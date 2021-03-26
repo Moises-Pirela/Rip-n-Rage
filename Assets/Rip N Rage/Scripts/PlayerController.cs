@@ -17,7 +17,7 @@ public class PlayerController : InputHandler
     public LayerMask groundLayerMask;
 
     public float counterMovement = 0.175f; //Breaking force
-    private float threshold = 1f;
+    private float threshold = 0.5f;
     public float maxSlopeAngle = 35f;
 
     private Vector3 crouchScale = new Vector3(1, 0.5f, 1);
@@ -29,6 +29,7 @@ public class PlayerController : InputHandler
 
     private Vector3 normalVector = Vector3.up;
     private Vector3 wallNormalDirection;
+    private CharacterController character;
 
     [SerializeField] private PlayerInventory playerInventory;
 
@@ -36,6 +37,7 @@ public class PlayerController : InputHandler
     {
         base.Awake();
         rigidbody = GetComponent<Rigidbody>();
+        character = GetComponent<CharacterController>();
     }
 
     void Start()
@@ -47,6 +49,8 @@ public class PlayerController : InputHandler
 
     void FixedUpdate()
     {
+        CheckForGround();
+
         ApplyMovement();
 
         if (IsJumping && CanJump) Jump();
@@ -83,15 +87,11 @@ public class PlayerController : InputHandler
     void ApplyMovement()
     {
         if (IsSliding) return;
-
-        //For weighty gravity
-        rigidbody.AddForce(Vector3.down * Time.deltaTime * 10);
-
+        
         var x = 0f;
         var y = 1f;
         x = MovementInput.x;
         y = MovementInput.y;
-        
 
         Vector2 magnitud = FindVelocityRelativeToLookDirection();
 
@@ -101,11 +101,13 @@ public class PlayerController : InputHandler
 
         float maxSpeed = this.maxSpeed;
 
-        if (IsSliding && IsGrounded && CanJump)
-        {
-            rigidbody.AddForce(Vector3.down * Time.deltaTime * 3000);
-            return;
-        }
+        //rigidbody.AddForce(Vector3.down * 10);
+
+        // if (IsSliding && IsGrounded && CanJump)
+        // {
+        //     rigidbody.AddForce(Vector3.down * Time.deltaTime * 3000);
+        //     return;
+        // }
 
         if (x > 0 && xMagnitude > maxSpeed) x = 0;
         if (x < 0 && xMagnitude < -maxSpeed) x = 0;
@@ -117,17 +119,24 @@ public class PlayerController : InputHandler
 
         if (!IsGrounded)
         {
-            airControlMultiplier = 0.5f;
+            airControlMultiplier = 0.4f;
             forwardMomentum = 0.5f;
         }
 
-        if (IsGrounded && IsSliding) forwardMomentum = 0;
+        if (!IsGrounded || IsSliding) forwardMomentum = 0;
 
-        //rigidbody.AddForce(orientation.transform.forward * y * movementSpeed * Time.deltaTime * airControlMultiplier * forwardMomentum);
-        //rigidbody.AddForce(orientation.transform.right * x * movementSpeed * Time.deltaTime * airControlMultiplier);
+        float directionalMovementSpeed = MovementInput.y > 0 ? movementSpeed : movementSpeed * 0.8f;
 
-        rigidbody.position += orientation.transform.forward * y * movementSpeed * Time.deltaTime; 
-        rigidbody.position += orientation.transform.right * x * movementSpeed * Time.deltaTime;
+        // rigidbody.AddForce(orientation.transform.forward * y * directionalMovementSpeed * airControlMultiplier, ForceMode.VelocityChange); // );
+        // rigidbody.AddForce(orientation.transform.right * x * (movementSpeed * 0.7f) * airControlMultiplier, ForceMode.VelocityChange);
+
+        // CharacterController character = GetComponent<CharacterController>();
+
+        character.Move(orientation.transform.forward * y * directionalMovementSpeed * Time.deltaTime);
+        character.Move(orientation.transform.right * x * directionalMovementSpeed * Time.deltaTime);
+
+        // transform.position += orientation.transform.forward * y * movementSpeed * Time.deltaTime; 
+        // transform.position += orientation.transform.right * x * movementSpeed * Time.deltaTime;
     }
 
     private void Jump()
@@ -142,6 +151,9 @@ public class PlayerController : InputHandler
             rigidbody.AddForce(Vector3.up * jumpForce * 1.5f);
             rigidbody.AddForce(normalVector * jumpForce * 0.5f);
 
+             //rigidbody.transform.position += Vector3.up * jumpForce * Time.deltaTime;
+            // rigidbody.transform.position += normalVector * jumpForce * 0.5f * Time.deltaTime;
+
             //If jumping while falling, reset y velocity.
             Vector3 vel = rigidbody.velocity;
             if (rigidbody.velocity.y < 0.5f)
@@ -149,7 +161,7 @@ public class PlayerController : InputHandler
             else if (rigidbody.velocity.y > 0)
                 rigidbody.velocity = new Vector3(vel.x, vel.y / 2, vel.z);
 
-            Invoke(nameof(ResetJump), jumpCooldown);
+            // Invoke(nameof(ResetJump), jumpCooldown);
         }
     }
 
@@ -168,8 +180,8 @@ public class PlayerController : InputHandler
         
         if (IsGrounded)
         {
-            //rigidbody.AddForce(orientation.transform.forward * slideForce, ForceMode.Impulse);
-            rigidbody.position += orientation.transform.forward * slideForce * Time.deltaTime;
+            rigidbody.AddForce(orientation.transform.forward * slideForce, ForceMode.Impulse);
+            //rigidbody.position += orientation.transform.forward * slideForce * Time.deltaTime;
         }
 
         yield return new WaitForSeconds(0.5f);
@@ -251,57 +263,10 @@ public class PlayerController : InputHandler
         {
             rigidbody.AddForce(movementSpeed * orientation.transform.forward * Time.deltaTime * -mag.y * counterMovement);
         }
-
-        //Limit diagonal running. This will also cause a full stop if sliding fast and un-crouching, so not optimal.
-        if (Mathf.Sqrt((Mathf.Pow(rigidbody.velocity.x, 2) + Mathf.Pow(rigidbody.velocity.z, 2))) > maxSpeed)
-        {
-            float fallspeed = rigidbody.velocity.y;
-            Vector3 n = rigidbody.velocity.normalized * maxSpeed;
-            rigidbody.velocity = new Vector3(n.x, fallspeed, n.z);
-        }
     }
 
-
-    private bool cancellingGrounded;
-
-    /// <summary>
-    /// Handle ground detection
-    /// </summary>
-    private void OnCollisionStay(Collision other)
+    private void CheckForGround()
     {
-        //Make sure we are only checking for walkable layers
-        int layer = other.gameObject.layer;
-        if (groundLayerMask == layer) return;
-
-        Debug.Log(other.gameObject.name);
-
-        IsGrounded = true;
-
-        //Iterate through every collision in a physics update
-        for (int i = 0; i < other.contactCount; i++)
-        {
-            Vector3 normal = other.contacts[i].normal;
-            //FLOOR
-            if (IsFloor(normal))
-            {
-                IsGrounded = true;
-                cancellingGrounded = false;
-                normalVector = normal;
-                CancelInvoke(nameof(StopGrounded));
-            }
-        }
-
-        //Invoke ground/wall cancel, since we can't check normals with CollisionExit
-        float delay =  15f;
-        if (!cancellingGrounded)
-        {
-            cancellingGrounded = true;
-            Invoke(nameof(StopGrounded), Time.deltaTime * delay);
-        }
-    }
-
-    private void StopGrounded()
-    {
-        IsGrounded = false;
+        IsGrounded = Physics.Raycast(feet.transform.position, -feet.transform.up,  out RaycastHit hit, 1f,groundLayerMask);
     }
 }

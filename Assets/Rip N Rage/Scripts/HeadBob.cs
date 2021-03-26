@@ -17,7 +17,7 @@ public class HeadBob : MonoBehaviour
     [SerializeField] private float swaySpeed;
 
 
-    [SerializeField] private PlayerController controller;
+    [SerializeField] private FPSController controller;
 
     private Vector3 startPos;
     private float timer;

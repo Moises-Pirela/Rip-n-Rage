@@ -9,4 +9,5 @@ public interface IDamageable
     void SetDefaultValues();
     void TakeDamage(float damage);
     void Heal(float amountToHeal);
+    void Die();
 }
