@@ -1,0 +1,53 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEditor.AnimatedValues;
+using UnityEngine;
+
+public class CameraRecoil : MonoBehaviour
+{
+    [Header("Setup")] [SerializeField] 
+    private FPSCombat fpsCombat;
+    
+    
+    private float rotationSpeed = 6f;
+    private float returnSpeed = 25f;
+    
+    [Header("Camera Shake:")]
+    public Vector3 recoilCameraShake = new Vector3(0.5f, 0.5f, 1.5f);
+
+    private Vector3 currentRotation;
+    
+    private Vector3 Rot;
+
+    void Start()
+    {
+        fpsCombat.OnPrimaryFireCallback.AddListener(OnFire);
+    }
+
+    void FixedUpdate()
+    {
+        currentRotation = Vector3.Lerp(currentRotation, Vector3.zero, returnSpeed * Time.deltaTime);
+        Rot = Vector3.Slerp(Rot, currentRotation, rotationSpeed * Time.deltaTime);
+        transform.localRotation = Quaternion.Euler(Rot);
+    }
+
+    
+    public void Shake()
+    {
+        var yRotation = Random.Range(-recoilCameraShake.y, recoilCameraShake.y) * 15;
+        var zRotation = Random.Range(-recoilCameraShake.z, recoilCameraShake.z) * 15;
+        currentRotation += new Vector3(-recoilCameraShake.x, yRotation, zRotation);
+    }
+
+    public void OnFire()
+    {
+        WeaponData currentWeapon = fpsCombat.inventoryComponent.currentWeapon.weaponData;
+        Vector3 recoil = currentWeapon.recoilRotation;
+        rotationSpeed = currentWeapon.recoilSpeed;
+        returnSpeed = currentWeapon.recoilRecoverySpeed;
+        
+        var yRotation = Random.Range(-recoil.y, recoil.y);
+        var zRotation = Random.Range(-recoil.z, recoil.z);
+        currentRotation += new Vector3(-recoil.x, yRotation, zRotation);
+    }
+}

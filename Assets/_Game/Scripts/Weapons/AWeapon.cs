@@ -1,21 +1,24 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Events;
 
 public abstract class AWeapon : MonoBehaviour
 {
     public WeaponData weaponData;
-
-    public virtual IEnumerator Fire(Vector3 direction, Vector3 origin, LayerMask layerMask)
+    
+    public virtual void Fire(Vector3 direction, Vector3 origin, LayerMask layerMask, Quaternion projectileDirection, Vector3 projectileSpawn, UnityEvent Callback)
     {
-        for (int i = 0; i < weaponData.roundsPerFire; i++)
-        {
-            if (Physics.Raycast(origin, direction, out RaycastHit hit, 100,layerMask))
-            {
-            }
+        Callback.Invoke();
+        
+        Instantiate(weaponData.bulletProjectile, projectileSpawn, projectileDirection);
+        //Instantiate(weaponData.muzzleFlash, projectileSpawn, projectileDirection);
 
-            yield return new WaitForSeconds(weaponData.fireRate);
+        if (Physics.Raycast(origin, direction, out RaycastHit hit, 100, layerMask))
+        {
+            Instantiate(weaponData.bulletImpact, hit.point, Quaternion.LookRotation(hit.normal));
         }
     }
 

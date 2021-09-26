@@ -7,16 +7,17 @@ public class WeaponAnimationEvents : MonoBehaviour
 {
     [SerializeField] private FPSCombat combat;
     [SerializeField] private GameObject muzzleFlashObject;
+    [SerializeField] private AudioSource weaponAudio;
+    [SerializeField] private FPSCombat fpsCombat;
 
    void OnFire()
    {
-       muzzleFlashObject.SetActive(true);
+       //muzzleFlashObject.SetActive(true);
    }
 
    void OnEndFire()
    {
-       muzzleFlashObject.SetActive(false);
-       combat.CanFire = true;
+       //muzzleFlashObject.SetActive(false);
    }
 
    void OnGlockAltFire()

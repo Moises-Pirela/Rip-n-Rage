@@ -5,7 +5,7 @@ using UnityEngine;
 [System.Serializable]
 public class InventoryComponent
 {
-    public AWeapon weapon;
+    public AWeapon currentWeapon;
     public AWeapon[] weapons;
     public Ammo[] ammo;
 }

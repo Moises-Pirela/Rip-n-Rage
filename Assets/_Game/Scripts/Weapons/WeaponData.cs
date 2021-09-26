@@ -30,4 +30,14 @@ public class WeaponData : ScriptableObject
     public float fireRate;
     public AnimatorOverrideController AnimatorOverrideController;
     public AudioClip fireSound;
+    public GameObject bulletProjectile;
+    public GameObject bulletImpact;
+    public GameObject muzzleFlash;
+
+    [Space(20)] [Header("Recoil settings")]
+    public Vector3 recoilRotation;
+    public float recoilSpeed;
+    public float recoilRecoverySpeed;
+
+
 }

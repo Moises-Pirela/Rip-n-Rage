@@ -40,8 +40,7 @@ public class FPSCameraController : MonoBehaviour
 
         float mouseX = _inputActions.LookInput.x * sensitivity * Time.fixedDeltaTime * sensitivityMultiplier;
         float mouseY = _inputActions.LookInput.y * sensitivity * Time.fixedDeltaTime * sensitivityMultiplier;
-
-
+        
         var localRotation = playerCamera.transform.localRotation;
         
         Vector3 rot = localRotation.eulerAngles;
