@@ -1,0 +1,15 @@
+version: 2
+importPivots: 1
+tpsheetFileNames:
+- Assets/_Game/Sprites/Weapons/Glock/Glock.tpsheet
+- Assets/_Game/Sprites/Weapons/Katana/Katana_01.tpsheet
+- Assets/codeandweb.com/Example/SpriteSheet/sprites.tpsheet
+textureFileNames:
+- Assets/_Game/Sprites/Weapons/Glock/Glock.png
+- Assets/_Game/Sprites/Weapons/Katana/Katana_01.png
+- Assets/codeandweb.com/Example/SpriteSheet/sprites.png
+normalmapFileNames:
+- 
+- 
+- Assets/codeandweb.com/Example/SpriteSheet/sprites_n.png
+enableDebugOutput: 0
