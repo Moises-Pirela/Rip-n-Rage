@@ -22,7 +22,7 @@ public class WeaponSway : MonoBehaviour
     private float timer;
     float horizontalTimer;
     
-    [Space(100)]
+    [Space(20)]
     [Header("Sway animation data")] 
     [SerializeField] private float zSmoothLerp = 12;
     [SerializeField] private float zSwayAngle = 1.5f;

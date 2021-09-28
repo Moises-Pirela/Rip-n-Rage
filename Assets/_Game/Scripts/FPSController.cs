@@ -14,11 +14,12 @@ public class FPSController : MonoBehaviour
     [SerializeField] [Range(0f, 1f)] private float m_RunstepLenghten;
     [SerializeField] private float m_StepInterval;
 
-    [Space, Header("Locomotion Settings")]
+    [Space, Header("Locomotion Settings")] 
+    [SerializeField] private bool bEnableBunnyHop = true;
     [SerializeField] private float crouchSpeed = 1f;
     [SerializeField] private float walkSpeed = 2f;
     [SerializeField] private float runSpeed = 3f;
-    [SerializeField] private float dashSpeed = 20f;
+    [SerializeField] private float bunnyHopSpeed = 20f;
     [SerializeField] private float jumpSpeed = 5f;
     [Range(0f, 1f)] [SerializeField] private float moveBackwardsSpeedPercent = 0.5f;
     [Range(0f, 1f)] [SerializeField] private float moveSideSpeedPercent = 0.75f;
@@ -240,7 +241,7 @@ public class FPSController : MonoBehaviour
     #endregion
 
     #region Locomotion Calculation Methods
-    protected virtual void CheckIfGrounded()
+    protected virtual bool CheckIfGrounded()
     {
         Vector3 _origin = transform.position + m_characterController.center;
 
@@ -248,6 +249,8 @@ public class FPSController : MonoBehaviour
         Debug.DrawRay(_origin, Vector3.down * (m_finalRayLength), Color.red);
 
         _inputActions.IsGrounded = _hitGround ? true : false;
+
+        return _inputActions.IsGrounded;
     }
 
     protected virtual void CheckIfWall()
@@ -297,10 +300,10 @@ public class FPSController : MonoBehaviour
 
     protected virtual void CalculateSpeed()
     {
-        m_currentSpeed = runSpeed;//movementInputData.IsRunning && CanRun() ? runSpeed : walkSpeed;
-                                  //m_currentSpeed = movementInputData.IsCrouching ? crouchSpeed : m_currentSpeed;
-                                  //m_currentSpeed = !movementInputData.HasInput ? 0f : m_currentSpeed;
-                                  //m_currentSpeed = movementInputData.Dashed ?  dashSpeed : m_currentSpeed;
+        if (bEnableBunnyHop) m_currentSpeed = CheckIfGrounded() ? runSpeed : bunnyHopSpeed;
+        else m_currentSpeed = runSpeed;
+        
+        
         m_currentSpeed = Math.Abs(_inputActions.MovementInput.y - (-1)) < 1 ? m_currentSpeed * moveBackwardsSpeedPercent : m_currentSpeed;
         m_currentSpeed = _inputActions.MovementInput.x != 0 && _inputActions.MovementInput.y == 0 ? m_currentSpeed * moveSideSpeedPercent : m_currentSpeed;
     }

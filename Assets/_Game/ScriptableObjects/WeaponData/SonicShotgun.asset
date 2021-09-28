@@ -12,9 +12,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 17053db880b72f04b9499bf0a7a3087f, type: 3}
   m_Name: SonicShotgun
   m_EditorClassIdentifier: 
-  WeaponName: ' Sonic Shotgun'
+  WeaponName: Sonic Shotgun
   FireType: 0
   AmmoType: 0
-  maxAmmo: 64
   roundsPerFire: 16
+  fireRate: 0
+  altRefireRate: 0
   AnimatorOverrideController: {fileID: 0}
+  fireSound: {fileID: 0}
+  bulletProjectile: {fileID: 0}
+  bulletImpact: {fileID: 0}
+  muzzleFlash: {fileID: 0}
+  recoilRotation: {x: 0, y: 0, z: 0}
+  recoilSpeed: 0
+  recoilRecoverySpeed: 0

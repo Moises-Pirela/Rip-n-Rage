@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 17053db880b72f04b9499bf0a7a3087f, type: 3}
   m_Name: Glock
   m_EditorClassIdentifier: 
-  WeaponName: Glock
+  WeaponName: Double Barreled Glock
   FireType: 1
   AmmoType: 1
   roundsPerFire: 2
