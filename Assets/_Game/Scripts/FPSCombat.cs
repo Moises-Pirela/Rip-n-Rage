@@ -16,6 +16,7 @@ public class FPSCombat : MonoBehaviour
     
     public Transform cameraTransform;
     public Transform muzzle;
+    public Transform weaponHolder;
     public LayerMask layerMask;
     
     private PlayerInputActions _inputActions;
@@ -25,52 +26,48 @@ public class FPSCombat : MonoBehaviour
     public bool CanFire;
 
     public UnityEngine.Events.UnityEvent OnPrimaryFireCallback;
+    
 
-    private void Start()
+    private void Awake()
     {
         _inputActions = GetComponent<PlayerInputActions>();
         _inputActions.OnPrimaryFire += OnPrimaryFire;
         _inputActions.OnSecondaryFire += OnSecondaryFire;
         
+        inventoryComponent.SetupInventory();
+        
+        PrepareWeapons();
+        
         EquipWeapon(0);
+    }
+
+    private void PrepareWeapons()
+    {
+        AWeapon[] weapons = inventoryComponent.weapons;
+        for (int i = 0; i < weapons.Length; i++)
+        {
+            AWeapon weaponToSpawn = Instantiate(weapons[i],weaponHolder);
+            
+            inventoryComponent.availableWeapons.Add(weaponToSpawn);
+        }
     }
 
     private void EquipWeapon(int index)
     {
-        inventoryComponent.currentWeapon = inventoryComponent.weapons[index];
-        mainAnimator.runtimeAnimatorController = inventoryComponent.currentWeapon.weaponData.AnimatorOverrideController;
-        CanFire = true;
+        inventoryComponent.EquipWeapon(index);
+        inventoryComponent.currentWeapon.Equip(audioSource, mainAnimator, muzzleFlashSpriteObject, inventoryComponent);
     }
 
     private void OnPrimaryFire()
     {
-        if (!CanFire) return;
-        
-        mainAnimator.SetBool("New Bool", true);
-        audioSource.PlayOneShot(inventoryComponent.currentWeapon.weaponData.fireSound);
-        muzzleFlashSpriteObject.SetActive(true);
-        CanFire = false;
-
         inventoryComponent.currentWeapon.Fire(cameraTransform.forward, cameraTransform.position,
             layerMask, cameraTransform.rotation, muzzle.position, OnPrimaryFireCallback);
-
-        StartCoroutine(AllowRefire());
     }
-
-    public IEnumerator AllowRefire()
-    {
-        yield return new WaitForSeconds(inventoryComponent.currentWeapon.weaponData.fireRate);
-        muzzleFlashSpriteObject.SetActive(false);
-        CanFire = true;
-        mainAnimator.SetBool("New Bool", false);
-    }
-
+    
     private void OnSecondaryFire()
     {
-        if (!CanFire) return;
-
-        inventoryComponent.currentWeapon.AltFire();
+        inventoryComponent.currentWeapon.AltFire(cameraTransform.forward, cameraTransform.position,
+            layerMask, cameraTransform.rotation, muzzle.position, OnPrimaryFireCallback);
         mainAnimator.SetTrigger(AltFire);
-        CanFire = false;
     }
 }

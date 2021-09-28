@@ -28,6 +28,7 @@ public class WeaponData : ScriptableObject
     public AmmoType AmmoType;
     public int roundsPerFire;
     public float fireRate;
+    public float altRefireRate;
     public AnimatorOverrideController AnimatorOverrideController;
     public AudioClip fireSound;
     public GameObject bulletProjectile;

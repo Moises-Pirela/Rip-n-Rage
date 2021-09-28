@@ -17,6 +17,7 @@ MonoBehaviour:
   AmmoType: 1
   roundsPerFire: 2
   fireRate: 0.1
+  altRefireRate: 0.3
   AnimatorOverrideController: {fileID: 22100000, guid: acd99e4ba8760654385d48c6e03d466b,
     type: 2}
   fireSound: {fileID: 8300000, guid: 436faba33614a924eaf324f992e7ec89, type: 3}

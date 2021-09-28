@@ -6,6 +6,7 @@ using UnityEngine;
 public class EnterWaterCollision : MonoBehaviour
 {
     private Material startingSkybox;
+    public Material noSky;
     private void OnTriggerEnter(Collider other)
     {
         if (!other.CompareTag("MainCamera")) return;
