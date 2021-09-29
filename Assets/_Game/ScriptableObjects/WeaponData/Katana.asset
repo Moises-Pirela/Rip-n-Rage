@@ -15,6 +15,15 @@ MonoBehaviour:
   WeaponName: Katana
   FireType: 0
   AmmoType: 0
-  maxAmmo: 0
   roundsPerFire: 0
-  AnimatorOverrideController: {fileID: 0}
+  fireRate: 0.2
+  altRefireRate: 0.2
+  AnimatorOverrideController: {fileID: 22100000, guid: 2422d055e984e3a4c8b2adc0c4410950,
+    type: 2}
+  fireSound: {fileID: 8300000, guid: 33094b947566133478f9ff31566708a7, type: 3}
+  bulletProjectile: {fileID: 0}
+  bulletImpact: {fileID: 0}
+  muzzleFlash: {fileID: 0}
+  recoilRotation: {x: 0, y: 0, z: 0}
+  recoilSpeed: 0
+  recoilRecoverySpeed: 0

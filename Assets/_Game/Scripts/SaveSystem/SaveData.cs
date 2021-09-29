@@ -19,4 +19,6 @@ public class SaveData
             return _current;
         }
     }
+
+    public PlayerState PlayerState;
 }

@@ -10,11 +10,11 @@ public abstract class AWeapon : MonoBehaviour
     [HideInInspector] public InventoryComponent parentInventory;
     public WeaponData weaponData;
 
-    private AudioSource _weaponAudioSource;
-    private Animator _mainAnimator;
+    protected AudioSource _weaponAudioSource;
+    protected Animator _mainAnimator;
     private GameObject _muzzleFlash;
     
-    private static readonly int IsFiring = Animator.StringToHash("IsFiring");
+    protected static readonly int IsFiring = Animator.StringToHash("IsFiring");
 
     protected bool bCanFire;
     protected bool bCanAltFire;

@@ -9,9 +9,9 @@ AnimatorOverrideController:
   m_Name: GlockWeaponController
   m_Controller: {fileID: 9100000, guid: aa1d5fe10a5a03441ab15b180652fe7c, type: 2}
   m_Clips:
-  - m_OriginalClip: {fileID: 7400000, guid: 4bbabe5b5bc277448a1c8d3a09c6d9ef, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: deca3e62bb381cf4dbe5395f95efbb44, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 4bbabe5b5bc277448a1c8d3a09c6d9ef, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 5b8a6e7761e07804883f68397d843765, type: 2}
     m_OverrideClip: {fileID: 7400000, guid: c544c26435a435445bccf30e3f4e257c, type: 2}
-  - m_OriginalClip: {fileID: 7400000, guid: c544c26435a435445bccf30e3f4e257c, type: 2}
-    m_OverrideClip: {fileID: 7400000, guid: c544c26435a435445bccf30e3f4e257c, type: 2}
-  - m_OriginalClip: {fileID: 7400000, guid: 19deb52c4760fe543871819041ef7acd, type: 2}
-    m_OverrideClip: {fileID: 7400000, guid: 19deb52c4760fe543871819041ef7acd, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: a280339b49434724a96c8a8a3ca030d7, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 73ed4129e1eecc4498917c5bbd01c99e, type: 2}
