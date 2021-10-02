@@ -28,11 +28,13 @@ public class FPSCombat : MonoBehaviour
     public UnityEngine.Events.UnityEvent OnPrimaryFireCallback;
     
 
-    private void Awake()
+    private void Start()
     {
         _inputActions = GetComponent<PlayerInputActions>();
         _inputActions.OnPrimaryFire += OnPrimaryFire;
         _inputActions.OnSecondaryFire += OnSecondaryFire;
+        _inputActions.OnSwapWheel += SwapWeaponWheel;
+        _inputActions.OnSwapButton += SwapWeapon;
         
         inventoryComponent.SetupInventory();
         
@@ -54,20 +56,32 @@ public class FPSCombat : MonoBehaviour
 
     private void EquipWeapon(int index)
     {
+        //if (inventoryComponent.currentWeaponIndex == index) return;
+        
         inventoryComponent.EquipWeapon(index);
         inventoryComponent.currentWeapon.Equip(audioSource, mainAnimator, muzzleFlashSpriteObject, inventoryComponent);
     }
-
     private void OnPrimaryFire()
     {
         inventoryComponent.currentWeapon.Fire(cameraTransform.forward, cameraTransform.position,
             layerMask, cameraTransform.rotation, muzzle.position, OnPrimaryFireCallback);
     }
-    
     private void OnSecondaryFire()
     {
         inventoryComponent.currentWeapon.AltFire(cameraTransform.forward, cameraTransform.position,
             layerMask, cameraTransform.rotation, muzzle.position, OnPrimaryFireCallback);
         mainAnimator.SetTrigger(AltFire);
     }
+    private void SwapWeaponWheel(int index)
+    {
+        int newIndex = inventoryComponent.SwapWeapon(index);
+        
+        EquipWeapon(newIndex);
+    }
+    
+    private void SwapWeapon(int index)
+    {
+        EquipWeapon(index);
+    }
+    
 }

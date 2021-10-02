@@ -50,8 +50,8 @@ MonoBehaviour:
   horizontalSwaySpeed: 10
   controller: {fileID: 6211253164267376082}
   zSmoothLerp: 12
-  zSwayAngle: 1.5
-  zSwayMultiplier: -50
+  zSwayAngle: 5
+  zSwayMultiplier: -100
   zSmoothSway: 20
 --- !u!1 &6211253163912668039
 GameObject:
@@ -521,23 +521,27 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   inventoryComponent:
+    currentWeaponIndex: 0
     currentWeapon: {fileID: 0}
     weapons:
+    - {fileID: 969256033810756184, guid: 7ddb31c8078580c45bd4c5bda590c2c0, type: 3}
     - {fileID: -190233040442426912, guid: eb1f058fc9d52ef408b6753d2495ba56, type: 3}
     currentAmmo:
       ammoType: 0
       MaxAmmo: 0
-    ammo:
+    InventoryAmmo:
     - ammoType: 1
       MaxAmmo: 60
-    - ammoType: 2
-      MaxAmmo: 100
     - ammoType: 3
-      MaxAmmo: 100
-    - ammoType: 4
-      MaxAmmo: 100
+      MaxAmmo: 60
     - ammoType: 5
-      MaxAmmo: 100
+      MaxAmmo: 60
+    - ammoType: 4
+      MaxAmmo: 60
+    - ammoType: 2
+      MaxAmmo: 60
+    - ammoType: 0
+      MaxAmmo: 0
     availableWeapons: []
   mainAnimator: {fileID: 6211253165621947700}
   audioSource: {fileID: 6211253165621947706}
@@ -655,8 +659,8 @@ MonoBehaviour:
   sensitivityMultiplier: 1
   sensitivity: 5
   zSmoothLerp: 0
-  zSwayAngle: 1.5
-  zSwayMultiplier: 50
+  zSwayAngle: 5
+  zSwayMultiplier: 100
   zSmoothSway: -50
 --- !u!114 &6211253164267376073
 MonoBehaviour:
@@ -899,16 +903,13 @@ MonoBehaviour:
             m_StringArgument: 
             m_BoolArgument: 0
           m_CallState: 2
-  position: {x: 0, y: 0, z: 0}
-  rotation: {x: 0, y: 0, z: 0, w: 0}
-  InventoryComponent:
-    currentWeapon: {fileID: 0}
-    weapons: []
-    currentAmmo:
-      ammoType: 0
-      MaxAmmo: 0
-    ammo: []
-    availableWeapons: []
+  RageState: 0
+  CurrentRageState: {fileID: 0}
+  CombatState: 0
+  rageStates:
+  - {fileID: 11400000, guid: 60b0172b6c5d8254385443fb343025d7, type: 2}
+  - {fileID: 11400000, guid: e9c5049a1cef1a64eb3f7b27341474b9, type: 2}
+  - {fileID: 11400000, guid: 450d36d9b1a74014e9fdfeac4eb757bd, type: 2}
 --- !u!1 &6211253164364876637
 GameObject:
   m_ObjectHideFlags: 0

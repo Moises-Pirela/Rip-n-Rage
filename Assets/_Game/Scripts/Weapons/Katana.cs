@@ -18,6 +18,7 @@ public class Katana : AWeapon
         if (Physics.Raycast(origin, direction, out RaycastHit hit, 100, layerMask))
         {
             //deal damage
+            PlayerState.Current.SetViolentCombatState();
         }
         
         StartCoroutine(AllowRefire(weaponData.fireRate));

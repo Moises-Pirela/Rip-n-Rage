@@ -7,13 +7,20 @@ public class EntityState : MonoBehaviour
     [Header("Status")]
     public HealthComponent healthComponent;
 
-    public virtual void Awake()
+    public virtual void Start()
     {
         Init();
     }
 
     public virtual void Init()
     {
-        healthComponent.InitHealth();
+        if (SaveData.current != null)
+        {
+            healthComponent.Health = SaveData.current.PlayerStateData.PlayerHealth;
+        }
+        else
+        {
+            healthComponent.InitHealth();   
+        }        
     }
 }

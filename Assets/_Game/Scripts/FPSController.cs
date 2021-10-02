@@ -306,6 +306,7 @@ public class FPSController : MonoBehaviour
         
         m_currentSpeed = Math.Abs(_inputActions.MovementInput.y - (-1)) < 1 ? m_currentSpeed * moveBackwardsSpeedPercent : m_currentSpeed;
         m_currentSpeed = _inputActions.MovementInput.x != 0 && _inputActions.MovementInput.y == 0 ? m_currentSpeed * moveSideSpeedPercent : m_currentSpeed;
+        m_currentSpeed *= PlayerState.Current.CurrentRageState.movementSpeedModifier;
     }
 
     protected virtual void CalculateFinalMovement()

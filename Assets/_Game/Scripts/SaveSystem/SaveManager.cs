@@ -13,6 +13,8 @@ public class SaveManager
     public static readonly string defaultFolderPath = (Application.persistentDataPath + "/saves");
     public static readonly string saveExtension = ".save";
 
+    public static System.Action OnLoadData;
+
     public static bool Save(string saveName, object saveData)
     {
         BinaryFormatter formatter = GetBinaryFormatter();
@@ -43,6 +45,7 @@ public class SaveManager
 
         BinaryFormatter formatter = GetBinaryFormatter();
 
+        Debug.Log(defaultPath);
         FileStream file = File.Open(defaultPath + saveName + saveExtension, FileMode.Open);
 
         try

@@ -14,6 +14,8 @@ public class PlayerInputActions : MonoBehaviour
 
     public System.Action OnPrimaryFire;
     public System.Action OnSecondaryFire;
+    public System.Action<int> OnSwapWheel;
+    public System.Action<int> OnSwapButton;
     
     public void OnMove(InputValue value)
     {
@@ -39,5 +41,31 @@ public class PlayerInputActions : MonoBehaviour
     public void OnAltFire(InputValue value)
     {
         OnSecondaryFire();
+    }
+
+    public void OnSwapWeapon(InputValue value)
+    {
+        int index = Mathf.FloorToInt(value.Get<float>());
+        
+        if (index == 0) return;
+
+        index = Mathf.Clamp(index, -1, 1);
+        
+        OnSwapWheel(index);
+    }
+
+    public void OnChangeWeapon1(InputValue value)
+    {
+        OnSwapButton(0);
+    }
+    
+    public void OnChangeWeapon2(InputValue value)
+    {
+        OnSwapButton(1);
+    }
+    
+    public void OnChangeWeapon3(InputValue value)
+    {
+        OnSwapButton(2);
     }
 }

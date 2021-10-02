@@ -37,6 +37,8 @@ public class GameManager : MonoBehaviour, IManager
     public IEnumerator Init()
     {
         GetAllManagers();
+
+        SaveData.current =  (SaveData)SaveManager.Load("Save1");
         
         foreach (IManager manager in _managers)
         {

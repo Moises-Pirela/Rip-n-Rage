@@ -18,7 +18,9 @@ public class SaveData
 
             return _current;
         }
+        set => _current = value;
+        
     }
 
-    public PlayerState PlayerState;
+    public PlayerStateData PlayerStateData;
 }

@@ -1,4 +1,4 @@
-// GENERATED AUTOMATICALLY FROM 'Assets/Rip N Rage/Scripts/PlayerControls.inputactions'
+// GENERATED AUTOMATICALLY FROM 'Assets/_Game/Scripts/PlayerControls.inputactions'
 
 using System;
 using System.Collections;
@@ -63,6 +63,38 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                     ""type"": ""Button"",
                     ""id"": ""4b764c1f-e449-4642-b40b-5051aebf9901"",
                     ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """"
+                },
+                {
+                    ""name"": ""ChangeWeapon1"",
+                    ""type"": ""Button"",
+                    ""id"": ""66f2951b-d3ac-4857-8db4-9f90bd47ae07"",
+                    ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """"
+                },
+                {
+                    ""name"": ""ChangeWeapon2"",
+                    ""type"": ""Button"",
+                    ""id"": ""fcce9f2e-156a-4f1d-b886-63ec6d86e205"",
+                    ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """"
+                },
+                {
+                    ""name"": ""ChangeWeapon3"",
+                    ""type"": ""Button"",
+                    ""id"": ""d341a571-a6a3-4cb8-9f17-15c1e905734f"",
+                    ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """"
+                },
+                {
+                    ""name"": ""SwapWeapon"",
+                    ""type"": ""Value"",
+                    ""id"": ""f2ba446e-20a3-47fd-8f29-a92e7bb20e21"",
+                    ""expectedControlType"": ""Axis"",
                     ""processors"": """",
                     ""interactions"": """"
                 }
@@ -177,6 +209,50 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                     ""action"": ""AltFire"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""81f3997d-bfaa-4e93-94db-1708545c11df"",
+                    ""path"": ""<Keyboard>/1"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": ""Keyboard and Mouse"",
+                    ""action"": ""ChangeWeapon1"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""b23818fa-b29d-41fd-bc75-f60063395608"",
+                    ""path"": ""<Keyboard>/2"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": ""Keyboard and Mouse"",
+                    ""action"": ""ChangeWeapon2"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""c3aef6d0-592a-4393-915b-33e9cdf3cf7a"",
+                    ""path"": ""<Keyboard>/3"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": ""Keyboard and Mouse"",
+                    ""action"": ""ChangeWeapon3"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""04284c27-8983-4af9-9626-f150069df1c4"",
+                    ""path"": ""<Mouse>/scroll/y"",
+                    ""interactions"": """",
+                    ""processors"": ""Normalize(min=-1,max=1,zero=1)"",
+                    ""groups"": ""Keyboard and Mouse"",
+                    ""action"": ""SwapWeapon"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
                 }
             ]
         }
@@ -219,6 +295,10 @@ public class @PlayerControls : IInputActionCollection, IDisposable
         m_Character_Crouch = m_Character.FindAction("Crouch", throwIfNotFound: true);
         m_Character_Fire = m_Character.FindAction("Fire", throwIfNotFound: true);
         m_Character_AltFire = m_Character.FindAction("AltFire", throwIfNotFound: true);
+        m_Character_ChangeWeapon1 = m_Character.FindAction("ChangeWeapon1", throwIfNotFound: true);
+        m_Character_ChangeWeapon2 = m_Character.FindAction("ChangeWeapon2", throwIfNotFound: true);
+        m_Character_ChangeWeapon3 = m_Character.FindAction("ChangeWeapon3", throwIfNotFound: true);
+        m_Character_SwapWeapon = m_Character.FindAction("SwapWeapon", throwIfNotFound: true);
     }
 
     public void Dispose()
@@ -274,6 +354,10 @@ public class @PlayerControls : IInputActionCollection, IDisposable
     private readonly InputAction m_Character_Crouch;
     private readonly InputAction m_Character_Fire;
     private readonly InputAction m_Character_AltFire;
+    private readonly InputAction m_Character_ChangeWeapon1;
+    private readonly InputAction m_Character_ChangeWeapon2;
+    private readonly InputAction m_Character_ChangeWeapon3;
+    private readonly InputAction m_Character_SwapWeapon;
     public struct CharacterActions
     {
         private @PlayerControls m_Wrapper;
@@ -284,6 +368,10 @@ public class @PlayerControls : IInputActionCollection, IDisposable
         public InputAction @Crouch => m_Wrapper.m_Character_Crouch;
         public InputAction @Fire => m_Wrapper.m_Character_Fire;
         public InputAction @AltFire => m_Wrapper.m_Character_AltFire;
+        public InputAction @ChangeWeapon1 => m_Wrapper.m_Character_ChangeWeapon1;
+        public InputAction @ChangeWeapon2 => m_Wrapper.m_Character_ChangeWeapon2;
+        public InputAction @ChangeWeapon3 => m_Wrapper.m_Character_ChangeWeapon3;
+        public InputAction @SwapWeapon => m_Wrapper.m_Character_SwapWeapon;
         public InputActionMap Get() { return m_Wrapper.m_Character; }
         public void Enable() { Get().Enable(); }
         public void Disable() { Get().Disable(); }
@@ -311,6 +399,18 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                 @AltFire.started -= m_Wrapper.m_CharacterActionsCallbackInterface.OnAltFire;
                 @AltFire.performed -= m_Wrapper.m_CharacterActionsCallbackInterface.OnAltFire;
                 @AltFire.canceled -= m_Wrapper.m_CharacterActionsCallbackInterface.OnAltFire;
+                @ChangeWeapon1.started -= m_Wrapper.m_CharacterActionsCallbackInterface.OnChangeWeapon1;
+                @ChangeWeapon1.performed -= m_Wrapper.m_CharacterActionsCallbackInterface.OnChangeWeapon1;
+                @ChangeWeapon1.canceled -= m_Wrapper.m_CharacterActionsCallbackInterface.OnChangeWeapon1;
+                @ChangeWeapon2.started -= m_Wrapper.m_CharacterActionsCallbackInterface.OnChangeWeapon2;
+                @ChangeWeapon2.performed -= m_Wrapper.m_CharacterActionsCallbackInterface.OnChangeWeapon2;
+                @ChangeWeapon2.canceled -= m_Wrapper.m_CharacterActionsCallbackInterface.OnChangeWeapon2;
+                @ChangeWeapon3.started -= m_Wrapper.m_CharacterActionsCallbackInterface.OnChangeWeapon3;
+                @ChangeWeapon3.performed -= m_Wrapper.m_CharacterActionsCallbackInterface.OnChangeWeapon3;
+                @ChangeWeapon3.canceled -= m_Wrapper.m_CharacterActionsCallbackInterface.OnChangeWeapon3;
+                @SwapWeapon.started -= m_Wrapper.m_CharacterActionsCallbackInterface.OnSwapWeapon;
+                @SwapWeapon.performed -= m_Wrapper.m_CharacterActionsCallbackInterface.OnSwapWeapon;
+                @SwapWeapon.canceled -= m_Wrapper.m_CharacterActionsCallbackInterface.OnSwapWeapon;
             }
             m_Wrapper.m_CharacterActionsCallbackInterface = instance;
             if (instance != null)
@@ -333,6 +433,18 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                 @AltFire.started += instance.OnAltFire;
                 @AltFire.performed += instance.OnAltFire;
                 @AltFire.canceled += instance.OnAltFire;
+                @ChangeWeapon1.started += instance.OnChangeWeapon1;
+                @ChangeWeapon1.performed += instance.OnChangeWeapon1;
+                @ChangeWeapon1.canceled += instance.OnChangeWeapon1;
+                @ChangeWeapon2.started += instance.OnChangeWeapon2;
+                @ChangeWeapon2.performed += instance.OnChangeWeapon2;
+                @ChangeWeapon2.canceled += instance.OnChangeWeapon2;
+                @ChangeWeapon3.started += instance.OnChangeWeapon3;
+                @ChangeWeapon3.performed += instance.OnChangeWeapon3;
+                @ChangeWeapon3.canceled += instance.OnChangeWeapon3;
+                @SwapWeapon.started += instance.OnSwapWeapon;
+                @SwapWeapon.performed += instance.OnSwapWeapon;
+                @SwapWeapon.canceled += instance.OnSwapWeapon;
             }
         }
     }
@@ -363,5 +475,9 @@ public class @PlayerControls : IInputActionCollection, IDisposable
         void OnCrouch(InputAction.CallbackContext context);
         void OnFire(InputAction.CallbackContext context);
         void OnAltFire(InputAction.CallbackContext context);
+        void OnChangeWeapon1(InputAction.CallbackContext context);
+        void OnChangeWeapon2(InputAction.CallbackContext context);
+        void OnChangeWeapon3(InputAction.CallbackContext context);
+        void OnSwapWeapon(InputAction.CallbackContext context);
     }
 }

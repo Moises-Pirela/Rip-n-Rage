@@ -5,6 +5,19 @@ public enum EntityHealthState
     DEAD
 }
 
+public enum PlayerRageState
+{
+    NORMAL,
+    ENRAGED,
+    DEPRESSED
+}
+
+public enum PlayerCombatState
+{
+    PACIFIST,
+    VIOLENT
+}
+
 public enum ManagerInitState
 {
     PENDING,

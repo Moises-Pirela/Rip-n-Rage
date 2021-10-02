@@ -27,6 +27,7 @@ public abstract class AWeapon : MonoBehaviour
         parentInventory = inventoryComponent;
         
         _mainAnimator.runtimeAnimatorController = weaponData.AnimatorOverrideController;
+        
         bCanFire = true;
         bCanAltFire = true;
     }
@@ -35,7 +36,6 @@ public abstract class AWeapon : MonoBehaviour
     {
         if (!bCanFire) return;
         
-        Callback.Invoke();
         bCanFire = false;
         
         _mainAnimator.SetBool(IsFiring, true);
@@ -47,9 +47,12 @@ public abstract class AWeapon : MonoBehaviour
         if (Physics.Raycast(origin, direction, out RaycastHit hit, 100, layerMask))
         {
             Instantiate(weaponData.bulletImpact, hit.point, Quaternion.LookRotation(hit.normal));
+            PlayerState.Current.SetViolentCombatState();
         }
         
         parentInventory.UseAmmo(1);
+        
+        Callback.Invoke();
         
         StartCoroutine(AllowRefire(weaponData.fireRate));
     }
