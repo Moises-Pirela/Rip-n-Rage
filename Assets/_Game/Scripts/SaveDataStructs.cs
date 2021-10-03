@@ -9,6 +9,7 @@ public struct PlayerStateData
     public Quaternion playerRotation;
 
     public float PlayerHealth;
+    public float PlayerArmor;
 
     public List<Ammo> Ammo;
 }

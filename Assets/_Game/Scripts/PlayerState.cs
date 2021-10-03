@@ -8,6 +8,7 @@ public class PlayerState : EntityState
     public UnityEvent OnEnterEnraged;
     public UnityEvent OnEnterDepressed;
     public UnityEvent OnEnterNormal;
+    public UnityEvent OnTickRage;
     
     private static PlayerState _current;
     public static PlayerState Current {
@@ -31,8 +32,9 @@ public class PlayerState : EntityState
 
     private Coroutine ResetCombatState;
 
-    private void Awake()
+    public override void Awake()
     {
+        base.Awake();
         _current = this;
         RageState = PlayerRageState.NONE;
         _rage = 0.5f;
@@ -43,9 +45,6 @@ public class PlayerState : EntityState
     {
         TickRage();
         GetRageState();
-
-        //string ragestring = String.Format("{0} at Rage meter: {1}", RageState, _rage);
-        //Debug.Log(CombatState);
     }
 
     public void SetViolentCombatState()
@@ -72,6 +71,8 @@ public class PlayerState : EntityState
         _rage += Time.deltaTime * rageStateTick;
 
         _rage = Mathf.Clamp01(_rage);
+
+        OnTickRage.Invoke();
     }
 
     private void GetRageState()
@@ -110,10 +111,9 @@ public class PlayerState : EntityState
 
         SaveData.current.PlayerStateData.playerPosition = transform.position;
         SaveData.current.PlayerStateData.playerRotation = transform.rotation;
-
-        healthComponent.Health = 50;
         
-        SaveData.current.PlayerStateData.PlayerHealth = healthComponent.Health;
+        SaveData.current.PlayerStateData.PlayerHealth = Health;
+        SaveData.current.PlayerStateData.PlayerArmor = Armor;
 
         FPSCombat fpsCombat = GetComponent<FPSCombat>();
 
