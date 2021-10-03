@@ -7,6 +7,7 @@ public enum EntityHealthState
 
 public enum PlayerRageState
 {
+    NONE,
     NORMAL,
     ENRAGED,
     DEPRESSED

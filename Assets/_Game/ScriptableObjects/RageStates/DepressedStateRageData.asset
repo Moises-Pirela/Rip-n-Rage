@@ -14,5 +14,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   damageDealtModifier: 1
   damageTakenModifer: 1
-  movementSpeedModifier: 0.1
-  ammoDropModifier: 1
+  movementSpeedModifier: 0.75
+  ammoDropChanceModifier: 1
+  healthDropChanceModifier: 1

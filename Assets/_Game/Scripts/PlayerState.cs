@@ -1,15 +1,14 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
-using System.Timers;
 using UnityEngine;
-
-
+using UnityEngine.Events;
 
 [System.Serializable]
 public class PlayerState : EntityState
 {
+    public UnityEvent OnEnterEnraged;
+    public UnityEvent OnEnterDepressed;
+    public UnityEvent OnEnterNormal;
+    
     private static PlayerState _current;
     public static PlayerState Current {
         get
@@ -35,23 +34,18 @@ public class PlayerState : EntityState
     private void Awake()
     {
         _current = this;
-
+        RageState = PlayerRageState.NONE;
         _rage = 0.5f;
-        
-        RageState = GetRageState();
-        SetCurrentRageState();
+        GetRageState();
     }
 
     private void Update()
     {
         TickRage();
-        
-        RageState = GetRageState();
-        
-        SetCurrentRageState();
+        GetRageState();
 
         //string ragestring = String.Format("{0} at Rage meter: {1}", RageState, _rage);
-        Debug.Log(CombatState);
+        //Debug.Log(CombatState);
     }
 
     public void SetViolentCombatState()
@@ -80,31 +74,32 @@ public class PlayerState : EntityState
         _rage = Mathf.Clamp01(_rage);
     }
 
-    private void SetCurrentRageState()
+    private void GetRageState()
     {
-        switch (RageState)
+        if (_rage >= 1 && RageState != PlayerRageState.ENRAGED)
         {
-            case PlayerRageState.NORMAL:
-                CurrentRageState = rageStates[0];
-                break;
-            case PlayerRageState.ENRAGED:
-                CurrentRageState = rageStates[1];
-                break;
-            case PlayerRageState.DEPRESSED:
-                CurrentRageState = rageStates[2];
-                break;
+            RageState = PlayerRageState.ENRAGED;
+            CurrentRageState = rageStates[1];
+            OnEnterEnraged.Invoke();
+            return;
         }
-    }
 
-    private PlayerRageState GetRageState()
-    {
-        if (_rage >= 1)
-            return PlayerRageState.ENRAGED;
-        
-        if (_rage <= 0)
-            return PlayerRageState.DEPRESSED;
+        if (_rage <= 0 && RageState != PlayerRageState.DEPRESSED)
+        {
+            RageState = PlayerRageState.DEPRESSED;
+            CurrentRageState = rageStates[2];
+            OnEnterDepressed.Invoke();
+            return;
+        }
 
-        return PlayerRageState.NORMAL;
+        if (_rage > 0 && _rage < 1 && RageState != PlayerRageState.NORMAL)
+        {
+            RageState = PlayerRageState.NORMAL;
+            CurrentRageState = rageStates[0];
+            OnEnterNormal.Invoke();
+        }
+
+       
     }
 
     private void OnTriggerEnter(Collider other)
