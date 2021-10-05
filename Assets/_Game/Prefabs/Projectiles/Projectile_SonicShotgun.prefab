@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 198737689383679476}
   - component: {fileID: 54453457801900860}
   - component: {fileID: 997699706327253889}
-  - component: {fileID: 3555897947422018078}
+  - component: {fileID: 3379952475107939377}
   m_Layer: 6
   m_Name: Projectile_SonicShotgun
   m_TagString: FX
@@ -5028,9 +5028,9 @@ SphereCollider:
   m_IsTrigger: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Radius: 0.5
-  m_Center: {x: 0, y: 0, z: 0.25}
---- !u!114 &3555897947422018078
+  m_Radius: 0.67
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &3379952475107939377
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -5039,7 +5039,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 1238843893459588}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f08f1a32c89817a449944f2a9d04e6ad, type: 3}
+  m_Script: {fileID: 11500000, guid: 55268e1f48cc68f4cb340c83efc89173, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   projectileSpeed: 50
@@ -5048,7 +5048,8 @@ MonoBehaviour:
   shouldTickDestroy: 0
   projectileLayerMask:
     serializedVersion: 2
-    m_Bits: 3895
+    m_Bits: 3345
+  forceToAdd: 50
 --- !u!1 &1809025296285686
 GameObject:
   m_ObjectHideFlags: 0

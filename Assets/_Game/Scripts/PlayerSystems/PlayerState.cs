@@ -59,6 +59,7 @@ public class PlayerState : EntityState
 
     public void AddToRage(float value)
     {
+        //_rage = Mathf.Lerp(_rage, _rage + value, 5);
         _rage += value;
     }
 

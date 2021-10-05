@@ -20,12 +20,12 @@ public class Projectile : MonoBehaviour
 
     private bool setToDestroy = false;
 
-    void Update()
+    public virtual void Update()
     {
         transform.position += transform.forward * projectileSpeed * Time.deltaTime;
     }
 
-    public void SetUp(GameObject instigator, WeaponData weaponData)
+    public virtual void SetUp(GameObject instigator, WeaponData weaponData)
     {
         Instigator = instigator;
         owningWeapon = weaponData;
@@ -33,14 +33,17 @@ public class Projectile : MonoBehaviour
         if (shouldTickDestroy)
             Destroy(gameObject, 0.5f);
     }
-    private void OnCollisionEnter(Collision other)
+    public virtual void OnCollisionEnter(Collision other)
     {
         if (shouldTickDestroy) return;
+        
+        if (setToDestroy) return;
 
         ContactPoint hitPoint = other.GetContact(0);
         
-        Instantiate(impactPrefab, transform.position,  Quaternion.LookRotation(hitPoint.normal));
-        GameObject impactSound = Instantiate(Resources.Load("ImpactSound"), hitPoint.point, quaternion.identity) as GameObject;
+        GameObject impact = Instantiate(impactPrefab, hitPoint.point,  Quaternion.LookRotation(hitPoint.normal));
+        impact.transform.SetParent(other.transform);
+        GameObject impactSound = Instantiate(Resources.Load("ImpactSound"), hitPoint.normal, quaternion.identity) as GameObject;
         impactSound.GetComponent<AudioSource>().PlayOneShot(owningWeapon.projectileImpactSound);
         Destroy(impactSound, 1f);
         Destroy(gameObject);
