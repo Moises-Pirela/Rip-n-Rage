@@ -43,4 +43,9 @@ public class HitscanWeapon : AWeapon
     {
         throw new System.NotImplementedException();
     }
+
+    public override void CancelAltFire()
+    {
+        throw new System.NotImplementedException();
+    }
 }

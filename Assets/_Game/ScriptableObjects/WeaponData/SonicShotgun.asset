@@ -28,6 +28,6 @@ MonoBehaviour:
   bulletImpact: {fileID: 1228869523896316, guid: 1ac3ed6c17f52044eb14f3c1c191b389,
     type: 3}
   muzzleFlash: {fileID: 0}
-  recoilRotation: {x: 0, y: 0, z: 0}
-  recoilSpeed: 0
-  recoilRecoverySpeed: 0
+  recoilRotation: {x: 25, y: 0, z: 0}
+  recoilSpeed: 12
+  recoilRecoverySpeed: 10

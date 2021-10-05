@@ -42,9 +42,16 @@ public class Projectile : MonoBehaviour
         ContactPoint hitPoint = other.GetContact(0);
         
         GameObject impact = Instantiate(impactPrefab, hitPoint.point,  Quaternion.LookRotation(hitPoint.normal));
+        impact.transform.localScale = transform.localScale;
         impact.transform.SetParent(other.transform);
         GameObject impactSound = Instantiate(Resources.Load("ImpactSound"), hitPoint.normal, quaternion.identity) as GameObject;
+        
         impactSound.GetComponent<AudioSource>().PlayOneShot(owningWeapon.projectileImpactSound);
+
+        IProjectileSpawner Player = Instigator.GetComponent<IProjectileSpawner>();
+
+        Player?.OnProjectileHit?.Invoke();
+
         Destroy(impactSound, 1f);
         Destroy(gameObject);
     }

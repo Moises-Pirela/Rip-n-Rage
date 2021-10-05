@@ -1,4 +1,4 @@
-// GENERATED AUTOMATICALLY FROM 'Assets/_Game/Scripts/PlayerControls.inputactions'
+// GENERATED AUTOMATICALLY FROM 'Assets/_Game/Scripts/PlayerSystems/PlayerControls.inputactions'
 
 using System;
 using System.Collections;
@@ -43,16 +43,8 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                     ""interactions"": """"
                 },
                 {
-                    ""name"": ""Crouch"",
-                    ""type"": ""Button"",
-                    ""id"": ""3809095f-a2a3-4e63-af8e-3636eb96f8e8"",
-                    ""expectedControlType"": ""Button"",
-                    ""processors"": """",
-                    ""interactions"": """"
-                },
-                {
                     ""name"": ""Fire"",
-                    ""type"": ""Button"",
+                    ""type"": ""PassThrough"",
                     ""id"": ""58348817-a67e-41fc-aa60-d2c4b590110c"",
                     ""expectedControlType"": ""Button"",
                     ""processors"": """",
@@ -179,17 +171,6 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                 },
                 {
                     ""name"": """",
-                    ""id"": ""e8beab43-e3f3-4a7c-ac33-1463d9b61684"",
-                    ""path"": ""<Keyboard>/leftCtrl"",
-                    ""interactions"": """",
-                    ""processors"": """",
-                    ""groups"": ""Keyboard and Mouse"",
-                    ""action"": ""Crouch"",
-                    ""isComposite"": false,
-                    ""isPartOfComposite"": false
-                },
-                {
-                    ""name"": """",
                     ""id"": ""243b2de2-a5e1-4665-9146-f93d46dced6d"",
                     ""path"": ""<Mouse>/leftButton"",
                     ""interactions"": """",
@@ -292,7 +273,6 @@ public class @PlayerControls : IInputActionCollection, IDisposable
         m_Character_Move = m_Character.FindAction("Move", throwIfNotFound: true);
         m_Character_Look = m_Character.FindAction("Look", throwIfNotFound: true);
         m_Character_Jump = m_Character.FindAction("Jump", throwIfNotFound: true);
-        m_Character_Crouch = m_Character.FindAction("Crouch", throwIfNotFound: true);
         m_Character_Fire = m_Character.FindAction("Fire", throwIfNotFound: true);
         m_Character_AltFire = m_Character.FindAction("AltFire", throwIfNotFound: true);
         m_Character_ChangeWeapon1 = m_Character.FindAction("ChangeWeapon1", throwIfNotFound: true);
@@ -351,7 +331,6 @@ public class @PlayerControls : IInputActionCollection, IDisposable
     private readonly InputAction m_Character_Move;
     private readonly InputAction m_Character_Look;
     private readonly InputAction m_Character_Jump;
-    private readonly InputAction m_Character_Crouch;
     private readonly InputAction m_Character_Fire;
     private readonly InputAction m_Character_AltFire;
     private readonly InputAction m_Character_ChangeWeapon1;
@@ -365,7 +344,6 @@ public class @PlayerControls : IInputActionCollection, IDisposable
         public InputAction @Move => m_Wrapper.m_Character_Move;
         public InputAction @Look => m_Wrapper.m_Character_Look;
         public InputAction @Jump => m_Wrapper.m_Character_Jump;
-        public InputAction @Crouch => m_Wrapper.m_Character_Crouch;
         public InputAction @Fire => m_Wrapper.m_Character_Fire;
         public InputAction @AltFire => m_Wrapper.m_Character_AltFire;
         public InputAction @ChangeWeapon1 => m_Wrapper.m_Character_ChangeWeapon1;
@@ -390,9 +368,6 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                 @Jump.started -= m_Wrapper.m_CharacterActionsCallbackInterface.OnJump;
                 @Jump.performed -= m_Wrapper.m_CharacterActionsCallbackInterface.OnJump;
                 @Jump.canceled -= m_Wrapper.m_CharacterActionsCallbackInterface.OnJump;
-                @Crouch.started -= m_Wrapper.m_CharacterActionsCallbackInterface.OnCrouch;
-                @Crouch.performed -= m_Wrapper.m_CharacterActionsCallbackInterface.OnCrouch;
-                @Crouch.canceled -= m_Wrapper.m_CharacterActionsCallbackInterface.OnCrouch;
                 @Fire.started -= m_Wrapper.m_CharacterActionsCallbackInterface.OnFire;
                 @Fire.performed -= m_Wrapper.m_CharacterActionsCallbackInterface.OnFire;
                 @Fire.canceled -= m_Wrapper.m_CharacterActionsCallbackInterface.OnFire;
@@ -424,9 +399,6 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                 @Jump.started += instance.OnJump;
                 @Jump.performed += instance.OnJump;
                 @Jump.canceled += instance.OnJump;
-                @Crouch.started += instance.OnCrouch;
-                @Crouch.performed += instance.OnCrouch;
-                @Crouch.canceled += instance.OnCrouch;
                 @Fire.started += instance.OnFire;
                 @Fire.performed += instance.OnFire;
                 @Fire.canceled += instance.OnFire;
@@ -472,7 +444,6 @@ public class @PlayerControls : IInputActionCollection, IDisposable
         void OnMove(InputAction.CallbackContext context);
         void OnLook(InputAction.CallbackContext context);
         void OnJump(InputAction.CallbackContext context);
-        void OnCrouch(InputAction.CallbackContext context);
         void OnFire(InputAction.CallbackContext context);
         void OnAltFire(InputAction.CallbackContext context);
         void OnChangeWeapon1(InputAction.CallbackContext context);

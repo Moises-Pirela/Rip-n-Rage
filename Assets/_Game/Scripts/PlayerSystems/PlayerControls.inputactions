@@ -30,16 +30,8 @@
                     "interactions": ""
                 },
                 {
-                    "name": "Crouch",
-                    "type": "Button",
-                    "id": "3809095f-a2a3-4e63-af8e-3636eb96f8e8",
-                    "expectedControlType": "Button",
-                    "processors": "",
-                    "interactions": ""
-                },
-                {
                     "name": "Fire",
-                    "type": "Button",
+                    "type": "PassThrough",
                     "id": "58348817-a67e-41fc-aa60-d2c4b590110c",
                     "expectedControlType": "Button",
                     "processors": "",
@@ -161,17 +153,6 @@
                     "processors": "",
                     "groups": "Keyboard and Mouse",
                     "action": "Jump",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "e8beab43-e3f3-4a7c-ac33-1463d9b61684",
-                    "path": "<Keyboard>/leftCtrl",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "Keyboard and Mouse",
-                    "action": "Crouch",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

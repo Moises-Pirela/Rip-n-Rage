@@ -15,12 +15,8 @@ public class ProjectileWeapon : AWeapon
         _mainAnimator.SetBool(IsFiring, true);
         _weaponAudioSource.PlayOneShot(weaponData.fireSound);
         //_muzzleFlash.SetActive(true);
-        
-        GameObject projectile = Instantiate(weaponData.bulletProjectile, projectileSpawn, projectileDirection);
 
-        Projectile projectileClass = projectile.GetComponent<Projectile>();
-        
-        projectileClass.SetUp(parentInventory.Owner, weaponData);
+        SpawnProjectile(projectileSpawn, projectileDirection);
 
         parentInventory.UseAmmo(1);
         
@@ -28,9 +24,25 @@ public class ProjectileWeapon : AWeapon
         
         StartCoroutine(AllowRefire(weaponData.fireRate));   
     }
+
+    public virtual GameObject SpawnProjectile(Vector3 spawnPos, Quaternion spawnDirection)
+    {
+        GameObject projectile = Instantiate(weaponData.bulletProjectile, spawnPos, spawnDirection);
+
+        Projectile projectileClass = projectile.GetComponent<Projectile>();
+        
+        projectileClass.SetUp(parentInventory.Owner, weaponData);
+
+        return projectile;
+    }
     
     public override void AltFire(Vector3 direction, Vector3 origin, LayerMask layerMask, Quaternion projectileDirection,
         Vector3 projectileSpawn, UnityEvent Callback)
+    {
+        throw new System.NotImplementedException();
+    }
+
+    public override void CancelAltFire()
     {
         throw new System.NotImplementedException();
     }

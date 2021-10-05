@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
 
-public class FPSCombat : MonoBehaviour
+public class FPSCombat : MonoBehaviour, IProjectileSpawner
 {
     [Header("Inventory")] 
     public InventoryComponent inventoryComponent;
@@ -26,13 +26,14 @@ public class FPSCombat : MonoBehaviour
     public bool CanFire;
 
     public UnityEngine.Events.UnityEvent OnPrimaryFireCallback;
+    public Action OnProjectileHit {get;set;}
     
-
     private void Start()
     {
         _inputActions = GetComponent<PlayerInputActions>();
         _inputActions.OnPrimaryFire += OnPrimaryFire;
         _inputActions.OnSecondaryFire += OnSecondaryFire;
+        _inputActions.OnCancelAltFire += OnCancelAltFire;
         _inputActions.OnSwapWheel += SwapWeaponWheel;
         _inputActions.OnSwapButton += SwapWeapon;
         
@@ -57,9 +58,16 @@ public class FPSCombat : MonoBehaviour
     private void EquipWeapon(int index)
     {
         //if (inventoryComponent.currentWeaponIndex == index) return;
+
+        OnProjectileHit -= OnProjectileHit_Implementation;
         
         inventoryComponent.EquipWeapon(index);
         inventoryComponent.currentWeapon.Equip(audioSource, mainAnimator, muzzleFlashSpriteObject, inventoryComponent);
+
+        if (inventoryComponent.currentWeapon is ProjectileWeapon)
+        {
+            OnProjectileHit += OnProjectileHit_Implementation;
+        }
     }
     private void OnPrimaryFire()
     {
@@ -70,7 +78,11 @@ public class FPSCombat : MonoBehaviour
     {
         inventoryComponent.currentWeapon.AltFire(cameraTransform.forward, cameraTransform.position,
             layerMask, cameraTransform.rotation, muzzle.position, OnPrimaryFireCallback);
-        mainAnimator.SetTrigger(AltFire);
+    }
+
+    private void OnCancelAltFire()
+    {
+        inventoryComponent.currentWeapon.CancelAltFire();
     }
     private void SwapWeaponWheel(int index)
     {
@@ -82,6 +94,12 @@ public class FPSCombat : MonoBehaviour
     private void SwapWeapon(int index)
     {
         EquipWeapon(index);
+    }
+
+    public void OnProjectileHit_Implementation()
+    {
+        PlayerState.Current.AddToRage(0.05f);
+        PlayerState.Current.SetViolentCombatState();
     }
     
 }

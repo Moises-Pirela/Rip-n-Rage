@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Interactions;
 
 public class PlayerInputActions : MonoBehaviour
 {
@@ -14,38 +15,47 @@ public class PlayerInputActions : MonoBehaviour
 
     public System.Action OnPrimaryFire;
     public System.Action OnSecondaryFire;
+    public System.Action OnCancelAltFire;
     public System.Action<int> OnSwapWheel;
     public System.Action<int> OnSwapButton;
     
-    public void OnMove(InputValue value)
+    public void OnMove(InputAction.CallbackContext context)
     {
-        MovementInput = value.Get<Vector2>();
+        MovementInput = context.ReadValue<Vector2>();
     }
     
-    public void OnLook(InputValue value)
+    public void OnLook(InputAction.CallbackContext context)
     {
-        LookInput =value.Get<Vector2>();
+        LookInput = context.ReadValue<Vector2>();
     }
 
-    public void OnJump(InputValue value)
+    public void OnJump(InputAction.CallbackContext context)
     {
+        if (!context.performed) return;
+        
         IsJumping = true;
         CanJump= true;
     }
 
-    public void OnFire(InputValue value)
-    {
+    public void OnFire(InputAction.CallbackContext context)
+    {   
         OnPrimaryFire();
     }
 
-    public void OnAltFire(InputValue value)
+    public void OnAltFire(InputAction.CallbackContext context)
     {
         OnSecondaryFire();
+
+        if (context.canceled)
+        {
+            Debug.Log("Cancelled");
+            OnCancelAltFire();
+        }
     }
 
-    public void OnSwapWeapon(InputValue value)
+    public void OnSwapWeapon(InputAction.CallbackContext context)
     {
-        int index = Mathf.FloorToInt(value.Get<float>());
+        int index = Mathf.FloorToInt(context.ReadValue<float>());
         
         if (index == 0) return;
 
@@ -54,17 +64,17 @@ public class PlayerInputActions : MonoBehaviour
         OnSwapWheel(index);
     }
 
-    public void OnChangeWeapon1(InputValue value)
+    public void OnChangeWeapon1(InputAction.CallbackContext context)
     {
         OnSwapButton(0);
     }
     
-    public void OnChangeWeapon2(InputValue value)
+    public void OnChangeWeapon2(InputAction.CallbackContext context)
     {
         OnSwapButton(1);
     }
     
-    public void OnChangeWeapon3(InputValue value)
+    public void OnChangeWeapon3(InputAction.CallbackContext context)
     {
         OnSwapButton(2);
     }

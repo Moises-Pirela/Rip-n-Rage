@@ -51,4 +51,6 @@ public abstract class AWeapon : MonoBehaviour
 
 
     public abstract void AltFire(Vector3 direction, Vector3 origin, LayerMask layerMask, Quaternion projectileDirection, Vector3 projectileSpawn, UnityEvent Callback);
+
+    public abstract void CancelAltFire();
 }

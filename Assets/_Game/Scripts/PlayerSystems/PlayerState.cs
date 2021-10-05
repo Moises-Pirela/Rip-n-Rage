@@ -65,7 +65,7 @@ public class PlayerState : EntityState
 
     private IEnumerator ResetViolentCombatState()
     {
-        yield return new WaitForSeconds(3f);
+        yield return new WaitForSeconds(1f);
 
         CombatState = PlayerCombatState.PACIFIST;
     }
