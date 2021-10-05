@@ -29,6 +29,7 @@ public class WeaponData : ScriptableObject
     public int roundsPerFire;
     public float fireRate;
     public float altRefireRate;
+    public float distance = 100;
     public AnimatorOverrideController AnimatorOverrideController;
     public AudioClip fireSound;
     public AudioClip projectileImpactSound;

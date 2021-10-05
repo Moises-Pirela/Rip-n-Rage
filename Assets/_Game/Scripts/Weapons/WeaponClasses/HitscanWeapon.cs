@@ -22,7 +22,7 @@ public class HitscanWeapon : AWeapon
         if (weaponData.bulletProjectile)
             Instantiate(weaponData.bulletProjectile, projectileSpawn, projectileDirection);
 
-        if (Physics.Raycast(origin, direction, out RaycastHit hit, 100, layerMask))
+        if (Physics.Raycast(origin, direction, out RaycastHit hit, weaponData.distance, layerMask))
         {
             if (weaponData.bulletImpact)
                 Instantiate(weaponData.bulletImpact, hit.point, Quaternion.LookRotation(hit.normal));
