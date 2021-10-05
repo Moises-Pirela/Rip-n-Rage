@@ -31,6 +31,7 @@ public class WeaponData : ScriptableObject
     public float altRefireRate;
     public AnimatorOverrideController AnimatorOverrideController;
     public AudioClip fireSound;
+    public AudioClip projectileImpactSound;
     public GameObject bulletProjectile;
     public GameObject bulletImpact;
     public GameObject muzzleFlash;

@@ -16,7 +16,7 @@ GameObject:
   - component: {fileID: -24207164971891762}
   - component: {fileID: 7927123228999170167}
   m_Layer: 6
-  m_Name: StandardBullet
+  m_Name: Projectile_StandardBullet
   m_TagString: FX
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

@@ -1061,6 +1061,7 @@ MonoBehaviour:
     weapons:
     - {fileID: 969256033810756184, guid: 7ddb31c8078580c45bd4c5bda590c2c0, type: 3}
     - {fileID: -190233040442426912, guid: eb1f058fc9d52ef408b6753d2495ba56, type: 3}
+    - {fileID: 7415410303756114308, guid: cd1cabd0e7f3073468aad082c64f7511, type: 3}
     currentAmmo:
       ammoType: 0
       MaxAmmo: 0

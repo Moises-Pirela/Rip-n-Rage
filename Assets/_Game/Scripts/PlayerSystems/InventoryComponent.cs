@@ -10,6 +10,7 @@ public class InventoryComponent
     public AWeapon currentWeapon;
     public AWeapon[] weapons;
     public Ammo currentAmmo;
+    public GameObject Owner;
 
     public List<Ammo> InventoryAmmo = new List<Ammo>()
     {
@@ -42,10 +43,12 @@ public class InventoryComponent
 
         currentAmmo = InventoryAmmo.Find(type => type.ammoType == currentWeapon.weaponData.AmmoType);
     }
-    public void SetupInventory()
+    public void SetupInventory(GameObject Owner)
     {
         if (SaveData.current.PlayerStateData.Ammo != null)
             InventoryAmmo = SaveData.current.PlayerStateData.Ammo;
+
+        this.Owner = Owner;
     }
     public int GetCurrentWeaponAmmo()
     {

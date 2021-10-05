@@ -36,7 +36,7 @@ public class FPSCombat : MonoBehaviour
         _inputActions.OnSwapWheel += SwapWeaponWheel;
         _inputActions.OnSwapButton += SwapWeapon;
         
-        inventoryComponent.SetupInventory();
+        inventoryComponent.SetupInventory(gameObject);
         
         PrepareWeapons();
         

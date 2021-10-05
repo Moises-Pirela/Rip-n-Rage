@@ -12,7 +12,7 @@ public abstract class AWeapon : MonoBehaviour
 
     protected AudioSource _weaponAudioSource;
     protected Animator _mainAnimator;
-    private GameObject _muzzleFlash;
+    protected GameObject _muzzleFlash;
     
     protected static readonly int IsFiring = Animator.StringToHash("IsFiring");
 
@@ -32,30 +32,9 @@ public abstract class AWeapon : MonoBehaviour
         bCanAltFire = true;
     }
 
-    public virtual void Fire(Vector3 direction, Vector3 origin, LayerMask layerMask, Quaternion projectileDirection, Vector3 projectileSpawn, UnityEvent Callback)
-    {
-        if (!bCanFire) return;
-        
-        bCanFire = false;
-        
-        _mainAnimator.SetBool(IsFiring, true);
-        _weaponAudioSource.PlayOneShot(weaponData.fireSound);
-        _muzzleFlash.SetActive(true);
-        
-        Instantiate(weaponData.bulletProjectile, projectileSpawn, projectileDirection);
-
-        if (Physics.Raycast(origin, direction, out RaycastHit hit, 100, layerMask))
-        {
-            Instantiate(weaponData.bulletImpact, hit.point, Quaternion.LookRotation(hit.normal));
-            PlayerState.Current.SetViolentCombatState();
-        }
-        
-        parentInventory.UseAmmo(1);
-        
-        Callback.Invoke();
-        
-        StartCoroutine(AllowRefire(weaponData.fireRate));
-    }
+    public abstract void Fire(Vector3 direction, Vector3 origin, LayerMask layerMask, Quaternion projectileDirection,
+        Vector3 projectileSpawn, UnityEvent Callback);
+    
     protected IEnumerator AllowRefire(float timer)
     {
         yield return new WaitForSeconds(timer);

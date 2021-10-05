@@ -57,6 +57,11 @@ public class PlayerState : EntityState
         ResetCombatState = StartCoroutine(ResetViolentCombatState());
     }
 
+    public void AddToRage(float value)
+    {
+        _rage += value;
+    }
+
     private IEnumerator ResetViolentCombatState()
     {
         yield return new WaitForSeconds(3f);
@@ -66,7 +71,7 @@ public class PlayerState : EntityState
 
     private void TickRage()
     {
-        float rageStateTick = CombatState == PlayerCombatState.PACIFIST ? -0.1f : 0.1f;
+        float rageStateTick = CombatState == PlayerCombatState.PACIFIST ? -0.1f : 0f;
         
         _rage += Time.deltaTime * rageStateTick;
 
