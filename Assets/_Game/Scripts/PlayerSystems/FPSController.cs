@@ -368,25 +368,32 @@ public class FPSController : MonoBehaviour
     #region Locomotion Apply
     protected virtual void HandleJump()
     {
-        if (!_inputActions.IsJumping) return;
+        if (_inputActions.IsJumping)
+        {
+            m_finalMoveVector.y = jumpSpeed;
 
-        m_finalMoveVector.y = jumpSpeed;
+            m_previouslyGrounded = true;
+            _inputActions.IsGrounded = false;
 
-        m_previouslyGrounded = true;
-        _inputActions.IsGrounded = false;
+            PlayJumpSound();
 
-        PlayJumpSound();
+            if (_inputActions.IsDoubleJumping)
+            {
+                Debug.Log("double jump");
+            }
+        }
     }
 
     protected virtual void ApplyGravity()
     {
-        if (m_characterController.isGrounded) // if we would use our own m_isGrounded it would not work that good, this one is more precise
+        if (m_characterController.isGrounded)
         {
             m_inAirTimer = 0f;
             m_finalMoveVector.y = -stickToGroundForce;
 
-            HandleJump();
-            _inputActions.IsJumping = false;
+             HandleJump();  
+             _inputActions.IsJumping = false;
+             _inputActions.IsDoubleJumping = false;
         }
         else
         {

@@ -10,6 +10,7 @@ public class PlayerInputActions : MonoBehaviour
     public Vector2 MovementInput { get; set; }
     public Vector2 LookInput { get; set; }
     public bool IsJumping { get; set; }
+    public bool IsDoubleJumping {get;set;}
     public bool CanJump { get; set; }
     public bool IsGrounded { get; set; }
 
@@ -32,9 +33,21 @@ public class PlayerInputActions : MonoBehaviour
     public void OnJump(InputAction.CallbackContext context)
     {
         if (!context.performed) return;
-        
-        IsJumping = true;
-        CanJump= true;
+
+        if (!IsJumping)
+        {
+            IsJumping = true;
+        }
+        else
+        {
+            if (!IsDoubleJumping)
+            {
+                Debug.Log("Double");
+                IsDoubleJumping = true;
+            }
+        }
+
+        CanJump = true;
     }
 
     public void OnFire(InputAction.CallbackContext context)
