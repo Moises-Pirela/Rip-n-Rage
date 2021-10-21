@@ -22,6 +22,9 @@ public class FPSCombat : MonoBehaviour, IProjectileSpawner
     private PlayerInputActions _inputActions;
     private static readonly int Fire = Animator.StringToHash("Fire");
     private static readonly int AltFire = Animator.StringToHash("AltFire");
+    private Coroutine MeleeComboTime;
+    private bool isInCombo = false;
+    private int comboStep = 0;
 
     public bool CanFire;
 
@@ -33,7 +36,6 @@ public class FPSCombat : MonoBehaviour, IProjectileSpawner
         _inputActions = GetComponent<PlayerInputActions>();
         _inputActions.OnPrimaryFire += OnPrimaryFire;
         _inputActions.OnSecondaryFire += OnSecondaryFire;
-        _inputActions.OnCancelAltFire += OnCancelAltFire;
         _inputActions.OnSwapWheel += SwapWeaponWheel;
         _inputActions.OnSwapButton += SwapWeapon;
         
@@ -76,13 +78,47 @@ public class FPSCombat : MonoBehaviour, IProjectileSpawner
     }
     private void OnSecondaryFire()
     {
-        inventoryComponent.currentWeapon.AltFire(cameraTransform.forward, cameraTransform.position,
-            layerMask, cameraTransform.rotation, muzzle.position, OnPrimaryFireCallback);
+        comboStep = Mathf.Clamp(comboStep + 1, 0,3);
+
+        switch(comboStep)
+        {
+            case 1:
+            Debug.Log("Move 1");
+            break;
+            case 2:
+            Debug.Log("Move 2");
+            break;
+            case 3:
+            inventoryComponent.currentWeapon.MeleeCombo();
+            break;    
+        }
+
+        if (MeleeComboTime != null)
+            StopCoroutine(MeleeComboTime);
+
+
+         if (comboStep < 3)   
+            MeleeComboTime = StartCoroutine(ExpireMeleeCombo());
+            else
+                EndCombo();
+
+
+        // inventoryComponent.currentWeapon.AltFire(cameraTransform.forward, cameraTransform.position,
+        //     layerMask, cameraTransform.rotation, muzzle.position, OnPrimaryFireCallback);
     }
 
-    private void OnCancelAltFire()
+    private void EndCombo()
     {
-        inventoryComponent.currentWeapon.CancelAltFire();
+        Debug.Log("End combo");
+        comboStep = 0;
+        isInCombo = false;
+    }
+
+    private IEnumerator ExpireMeleeCombo()
+    {
+            isInCombo = true;
+            yield return new WaitForSeconds(1f);
+            EndCombo();
     }
     private void SwapWeaponWheel(int index)
     {

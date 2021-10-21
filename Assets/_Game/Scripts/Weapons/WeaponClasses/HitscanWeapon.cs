@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Collections.Generic;
-using NodeCanvas.Tasks.Actions;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -36,16 +35,5 @@ public class HitscanWeapon : AWeapon
         Callback.Invoke();
         
         StartCoroutine(AllowRefire(weaponData.fireRate));
-    }
-
-    public override void AltFire(Vector3 direction, Vector3 origin, LayerMask layerMask, Quaternion projectileDirection,
-        Vector3 projectileSpawn, UnityEvent Callback)
-    {
-        throw new System.NotImplementedException();
-    }
-
-    public override void CancelAltFire()
-    {
-        throw new System.NotImplementedException();
     }
 }

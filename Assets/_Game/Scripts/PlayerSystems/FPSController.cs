@@ -376,11 +376,6 @@ public class FPSController : MonoBehaviour
             _inputActions.IsGrounded = false;
 
             PlayJumpSound();
-
-            if (_inputActions.IsDoubleJumping)
-            {
-                Debug.Log("double jump");
-            }
         }
     }
 
@@ -393,7 +388,6 @@ public class FPSController : MonoBehaviour
 
              HandleJump();  
              _inputActions.IsJumping = false;
-             _inputActions.IsDoubleJumping = false;
         }
         else
         {

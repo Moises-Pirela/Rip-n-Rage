@@ -1,8 +1,22 @@
-
+public enum ExcecutionState
+{
+    NONE,
+    RUNNING,
+    SUCCESS,
+    FAILED
+}
 public enum EntityHealthState
 {
     ALIVE,
     DEAD
+}
+
+public enum AnimationState
+{
+    IDLE,
+    MOVING,
+    ATTACKING,
+    DYING
 }
 
 public enum PlayerRageState

@@ -10,7 +10,6 @@ public class PlayerInputActions : MonoBehaviour
     public Vector2 MovementInput { get; set; }
     public Vector2 LookInput { get; set; }
     public bool IsJumping { get; set; }
-    public bool IsDoubleJumping {get;set;}
     public bool CanJump { get; set; }
     public bool IsGrounded { get; set; }
 
@@ -37,33 +36,20 @@ public class PlayerInputActions : MonoBehaviour
         if (!IsJumping)
         {
             IsJumping = true;
+            CanJump = true;
         }
-        else
-        {
-            if (!IsDoubleJumping)
-            {
-                Debug.Log("Double");
-                IsDoubleJumping = true;
-            }
-        }
-
-        CanJump = true;
     }
 
     public void OnFire(InputAction.CallbackContext context)
     {   
-        OnPrimaryFire();
+        //if (context.performed && !context.canceled)
+                OnPrimaryFire();
     }
 
     public void OnAltFire(InputAction.CallbackContext context)
     {
-        OnSecondaryFire();
-
-        if (context.canceled)
-        {
-            Debug.Log("Cancelled");
-            OnCancelAltFire();
-        }
+        if (context.performed)
+            OnSecondaryFire();
     }
 
     public void OnSwapWeapon(InputAction.CallbackContext context)

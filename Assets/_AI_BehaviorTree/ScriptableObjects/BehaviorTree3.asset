@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 117428b50734b874b9a7344064e2b7fb, type: 3}
+  m_Name: BehaviorTree3
+  m_EditorClassIdentifier: 
+  rootNode: {fileID: 6516135276557931850}
+  treeState: 0
+  nodes:
+  - {fileID: 0}
+  - {fileID: 6516135276557931850}
+--- !u!114 &6516135276557931850
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d3d9265215aed5349923a7e32b3dbbac, type: 3}
+  m_Name: RootNode
+  m_EditorClassIdentifier: 
+  state: 0
+  hasStarted: 0
+  guid: 7b90dd21ed3f6094db676fea9b2329a5
+  graphPosition: {x: 0, y: 0}
+  child: {fileID: 0}

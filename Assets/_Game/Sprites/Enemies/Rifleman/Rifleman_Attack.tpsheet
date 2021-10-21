@@ -1,0 +1,18 @@
+#
+# Sprite sheet data for Unity.
+#
+# To import these sprites into your Unity project, download "TexturePackerImporter":
+# https://www.codeandweb.com/texturepacker/unity
+#
+# $TexturePacker:SmartUpdate:c5bdc2994ef88df558cd97ba9951a10f:0b24d1144da4607b3f0da09b512e4696:bce36f9e137391d42c1ce90f09705016$
+#
+:format=40300
+:texture=Rifleman_Attack.png
+:size=2048x512
+:pivotpoints=enabled
+:borders=disabled
+
+rifleman_attack_00;0;0;512;512; 0.5;0.5; 0;0;0;0
+rifleman_attack_01;512;0;512;512; 0.5;0.5; 0;0;0;0
+rifleman_attack_02;1024;0;512;512; 0.5;0.5; 0;0;0;0
+rifleman_attack_03;1536;0;512;512; 0.5;0.5; 0;0;0;0

@@ -17,7 +17,6 @@ public abstract class AWeapon : MonoBehaviour
     protected static readonly int IsFiring = Animator.StringToHash("IsFiring");
 
     protected bool bCanFire;
-    protected bool bCanAltFire;
 
     public void Equip(AudioSource audioSource, Animator animator, GameObject muzzleFlash, InventoryComponent inventoryComponent)
     {
@@ -29,7 +28,6 @@ public abstract class AWeapon : MonoBehaviour
         _mainAnimator.runtimeAnimatorController = weaponData.AnimatorOverrideController;
         
         bCanFire = true;
-        bCanAltFire = true;
     }
 
     public abstract void Fire(Vector3 direction, Vector3 origin, LayerMask layerMask, Quaternion projectileDirection,
@@ -43,14 +41,8 @@ public abstract class AWeapon : MonoBehaviour
         _mainAnimator.SetBool(IsFiring, false);
     }
 
-    protected IEnumerator AllowAltRefire()
+    public virtual void MeleeCombo()
     {
-        yield return new WaitForSeconds(weaponData.altRefireRate);
-        bCanAltFire = true;
+        Debug.Log("Weapon specific melee");
     }
-
-
-    public abstract void AltFire(Vector3 direction, Vector3 origin, LayerMask layerMask, Quaternion projectileDirection, Vector3 projectileSpawn, UnityEvent Callback);
-
-    public abstract void CancelAltFire();
 }
