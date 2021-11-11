@@ -10,76 +10,127 @@ using UnityEngine.AI;
 [RequireComponent(typeof(NavMeshAgent))]
 public class AIAgent : MonoBehaviour, IEnemyAI
 {
-    public NavMeshAgent _navMeshAgent;
+    public bool CanFire { get; set; }
+    
+    public NavMeshAgent navMeshAgent;
 
-    public AnimationStateController AnimationStateController;
+    public AnimationStateController animationStateController;
 
-    protected Vector3 targetLocation;
+    public GameObject projectile;
+
+    public Transform projectileSpawnPosition;
+    
+    protected Vector3 TargetLocation;
+    
+    [SerializeField] protected EnemyData data;
+
+    public AIState aiState;
+
+    private void Start()
+    {
+        animationStateController.AnimationData = data.enemyAnimationData;
+        CanFire = true;
+        navMeshAgent.speed = data.movementSpeed;
+        navMeshAgent.angularSpeed = data.turnSpeed;
+        aiState = GetComponent<AIState>();
+        aiState.OnDieCallback += Die;
+    }
 
     private void Update()
     {
-        if (_navMeshAgent.isStopped && AnimationStateController.AnimationState == AnimationState.MOVING)
+        if (aiState.HealthState == EntityHealthState.DEAD) return;;
+        
+        if (navMeshAgent.isStopped && animationStateController.AnimationState == AnimationState.MOVING)
         {
-            AnimationStateController.AnimationState = AnimationState.IDLE;
+            animationStateController.AnimationState = AnimationState.IDLE;
         }
     }
 
     public void Move(Vector3 targetLocation)
     {
-        this.targetLocation = targetLocation;
+        this.TargetLocation = targetLocation;
         
-        _navMeshAgent.SetDestination(targetLocation);
+        navMeshAgent.SetDestination(targetLocation);
 
-        AnimationStateController.AnimationState = AnimationState.MOVING;
+        animationStateController.AnimationState = AnimationState.MOVING;
     }
 
     public void Attack(Vector3 targetLocation)
     {
+        if (!CanFire) return;
+
+        CanFire = false;
         StopAgent();
-        AnimationStateController.AnimationState = AnimationState.ATTACKING;
+        SpawnProjectile(targetLocation);
+        animationStateController.AnimationState = AnimationState.ATTACKING;
+        StartCoroutine(AllowRefireCoroutine());
+    }
+
+    public void SpawnProjectile(Vector3 targetLocation)
+    {
+        var direction = targetLocation - transform.position; 
+        GameObject projectile = Instantiate(this.projectile, projectileSpawnPosition.position, Quaternion.LookRotation(direction));
+    }
+
+    public IEnumerator AllowRefireCoroutine()
+    {
+        yield return new WaitForSeconds(data.fireRate);
+
+        CanFire = true;
     }
 
     public void Die()
     {
-        AnimationStateController.AnimationState = AnimationState.DYING;
+        animationStateController.AnimationState = AnimationState.DYING;
+        StartCoroutine(SetDeadCoroutine());
     }
-
-    public void StopAgent()
-    {
-        _navMeshAgent.isStopped = true;
-        _navMeshAgent.velocity = Vector3.zero;
-    }
-
-    private void AllowAgentToMove()
-    {
-        _navMeshAgent.isStopped = false;
-        _navMeshAgent.velocity = _navMeshAgent.desiredVelocity;
-    }
-
     public bool HasReachedLocation()
     {
-        float distanceToTargetLocation = Vector3.Distance(targetLocation, transform.position);
+        float distanceToTargetLocation = Vector3.Distance(TargetLocation, transform.position);
 
-        NavMeshPath path = _navMeshAgent.path;
+        NavMeshPath path = navMeshAgent.path;
 
         float closestCornerDistance = 0;
 
         foreach (var corner in path.corners)
         {
             if (Vector3.Distance(corner, transform.position) <= closestCornerDistance)
-            {   
+            {
                 closestCornerDistance = Vector3.Distance(corner, transform.position);
             }
         }
 
-        if (_navMeshAgent.remainingDistance + closestCornerDistance <= 5f)
+        if (navMeshAgent.remainingDistance + closestCornerDistance <= 5f)
         {
             StopAgent();
             return true;
         }
-        
+
         AllowAgentToMove();
-        
+
         return false;
+    }
+    
+    private void StopAgent()
+    {
+        navMeshAgent.isStopped = true;
+        navMeshAgent.velocity = Vector3.zero;
+    }
+
+    private void AllowAgentToMove()
+    {
+        navMeshAgent.isStopped = false;
+        navMeshAgent.velocity = navMeshAgent.desiredVelocity;
+    }
+
+    private IEnumerator SetDeadCoroutine()
+    {
+        float waitTime = (float)data.enemyAnimationData.DeathAnimation.AnimationFrames /
+                         data.enemyAnimationData.DeathAnimation.AnimationFramesPerSecond;
+        
+        yield return new WaitForSeconds(0.25f);
+        
+        animationStateController.AnimationState = AnimationState.DEAD;
+
     }
 }

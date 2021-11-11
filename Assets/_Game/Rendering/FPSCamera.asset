@@ -99,7 +99,7 @@ MonoBehaviour:
   m_Active: 1
   settings:
     passTag: Fps Transparent
-    Event: 500
+    Event: 1000
     filterSettings:
       RenderQueueType: 1
       LayerMask:

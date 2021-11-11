@@ -11,7 +11,7 @@ namespace AI.BehaviorTree
         {
             if (!(Vector3.Distance(agent.transform.position, blackboard.MoveToTarget) <= attackRange)) return false;
             
-            agent._navMeshAgent.isStopped = true;
+            agent.navMeshAgent.isStopped = true;
             
             return true;
 

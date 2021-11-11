@@ -25,7 +25,7 @@ Material:
     type: 3}
   m_ShaderKeywords: BILBOARD_ON ETC1_EXTERNAL_ALPHA
   m_LightmapFlags: 4
-  m_EnableInstancingVariants: 1
+  m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
   stringTagMap: {}
@@ -34,7 +34,7 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - NormalMap:
-        m_Texture: {fileID: 2800000, guid: 35194e44586196b489af26acb4d840ae, type: 3}
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - Texture2D_17D10BAE:
@@ -82,7 +82,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: 6e296036fea569d4ca0a2242ca224319, type: 3}
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MaskTex:
@@ -133,6 +133,7 @@ Material:
     - Alpha_Clip_Threshold: 0.117
     - Billboard: 0
     - Boolean_005024d9cc654e2bac3188346a80c59f: 0
+    - PixelSnap: 0
     - Vector1_637e4ff25222454390ab873a373d1298: 0
     - Vector1_95c490b740b74fc7acbc4ebfae7fb5d5: 0
     - _Alpha: 1

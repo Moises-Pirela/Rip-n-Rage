@@ -44,7 +44,7 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                 },
                 {
                     ""name"": ""Fire"",
-                    ""type"": ""PassThrough"",
+                    ""type"": ""Button"",
                     ""id"": ""58348817-a67e-41fc-aa60-d2c4b590110c"",
                     ""expectedControlType"": ""Button"",
                     ""processors"": """",

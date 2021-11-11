@@ -4,10 +4,6 @@ using UnityEngine;
 
 public class CameraRecoil : MonoBehaviour
 {
-    [Header("Setup")] [SerializeField] 
-    private FPSCombat fpsCombat;
-    
-    
     private float rotationSpeed = 6f;
     private float returnSpeed = 25f;
     
@@ -18,13 +14,13 @@ public class CameraRecoil : MonoBehaviour
     
     private Vector3 Rot;
 
-    void Start()
+    void Awake()
     {
-        fpsCombat.OnPrimaryFireCallback.AddListener(OnFire);
+        EnragedInjector<CameraRecoil>.SetInstance(this);
     }
 
     void FixedUpdate()
-    {
+    {   
         currentRotation = Vector3.Lerp(currentRotation, Vector3.zero, returnSpeed * Time.deltaTime);
         Rot = Vector3.Slerp(Rot, currentRotation, rotationSpeed * Time.deltaTime);
         transform.localRotation = Quaternion.Euler(Rot);
@@ -38,15 +34,15 @@ public class CameraRecoil : MonoBehaviour
         currentRotation += new Vector3(-recoilCameraShake.x, yRotation, zRotation);
     }
 
-    public void OnFire()
+    public void ApplyRecoil()
     {
-        WeaponData currentWeapon = fpsCombat.inventoryComponent.currentWeapon.weaponData;
-        Vector3 recoil = currentWeapon.recoilRotation;
-        rotationSpeed = currentWeapon.recoilSpeed;
-        returnSpeed = currentWeapon.recoilRecoverySpeed;
-        
-        var yRotation = Random.Range(-recoil.y, recoil.y);
-        var zRotation = Random.Range(-recoil.z, recoil.z);
-        currentRotation += new Vector3(-recoil.x, yRotation, zRotation);
+        // WeaponData currentWeapon = fpsCombat.inventoryComponent.currentWeapon.weaponData;
+        // Vector3 recoil = currentWeapon.recoilRotation;
+        // rotationSpeed = currentWeapon.recoilSpeed;
+        // returnSpeed = currentWeapon.recoilRecoverySpeed;
+        //
+        // var yRotation = Random.Range(-recoil.y, recoil.y);
+        // var zRotation = Random.Range(-recoil.z, recoil.z);
+        // currentRotation += new Vector3(-recoil.x, yRotation, zRotation);
     }
 }

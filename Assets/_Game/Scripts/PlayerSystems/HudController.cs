@@ -11,7 +11,6 @@ public class HudController : MonoBehaviour
     [SerializeField] private TMPro.TextMeshProUGUI armorText;
     [SerializeField] private TMPro.TextMeshProUGUI ammoText;
     [SerializeField] private Image rageMeterFill; 
-    [SerializeField] private FPSCombat fpsCombat;
     [SerializeField] private PlayerState playerState;
 
     private void Start()
@@ -40,7 +39,7 @@ public class HudController : MonoBehaviour
 
     private void UpdateAmmo()
     {
-        ammoText.text = fpsCombat.inventoryComponent.GetCurrentWeaponAmmo().ToString();
+       //ammoText.text = fpsCombat.inventoryComponent.GetCurrentWeaponAmmo().ToString();
     }
 
     public void OnHealthChanged()

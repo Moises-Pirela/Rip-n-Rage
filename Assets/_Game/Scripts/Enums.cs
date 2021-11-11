@@ -16,7 +16,8 @@ public enum AnimationState
     IDLE,
     MOVING,
     ATTACKING,
-    DYING
+    DYING,
+    DEAD
 }
 
 public enum PlayerRageState

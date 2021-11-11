@@ -7,7 +7,7 @@ public class AnimationStateController : MonoBehaviour
 {
     public AnimationState AnimationState;
     public SpriteRenderer SpriteRenderer;
-    public EnemyData AnimationData;
+    public EnemyAnimationData AnimationData;
 
     private MaterialPropertyBlock PropertyBlock;
     
@@ -29,21 +29,29 @@ public class AnimationStateController : MonoBehaviour
 
     private void UpdateAnimationState()
     {
+        var sheet = new AnimationSheet();
+        
         switch (AnimationState)
         {
             case AnimationState.IDLE:
-                SetAnimation(AnimationData.EnemyAnimationData.IdleAnimation);
+                sheet = AnimationData.IdleAnimation;
                 break;
             case AnimationState.MOVING:
-                SetAnimation(AnimationData.EnemyAnimationData.MoveAnimation);
+                sheet = AnimationData.MoveAnimation;
                 break;
             case AnimationState.ATTACKING:
-                SetAnimation(AnimationData.EnemyAnimationData.AttackAnimation);
+                sheet = AnimationData.AttackAnimation;
                 break;
             case AnimationState.DYING:
-                SetAnimation(AnimationData.EnemyAnimationData.DeathAnimation);
+                sheet = AnimationData.DeathAnimation;
+                ResetSheet();
+                break;
+            case AnimationState.DEAD:
+                sheet = AnimationData.DeadAnimation;
                 break;
         }
+
+        SetAnimation(sheet);
     }
 
     private void SetAnimation(AnimationSheet animationSheet)
@@ -52,6 +60,14 @@ public class AnimationStateController : MonoBehaviour
         PropertyBlock.SetFloat(AnimFrameCount, animationSheet.AnimationFrames);
         PropertyBlock.SetFloat(SideCount, animationSheet.Sides);
         PropertyBlock.SetFloat(AnimFPS, animationSheet.AnimationFramesPerSecond);
+        
+        SpriteRenderer.SetPropertyBlock(PropertyBlock);
+    }
+
+    private void ResetSheet()
+    {
+        PropertyBlock.SetFloat(AnimFrameCount, 1);
+        PropertyBlock.SetFloat(AnimFPS, 1);
         
         SpriteRenderer.SetPropertyBlock(PropertyBlock);
     }

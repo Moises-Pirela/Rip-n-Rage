@@ -18,15 +18,18 @@ MonoBehaviour:
   roundsPerFire: 2
   fireRate: 0.1
   altRefireRate: 0.3
+  distance: 100
   AnimatorOverrideController: {fileID: 22100000, guid: acd99e4ba8760654385d48c6e03d466b,
     type: 2}
   fireSound: {fileID: 8300000, guid: 436faba33614a924eaf324f992e7ec89, type: 3}
+  projectileImpactSound: {fileID: 0}
   bulletProjectile: {fileID: 1238843893459588, guid: 77e7e797520cc7e4e9f479d244fb00a8,
     type: 3}
   bulletImpact: {fileID: 1879272669879180, guid: 7bef351ddc33ae044b671a7664396a20,
     type: 3}
   muzzleFlash: {fileID: 1000012903210382, guid: 01e91ba42e028824b86d47ee5f416589,
     type: 3}
-  recoilRotation: {x: 12, y: 0, z: 0}
-  recoilSpeed: 12
+  damage: 10
+  recoilRotation: {x: 5, y: 0, z: 0}
+  recoilSpeed: 5
   recoilRecoverySpeed: 5

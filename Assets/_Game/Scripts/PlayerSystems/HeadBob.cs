@@ -35,21 +35,12 @@ public class HeadBob : MonoBehaviour
         {
             timer += Time.deltaTime * frequency;
             transform.localPosition = new Vector3(transform.localPosition.x, startPos.y + Mathf.Sin(timer) * waveLength, transform.localPosition.z);
-
-            //sway
-            // var initialRot = transform.localRotation;
-            // transform.localEulerAngles += new Vector3(0, 0,
-            //     Mathf.Lerp(transform.localEulerAngles.z, swayAmount, Time.deltaTime * swaySpeed));
-            //Quaternion.Euler(1,1, controller.MovementInput.x * swayAmount * Time.deltaTime * swaySpeed);
         }
         else
         {
             timer = 0;
             transform.localPosition = new Vector3(transform.localPosition.x, Mathf.Lerp(transform.localPosition.y, startPos.y,
             Time.deltaTime * frequency), transform.localPosition.z);
-            
-            // transform.localEulerAngles += new Vector3(0, 0,
-            //     Mathf.Lerp(transform.localEulerAngles.z, 0, Time.deltaTime * swaySpeed));
         }
     }
 }

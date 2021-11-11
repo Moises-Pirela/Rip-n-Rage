@@ -1,39 +1,41 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Events;
 
-public class HitscanWeapon : AWeapon
+public class HitscanWeapon : Weapon
 {
-    public override void Fire(Vector3 direction, Vector3 origin, LayerMask layerMask, Quaternion projectileDirection,
-        Vector3 projectileSpawn, UnityEvent Callback)
-    {
-        if (!bCanFire) return;
-        
-        bCanFire = false;
-        
-        _mainAnimator.SetBool(IsFiring, true);
-        _weaponAudioSource.PlayOneShot(weaponData.fireSound);
-        
-        if (weaponData.FireType != FireType.MELEE)
-            _muzzleFlash.SetActive(true);
-        
-        if (weaponData.bulletProjectile)
-            Instantiate(weaponData.bulletProjectile, projectileSpawn, projectileDirection);
+    public Transform cameraTransform;
 
-        if (Physics.Raycast(origin, direction, out RaycastHit hit, weaponData.distance, layerMask))
+    public override void Equip(Transform transform, LayerMask layerMask)
+    {
+        base.Equip(transform, layerMask);
+        
+        cameraTransform = transform;
+    }
+
+    public override void Fire()
+    {
+        if (!CanFire) return;
+        
+        if (AllowRefireCoroutine != null)
+            StopCoroutine(AllowRefire_Coroutine());
+        
+        AllowRefireCoroutine = StartCoroutine(AllowRefire_Coroutine());
+        
+        int bulletsPerShot = WeaponData.bulletsPerShot;
+
+        for (int i = 0; i < bulletsPerShot; i++)
         {
-            if (weaponData.bulletImpact)
-                Instantiate(weaponData.bulletImpact, hit.point, Quaternion.LookRotation(hit.normal));
-            
-            PlayerState.Current.SetViolentCombatState();
-            PlayerState.Current.AddToRage(0.1f); 
+            if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out RaycastHit hit, 100, _LayerMask))
+            {
+                Debug.Log("hit");
+            }
         }
-        
-        parentInventory.UseAmmo(1);
-        
-        Callback.Invoke();
-        
-        StartCoroutine(AllowRefire(weaponData.fireRate));
+    }
+
+    public override void Melee()
+    {
+        throw new System.NotImplementedException();
     }
 }
+

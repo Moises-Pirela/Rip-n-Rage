@@ -5,10 +5,8 @@ using UnityEngine.Serialization;
 
 public class WeaponAnimationEvents : MonoBehaviour
 {
-    [SerializeField] private FPSCombat combat;
     [SerializeField] private GameObject muzzleFlashObject;
     [SerializeField] private AudioSource weaponAudio;
-    [SerializeField] private FPSCombat fpsCombat;
 
    void OnFire()
    {

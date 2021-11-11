@@ -1,0 +1,18 @@
+#
+# Sprite sheet data for Unity.
+#
+# To import these sprites into your Unity project, download "TexturePackerImporter":
+# https://www.codeandweb.com/texturepacker/unity
+#
+# $TexturePacker:SmartUpdate:0537316ce4abc9c87555c17b70697301:0645aad377ca1b1b3f0527002e5a9b2d:b32f8fe87481c139f64625cc1ae642bf$
+#
+:format=40300
+:texture=Rifleman_Dead.png
+:size=512x2048
+:pivotpoints=enabled
+:borders=disabled
+
+rifleman_death_front_05;0;1536;512;512; 0.5;0.5; 0;0;0;0
+rifleman_death_l_05;0;1024;512;512; 0.5;0.5; 0;0;0;0
+rifleman_death_r_05;0;512;512;512; 0.5;0.5; 0;0;0;0
+rifleman_death_reverse_05;0;0;512;512; 0.5;0.5; 0;0;0;0

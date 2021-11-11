@@ -12,11 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 592c9ecbf685b6a4e9d560a929c29918, type: 3}
   m_Name: RiflemanData
   m_EditorClassIdentifier: 
-  MovementSpeed: 3
-  AttackRange: 10
-  MeleeAttackRange: 2
-  TurnSpeed: 360
-  EnemyAnimationData:
+  movementSpeed: 3
+  attackRange: 10
+  meleeAttackRange: 2
+  turnSpeed: 3600
+  fireRate: 0.75
+  maxHealth: 200
+  maxArmor: 0
+  enemyAnimationData:
     IdleAnimation:
       AnimationFrames: 1
       Sides: 4
@@ -25,7 +28,7 @@ MonoBehaviour:
     AttackAnimation:
       AnimationFrames: 4
       Sides: 1
-      AnimationFramesPerSecond: 5
+      AnimationFramesPerSecond: 4
       TextureSheet: {fileID: 2800000, guid: 265c77d0005dd344384970da77c9d42b, type: 3}
     MoveAnimation:
       AnimationFrames: 4
@@ -33,7 +36,12 @@ MonoBehaviour:
       AnimationFramesPerSecond: 5
       TextureSheet: {fileID: 2800000, guid: b68c4458cf04c1540af14c45f1a77ca5, type: 3}
     DeathAnimation:
-      AnimationFrames: 0
-      Sides: 0
-      AnimationFramesPerSecond: 0
-      TextureSheet: {fileID: 0}
+      AnimationFrames: 4
+      Sides: 4
+      AnimationFramesPerSecond: 5
+      TextureSheet: {fileID: 2800000, guid: 1c8505b7b42259544b62341453d3ca88, type: 3}
+    DeadAnimation:
+      AnimationFrames: 1
+      Sides: 4
+      AnimationFramesPerSecond: 1
+      TextureSheet: {fileID: 2800000, guid: 745f7041107cb5e48bd0d7c5463b34a8, type: 3}

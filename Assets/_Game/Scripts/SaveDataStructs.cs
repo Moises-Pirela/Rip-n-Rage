@@ -10,13 +10,4 @@ public struct PlayerStateData
 
     public float PlayerHealth;
     public float PlayerArmor;
-
-    public List<Ammo> Ammo;
-}
-
-[Serializable]
-public struct AmmoData
-{
-    public AmmoType AmmoType;
-    public float AmmoCount;
 }

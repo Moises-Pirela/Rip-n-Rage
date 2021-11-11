@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -12,69 +13,67 @@ public class PlayerInputActions : MonoBehaviour
     public bool IsJumping { get; set; }
     public bool CanJump { get; set; }
     public bool IsGrounded { get; set; }
+    
+    private bool isBlockingInput;
 
     public System.Action OnPrimaryFire;
     public System.Action OnSecondaryFire;
     public System.Action OnCancelAltFire;
     public System.Action<int> OnSwapWheel;
     public System.Action<int> OnSwapButton;
-    
-    public void OnMove(InputAction.CallbackContext context)
+
+    private void Awake()
     {
-        MovementInput = context.ReadValue<Vector2>();
-    }
-    
-    public void OnLook(InputAction.CallbackContext context)
-    {
-        LookInput = context.ReadValue<Vector2>();
+        EnragedInjector<PlayerInputActions>.SetInstance(this);
     }
 
-    public void OnJump(InputAction.CallbackContext context)
+    public bool GetIsBlockingInput()
     {
-        if (!context.performed) return;
-
-        if (!IsJumping)
-        {
-            IsJumping = true;
-            CanJump = true;
-        }
+        return isBlockingInput;
     }
 
-    public void OnFire(InputAction.CallbackContext context)
-    {   
-        //if (context.performed && !context.canceled)
-                OnPrimaryFire();
+    public void SetIsBlockingInput(bool shouldBlock)
+    {
+        isBlockingInput = shouldBlock;
     }
 
-    public void OnAltFire(InputAction.CallbackContext context)
+    public void OnMove(InputValue value)
     {
-        if (context.performed)
-            OnSecondaryFire();
+        if (isBlockingInput) return;
+
+        MovementInput = value.Get<Vector2>();
     }
 
-    public void OnSwapWeapon(InputAction.CallbackContext context)
+    public void OnLook(InputValue value)
     {
-        int index = Mathf.FloorToInt(context.ReadValue<float>());
+        if (isBlockingInput) return;
+
+        LookInput = value.Get<Vector2>();
+    }
+
+    public void OnJump()
+    {
+        if (isBlockingInput) return;
+
+        if (IsJumping) return;
         
-        if (index == 0) return;
-
-        index = Mathf.Clamp(index, -1, 1);
-        
-        OnSwapWheel(index);
+        IsJumping = true;
+        CanJump = true;
     }
 
-    public void OnChangeWeapon1(InputAction.CallbackContext context)
+    public void OnFire(InputValue value)
     {
-        OnSwapButton(0);
+        if (isBlockingInput) return;
+
+        // if (value.isPressed)
+        //     OnPrimaryFire();    
     }
-    
-    public void OnChangeWeapon2(InputAction.CallbackContext context)
+
+    public void OnAltFire(InputValue value)
     {
-        OnSwapButton(1);
-    }
-    
-    public void OnChangeWeapon3(InputAction.CallbackContext context)
-    {
-        OnSwapButton(2);
+        if (isBlockingInput) return;
+        //
+        // if (value.isPressed)
+        //     OnSecondaryFire();
     }
 }

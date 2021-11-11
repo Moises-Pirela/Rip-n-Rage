@@ -7,4 +7,5 @@ public struct EnemyAnimationData
     public AnimationSheet AttackAnimation;
     public AnimationSheet MoveAnimation;
     public AnimationSheet DeathAnimation;
+    public AnimationSheet DeadAnimation;
 }

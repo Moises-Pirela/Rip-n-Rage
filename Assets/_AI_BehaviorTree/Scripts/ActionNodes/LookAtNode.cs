@@ -20,7 +20,7 @@ namespace AI.BehaviorTree
 
         protected override State OnUpdate()
         {
-            if (agent._navMeshAgent.velocity.sqrMagnitude > Mathf.Epsilon)
+            if (agent.navMeshAgent.velocity.sqrMagnitude > Mathf.Epsilon)
             {
                 agent.transform.rotation = Quaternion.LookRotation(-blackboard.MoveToTarget);
             }

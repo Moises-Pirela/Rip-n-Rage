@@ -6,12 +6,17 @@ using UnityEngine;
 public class EnemyData : ScriptableObject
 {
     [Header("AI Settings")]
-    public float MovementSpeed;
-    public float AttackRange;
-    public float MeleeAttackRange;
-    public float TurnSpeed;
+    public float movementSpeed;
+    public float attackRange;
+    public float meleeAttackRange;
+    public float turnSpeed;
+    public float fireRate;
+
+    [Space(5)] [Header("Enemy status")] 
+    public float maxHealth;
+    public float maxArmor;
     
     [Space(10)]
     [Header("Animation Settings")]
-    public EnemyAnimationData EnemyAnimationData;
+    public EnemyAnimationData enemyAnimationData;
 }

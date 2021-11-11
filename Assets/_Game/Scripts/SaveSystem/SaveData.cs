@@ -23,4 +23,5 @@ public class SaveData
     }
 
     public PlayerStateData PlayerStateData;
+    public InventoryData InventoryData;
 }

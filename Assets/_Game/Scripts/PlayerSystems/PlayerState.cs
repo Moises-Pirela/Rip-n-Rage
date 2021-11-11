@@ -32,13 +32,23 @@ public class PlayerState : EntityState
 
     private Coroutine ResetCombatState;
 
-    public override void Awake()
+    public void Awake()
     {
-        base.Awake();
         _current = this;
         RageState = PlayerRageState.NONE;
         _rage = 0.5f;
         GetRageState();
+    }
+
+    public override void Init()
+    {
+        InitializeArmor(200);
+        InitializeHealth(100);
+    }
+
+    public override void Die()
+    {
+        //TODO:Implement player death
     }
 
     private void Update()
@@ -120,12 +130,6 @@ public class PlayerState : EntityState
         
         SaveData.current.PlayerStateData.PlayerHealth = Health;
         SaveData.current.PlayerStateData.PlayerArmor = Armor;
-
-        FPSCombat fpsCombat = GetComponent<FPSCombat>();
-
-        SaveData.current.PlayerStateData.Ammo = fpsCombat.inventoryComponent.InventoryAmmo;
-        
-        Debug.LogWarning("Entering checkpoint - save data");
         
         SaveManager.Save("Save1", SaveData.current);
     }
