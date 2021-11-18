@@ -6,20 +6,22 @@ using UnityEngine.InputSystem;
 
 public class CombatController : MonoBehaviour
 {
+    public Action OnEquipWeapon;
+    public Action OnFireWeapon;
+
     [Header("Weapon setup")] [SerializeField]
     private Transform cameraTransform;
 
     [SerializeField] private Transform projectileSpawnTransform;
     [SerializeField] private LayerMask layerMask;
 
-    [Space(5)] [Header("Combat Animation")] [SerializeField]
-    private Animator weaponAnimator;
-
+    [Space(5)] [Header("Combat Animation")] 
+    [SerializeField] private Animator weaponAnimator;
     [SerializeField] private Animator leftFistAnimator;
     [SerializeField] private Animator rightFistAnimator;
 
-    [Space(5)] [Header("Inventory")] [SerializeField]
-    private Inventory inventory;
+    [Space(5)] [Header("Inventory")]
+    public Inventory inventory;
 
     private PlayerInputActions _playerInputActions;
     private int _comboStepCounter;
@@ -30,12 +32,32 @@ public class CombatController : MonoBehaviour
 
     private CameraRecoil _cameraRecoil;
     private static readonly int JabTrigger = Animator.StringToHash("Jab");
-    private static readonly int Fire = Animator.StringToHash("Fire");
+
+    private void Awake()
+    {
+        EnragedInjector<CombatController>.SetInstance(this);
+    }
 
     private void Start()
     {
         _playerInputActions = EnragedInjector<PlayerInputActions>.GetInstance();
         _cameraRecoil = EnragedInjector<CameraRecoil>.GetInstance();
+
+        foreach (var weaponPrefab in inventory.allWeaponPrefabs)
+        {
+            var prefab = Instantiate(weaponPrefab, this.transform);
+            Weapon weaponClass = prefab.GetComponent<Weapon>();
+
+            if (weaponClass.weaponData.weaponStats.isUnlocked)
+            {
+                inventory.availableWeapons.Add(weaponClass);
+            }
+        }
+        
+        inventory.Init();
+        
+        EquipWeapon(0);
+        weaponAnimator.runtimeAnimatorController = inventory.equippedWeapon.weaponData.animatorOverrideController;
     }
 
     #region Input Events
@@ -48,9 +70,8 @@ public class CombatController : MonoBehaviour
 
         if (_canFire)
         {
-            Debug.Log("Fre");
-            //inventory.equippedWeapon.Fire();
-            //weaponAnimator.SetTrigger(Fire);
+            inventory.equippedWeapon.Fire();
+            OnFireWeapon();
         }
     }
 
@@ -61,6 +82,8 @@ public class CombatController : MonoBehaviour
         if (!inputValue.isPressed) return;
 
         if (_comboStepCounter >= 3 || !_canJab) return;
+        
+        PlayerState.Current.SetViolentCombatState();
 
         _comboStepCounter++;
 
@@ -97,25 +120,24 @@ public class CombatController : MonoBehaviour
 
         index = Mathf.Clamp(index, -1, 1);
 
-        inventory.SwapWeapon(index);
+        int newIndex = inventory.SwapWeapon(index);
+        
+        EquipWeapon(newIndex);
     }
 
     public void OnChangeWeapon1()
     {
-        if (_playerInputActions.GetIsBlockingInput()) return;
-        inventory.SwapWeapon(0);
+        ChangeWeapon(0);
     }
 
     public void OnChangeWeapon2()
     {
-        if (_playerInputActions.GetIsBlockingInput()) return;
-        inventory.SwapWeapon(1);
+       ChangeWeapon(1);
     }
 
     public void OnChangeWeapon3()
     {
-        if (_playerInputActions.GetIsBlockingInput()) return;
-        inventory.SwapWeapon(2);
+       ChangeWeapon(2);
     }
 
     #endregion
@@ -136,6 +158,22 @@ public class CombatController : MonoBehaviour
         }
     }
 
+    private void ChangeWeapon(int index)
+    {
+        if (_playerInputActions.GetIsBlockingInput()) return;
+        EquipWeapon(index);
+    }
+
+    private void EquipWeapon(int index)
+    {
+        inventory.equippedWeapon = inventory.availableWeapons[index];
+        inventory.equippedWeapon.Equip(weaponAnimator,cameraTransform, layerMask);   
+        weaponAnimator.runtimeAnimatorController = inventory.equippedWeapon.weaponData.animatorOverrideController;
+        
+        if (OnEquipWeapon != null)
+            OnEquipWeapon();
+    }
+
     #region Coroutines
 
     private IEnumerator AllowJab_Coroutine()
@@ -151,6 +189,7 @@ public class CombatController : MonoBehaviour
         _comboStepCounter = 0;
         _comboCoroutine = null;
         weaponAnimator.gameObject.SetActive(true);
+        _canFire = true;
     }
 
     #endregion

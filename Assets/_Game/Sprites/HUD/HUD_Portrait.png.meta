@@ -1,0 +1,600 @@
+fileFormatVersion: 2
+guid: 423a0cae9f4f55344826d9a3f7b49e66
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -2567471264515048586
+    second: portrait_death01
+  - first:
+      213: 8103521348980045342
+    second: portrait_default01
+  - first:
+      213: -3530540375987622011
+    second: portrait_default_damage01
+  - first:
+      213: -6045902287871698846
+    second: portrait_default_damageb01
+  - first:
+      213: 1761564574109400013
+    second: portrait_default_damagec01
+  - first:
+      213: -877341151594129100
+    second: portrait_default_damaged01
+  - first:
+      213: -5055449965344377289
+    second: portrait_fight01
+  - first:
+      213: -7808245665126875530
+    second: portrait_fight_damage01
+  - first:
+      213: 7057841379032961214
+    second: portrait_fight_damageb01
+  - first:
+      213: -1465099256843931935
+    second: portrait_fight_damagec01
+  - first:
+      213: -7206093280430595785
+    second: portrait_fight_damaged01
+  - first:
+      213: 8284871804952301644
+    second: portrait_rage01
+  - first:
+      213: 8367292732974850530
+    second: portrait_rage_damage01
+  - first:
+      213: 4962010308997720760
+    second: portrait_rage_damageb01
+  - first:
+      213: -8989019898030502983
+    second: portrait_rage_damagec01
+  - first:
+      213: 4718280767765333152
+    second: portrait_rage_damaged01
+  - first:
+      213: 9082965295995202549
+    second: portrait_sad01
+  - first:
+      213: 2480886751108186293
+    second: portrait_sad_damage01
+  - first:
+      213: 510317632656668634
+    second: portrait_sad_damageb01
+  - first:
+      213: -7506094316043003181
+    second: portrait_sad_damagec01
+  - first:
+      213: -6940907013282812598
+    second: portrait_sad_damaged01
+  externalObjects: {}
+  serializedVersion: 11
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 1
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 0
+    wrapV: 0
+    wrapW: 0
+  nPOTScale: 1
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: portrait_death01
+      rect:
+        serializedVersion: 2
+        x: 1653
+        y: 91
+        width: 180
+        height: 209
+      alignment: 9
+      pivot: {x: 0.49444443, y: 0.53110045}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 67bbe8bec728e5cd0800000000000000
+      internalID: -2567471264515048586
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_default01
+      rect:
+        serializedVersion: 2
+        x: 1
+        y: 287
+        width: 182
+        height: 224
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e16ffbb8bbd757070800000000000000
+      internalID: 8103521348980045342
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_default_damage01
+      rect:
+        serializedVersion: 2
+        x: 1
+        y: 61
+        width: 182
+        height: 224
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 58f6510db30010fc0800000000000000
+      internalID: -3530540375987622011
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_default_damageb01
+      rect:
+        serializedVersion: 2
+        x: 185
+        y: 287
+        width: 182
+        height: 224
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2689fa8d6e3a81ca0800000000000000
+      internalID: -6045902287871698846
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_default_damagec01
+      rect:
+        serializedVersion: 2
+        x: 1286
+        y: 82
+        width: 182
+        height: 213
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5070422}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: dcbf3b0a5a5527810800000000000000
+      internalID: 1761564574109400013
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_default_damaged01
+      rect:
+        serializedVersion: 2
+        x: 1655
+        y: 304
+        width: 183
+        height: 207
+      alignment: 9
+      pivot: {x: 0.5027322, y: 0.5362319}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4395668fede03d3f0800000000000000
+      internalID: -877341151594129100
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_fight01
+      rect:
+        serializedVersion: 2
+        x: 185
+        y: 61
+        width: 182
+        height: 224
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 73633eb9a0f67d9b0800000000000000
+      internalID: -5055449965344377289
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_fight_damage01
+      rect:
+        serializedVersion: 2
+        x: 369
+        y: 287
+        width: 182
+        height: 224
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 67ef02bffe983a390800000000000000
+      internalID: -7808245665126875530
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_fight_damageb01
+      rect:
+        serializedVersion: 2
+        x: 369
+        y: 61
+        width: 182
+        height: 224
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: eb01056175d72f160800000000000000
+      internalID: 7057841379032961214
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_fight_damagec01
+      rect:
+        serializedVersion: 2
+        x: 1104
+        y: 297
+        width: 180
+        height: 214
+      alignment: 9
+      pivot: {x: 0.49444443, y: 0.5140187}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1eee0230dfbeaabe0800000000000000
+      internalID: -1465099256843931935
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_fight_damaged01
+      rect:
+        serializedVersion: 2
+        x: 1470
+        y: 91
+        width: 181
+        height: 209
+      alignment: 9
+      pivot: {x: 0.49723756, y: 0.54545456}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 731ea994750defb90800000000000000
+      internalID: -7206093280430595785
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_rage01
+      rect:
+        serializedVersion: 2
+        x: 737
+        y: 61
+        width: 181
+        height: 224
+      alignment: 9
+      pivot: {x: 0.49723756, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c40d4dfe207c9f270800000000000000
+      internalID: 8284871804952301644
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_rage_damage01
+      rect:
+        serializedVersion: 2
+        x: 920
+        y: 61
+        width: 181
+        height: 224
+      alignment: 9
+      pivot: {x: 0.49723756, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2e16ca8a8689e1470800000000000000
+      internalID: 8367292732974850530
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_rage_damageb01
+      rect:
+        serializedVersion: 2
+        x: 921
+        y: 287
+        width: 181
+        height: 224
+      alignment: 9
+      pivot: {x: 0.49723756, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8baa2af061a9cd440800000000000000
+      internalID: 4962010308997720760
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_rage_damagec01
+      rect:
+        serializedVersion: 2
+        x: 1103
+        y: 63
+        width: 181
+        height: 222
+      alignment: 9
+      pivot: {x: 0.49723756, y: 0.518018}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9bb49f25706904380800000000000000
+      internalID: -8989019898030502983
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_rage_damaged01
+      rect:
+        serializedVersion: 2
+        x: 1468
+        y: 302
+        width: 185
+        height: 209
+      alignment: 9
+      pivot: {x: 0.48108107, y: 0.54066986}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0a4c5391c53ba7140800000000000000
+      internalID: 4718280767765333152
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_sad01
+      rect:
+        serializedVersion: 2
+        x: 553
+        y: 287
+        width: 182
+        height: 224
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5fbaef620dc2d0e70800000000000000
+      internalID: 9082965295995202549
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_sad_damage01
+      rect:
+        serializedVersion: 2
+        x: 553
+        y: 61
+        width: 182
+        height: 224
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5b0c6c71b51ed6220800000000000000
+      internalID: 2480886751108186293
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_sad_damageb01
+      rect:
+        serializedVersion: 2
+        x: 737
+        y: 287
+        width: 182
+        height: 224
+      alignment: 9
+      pivot: {x: 0.5, y: 0.5223214}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ad77e11ee23051700800000000000000
+      internalID: 510317632656668634
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_sad_damagec01
+      rect:
+        serializedVersion: 2
+        x: 1286
+        y: 297
+        width: 180
+        height: 214
+      alignment: 9
+      pivot: {x: 0.49444443, y: 0.50934577}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3da9da11dfef4d790800000000000000
+      internalID: -7506094316043003181
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: portrait_sad_damaged01
+      rect:
+        serializedVersion: 2
+        x: 1840
+        y: 305
+        width: 181
+        height: 206
+      alignment: 9
+      pivot: {x: 0.49723756, y: 0.5339806}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a4da24e88d1fcaf90800000000000000
+      internalID: -6940907013282812598
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+  spritePackingTag: 
+  pSDRemoveMatte: 0
+  pSDShowRemoveMatteOption: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -27,22 +27,21 @@ public class CameraRecoil : MonoBehaviour
     }
 
     
-    public void Shake()
+    public void Shake(float strength = 15)
     {
-        var yRotation = Random.Range(-recoilCameraShake.y, recoilCameraShake.y) * 15;
-        var zRotation = Random.Range(-recoilCameraShake.z, recoilCameraShake.z) * 15;
+        var yRotation = Random.Range(-recoilCameraShake.y, recoilCameraShake.y) * strength;
+        var zRotation = Random.Range(-recoilCameraShake.z, recoilCameraShake.z) * strength;
         currentRotation += new Vector3(-recoilCameraShake.x, yRotation, zRotation);
     }
 
-    public void ApplyRecoil()
+    public void ApplyRecoil(WeaponRecoil currentWeapon)
     {
-        // WeaponData currentWeapon = fpsCombat.inventoryComponent.currentWeapon.weaponData;
-        // Vector3 recoil = currentWeapon.recoilRotation;
-        // rotationSpeed = currentWeapon.recoilSpeed;
-        // returnSpeed = currentWeapon.recoilRecoverySpeed;
-        //
-        // var yRotation = Random.Range(-recoil.y, recoil.y);
-        // var zRotation = Random.Range(-recoil.z, recoil.z);
-        // currentRotation += new Vector3(-recoil.x, yRotation, zRotation);
+        var recoil = currentWeapon.recoil;
+        rotationSpeed = currentWeapon.recoilSpeed;
+        returnSpeed = currentWeapon.recoilRecoverySpeed;
+        
+        float yRotation = Random.Range(-recoil.y, recoil.y);
+        float zRotation = Random.Range(-recoil.z, recoil.z);
+        currentRotation += new Vector3(-recoil.x, yRotation, zRotation);
     }
 }

@@ -1,5 +1,7 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using AI.BehaviorTree;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -13,13 +15,13 @@ public abstract class EntityState : MonoBehaviour, IHealth, IArmor
     private float MaxHealth;
     private float MaxArmor;
 
-    public UnityEvent OnHealthChanged;
-    public UnityEvent OnArmorChanged;
+    public Action OnHealthChanged;
+    public Action OnArmorChanged;
 
     public abstract void Init();
     public abstract void Die();
 
-    public void TakeDamage(float damage, float armorDamageResistance = .25f)
+    public virtual void TakeDamage(float damage, float armorDamageResistance = 1f)
     {
         var totalDamage = damage;
         
@@ -42,7 +44,7 @@ public abstract class EntityState : MonoBehaviour, IHealth, IArmor
     public void TakeHealthDamage(float value)
     {
         Health = Mathf.Clamp(Health-value,0,MaxHealth);
-        OnHealthChanged.Invoke();
+        OnHealthChanged?.Invoke();
 
         if (Health <= 0)
         {
@@ -53,18 +55,22 @@ public abstract class EntityState : MonoBehaviour, IHealth, IArmor
     public void Heal(float value)
     {
         Health = Mathf.Clamp(Health+value,0,MaxHealth);
-        OnHealthChanged.Invoke();
+        OnHealthChanged?.Invoke();
     }
     public void TakeArmorDamage(float value)
     {
         Armor = Mathf.Clamp(Armor-value,0,MaxArmor);
-        OnArmorChanged.Invoke();
+
+        if (OnArmorChanged != null)
+            OnArmorChanged();
     }
 
     public void ApplyArmor(float value)
     {
         Armor = Mathf.Clamp(Armor+value,0,MaxArmor);
-        OnArmorChanged.Invoke();
+        
+        if (OnArmorChanged != null)
+            OnArmorChanged();
     }
 
     public void InitializeHealth(float maxHealth)

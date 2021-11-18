@@ -10,4 +10,12 @@ public struct PlayerStateData
 
     public float PlayerHealth;
     public float PlayerArmor;
+
+    public PlayerStateData(Vector3 pos, Quaternion rot, float health, float armor)
+    {
+        playerPosition = pos;
+        playerRotation = rot;
+        PlayerHealth = health;
+        PlayerArmor = armor;
+    }
 }

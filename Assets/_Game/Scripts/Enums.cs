@@ -1,3 +1,19 @@
+public enum AmmoType
+{
+    LIGHT,
+    HEAVY,
+    SHELL,
+    ENERGY,
+    EXPLOSIVE
+}
+
+public enum WeaponType
+{
+    HITSCAN,
+    AUTO
+}
+
+
 public enum ExcecutionState
 {
     NONE,

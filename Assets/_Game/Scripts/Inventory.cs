@@ -5,35 +5,56 @@ using UnityEngine;
 [Serializable]
 public class Inventory
 {
-    public List<Weapon> allWeapons = new List<Weapon>();
-    private List<Weapon> availableWeapons = new List<Weapon>();
+    public List<GameObject> allWeaponPrefabs = new List<GameObject>();
+    [HideInInspector] public List<Weapon> availableWeapons = new List<Weapon>();
 
     public Weapon equippedWeapon;
-    private int _currentWeaponIndex;
+    public int[] ammoLimits = new int[5];
+    [HideInInspector] public int[] ammo = new int[5];
+    [HideInInspector] public int currentWeaponIndex;
 
-    private InventoryData m_InventoryData;
+    private InventoryData _inventoryData;
 
     public void Init()
     {
-        m_InventoryData = SaveData.current.InventoryData;
+        _inventoryData = SaveData.Current.inventoryData;
+
+        currentWeaponIndex = _inventoryData.currentWeaponIndex;
+        ammo = _inventoryData.ammo;
     }
 
-    public void EquipWeapon(Weapon weapon)
+    public bool HasAmmoOfType(AmmoType ammoType)
     {
-        if (equippedWeapon == null  || equippedWeapon == weapon) return;
+        int index = (int) ammoType;
         
-        equippedWeapon = weapon;
+        return ammo[index] > 0;
     }
 
-    public void SwapWeapon(int value)
+    public void AddToAmmo(AmmoType ammoType, int amountToAdd)
     {
-        _currentWeaponIndex += value;
+        int index = (int) ammoType;
+        ammo[index] = Mathf.Clamp(ammo[index] + amountToAdd, 0, ammoLimits[index]);
+    }
 
-        if (_currentWeaponIndex < 0)
-            _currentWeaponIndex = availableWeapons.Count - 1;
-        else if (_currentWeaponIndex > availableWeapons.Count - 1)
-            _currentWeaponIndex = 0;
+    public void UseAmmo(int amountToUse)
+    {
+        int index = (int)equippedWeapon.weaponData.ammoType;
+        int currentAmmoCount = ammo[index];
+        currentAmmoCount = Mathf.Clamp(currentAmmoCount - amountToUse, 0, ammoLimits[index]);
+        ammo[index] = currentAmmoCount;
+    }
+
+    public int SwapWeapon(int value)
+    {
+        currentWeaponIndex += value;
+
+        if (currentWeaponIndex < 0)
+            currentWeaponIndex = availableWeapons.Count - 1;
+        else if (currentWeaponIndex > availableWeapons.Count - 1)
+            currentWeaponIndex = 0;
         
-        EquipWeapon(availableWeapons[_currentWeaponIndex]);
+        equippedWeapon = availableWeapons[currentWeaponIndex];
+
+        return currentWeaponIndex;
     }
 }

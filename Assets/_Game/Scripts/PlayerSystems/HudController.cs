@@ -7,59 +7,114 @@ using UnityEngine.UI;
 
 public class HudController : MonoBehaviour
 {
-    [SerializeField] private TMPro.TextMeshProUGUI healthText;
-    [SerializeField] private TMPro.TextMeshProUGUI armorText;
+    [SerializeField] private Image healthBar;
+    [SerializeField] private Image armorBar;
     [SerializeField] private TMPro.TextMeshProUGUI ammoText;
-    [SerializeField] private Image rageMeterFill; 
     [SerializeField] private PlayerState playerState;
+
+    [SerializeField] private Image playerPortrait;
+    [SerializeField] private Image ammoTypeIcon;
+
+    [SerializeField] private PlayerPortraitData _portraitData;
+    [SerializeField] private Sprite[] ammoTypeIcons = new Sprite[5];
+
+    private CombatController _combatController;
 
     private void Start()
     {
+        _combatController = EnragedInjector<CombatController>.GetInstance();
+
+        _combatController.OnEquipWeapon += UpdateAmmo;
+        _combatController.OnFireWeapon += UpdateAmmo;
+        
+        playerState.OnHealthChanged += UpdateHealth;
+        playerState.OnArmorChanged += UpdateArmor;
+        playerState.OnHealthChanged += UpdatePortrait;
+        playerState.OnTickRage += UpdatePortrait;
+        
         UpdateAmmo();
         UpdateArmor();
         UpdateHealth();
-        UpdateRageMeter();
-    }
-
-    private void UpdateRageMeter()
-    {
-        rageMeterFill.fillAmount = playerState.Rage;
     }
 
 
     private void UpdateHealth()
     {
-        healthText.text = playerState.Health.ToString();
+        float healthPercentage = 0;
+
+        healthPercentage = Mathf.Clamp((playerState.Health * 0.5f) / 100, 0 , 0.5f);
+
+        healthBar.fillAmount = healthPercentage;
     }
 
     private void UpdateArmor()
     {
-        armorText.text = playerState.Armor.ToString();
+        float armorPercentage = 0;
+
+        armorPercentage = Mathf.Clamp((playerState.Armor * 0.5f) / 100, 0 , 0.5f);
+
+        armorBar.fillAmount = armorPercentage;
     }
 
     private void UpdateAmmo()
     {
-       //ammoText.text = fpsCombat.inventoryComponent.GetCurrentWeaponAmmo().ToString();
+        int currentAmmoIndex = (int)_combatController.inventory.equippedWeapon.weaponData.ammoType;
+        ammoText.text = _combatController.inventory.ammo[currentAmmoIndex].ToString();
+
+       int ammoType = (int) _combatController.inventory.equippedWeapon.weaponData.ammoType;
+       ammoTypeIcon.sprite = ammoTypeIcons[ammoType];
     }
 
-    public void OnHealthChanged()
+    private void UpdatePortrait()
     {
-        UpdateHealth();
-    }
+        int playerDamageIndex = 0;
+        Sprite newPortrait = null;
 
-    public void OnArmorChanged()
-    {
-        UpdateArmor();
-    }
+        if (playerState.Health == 0)
+        {
+            playerPortrait.sprite = _portraitData.deathPortrait;
+            return;
+        }
 
-    public void OnAmmoChanged()
-    {
-        UpdateAmmo();
+        if (playerState.Health <= 80 && playerState.Health > 60)
+        {
+            playerDamageIndex = 1;
+        }
+        else if (playerState.Health <= 60 && playerState.Health > 40)
+        {
+            playerDamageIndex = 2;
+        }
+        else if (playerState.Health <= 40 && playerState.Health > 20)
+        {
+            playerDamageIndex = 3;
+        }
+        else if (playerState.Health <= 20 && playerState.Health > 0)
+        {
+            playerDamageIndex = 4;
+        }
+
+        switch (playerState.RageState)
+        {
+            case PlayerRageState.ENRAGED:
+                newPortrait = _portraitData.enragedPortrait[playerDamageIndex];
+                break;
+            case PlayerRageState.DEPRESSED:
+                newPortrait = _portraitData.depressedPortrait[playerDamageIndex];
+                break;
+            case PlayerRageState.NORMAL:
+            case PlayerRageState.NONE:
+                newPortrait = playerState.CombatState == PlayerCombatState.VIOLENT
+                    ? _portraitData.inCombatPortrait[playerDamageIndex]
+                    : _portraitData.defaultPortrait[playerDamageIndex];
+                break;
+        }
+        
+        playerPortrait.sprite = newPortrait;
     }
 
     public void OnRageTicked()
     {
-        UpdateRageMeter();
+        
     }
 
     public void OnWeaponChanged()

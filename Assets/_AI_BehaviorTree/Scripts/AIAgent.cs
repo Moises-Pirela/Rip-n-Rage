@@ -70,6 +70,8 @@ public class AIAgent : MonoBehaviour, IEnemyAI
     {
         var direction = targetLocation - transform.position; 
         GameObject projectile = Instantiate(this.projectile, projectileSpawnPosition.position, Quaternion.LookRotation(direction));
+        
+        projectile.GetComponent<Projectile>().SetupProjectile(GetComponent<AIState>());
     }
 
     public IEnumerator AllowRefireCoroutine()

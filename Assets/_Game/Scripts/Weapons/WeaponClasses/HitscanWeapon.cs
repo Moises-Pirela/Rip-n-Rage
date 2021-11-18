@@ -6,31 +6,68 @@ public class HitscanWeapon : Weapon
 {
     public Transform cameraTransform;
 
-    public override void Equip(Transform transform, LayerMask layerMask)
+    public override void Equip(Animator animator,Transform transform, LayerMask layerMask)
     {
-        base.Equip(transform, layerMask);
+        base.Equip(animator, transform, layerMask);
         
         cameraTransform = transform;
     }
 
     public override void Fire()
     {
+        if (!_combatController.inventory.HasAmmoOfType(weaponData.ammoType))
+        {
+            //todo: play no ammo sound or swap weapon
+            return;
+        }
+        
         if (!CanFire) return;
         
         if (AllowRefireCoroutine != null)
             StopCoroutine(AllowRefire_Coroutine());
         
         AllowRefireCoroutine = StartCoroutine(AllowRefire_Coroutine());
+        PlayerState.Current.SetViolentCombatState();
         
-        int bulletsPerShot = WeaponData.bulletsPerShot;
+        
+        weaponAnimator.SetBool(IsFiring, true);
+        _audioSource.PlayOneShot(weaponData.fireSound);
+        
+        int bulletsPerShot = weaponData.weaponStats.bulletsPerShot;
 
         for (int i = 0; i < bulletsPerShot; i++)
         {
-            if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out RaycastHit hit, 100, _LayerMask))
+            float randomHorizontalSpread = Random.Range(-weaponData.weaponStats.weaponSpread , weaponData.weaponStats.weaponSpread);
+            float randomVerticalSpread = Random.Range(-weaponData.weaponStats.weaponSpread , weaponData.weaponStats.weaponSpread);
+            
+            var finalDirection = cameraTransform.forward;
+
+            finalDirection += cameraTransform.right * randomHorizontalSpread;
+            finalDirection += cameraTransform.up * randomVerticalSpread; 
+            
+            if (!Physics.Raycast(cameraTransform.position, finalDirection, out RaycastHit hit, 100,
+                _LayerMask)) continue;
+            
+            var entityState = hit.collider.GetComponent<EntityState>();
+
+            GameObject hitVFX = null;
+
+            if (entityState)
             {
-                Debug.Log("hit");
+                entityState.TakeDamage(weaponData.weaponStats.damagePerShot);
+                PlayerState.Current.AddToRage(0.01f);
+                //TODO: Apply blood hit effects
+                //hitVFX = Instantiate(weaponData.spawnableVFX, hit.point, Quaternion.LookRotation(hit.normal));
             }
+            else
+            {
+                hitVFX = Instantiate(weaponData.spawnableVFX, hit.point, Quaternion.LookRotation(hit.normal));
+            }
+
+            Destroy(hitVFX, 0.5f);
         }
+        
+        _combatController.inventory.UseAmmo(1);
     }
 
     public override void Melee()

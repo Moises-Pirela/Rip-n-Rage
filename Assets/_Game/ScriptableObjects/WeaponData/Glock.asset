@@ -9,27 +9,22 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 17053db880b72f04b9499bf0a7a3087f, type: 3}
+  m_Script: {fileID: 11500000, guid: 07ed3f07f285b2543aa816e1a6544100, type: 3}
   m_Name: Glock
   m_EditorClassIdentifier: 
-  WeaponName: Double Barreled Glock
-  FireType: 1
-  AmmoType: 1
-  roundsPerFire: 2
-  fireRate: 0.1
-  altRefireRate: 0.3
-  distance: 100
-  AnimatorOverrideController: {fileID: 22100000, guid: acd99e4ba8760654385d48c6e03d466b,
+  ammoType: 0
+  weaponType: 0
+  weaponRecoil:
+    recoil: {x: 12, y: 0, z: 0}
+    recoilSpeed: 12
+    recoilRecoverySpeed: 6
+  weaponStats:
+    bulletsPerShot: 2
+    fireRate: 0.15
+    damagePerShot: 100
+    isUnlocked: 1
+  animatorOverrideController: {fileID: 22100000, guid: acd99e4ba8760654385d48c6e03d466b,
     type: 2}
   fireSound: {fileID: 8300000, guid: 436faba33614a924eaf324f992e7ec89, type: 3}
-  projectileImpactSound: {fileID: 0}
-  bulletProjectile: {fileID: 1238843893459588, guid: 77e7e797520cc7e4e9f479d244fb00a8,
+  spawnableVFX: {fileID: 1879272669879180, guid: 7bef351ddc33ae044b671a7664396a20,
     type: 3}
-  bulletImpact: {fileID: 1879272669879180, guid: 7bef351ddc33ae044b671a7664396a20,
-    type: 3}
-  muzzleFlash: {fileID: 1000012903210382, guid: 01e91ba42e028824b86d47ee5f416589,
-    type: 3}
-  damage: 10
-  recoilRotation: {x: 5, y: 0, z: 0}
-  recoilSpeed: 5
-  recoilRecoverySpeed: 5

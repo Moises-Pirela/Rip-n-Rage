@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 199822515480979474}
   - component: {fileID: 198737689383679476}
   - component: {fileID: 7927123228999170167}
-  - component: {fileID: 3244316313226256867}
+  - component: {fileID: 6214317442205481827}
   m_Layer: 6
   m_Name: Projectile_StandardBullet
   m_TagString: FX
@@ -4959,12 +4959,12 @@ BoxCollider:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1238843893459588}
   m_Material: {fileID: 0}
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_Enabled: 1
   serializedVersion: 2
   m_Size: {x: 0.2, y: 0.2, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
---- !u!114 &3244316313226256867
+--- !u!114 &6214317442205481827
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -4973,16 +4973,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 1238843893459588}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f08f1a32c89817a449944f2a9d04e6ad, type: 3}
+  m_Script: {fileID: 11500000, guid: ba29e25412bfe11489711f854fc500d6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  projectileSpeed: 200
-  impactPrefab: {fileID: 1879272669879180, guid: 7bef351ddc33ae044b671a7664396a20,
-    type: 3}
-  shouldTickDestroy: 1
-  projectileLayerMask:
-    serializedVersion: 2
-    m_Bits: 2321
+  projectileStats:
+    speed: 25
+    damage: 1
+    range: 100
+    hitVFX: {fileID: 1879272669879180, guid: 7bef351ddc33ae044b671a7664396a20, type: 3}
 --- !u!1 &1540588367011230
 GameObject:
   m_ObjectHideFlags: 0

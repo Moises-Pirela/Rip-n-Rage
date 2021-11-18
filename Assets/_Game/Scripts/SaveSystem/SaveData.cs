@@ -7,7 +7,7 @@ public class SaveData
 {
     private static SaveData _current;
 
-    public static SaveData current
+    public static SaveData Current
     {
         get
         {
@@ -22,6 +22,14 @@ public class SaveData
         
     }
 
-    public PlayerStateData PlayerStateData;
-    public InventoryData InventoryData;
+    public PlayerStateData playerStateData = new PlayerStateData(Vector3.zero, Quaternion.identity, 100, 100);
+    
+    public InventoryData inventoryData = new InventoryData(new [] 
+    {
+        120,  // Light
+        60,  // Heavy
+        16,  // Shell
+        100, // Energy
+        10   // Explosive
+    }, 0);
 }

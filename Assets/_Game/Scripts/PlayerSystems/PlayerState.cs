@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.Events;
@@ -5,10 +6,7 @@ using UnityEngine.Events;
 [System.Serializable]
 public class PlayerState : EntityState
 {
-    public UnityEvent OnEnterEnraged;
-    public UnityEvent OnEnterDepressed;
-    public UnityEvent OnEnterNormal;
-    public UnityEvent OnTickRage;
+    public Action OnTickRage;
     
     private static PlayerState _current;
     public static PlayerState Current {
@@ -31,19 +29,35 @@ public class PlayerState : EntityState
     }
 
     private Coroutine ResetCombatState;
+    private CameraRecoil _cameraRecoil;
+    private CombatController _combatController;
 
-    public void Awake()
+    private void Awake()
     {
         _current = this;
         RageState = PlayerRageState.NONE;
         _rage = 0.5f;
         GetRageState();
+        Init();
+    }
+
+    private void Start()
+    {
+        _cameraRecoil = EnragedInjector<CameraRecoil>.GetInstance();
+        _combatController = EnragedInjector<CombatController>.GetInstance();
     }
 
     public override void Init()
     {
-        InitializeArmor(200);
-        InitializeHealth(100);
+        InitializeArmor(SaveData.Current.playerStateData.PlayerArmor);
+        InitializeHealth(SaveData.Current.playerStateData.PlayerHealth);
+    }
+
+    public override void TakeDamage(float damage, float armorDamageResistance = 1)
+    {
+        base.TakeDamage(damage, armorDamageResistance);
+        
+        _cameraRecoil.Shake(0.5f);
     }
 
     public override void Die()
@@ -97,7 +111,6 @@ public class PlayerState : EntityState
         {
             RageState = PlayerRageState.ENRAGED;
             CurrentRageState = rageStates[1];
-            OnEnterEnraged.Invoke();
             return;
         }
 
@@ -105,7 +118,6 @@ public class PlayerState : EntityState
         {
             RageState = PlayerRageState.DEPRESSED;
             CurrentRageState = rageStates[2];
-            OnEnterDepressed.Invoke();
             return;
         }
 
@@ -113,7 +125,6 @@ public class PlayerState : EntityState
         {
             RageState = PlayerRageState.NORMAL;
             CurrentRageState = rageStates[0];
-            OnEnterNormal.Invoke();
         }
 
        
@@ -125,12 +136,15 @@ public class PlayerState : EntityState
         
         //Save data
 
-        SaveData.current.PlayerStateData.playerPosition = transform.position;
-        SaveData.current.PlayerStateData.playerRotation = transform.rotation;
+        SaveData.Current.playerStateData.playerPosition = transform.position;
+        SaveData.Current.playerStateData.playerRotation = transform.rotation;
         
-        SaveData.current.PlayerStateData.PlayerHealth = Health;
-        SaveData.current.PlayerStateData.PlayerArmor = Armor;
+        SaveData.Current.playerStateData.PlayerHealth = Health;
+        SaveData.Current.playerStateData.PlayerArmor = Armor;
+
+        SaveData.Current.inventoryData.ammo = _combatController.inventory.ammo;
+        SaveData.Current.inventoryData.currentWeaponIndex = _combatController.inventory.currentWeaponIndex;
         
-        SaveManager.Save("Save1", SaveData.current);
+        SaveManager.Save("Save1", SaveData.Current);
     }
 }

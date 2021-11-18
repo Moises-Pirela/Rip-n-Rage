@@ -22,6 +22,7 @@
     <setting file="file://$PROJECT_DIR$/Assets/_Game/Scripts/SaveSystem/QuaternionSerializationSurrogate.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Assets/_Game/Scripts/EnemyData/EnemyData.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Assets/_AI_BehaviorTree/Scripts/AIState.cs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Assets/_Game/Scripts/Weapons/ProjectileClasses/Projectile.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Assets/_AI_BehaviorTree/Scripts/AgentVisionSensor.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Assets/Tools/EnragedInjector.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Assets/_AI_BehaviorTree/Scripts/SelectorNode.cs" root0="FORCE_HIGHLIGHTING" />
@@ -33,6 +34,7 @@
     <setting file="file://$PROJECT_DIR$/Assets/_AI_BehaviorTree/Scripts/ActionNodes/UpdatePlayerPositionNode.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Assets/_Game/Scripts/Interfaces/IHealth.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/DecompilerCache/decompiler/88f69663e9a64d00b2091dd8dfd4d38f13b800/17/93bd9ab3/MonoBehaviour.cs" root0="SKIP_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Assets/_Game/Scripts/Data/WeaponData.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/DecompilerCache/IL/075dc5307f334b8e912c548ec0b95651f6e00/f7/76585280/0200005Apdb.il" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Assets/_AI_BehaviorTree/Scripts/RandomLocationNode.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Assets/_AI_BehaviorTree/Scripts/SelectorNodes/PlayerSpottedNode.cs" root0="FORCE_HIGHLIGHTING" />
@@ -65,7 +67,7 @@
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="settings.editor.selected.configurable" value="editor.preferences.fonts.default" />
   </component>
-  <component name="RunManager" selected="Attach to Unity Editor.Attach to Unity Editor">
+  <component name="RunManager" selected="Attach to Unity Editor.Attach to Unity Editor &amp; Play">
     <configuration name="Standalone Player" type="RunUnityExe" factoryName="Unity Executable">
       <option name="EXE_PATH" value="F:/Builds/sadas\ProjectNeon.exe" />
       <option name="PROGRAM_PARAMETERS" value="" />
@@ -74,10 +76,10 @@
       <option name="USE_EXTERNAL_CONSOLE" value="0" />
       <method v="2" />
     </configuration>
-    <configuration name="Attach to Unity Editor &amp; Play" type="UNITY_DEBUG_RUN_CONFIGURATION" factoryName="UNITY_ATTACH_AND_PLAY" show_console_on_std_err="false" show_console_on_std_out="false" port="50000" address="localhost">
+    <configuration name="Attach to Unity Editor &amp; Play" type="UNITY_DEBUG_RUN_CONFIGURATION" factoryName="UNITY_ATTACH_AND_PLAY" show_console_on_std_err="false" show_console_on_std_out="false" port="50000" address="localhost" ignored-value-for-modified-check="4996">
       <option name="allowRunningInParallel" value="false" />
       <option name="listenPortForConnections" value="false" />
-      <option name="pid" />
+      <option name="pid" value="4996" />
       <option name="projectPathOnTarget" />
       <option name="selectedOptions">
         <list />
@@ -86,7 +88,7 @@
     </configuration>
     <configuration name="Attach to Unity Editor" type="UNITY_DEBUG_RUN_CONFIGURATION" factoryName="Unity Debug" show_console_on_std_err="false" show_console_on_std_out="false" port="50000" address="localhost">
       <option name="allowRunningInParallel" value="false" />
-      <option name="listenPortForConnections" value="true" />
+      <option name="listenPortForConnections" value="false" />
       <option name="pid" />
       <option name="projectPathOnTarget" />
       <option name="selectedOptions">

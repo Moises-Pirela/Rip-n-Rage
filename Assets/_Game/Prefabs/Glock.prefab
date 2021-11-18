@@ -9,7 +9,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2802626992812686449}
-  - component: {fileID: 969256033810756184}
+  - component: {fileID: 4119386946533113612}
   m_Layer: 0
   m_Name: Glock
   m_TagString: Untagged
@@ -31,7 +31,7 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &969256033810756184
+--- !u!114 &4119386946533113612
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -40,7 +40,8 @@ MonoBehaviour:
   m_GameObject: {fileID: 6696614725746947690}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 37c4ce9ea49b86e4e8439bd3c38ec5e1, type: 3}
+  m_Script: {fileID: 11500000, guid: 650777cdbf9b5504f8d98d3bc8db00d7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   weaponData: {fileID: 11400000, guid: 8748c9182c90cf045ad0aaceb5f27349, type: 2}
+  cameraTransform: {fileID: 0}
