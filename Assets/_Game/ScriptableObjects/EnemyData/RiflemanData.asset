@@ -17,7 +17,7 @@ MonoBehaviour:
   meleeAttackRange: 2
   turnSpeed: 3600
   fireRate: 0.75
-  maxHealth: 200
+  maxHealth: 1000
   maxArmor: 0
   enemyAnimationData:
     IdleAnimation:

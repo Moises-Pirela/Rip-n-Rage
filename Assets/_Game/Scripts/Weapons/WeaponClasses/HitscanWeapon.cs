@@ -2,13 +2,13 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class HitscanWeapon : Weapon
+public abstract class HitscanWeapon : Weapon
 {
     public Transform cameraTransform;
 
-    public override void Equip(Animator animator,Transform transform, LayerMask layerMask)
+    public override void Equip(Animator animator,Transform transform, LayerMask layerMask, Animator leftHandAnimator, Animator rightHandAnimator)
     {
-        base.Equip(animator, transform, layerMask);
+        base.Equip(animator, transform, layerMask, leftHandAnimator, rightHandAnimator);
         
         cameraTransform = transform;
     }
@@ -25,6 +25,8 @@ public class HitscanWeapon : Weapon
         
         if (AllowRefireCoroutine != null)
             StopCoroutine(AllowRefire_Coroutine());
+        
+        _hudController.CurrentCrosshair.OnShoot();
         
         AllowRefireCoroutine = StartCoroutine(AllowRefire_Coroutine());
         PlayerState.Current.SetViolentCombatState();
@@ -55,9 +57,10 @@ public class HitscanWeapon : Weapon
             if (entityState)
             {
                 entityState.TakeDamage(weaponData.weaponStats.damagePerShot);
-                PlayerState.Current.AddToRage(0.01f);
+                PlayerState.Current.AddToRage(0.05f);
                 //TODO: Apply blood hit effects
-                //hitVFX = Instantiate(weaponData.spawnableVFX, hit.point, Quaternion.LookRotation(hit.normal));
+                hitVFX = Instantiate(weaponData.spawnableVFX, hit.point, Quaternion.LookRotation(hit.normal));
+                _hudController.CurrentCrosshair.OnHit();
             }
             else
             {
@@ -70,9 +73,6 @@ public class HitscanWeapon : Weapon
         _combatController.inventory.UseAmmo(1);
     }
 
-    public override void Melee()
-    {
-        throw new System.NotImplementedException();
-    }
+    public abstract override void Melee();
 }
 

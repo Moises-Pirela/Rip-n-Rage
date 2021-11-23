@@ -7,6 +7,7 @@ TagManager:
   - Wall
   - FX
   - Checkpoint
+  - GrapplePoint
   layers:
   - Default
   - TransparentFX

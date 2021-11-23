@@ -10,7 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 7221057651937888224}
   - component: {fileID: -6296718115137473131}
-  - component: {fileID: -8981855732699550847}
+  - component: {fileID: 8401493270999072940}
   m_Layer: 0
   m_Name: M1887
   m_TagString: Untagged
@@ -128,7 +128,7 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
---- !u!114 &-8981855732699550847
+--- !u!114 &8401493270999072940
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -137,7 +137,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 6991743128418279056}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 650777cdbf9b5504f8d98d3bc8db00d7, type: 3}
+  m_Script: {fileID: 11500000, guid: bf8bdc0e4c9eaff43a44839fb037f632, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   weaponData: {fileID: 11400000, guid: 39bd97c554091fb4a9cf9ec7790c82b0, type: 2}

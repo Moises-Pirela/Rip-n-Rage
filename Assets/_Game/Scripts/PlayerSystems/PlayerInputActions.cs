@@ -8,23 +8,45 @@ using UnityEngine.InputSystem.Interactions;
 public class PlayerInputActions : MonoBehaviour
 {
     private PlayerControls _playerControls;
+    private PlayerInput _playerInput;
     public Vector2 MovementInput { get; set; }
     public Vector2 LookInput { get; set; }
     public bool IsJumping { get; set; }
     public bool CanJump { get; set; }
     public bool IsGrounded { get; set; }
-    
-    private bool isBlockingInput;
 
-    public System.Action OnPrimaryFire;
-    public System.Action OnSecondaryFire;
-    public System.Action OnCancelAltFire;
-    public System.Action<int> OnSwapWheel;
-    public System.Action<int> OnSwapButton;
+    public bool IsFiring { get; set; }
+
+    private bool isBlockingInput;
 
     private void Awake()
     {
         EnragedInjector<PlayerInputActions>.SetInstance(this);
+
+        _playerControls = new PlayerControls();
+
+        _playerInput = new PlayerInput();
+
+        InputSystem.pollingFrequency = 120;
+
+        _playerControls.Character.Fire.performed += context =>
+        {
+            IsFiring = true;
+        };
+        _playerControls.Character.Fire.canceled += context =>
+        {
+            IsFiring = false;
+        };
+    }
+
+    private void OnEnable()
+    {
+        _playerControls.Enable();
+    }
+
+    private void OnDisable()
+    {
+        _playerControls.Disable();
     }
 
     public bool GetIsBlockingInput()
@@ -35,6 +57,11 @@ public class PlayerInputActions : MonoBehaviour
     public void SetIsBlockingInput(bool shouldBlock)
     {
         isBlockingInput = shouldBlock;
+
+        if (!isBlockingInput) return;
+        
+        LookInput = Vector2.zero;
+        MovementInput = Vector2.zero;
     }
 
     public void OnMove(InputValue value)
@@ -59,21 +86,5 @@ public class PlayerInputActions : MonoBehaviour
         
         IsJumping = true;
         CanJump = true;
-    }
-
-    public void OnFire(InputValue value)
-    {
-        if (isBlockingInput) return;
-
-        // if (value.isPressed)
-        //     OnPrimaryFire();    
-    }
-
-    public void OnAltFire(InputValue value)
-    {
-        if (isBlockingInput) return;
-        //
-        // if (value.isPressed)
-        //     OnSecondaryFire();
     }
 }

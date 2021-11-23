@@ -9,7 +9,7 @@ public enum AmmoType
 
 public enum WeaponType
 {
-    HITSCAN,
+    SINGLE,
     AUTO
 }
 

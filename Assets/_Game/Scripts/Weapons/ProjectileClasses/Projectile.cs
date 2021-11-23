@@ -36,14 +36,12 @@ public class Projectile : MonoBehaviour
         if (entityState)
         {
             if (entityState is AIState) return;
-            
+
             entityState.TakeDamage(projectileStats.damage);
-            Debug.Log(entityState.name);
         }
         else
         {
             var contactPoint = GetPointOfContact();
-            Debug.Log(other.name);
             Instantiate(projectileStats.hitVFX, contactPoint, Quaternion.LookRotation(contactPoint.normalized));
         }
         Destroy(gameObject);

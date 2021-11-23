@@ -9,6 +9,8 @@ public class AIState : EntityState
     [SerializeField] protected EnemyData data;
     public Action OnDieCallback;
 
+    public Transform grapplePoint;
+
     private void Awake()
     {
         Init();

@@ -30,3 +30,4 @@ MonoBehaviour:
   spawnableVFX: {fileID: 1879272669879180, guid: 7bef351ddc33ae044b671a7664396a20,
     type: 3}
   weaponPosition: {x: -0.12, y: 0.25, z: 0}
+  weaponScale: 0.1

@@ -19,6 +19,9 @@ public class CombatController : MonoBehaviour
     [SerializeField] private Animator weaponAnimator;
     [SerializeField] private Animator leftFistAnimator;
     [SerializeField] private Animator rightFistAnimator;
+    [SerializeField] private AudioClip jabLandSound;
+    [SerializeField] private AudioSource jabSource;
+    
 
     [Space(5)] [Header("Inventory")]
     public Inventory inventory;
@@ -29,6 +32,12 @@ public class CombatController : MonoBehaviour
     private Coroutine _allowJabCoroutine;
     private bool _canJab = true;
     private bool _canFire = true;
+    public bool CanFire
+    {
+        get => _canFire;
+        set => _canFire = value;
+    }
+    private bool _isFiring = false;
 
     private CameraRecoil _cameraRecoil;
     private static readonly int JabTrigger = Animator.StringToHash("Jab");
@@ -60,14 +69,19 @@ public class CombatController : MonoBehaviour
         weaponAnimator.runtimeAnimatorController = inventory.equippedWeapon.weaponData.animatorOverrideController;
     }
 
+    private void Update()
+    {
+        if (_playerInputActions.IsFiring)
+        {
+            //Debug.Log("Fire");
+            Fire();
+        }
+    }
+
     #region Input Events
 
-    public void OnFire(InputValue inputValue)
+    private void Fire()
     {
-        if (_playerInputActions.GetIsBlockingInput()) return;
-
-        if (!inputValue.isPressed) return;
-
         if (_canFire)
         {
             inventory.equippedWeapon.Fire();
@@ -102,11 +116,24 @@ public class CombatController : MonoBehaviour
         }
         else
         {
-            _comboStepCounter = 0;
-            _canJab = true;
-            _canFire = true;
-            //_playerInputActions.SetIsBlockingInput(true);
-            //inventory.equippedWeapon.Melee();    
+            if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out RaycastHit hit, 1, layerMask))
+            {
+                var enemy = hit.collider.GetComponent<AIState>();
+
+                if (!enemy)
+                {
+                    OnEndMeleeCombo();
+                    return;
+                }
+
+                FPSCameraController.instance.ForceLookRotation(enemy.grapplePoint.position);
+                //_playerInputActions.SetIsBlockingInput(true);
+                inventory.equippedWeapon.Melee();
+            }
+            else
+            {
+                OnEndMeleeCombo();
+            }    
         }
     }
 
@@ -142,6 +169,14 @@ public class CombatController : MonoBehaviour
 
     #endregion
 
+    public void OnEndMeleeCombo()
+    {
+        _comboStepCounter = 0;
+        _canJab = true;
+        _canFire = true;
+        _playerInputActions.SetIsBlockingInput(false);
+    }
+
     private void Jab()
     {
         weaponAnimator.gameObject.SetActive(false);
@@ -152,9 +187,10 @@ public class CombatController : MonoBehaviour
         else if (_comboStepCounter == 2) rightFistAnimator.SetTrigger(JabTrigger);
 
         _canJab = false;
-        if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out RaycastHit hit, 3, layerMask))
+        if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out RaycastHit hit, 1, layerMask))
         {
             _cameraRecoil.Shake();
+            jabSource.PlayOneShot(jabLandSound);
         }
     }
 
@@ -167,7 +203,7 @@ public class CombatController : MonoBehaviour
     private void EquipWeapon(int index)
     {
         inventory.equippedWeapon = inventory.availableWeapons[index];
-        inventory.equippedWeapon.Equip(weaponAnimator,cameraTransform, layerMask);   
+        inventory.equippedWeapon.Equip(weaponAnimator,cameraTransform, layerMask, leftFistAnimator);   
         weaponAnimator.runtimeAnimatorController = inventory.equippedWeapon.weaponData.animatorOverrideController;
         
         if (OnEquipWeapon != null)

@@ -21,7 +21,7 @@ public abstract class EntityState : MonoBehaviour, IHealth, IArmor
     public abstract void Init();
     public abstract void Die();
 
-    public virtual void TakeDamage(float damage, float armorDamageResistance = 1f)
+    public virtual void TakeDamage(float damage, float armorDamageResistance = 0.75f)
     {
         var totalDamage = damage;
         

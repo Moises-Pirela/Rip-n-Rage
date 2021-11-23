@@ -20,8 +20,17 @@ public class HudController : MonoBehaviour
 
     private CombatController _combatController;
 
+    public ICrosshair CurrentCrosshair;
+    [SerializeField]private GameObject crossHairObject;
+
+    private void Awake()
+    {
+        EnragedInjector<HudController>.SetInstance(this);
+    }
+
     private void Start()
     {
+        CurrentCrosshair = crossHairObject.GetComponent<ICrosshair>();
         _combatController = EnragedInjector<CombatController>.GetInstance();
 
         _combatController.OnEquipWeapon += UpdateAmmo;

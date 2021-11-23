@@ -18,4 +18,5 @@ public class WeaponData : ScriptableObject
     public AudioClip fireSound;
     public GameObject spawnableVFX;
     public Vector3 weaponPosition;
+    public float weaponScale;
 }

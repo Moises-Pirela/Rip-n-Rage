@@ -22,9 +22,12 @@ MonoBehaviour:
     bulletsPerShot: 2
     fireRate: 0.15
     damagePerShot: 100
+    weaponSpread: 0
     isUnlocked: 1
   animatorOverrideController: {fileID: 22100000, guid: acd99e4ba8760654385d48c6e03d466b,
     type: 2}
   fireSound: {fileID: 8300000, guid: 436faba33614a924eaf324f992e7ec89, type: 3}
   spawnableVFX: {fileID: 1879272669879180, guid: 7bef351ddc33ae044b671a7664396a20,
     type: 3}
+  weaponPosition: {x: 0, y: 0, z: 0}
+  weaponScale: 0.1

@@ -27,8 +27,8 @@ public class SaveData
     public InventoryData inventoryData = new InventoryData(new [] 
     {
         120,  // Light
-        60,  // Heavy
-        16,  // Shell
+        240,  // Heavy
+        64,  // Shell
         100, // Energy
         10   // Explosive
     }, 0);
