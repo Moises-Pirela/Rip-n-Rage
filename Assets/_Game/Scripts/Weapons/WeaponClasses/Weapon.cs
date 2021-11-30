@@ -47,6 +47,8 @@ public abstract class Weapon : MonoBehaviour
     protected virtual void EndMelee()
     {
         _combatController.OnEndMeleeCombo();
+        weaponAnimator.SetBool(WeaponMelee, false);
+        weaponAnimator.gameObject.SetActive(false);
     }
     
     protected virtual IEnumerator AllowRefire_Coroutine()

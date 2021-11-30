@@ -95,7 +95,7 @@
         <key>fixedTextureSize</key>
         <QSize>
             <key>width</key>
-            <int>8192</int>
+            <int>4096</int>
             <key>height</key>
             <int>4096</int>
         </QSize>

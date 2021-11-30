@@ -17,6 +17,8 @@ tpsheetFileNames:
 - Assets/_Game/Sprites/Weapons/M1887/M1887_Reload.tpsheet
 - Assets/_Game/Sprites/Weapons/M1887/M1887_Special.tpsheet
 - Assets/_Game/Sprites/Weapons/MG338/MG338.tpsheet
+- Assets/_Game/Sprites/Weapons/RocketLauncher/RocketLauncher.tpsheet
+- Assets/_Game/Sprites/Weapons/RocketLauncher/RocketLauncher_Explosion.tpsheet
 - Assets/codeandweb.com/Example/SpriteSheet/sprites.tpsheet
 textureFileNames:
 - Assets/_Game/Sprites/Enemies/Rifleman/Rifleman.png
@@ -35,8 +37,12 @@ textureFileNames:
 - Assets/_Game/Sprites/Weapons/M1887/M1887_Reload.png
 - Assets/_Game/Sprites/Weapons/M1887/M1887_Special.png
 - Assets/_Game/Sprites/Weapons/MG338/MG338.png
+- Assets/_Game/Sprites/Weapons/RocketLauncher/RocketLauncher.png
+- Assets/_Game/Sprites/Weapons/RocketLauncher/RocketLauncher_Explosion.png
 - Assets/codeandweb.com/Example/SpriteSheet/sprites.png
 normalmapFileNames:
+- 
+- 
 - 
 - 
 - 

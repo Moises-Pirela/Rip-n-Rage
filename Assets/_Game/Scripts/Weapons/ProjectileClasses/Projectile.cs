@@ -10,7 +10,7 @@ public class Projectile : MonoBehaviour
 
     private EntityState _instigator;
 
-    public void SetupProjectile(EntityState entity)
+    public void SetupProjectile(bool firedByPlayer = false, EntityState entity = null)
     {
         _instigator = entity;
         _transform = transform;
@@ -29,7 +29,10 @@ public class Projectile : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.gameObject == _instigator.gameObject) return;
+        if (_instigator != null)
+        {   
+            if (other.gameObject == _instigator.gameObject) return;
+        }
         
         EntityState entityState = other.gameObject.GetComponent<EntityState>();
 
@@ -41,20 +44,20 @@ public class Projectile : MonoBehaviour
         }
         else
         {
-            var contactPoint = GetPointOfContact();
-            Instantiate(projectileStats.hitVFX, contactPoint, Quaternion.LookRotation(contactPoint.normalized));
+           // var contactPoint = GetPointOfContact();
+            //Instantiate(projectileStats.hitVFX, contactPoint, Quaternion.LookRotation(contactPoint.normalized));
         }
+        
+        var contactPoint = GetPointOfContact();
+        GameObject vfx = Instantiate(projectileStats.hitVFX, contactPoint, Quaternion.LookRotation(contactPoint.normalized));
         Destroy(gameObject);
+        Destroy(vfx, 0.4f);
     }
     
     private Vector3 GetPointOfContact()
     {
         RaycastHit hit;
-        if (Physics.Raycast(transform.position, transform.forward, out hit))
-        {
-            return hit.point;
-        }
-
-        return Vector3.zero;
+        
+        return Physics.Raycast(transform.position, transform.forward, out hit) ? hit.point : Vector3.zero;
     }
 }

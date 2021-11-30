@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07ed3f07f285b2543aa816e1a6544100, type: 3}
+  m_Name: RocketLauncher
+  m_EditorClassIdentifier: 
+  ammoType: 4
+  weaponType: 0
+  weaponRecoil:
+    recoil: {x: 5, y: 0, z: 0}
+    recoilSpeed: 50
+    recoilRecoverySpeed: 25
+  weaponStats:
+    bulletsPerShot: 1
+    fireRate: 0.25
+    damagePerShot: 1000
+    weaponSpread: 0
+    isUnlocked: 1
+  animatorOverrideController: {fileID: 22100000, guid: a60db62a2e7dc65439a9ae9f6c3d3fd3,
+    type: 2}
+  fireSound: {fileID: 8300000, guid: 9d557e2d3c47f784a9ff43531d89a57f, type: 3}
+  spawnableVFX: {fileID: 0}
+  weaponPosition: {x: -0.158, y: 0.365, z: 0}
+  weaponScale: 0.12

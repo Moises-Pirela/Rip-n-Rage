@@ -4977,7 +4977,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   projectileStats:
-    speed: 25
+    speed: 50
     damage: 1
     range: 100
     hitVFX: {fileID: 1879272669879180, guid: 7bef351ddc33ae044b671a7664396a20, type: 3}

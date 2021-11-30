@@ -123,7 +123,7 @@ TextureImporter:
         serializedVersion: 2
         x: 1
         y: 3071
-        width: 2048
+        width: 1024
         height: 1024
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
@@ -144,7 +144,7 @@ TextureImporter:
         serializedVersion: 2
         x: 1
         y: 2045
-        width: 2048
+        width: 1024
         height: 1024
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
@@ -165,7 +165,7 @@ TextureImporter:
         serializedVersion: 2
         x: 1
         y: 1019
-        width: 2048
+        width: 1024
         height: 1024
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
@@ -184,9 +184,9 @@ TextureImporter:
       name: machinegun_04
       rect:
         serializedVersion: 2
-        x: 2051
+        x: 1027
         y: 3071
-        width: 2048
+        width: 1024
         height: 1024
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
@@ -205,8 +205,8 @@ TextureImporter:
       name: machinegun_secondary_01
       rect:
         serializedVersion: 2
-        x: 2051
-        y: 2045
+        x: 2053
+        y: 3071
         width: 1024
         height: 1024
       alignment: 0
@@ -226,8 +226,8 @@ TextureImporter:
       name: machinegun_secondary_02
       rect:
         serializedVersion: 2
-        x: 2051
-        y: 1019
+        x: 1027
+        y: 2045
         width: 1024
         height: 1024
       alignment: 0
@@ -247,8 +247,8 @@ TextureImporter:
       name: machinegun_secondary_03
       rect:
         serializedVersion: 2
-        x: 3077
-        y: 2045
+        x: 1027
+        y: 1019
         width: 1024
         height: 1024
       alignment: 0
@@ -268,8 +268,8 @@ TextureImporter:
       name: machinegun_secondary_04
       rect:
         serializedVersion: 2
-        x: 4101
-        y: 3071
+        x: 2053
+        y: 2045
         width: 1024
         height: 1024
       alignment: 0
@@ -289,7 +289,7 @@ TextureImporter:
       name: machinegun_secondary_05
       rect:
         serializedVersion: 2
-        x: 3077
+        x: 2053
         y: 1019
         width: 1024
         height: 1024

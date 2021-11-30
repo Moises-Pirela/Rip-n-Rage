@@ -15,14 +15,14 @@ MonoBehaviour:
   ammoType: 1
   weaponType: 1
   weaponRecoil:
-    recoil: {x: 12, y: 0, z: 0}
+    recoil: {x: 12, y: 3, z: 0}
     recoilSpeed: 12
     recoilRecoverySpeed: 6
   weaponStats:
     bulletsPerShot: 1
-    fireRate: 0.1
-    damagePerShot: 500
-    weaponSpread: 0.05
+    fireRate: 0.2
+    damagePerShot: 1000
+    weaponSpread: 0
     isUnlocked: 1
   animatorOverrideController: {fileID: 22100000, guid: 1349afc41cda72e49a2cba0f8d15b56e,
     type: 2}

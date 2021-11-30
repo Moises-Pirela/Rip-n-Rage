@@ -9,9 +9,8 @@ public class CombatController : MonoBehaviour
     public Action OnEquipWeapon;
     public Action OnFireWeapon;
 
-    [Header("Weapon setup")] [SerializeField]
-    private Transform cameraTransform;
-
+    [Header("Weapon setup")] 
+    [SerializeField] private Transform cameraTransform;
     [SerializeField] private Transform projectileSpawnTransform;
     [SerializeField] private LayerMask layerMask;
 
@@ -203,7 +202,14 @@ public class CombatController : MonoBehaviour
     private void EquipWeapon(int index)
     {
         inventory.equippedWeapon = inventory.availableWeapons[index];
-        inventory.equippedWeapon.Equip(weaponAnimator,cameraTransform, layerMask, leftFistAnimator);   
+
+        Transform neededTransform = cameraTransform;
+
+        if (inventory.equippedWeapon is ProjectileWeapon)
+            neededTransform = projectileSpawnTransform;
+        
+        inventory.equippedWeapon.Equip(weaponAnimator,neededTransform, layerMask, leftFistAnimator);
+        
         weaponAnimator.runtimeAnimatorController = inventory.equippedWeapon.weaponData.animatorOverrideController;
         
         if (OnEquipWeapon != null)

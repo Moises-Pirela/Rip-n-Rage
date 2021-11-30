@@ -21,7 +21,7 @@ MonoBehaviour:
   weaponStats:
     bulletsPerShot: 16
     fireRate: 0.525
-    damagePerShot: 100
+    damagePerShot: 200
     weaponSpread: 0.05
     isUnlocked: 1
   animatorOverrideController: {fileID: 22100000, guid: f7b6b09717194e64ca6af84eca47f1fa,

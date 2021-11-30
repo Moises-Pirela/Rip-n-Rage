@@ -4,9 +4,18 @@ using UnityEngine;
 
 public class MG338 : HitscanWeapon
 {
+    [SerializeField] private AudioClip meleeClip;
     public override void Melee()
     {
-        Debug.Log("melee");
-       // throw new System.NotImplementedException();
+        _audioSource.PlayOneShot(meleeClip);
+        weaponAnimator.gameObject.SetActive(true);
+        weaponAnimator.SetBool(WeaponMelee, true);
+        StartCoroutine(WaitMelee());
+    }
+
+    private IEnumerator WaitMelee()
+    {
+        yield return new WaitForSeconds(0.2f);
+       EndMelee();
     }
 }
