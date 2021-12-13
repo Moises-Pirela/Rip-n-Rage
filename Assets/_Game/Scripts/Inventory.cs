@@ -30,10 +30,16 @@ public class Inventory
         return ammo[index] > 0;
     }
 
-    public void AddToAmmo(AmmoType ammoType, int amountToAdd)
+    public bool AddToAmmo(AmmoType ammoType, int amountToAdd)
     {
         int index = (int) ammoType;
+
+        if (ammo[index] >= ammoLimits[index]) return false;
+        
         ammo[index] = Mathf.Clamp(ammo[index] + amountToAdd, 0, ammoLimits[index]);
+        
+        return true;
+
     }
 
     public void UseAmmo(int amountToUse)

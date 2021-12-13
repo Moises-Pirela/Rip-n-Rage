@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 199822515480979474}
   - component: {fileID: 198737689383679476}
   - component: {fileID: 7927123228999170167}
-  - component: {fileID: 6214317442205481827}
+  - component: {fileID: 3201331300220863281}
   m_Layer: 6
   m_Name: Projectile_Rocket
   m_TagString: FX
@@ -4964,7 +4964,7 @@ BoxCollider:
   serializedVersion: 2
   m_Size: {x: 0.2, y: 0.2, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
---- !u!114 &6214317442205481827
+--- !u!114 &3201331300220863281
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -4973,15 +4973,18 @@ MonoBehaviour:
   m_GameObject: {fileID: 1238843893459588}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ba29e25412bfe11489711f854fc500d6, type: 3}
+  m_Script: {fileID: 11500000, guid: 4c47995dc843f4d488a5717c694e6c0c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   projectileStats:
     speed: 50
-    damage: 100
+    damage: 1000
     range: 100
     hitVFX: {fileID: 6033058373651159196, guid: f196eaa8229533a4793ce92b092691f8,
       type: 3}
+  entityDamageLayer:
+    serializedVersion: 2
+    m_Bits: 4104
 --- !u!1 &1540588367011230
 GameObject:
   m_ObjectHideFlags: 0

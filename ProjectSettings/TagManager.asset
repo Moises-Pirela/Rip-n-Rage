@@ -23,8 +23,8 @@ TagManager:
   - Walkable
   - Enemies
   - PlayerCamera
-  - 
-  - 
+  - Pickup
+  - OnlyGroundCollision
   - 
   - 
   - 

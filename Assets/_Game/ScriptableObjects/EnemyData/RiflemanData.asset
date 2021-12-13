@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 592c9ecbf685b6a4e9d560a929c29918, type: 3}
   m_Name: RiflemanData
   m_EditorClassIdentifier: 
-  movementSpeed: 3
+  movementSpeed: 10
   attackRange: 10
   meleeAttackRange: 2
   turnSpeed: 3600

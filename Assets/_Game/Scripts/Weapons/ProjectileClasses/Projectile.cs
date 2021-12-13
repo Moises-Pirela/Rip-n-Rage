@@ -8,7 +8,8 @@ public class Projectile : MonoBehaviour
     public ProjectileStats projectileStats;
     private Transform _transform;
 
-    private EntityState _instigator;
+    protected EntityState _instigator;
+    [SerializeField] protected LayerMask entityDamageLayer;
 
     public void SetupProjectile(bool firedByPlayer = false, EntityState entity = null)
     {
@@ -27,7 +28,7 @@ public class Projectile : MonoBehaviour
         _transform.position += transform.forward * projectileStats.speed * Time.deltaTime;
     }
 
-    private void OnTriggerEnter(Collider other)
+    public virtual void OnTriggerEnter(Collider other)
     {
         if (_instigator != null)
         {   
@@ -53,8 +54,8 @@ public class Projectile : MonoBehaviour
         Destroy(gameObject);
         Destroy(vfx, 0.4f);
     }
-    
-    private Vector3 GetPointOfContact()
+
+    protected Vector3 GetPointOfContact()
     {
         RaycastHit hit;
         

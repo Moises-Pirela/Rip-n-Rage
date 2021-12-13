@@ -6,7 +6,7 @@ using UnityEngine.Events;
 [System.Serializable]
 public class PlayerState : EntityState
 {
-    public Action OnTickRage;
+    public Action OnUpdateRage;
     
     private static PlayerState _current;
     public static PlayerState Current {
@@ -29,28 +29,27 @@ public class PlayerState : EntityState
     }
 
     private Coroutine ResetCombatState;
+    private Coroutine ResetRageState;
     private CameraRecoil _cameraRecoil;
     private CombatController _combatController;
 
     private void Awake()
     {
         _current = this;
-        RageState = PlayerRageState.NONE;
-        _rage = 0.5f;
-        GetRageState();
-        Init();
     }
 
     private void Start()
     {
         _cameraRecoil = EnragedInjector<CameraRecoil>.GetInstance();
         _combatController = EnragedInjector<CombatController>.GetInstance();
+        Init();
     }
 
     public override void Init()
     {
         InitializeArmor(SaveData.Current.playerStateData.PlayerArmor);
         InitializeHealth(SaveData.Current.playerStateData.PlayerHealth);
+        ResetRage();
     }
 
     public override void TakeDamage(float damage, float armorDamageResistance = 1)
@@ -69,6 +68,8 @@ public class PlayerState : EntityState
     {
         TickRage();
         GetRageState();
+        Debug.Log("Combat state: " + CombatState);
+        Debug.Log("rage state: " + RageState);
     }
 
     public void SetViolentCombatState()
@@ -78,7 +79,7 @@ public class PlayerState : EntityState
 
         CombatState = PlayerCombatState.VIOLENT;
 
-        ResetCombatState = StartCoroutine(ResetViolentCombatState());
+        ResetCombatState = StartCoroutine(ResetViolentCombatState_Coroutine());
     }
 
     public void AddToRage(float value)
@@ -87,47 +88,68 @@ public class PlayerState : EntityState
         _rage += value;
     }
 
-    private IEnumerator ResetViolentCombatState()
+    private IEnumerator ResetViolentCombatState_Coroutine()
     {
-        yield return new WaitForSeconds(1f);
+        yield return new WaitForSeconds(30f);
 
         CombatState = PlayerCombatState.PACIFIST;
+        ResetRage();
+    }
+    
+    private IEnumerator ResetRageState_Coroutine(float duration)
+    {
+        yield return new WaitForSeconds(duration);
+
+        ResetRage();
+    }
+
+    private void ResetRage()
+    {
+        _rage = 0.5f;
+        RageState = PlayerRageState.NORMAL;
+        CurrentRageState = rageStates[0];
+        OnUpdateRage();
     }
 
     private void TickRage()
     {
-        float rageStateTick = CombatState == PlayerCombatState.PACIFIST ? -0.1f : 0f;
+        if (CombatState == PlayerCombatState.PACIFIST ) return;
         
-        _rage += Time.deltaTime * rageStateTick;
+        float rageStateTick = 0.2f;
+        
+        _rage -= Time.deltaTime * rageStateTick;
 
         _rage = Mathf.Clamp01(_rage);
 
-        OnTickRage.Invoke();
+        OnUpdateRage.Invoke();
     }
 
     private void GetRageState()
-    {
+    { 
+        if (RageState != PlayerRageState.NORMAL) return;
+        
         if (_rage >= 1 && RageState != PlayerRageState.ENRAGED)
         {
-            RageState = PlayerRageState.ENRAGED;
-            CurrentRageState = rageStates[1];
+            SetRageState(PlayerRageState.ENRAGED, 5f);
+            
             return;
         }
 
         if (_rage <= 0 && RageState != PlayerRageState.DEPRESSED)
         {
-            RageState = PlayerRageState.DEPRESSED;
-            CurrentRageState = rageStates[2];
-            return;
+            SetRageState(PlayerRageState.DEPRESSED, 10f);
         }
+    }
 
-        if (_rage > 0 && _rage < 1 && RageState != PlayerRageState.NORMAL)
-        {
-            RageState = PlayerRageState.NORMAL;
-            CurrentRageState = rageStates[0];
-        }
+    private void SetRageState(PlayerRageState state, float duration)
+    {
+        RageState = state;
+        CurrentRageState = rageStates[(int)state];
+            
+        if (ResetRageState != null)
+            StopCoroutine(ResetRageState);
 
-       
+        ResetRageState = StartCoroutine(ResetRageState_Coroutine(duration));
     }
 
     private void OnTriggerEnter(Collider other)

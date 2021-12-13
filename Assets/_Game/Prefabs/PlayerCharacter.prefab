@@ -1947,7 +1947,7 @@ MonoBehaviour:
   projectileSpawnTransform: {fileID: 3203537938647052668}
   layerMask:
     serializedVersion: 2
-    m_Bits: 2325
+    m_Bits: 6421
   weaponAnimator: {fileID: 6211253165621947700}
   leftFistAnimator: {fileID: 9041174837012582589}
   rightFistAnimator: {fileID: 674835655340324338}
@@ -1961,7 +1961,7 @@ MonoBehaviour:
     - {fileID: 2258740036607305254, guid: be7b4b6efa8404b4985ebe59c2357ad3, type: 3}
     availableWeapons: []
     equippedWeapon: {fileID: 0}
-    ammoLimits: 780000003c00000010000000640000000a000000
+    ammoLimits: 780000003c00000078000000640000000a000000
     ammo: 0000000000000000000000000000000000000000
     currentWeaponIndex: 0
 --- !u!1 &6211253164719722893
@@ -2489,7 +2489,7 @@ Camera:
     height: 1
   near clip plane: 0.01
   far clip plane: 1000
-  field of view: 105
+  field of view: 77
   orthographic: 0
   orthographic size: 5
   m_Depth: -1

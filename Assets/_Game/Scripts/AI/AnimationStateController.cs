@@ -31,6 +31,8 @@ public class AnimationStateController : MonoBehaviour
     {
         var sheet = new AnimationSheet();
         
+        ResetSheet();
+        
         switch (AnimationState)
         {
             case AnimationState.IDLE:

@@ -38,6 +38,8 @@ public abstract class ProjectileWeapon : Weapon
         GameObject projectile = Instantiate(projectilePrefab, projectileSpawn.position, Quaternion.LookRotation(projectileSpawn.forward));
         Projectile projectileClass = projectile.GetComponent<Projectile>();
         
-        projectileClass.SetupProjectile();
+        projectileClass.SetupProjectile(true);
+        
+        _combatController.inventory.UseAmmo(1);
     }
 }

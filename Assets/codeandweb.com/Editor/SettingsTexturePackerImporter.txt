@@ -10,6 +10,7 @@ tpsheetFileNames:
 - Assets/_Game/Sprites/HUD/HUD_0.tpsheet
 - Assets/_Game/Sprites/HUD/HUD_General.tpsheet
 - Assets/_Game/Sprites/HUD/HUD_Portrait.tpsheet
+- Assets/_Game/Sprites/Pickups/Pickups.tpsheet
 - Assets/_Game/Sprites/Weapons/Fist/Fist.tpsheet
 - Assets/_Game/Sprites/Weapons/Glock/Glock.tpsheet
 - Assets/_Game/Sprites/Weapons/Katana/Katana_01.tpsheet
@@ -30,6 +31,7 @@ textureFileNames:
 - Assets/_Game/Sprites/HUD/HUD_0.png
 - Assets/_Game/Sprites/HUD/HUD_General.png
 - Assets/_Game/Sprites/HUD/HUD_Portrait.png
+- Assets/_Game/Sprites/Pickups/Pickups.png
 - Assets/_Game/Sprites/Weapons/Fist/Fist.png
 - Assets/_Game/Sprites/Weapons/Glock/Glock.png
 - Assets/_Game/Sprites/Weapons/Katana/Katana_01.png
@@ -41,6 +43,7 @@ textureFileNames:
 - Assets/_Game/Sprites/Weapons/RocketLauncher/RocketLauncher_Explosion.png
 - Assets/codeandweb.com/Example/SpriteSheet/sprites.png
 normalmapFileNames:
+- 
 - 
 - 
 - 

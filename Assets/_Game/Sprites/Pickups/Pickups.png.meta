@@ -1,0 +1,288 @@
+fileFormatVersion: 2
+guid: 178931bb9d36c5041b5b765b9b29f940
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -5290004912639064386
+    second: pickup_energyammo
+  - first:
+      213: -83638595077005786
+    second: pickup_explosiveammo
+  - first:
+      213: 4578987784175205085
+    second: pickup_health
+  - first:
+      213: -1028242266014949843
+    second: pickup_heavyammo
+  - first:
+      213: -6743628120182144898
+    second: pickup_lightammo
+  - first:
+      213: -2584173853132371485
+    second: pickup_rocketammo
+  - first:
+      213: 4940281311445365500
+    second: pickup_shellammo
+  - first:
+      213: 1238207374201299267
+    second: pickup_shield
+  externalObjects: {}
+  serializedVersion: 11
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 1
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 0
+    wrapV: 0
+    wrapW: 0
+  nPOTScale: 1
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: pickup_energyammo
+      rect:
+        serializedVersion: 2
+        x: 357
+        y: 420
+        width: 149
+        height: 185
+      alignment: 9
+      pivot: {x: 0.5033557, y: 0.4918919}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: eb6c3124f802696b0800000000000000
+      internalID: -5290004912639064386
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: pickup_explosiveammo
+      rect:
+        serializedVersion: 2
+        x: 2
+        y: 443
+        width: 352
+        height: 162
+      alignment: 9
+      pivot: {x: 0.51420456, y: 0.47530866}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 62e1ce2142bd6def0800000000000000
+      internalID: -83638595077005786
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: pickup_health
+      rect:
+        serializedVersion: 2
+        x: 2
+        y: 250
+        width: 217
+        height: 190
+      alignment: 9
+      pivot: {x: 0.49769586, y: 0.47894737}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ddabd921125db8f30800000000000000
+      internalID: 4578987784175205085
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: pickup_heavyammo
+      rect:
+        serializedVersion: 2
+        x: 2
+        y: 608
+        width: 365
+        height: 211
+      alignment: 9
+      pivot: {x: 0.44657534, y: 0.48341233}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d2ed22f5b13fab1f0800000000000000
+      internalID: -1028242266014949843
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: pickup_lightammo
+      rect:
+        serializedVersion: 2
+        x: 2
+        y: 153
+        width: 190
+        height: 94
+      alignment: 9
+      pivot: {x: 0.5105263, y: 0.5319149}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e70453734f1d962a0800000000000000
+      internalID: -6743628120182144898
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: pickup_rocketammo
+      rect:
+        serializedVersion: 2
+        x: 2
+        y: 822
+        width: 440
+        height: 200
+      alignment: 9
+      pivot: {x: 0.47954544, y: 0.55}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3e94136729b232cd0800000000000000
+      internalID: -2584173853132371485
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: pickup_shellammo
+      rect:
+        serializedVersion: 2
+        x: 370
+        y: 662
+        width: 122
+        height: 157
+      alignment: 9
+      pivot: {x: 0.48360655, y: 0.477707}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: cf2b3339da76f8440800000000000000
+      internalID: 4940281311445365500
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: pickup_shield
+      rect:
+        serializedVersion: 2
+        x: 222
+        y: 161
+        width: 206
+        height: 256
+      alignment: 9
+      pivot: {x: 0.48058254, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 341a989eb0ffe2110800000000000000
+      internalID: 1238207374201299267
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+  spritePackingTag: 
+  pSDRemoveMatte: 0
+  pSDShowRemoveMatteOption: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

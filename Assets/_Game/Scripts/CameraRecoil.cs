@@ -36,12 +36,12 @@ public class CameraRecoil : MonoBehaviour
 
     public void ApplyRecoil(WeaponRecoil currentWeapon)
     {
-        var recoil = currentWeapon.recoil;
-        rotationSpeed = currentWeapon.recoilSpeed;
-        returnSpeed = currentWeapon.recoilRecoverySpeed;
-        
-        float yRotation = Random.Range(-recoil.y, recoil.y);
-        float zRotation = Random.Range(-recoil.z, recoil.z);
-        currentRotation += new Vector3(-recoil.x, yRotation, zRotation);
+        // var recoil = currentWeapon.recoil;
+        // rotationSpeed = currentWeapon.recoilSpeed;
+        // returnSpeed = currentWeapon.recoilRecoverySpeed;
+        //
+        // float yRotation = Random.Range(-recoil.y, recoil.y);
+        // float zRotation = Random.Range(-recoil.z, recoil.z);
+        // currentRotation += new Vector3(-recoil.x, yRotation, zRotation);
     }
 }

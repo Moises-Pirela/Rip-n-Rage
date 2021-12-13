@@ -12,7 +12,6 @@ namespace AI.BehaviorTree
             if (blackboard.playerObject == null)
                 return false;
             
-            agent.navMeshAgent.speed = 5;
             blackboard.MoveToTarget = blackboard.playerObject.transform.position;
             return true;
 

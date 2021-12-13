@@ -33,13 +33,12 @@ public class HudController : MonoBehaviour
         CurrentCrosshair = crossHairObject.GetComponent<ICrosshair>();
         _combatController = EnragedInjector<CombatController>.GetInstance();
 
-        _combatController.OnEquipWeapon += UpdateAmmo;
-        _combatController.OnFireWeapon += UpdateAmmo;
+        _combatController.OnAmmoChanged += UpdateAmmo;
         
         playerState.OnHealthChanged += UpdateHealth;
         playerState.OnArmorChanged += UpdateArmor;
         playerState.OnHealthChanged += UpdatePortrait;
-        playerState.OnTickRage += UpdatePortrait;
+        playerState.OnUpdateRage += UpdatePortrait;
         
         UpdateAmmo();
         UpdateArmor();
@@ -111,7 +110,6 @@ public class HudController : MonoBehaviour
                 newPortrait = _portraitData.depressedPortrait[playerDamageIndex];
                 break;
             case PlayerRageState.NORMAL:
-            case PlayerRageState.NONE:
                 newPortrait = playerState.CombatState == PlayerCombatState.VIOLENT
                     ? _portraitData.inCombatPortrait[playerDamageIndex]
                     : _portraitData.defaultPortrait[playerDamageIndex];

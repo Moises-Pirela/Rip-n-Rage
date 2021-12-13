@@ -8,6 +8,7 @@ public class CombatController : MonoBehaviour
 {
     public Action OnEquipWeapon;
     public Action OnFireWeapon;
+    public Action OnAmmoChanged;
 
     [Header("Weapon setup")] 
     [SerializeField] private Transform cameraTransform;
@@ -84,7 +85,8 @@ public class CombatController : MonoBehaviour
         if (_canFire)
         {
             inventory.equippedWeapon.Fire();
-            OnFireWeapon();
+            OnFireWeapon?.Invoke();
+            OnAmmoChanged?.Invoke();
         }
     }
 
@@ -211,9 +213,9 @@ public class CombatController : MonoBehaviour
         inventory.equippedWeapon.Equip(weaponAnimator,neededTransform, layerMask, leftFistAnimator);
         
         weaponAnimator.runtimeAnimatorController = inventory.equippedWeapon.weaponData.animatorOverrideController;
-        
-        if (OnEquipWeapon != null)
-            OnEquipWeapon();
+
+        OnEquipWeapon?.Invoke();
+        OnAmmoChanged?.Invoke();
     }
 
     #region Coroutines

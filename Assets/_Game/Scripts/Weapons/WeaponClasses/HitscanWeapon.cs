@@ -57,7 +57,7 @@ public abstract class HitscanWeapon : Weapon
             if (entityState)
             {
                 entityState.TakeDamage(weaponData.weaponStats.damagePerShot);
-                PlayerState.Current.AddToRage(0.05f);
+                PlayerState.Current.AddToRage(0.1f);
                 //TODO: Apply blood hit effects
                 hitVFX = Instantiate(weaponData.spawnableVFX, hit.point, Quaternion.LookRotation(hit.normal));
                 _hudController.CurrentCrosshair.OnHit();
@@ -65,6 +65,7 @@ public abstract class HitscanWeapon : Weapon
             else
             {
                 hitVFX = Instantiate(weaponData.spawnableVFX, hit.point, Quaternion.LookRotation(hit.normal));
+                hitVFX.transform.parent = hit.collider.transform;
             }
 
             Destroy(hitVFX, 0.5f);

@@ -38,10 +38,9 @@ public enum AnimationState
 
 public enum PlayerRageState
 {
-    NONE,
-    NORMAL,
-    ENRAGED,
-    DEPRESSED
+    NORMAL = 0,
+    ENRAGED = 1,
+    DEPRESSED = 2
 }
 
 public enum PlayerCombatState
