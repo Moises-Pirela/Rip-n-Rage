@@ -1,8 +1,5 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
+
 using DG.Tweening;
-using UnityEditor.Recorder;
 using UnityEngine;
 using UnityEngine.UI;
 

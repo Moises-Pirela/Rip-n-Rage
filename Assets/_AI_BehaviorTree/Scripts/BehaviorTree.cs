@@ -129,6 +129,7 @@ namespace AI.BehaviorTree
                 EditorUtility.SetDirty(compositeNode);
             }
         }
+#endif
         
         public List<BaseNode> GetChildren(BaseNode parentNode)
         {
@@ -141,7 +142,7 @@ namespace AI.BehaviorTree
 
             if (rootNode && rootNode.child != null)
             {
-               children.Add(rootNode.child);
+                children.Add(rootNode.child);
             }
             if (decoratorNode && decoratorNode.child != null)
             {
@@ -158,7 +159,26 @@ namespace AI.BehaviorTree
 
             return children;
         }
-
+        
+        public void Traverse(BaseNode node, Action<BaseNode> visitor)
+        {
+            if (node)
+            {
+                visitor.Invoke(node);
+                var children = GetChildren(node);
+                children.ForEach((n) => Traverse(n,visitor));
+            }
+        }
+        
+        public void Bind(AIAgent agent)
+        {
+            Traverse(rootNode, node =>
+            {
+                node.blackboard = blackboard;
+                node.agent = agent;
+            });
+        }
+        
         public BehaviorTree Clone()
         {
             BehaviorTree tree = Instantiate(this);
@@ -173,28 +193,6 @@ namespace AI.BehaviorTree
             });
             return tree;
         }
-
-        public void Traverse(BaseNode node, Action<BaseNode> visitor)
-        {
-            if (node)
-            {
-                visitor.Invoke(node);
-                var children = GetChildren(node);
-                children.ForEach((n) => Traverse(n,visitor));
-            }
-        }
-
-        public void Bind(AIAgent agent)
-        {
-            Traverse(rootNode, node =>
-            {
-                node.blackboard = blackboard;
-                node.agent = agent;
-            });
-        }
-        
-
-#endif
     }
 }
 
