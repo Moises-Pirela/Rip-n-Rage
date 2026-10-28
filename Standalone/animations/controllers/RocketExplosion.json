@@ -1,0 +1,31 @@
+{
+  "name": "RocketExplosion",
+  "parameters": {},
+  "states": [
+    {
+      "name": "Explosion",
+      "clip": "Explosion",
+      "speed": 1,
+      "transitions": []
+    }
+  ],
+  "anyState": [],
+  "defaultState": "Explosion",
+  "clips": {
+    "Explosion": "Explosion"
+  },
+  "preview": {
+    "layer": "World",
+    "position": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      3,
+      3,
+      3
+    ],
+    "billboard": true
+  }
+}

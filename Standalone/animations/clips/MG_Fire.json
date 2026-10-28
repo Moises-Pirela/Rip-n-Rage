@@ -1,0 +1,26 @@
+{
+  "name": "MG_Fire",
+  "frameRate": 60,
+  "length": 0.18333334,
+  "loop": false,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "MG338/machinegun_01"
+    },
+    {
+      "time": 0.033333,
+      "sprite": "MG338/machinegun_02"
+    },
+    {
+      "time": 0.1,
+      "sprite": "MG338/machinegun_03"
+    },
+    {
+      "time": 0.166667,
+      "sprite": "MG338/machinegun_04"
+    }
+  ],
+  "enabled": [],
+  "events": []
+}

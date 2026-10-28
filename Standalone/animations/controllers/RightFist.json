@@ -1,0 +1,60 @@
+{
+  "name": "RightFist",
+  "parameters": {
+    "Jab": "Trigger"
+  },
+  "states": [
+    {
+      "name": "RightFistIdle",
+      "clip": "RightFistIdle",
+      "speed": 1,
+      "transitions": [
+        {
+          "to": "Jab",
+          "hasExitTime": false,
+          "exitTime": 1,
+          "conditions": [
+            {
+              "parameter": "Jab",
+              "mode": "If",
+              "threshold": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jab",
+      "clip": "RightJab",
+      "speed": 0.5,
+      "transitions": [
+        {
+          "to": "RightFistIdle",
+          "hasExitTime": true,
+          "exitTime": 1,
+          "conditions": []
+        }
+      ]
+    }
+  ],
+  "anyState": [],
+  "defaultState": "RightFistIdle",
+  "clips": {
+    "RightFistIdle": "RightFistIdle",
+    "RightJab": "RightJab"
+  },
+  "preview": {
+    "layer": "FirstPerson",
+    "position": [
+      0.35,
+      0.6,
+      -0.8
+    ],
+    "scale": [
+      0.1,
+      0.1,
+      0.075
+    ],
+    "billboard": false
+  }
+}

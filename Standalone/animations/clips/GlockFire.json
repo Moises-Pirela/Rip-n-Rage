@@ -1,0 +1,31 @@
+{
+  "name": "GlockFire",
+  "frameRate": 60,
+  "length": 0.083333336,
+  "loop": false,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "Glock/Glock01"
+    },
+    {
+      "time": 0.033333,
+      "sprite": "Glock/Glock02"
+    },
+    {
+      "time": 0.066667,
+      "sprite": "Glock/Glock01"
+    }
+  ],
+  "enabled": [],
+  "events": [
+    {
+      "time": 0,
+      "function": "OnFire"
+    },
+    {
+      "time": 0.066667,
+      "function": "OnEndFire"
+    }
+  ]
+}

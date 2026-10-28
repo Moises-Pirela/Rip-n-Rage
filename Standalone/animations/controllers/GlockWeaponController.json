@@ -1,0 +1,23 @@
+{
+  "name": "GlockWeaponController",
+  "base": "BaseWeaponController",
+  "overrides": {
+    "BaseIdle": "GlockIdle",
+    "BaseFire": "GlockFire",
+    "BaseWeaponMelee": "GlockAltFire"
+  },
+  "preview": {
+    "layer": "FirstPerson",
+    "position": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      0.1,
+      0.1,
+      0.1
+    ],
+    "billboard": false
+  }
+}

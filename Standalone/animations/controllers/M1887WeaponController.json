@@ -1,0 +1,23 @@
+{
+  "name": "M1887WeaponController",
+  "base": "BaseWeaponController",
+  "overrides": {
+    "BaseIdle": "M1887_Idle",
+    "BaseFire": "M1887_Fire",
+    "BaseWeaponMelee": "M1887_Melee"
+  },
+  "preview": {
+    "layer": "FirstPerson",
+    "position": [
+      -0.12,
+      0.25,
+      0
+    ],
+    "scale": [
+      0.1,
+      0.1,
+      0.1
+    ],
+    "billboard": false
+  }
+}

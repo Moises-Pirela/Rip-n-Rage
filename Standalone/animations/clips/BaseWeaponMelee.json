@@ -1,0 +1,9 @@
+{
+  "name": "BaseWeaponMelee",
+  "frameRate": 60,
+  "length": 1,
+  "loop": false,
+  "sprites": [],
+  "enabled": [],
+  "events": []
+}

@@ -1,0 +1,54 @@
+{
+  "name": "M1887_Melee",
+  "frameRate": 60,
+  "length": 0.5666667,
+  "loop": false,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "M1887/shotgun_01"
+    },
+    {
+      "time": 0.033333,
+      "sprite": "M1887/shotgun_02"
+    },
+    {
+      "time": 0.083333,
+      "sprite": "M1887/shotgun_03"
+    },
+    {
+      "time": 0.15,
+      "sprite": "M1887/shotgun_04"
+    },
+    {
+      "time": 0.2,
+      "sprite": "M1887_Special/shotgun_second_01"
+    },
+    {
+      "time": 0.266667,
+      "sprite": "M1887_Special/shotgun_second_02"
+    },
+    {
+      "time": 0.316667,
+      "sprite": "M1887_Special/shotgun_second_03"
+    },
+    {
+      "time": 0.383333,
+      "sprite": "M1887_Special/shotgun_second_04"
+    },
+    {
+      "time": 0.433333,
+      "sprite": "M1887_Special/shotgun_second_05"
+    },
+    {
+      "time": 0.5,
+      "sprite": "M1887_Special/shotgun_second_06"
+    },
+    {
+      "time": 0.55,
+      "sprite": "M1887/shotgun_01"
+    }
+  ],
+  "enabled": [],
+  "events": []
+}

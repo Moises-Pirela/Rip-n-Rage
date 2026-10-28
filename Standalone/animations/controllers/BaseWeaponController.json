@@ -1,0 +1,106 @@
+{
+  "name": "BaseWeaponController",
+  "parameters": {
+    "IsFiring": "Bool",
+    "WeaponMelee": "Bool"
+  },
+  "states": [
+    {
+      "name": "Idle",
+      "clip": "BaseIdle",
+      "speed": 1,
+      "transitions": [
+        {
+          "to": "Fire",
+          "hasExitTime": false,
+          "exitTime": 1,
+          "conditions": [
+            {
+              "parameter": "IsFiring",
+              "mode": "If",
+              "threshold": 0
+            }
+          ]
+        },
+        {
+          "to": "WeaponMelee",
+          "hasExitTime": false,
+          "exitTime": 1,
+          "conditions": [
+            {
+              "parameter": "WeaponMelee",
+              "mode": "If",
+              "threshold": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Fire",
+      "clip": "BaseFire",
+      "speed": 1,
+      "transitions": [
+        {
+          "to": "Idle",
+          "hasExitTime": false,
+          "exitTime": 1,
+          "conditions": [
+            {
+              "parameter": "IsFiring",
+              "mode": "IfNot",
+              "threshold": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "WeaponMelee",
+      "clip": "BaseWeaponMelee",
+      "speed": 1,
+      "transitions": [
+        {
+          "to": "Idle",
+          "hasExitTime": false,
+          "exitTime": 1,
+          "conditions": [
+            {
+              "parameter": "WeaponMelee",
+              "mode": "IfNot",
+              "threshold": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "RocketLauncherFire",
+      "clip": "RocketLauncherFire",
+      "speed": 1,
+      "transitions": []
+    }
+  ],
+  "anyState": [],
+  "defaultState": "Idle",
+  "clips": {
+    "BaseIdle": "BaseIdle",
+    "BaseFire": "BaseFire",
+    "BaseWeaponMelee": "BaseWeaponMelee",
+    "RocketLauncherFire": "RocketLauncherFire"
+  },
+  "preview": {
+    "layer": "FirstPerson",
+    "position": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      0.1,
+      0.1,
+      0.1
+    ],
+    "billboard": false
+  }
+}

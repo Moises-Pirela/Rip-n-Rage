@@ -1,0 +1,30 @@
+{
+  "name": "MG_Melee",
+  "frameRate": 60,
+  "length": 0.18333334,
+  "loop": false,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "MG338/machinegun_secondary_01"
+    },
+    {
+      "time": 0.033333,
+      "sprite": "MG338/machinegun_secondary_02"
+    },
+    {
+      "time": 0.083333,
+      "sprite": "MG338/machinegun_secondary_03"
+    },
+    {
+      "time": 0.133333,
+      "sprite": "MG338/machinegun_secondary_04"
+    },
+    {
+      "time": 0.166667,
+      "sprite": "MG338/machinegun_secondary_05"
+    }
+  ],
+  "enabled": [],
+  "events": []
+}

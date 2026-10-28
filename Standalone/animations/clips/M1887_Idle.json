@@ -1,0 +1,14 @@
+{
+  "name": "M1887_Idle",
+  "frameRate": 60,
+  "length": 0.016666668,
+  "loop": true,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "M1887/shotgun_01"
+    }
+  ],
+  "enabled": [],
+  "events": []
+}

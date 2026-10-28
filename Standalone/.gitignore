@@ -1,0 +1,8 @@
+bin/
+obj/
+*.user
+screenshot_*.png
+.vs/
+.idea/
+.dotnet/
+dist/

@@ -1,0 +1,30 @@
+{
+  "name": "RocketLauncherFire",
+  "frameRate": 60,
+  "length": 0.15,
+  "loop": false,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "RocketLauncher/rocketlauncher _01"
+    },
+    {
+      "time": 0.033333,
+      "sprite": "RocketLauncher/rocketlauncher _02"
+    },
+    {
+      "time": 0.066667,
+      "sprite": "RocketLauncher/rocketlauncher _03"
+    },
+    {
+      "time": 0.1,
+      "sprite": "RocketLauncher/rocketlauncher _04"
+    },
+    {
+      "time": 0.133333,
+      "sprite": "RocketLauncher/rocketlauncher _05"
+    }
+  ],
+  "enabled": [],
+  "events": []
+}

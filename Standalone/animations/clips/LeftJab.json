@@ -1,0 +1,31 @@
+{
+  "name": "LeftJab",
+  "frameRate": 60,
+  "length": 0.050000004,
+  "loop": false,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "Fist/fist_l_01"
+    },
+    {
+      "time": 0.016667,
+      "sprite": "Fist/fist_l_02"
+    },
+    {
+      "time": 0.033333,
+      "sprite": "Fist/fist_l_03"
+    }
+  ],
+  "enabled": [
+    {
+      "time": 0,
+      "enabled": true
+    },
+    {
+      "time": 0.05,
+      "enabled": false
+    }
+  ],
+  "events": []
+}

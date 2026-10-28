@@ -1,0 +1,14 @@
+{
+  "name": "BaseIdle",
+  "frameRate": 60,
+  "length": 1.0166668,
+  "loop": false,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "Glock/Glock01"
+    }
+  ],
+  "enabled": [],
+  "events": []
+}

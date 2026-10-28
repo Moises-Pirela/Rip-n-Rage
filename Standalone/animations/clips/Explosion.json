@@ -1,0 +1,22 @@
+{
+  "name": "Explosion",
+  "frameRate": 60,
+  "length": 0.33333334,
+  "loop": false,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "RocketLauncher/explosion_01"
+    },
+    {
+      "time": 0.083333,
+      "sprite": "RocketLauncher/explosion_02"
+    },
+    {
+      "time": 0.25,
+      "sprite": "RocketLauncher/explosion_03"
+    }
+  ],
+  "enabled": [],
+  "events": []
+}

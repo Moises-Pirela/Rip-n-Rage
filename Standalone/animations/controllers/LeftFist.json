@@ -1,0 +1,94 @@
+{
+  "name": "LeftFist",
+  "parameters": {
+    "Jab": "Trigger",
+    "Grapple": "Bool"
+  },
+  "states": [
+    {
+      "name": "LeftFistIdle",
+      "clip": "LeftFistIdle",
+      "speed": 1,
+      "transitions": [
+        {
+          "to": "Jab",
+          "hasExitTime": false,
+          "exitTime": 1,
+          "conditions": [
+            {
+              "parameter": "Jab",
+              "mode": "If",
+              "threshold": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jab",
+      "clip": "LeftJab",
+      "speed": 0.5,
+      "transitions": [
+        {
+          "to": "LeftFistIdle",
+          "hasExitTime": true,
+          "exitTime": 1,
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "name": "Grab",
+      "clip": "Grab",
+      "speed": 1,
+      "transitions": [
+        {
+          "to": "LeftFistIdle",
+          "hasExitTime": false,
+          "exitTime": 1,
+          "conditions": [
+            {
+              "parameter": "Grapple",
+              "mode": "IfNot",
+              "threshold": 0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "anyState": [
+    {
+      "to": "Grab",
+      "hasExitTime": false,
+      "exitTime": 1,
+      "conditions": [
+        {
+          "parameter": "Grapple",
+          "mode": "If",
+          "threshold": 0
+        }
+      ]
+    }
+  ],
+  "defaultState": "LeftFistIdle",
+  "clips": {
+    "LeftFistIdle": "LeftFistIdle",
+    "LeftJab": "LeftJab",
+    "Grab": "Grab"
+  },
+  "preview": {
+    "layer": "FirstPerson",
+    "position": [
+      -0.35,
+      0.6,
+      -0.8
+    ],
+    "scale": [
+      0.1,
+      0.1,
+      0.075
+    ],
+    "billboard": false
+  }
+}

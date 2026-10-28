@@ -1,0 +1,50 @@
+{
+  "name": "M1887_Fire",
+  "frameRate": 60,
+  "length": 0.5166667,
+  "loop": true,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "M1887/shotgun_01"
+    },
+    {
+      "time": 0.016667,
+      "sprite": "M1887/shotgun_02"
+    },
+    {
+      "time": 0.033333,
+      "sprite": "M1887/shotgun_03"
+    },
+    {
+      "time": 0.05,
+      "sprite": "M1887/shotgun_04"
+    },
+    {
+      "time": 0.083333,
+      "sprite": "M1887_Reload/shotgun_reload_01"
+    },
+    {
+      "time": 0.166667,
+      "sprite": "M1887_Reload/shotgun_reload_02"
+    },
+    {
+      "time": 0.266667,
+      "sprite": "M1887_Reload/shotgun_reload_03"
+    },
+    {
+      "time": 0.316667,
+      "sprite": "M1887_Reload/shotgun_reload_04"
+    },
+    {
+      "time": 0.416667,
+      "sprite": "M1887_Reload/shotgun_reload_05"
+    },
+    {
+      "time": 0.5,
+      "sprite": "M1887_Reload/shotgun_reload_06"
+    }
+  ],
+  "enabled": [],
+  "events": []
+}

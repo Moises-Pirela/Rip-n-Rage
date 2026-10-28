@@ -1,0 +1,23 @@
+{
+  "name": "MGAnimatorController",
+  "base": "BaseWeaponController",
+  "overrides": {
+    "BaseIdle": "MG_Idle",
+    "BaseFire": "MG_Fire",
+    "BaseWeaponMelee": "MG_Melee"
+  },
+  "preview": {
+    "layer": "FirstPerson",
+    "position": [
+      0.0132,
+      0.54,
+      0
+    ],
+    "scale": [
+      0.15,
+      0.15,
+      0.15
+    ],
+    "billboard": false
+  }
+}

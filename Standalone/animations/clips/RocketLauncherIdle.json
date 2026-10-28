@@ -1,0 +1,14 @@
+{
+  "name": "RocketLauncherIdle",
+  "frameRate": 60,
+  "length": 0.016666668,
+  "loop": true,
+  "sprites": [
+    {
+      "time": 0,
+      "sprite": "RocketLauncher/rocketlauncher _01"
+    }
+  ],
+  "enabled": [],
+  "events": []
+}
