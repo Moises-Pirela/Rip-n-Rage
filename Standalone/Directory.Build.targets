@@ -4,10 +4,17 @@
     <StandaloneDir>$(MSBuildThisFileDirectory)</StandaloneDir>
   </PropertyGroup>
 
-  <!-- GLFW / OpenAL shared libraries: copied beside the exe as native/<rid>/, where NativeLoader looks first. -->
+  <!--
+    GLFW / OpenAL shared libraries: copied beside the exe as native/<rid>/, where NativeLoader looks first, plus their
+    notice and licence files. A RID-specific build or publish (-r linux-x64) only takes that platform's folder.
+  -->
+  <PropertyGroup>
+    <NativeLibPattern Condition="'$(RuntimeIdentifier)' == ''">native\*-*\**\*</NativeLibPattern>
+    <NativeLibPattern Condition="'$(RuntimeIdentifier)' != ''">native\$(RuntimeIdentifier)\**\*</NativeLibPattern>
+  </PropertyGroup>
   <ItemGroup Condition="'$(OutputType)' == 'Exe'">
-    <None Include="$(StandaloneDir)native\**\*" Exclude="$(StandaloneDir)native\*.md"
-          Link="native\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(StandaloneDir)$(NativeLibPattern);$(StandaloneDir)native\NOTICE.md;$(StandaloneDir)native\licenses\**\*"
+          Link="$([MSBuild]::MakeRelative('$(StandaloneDir)', '%(FullPath)'))" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
   <!--

@@ -19,8 +19,9 @@ known gap in the code; the rest are proposals based on art and data that already
 
 ## Now: repo and build health
 
-- [ ] Commit GLFW/OpenAL binaries for Windows (`Standalone/native/win-x64/`), or a script that downloads them
-- [ ] Launch-test the game and both editors on Windows, Linux and macOS
+- [x] Bundle GLFW/OpenAL for Windows, Linux and macOS (`Standalone/native/`)
+- [x] Launch-test the game on Windows
+- [ ] Launch-test the game on Linux and macOS, and both editors everywhere
 - [ ] Restore or remove the missing README images (`Standalone/docs/*.png`)
 - [ ] Untrack the committed `.DS_Store` files (`git rm --cached`)
 - [ ] Point the TexturePacker projects in `Files/` at `Standalone/assets/Sprites/` so re-exported sheets land where the game loads them

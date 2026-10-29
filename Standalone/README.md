@@ -49,12 +49,13 @@ Project references: `Engine` ← `Level` ← `Game` ← `Editor`, and `Engine` +
   No NuGet packages are used. A plain build works offline. `nuget.config` limits package sources to
   nuget.org, which is only contacted for the runtime packs a self-contained publish (`build.sh`) needs.
 * An OpenGL 3.3 capable driver.
-* GLFW 3 and (optionally) OpenAL Soft shared libraries. They are **not** in the repo:
-  * **Windows**: put `glfw3.dll` (and `OpenAL32.dll` or `soft_oal.dll`) in `native/win-x64/`.
-    They are copied next to the executable on build.
-  * **Linux**: `sudo apt install libglfw3 libopenal1` (or your distro's equivalent), or copy
-    `libglfw.so.3` / `libopenal.so.1` into `native/linux-x64/`.
-  * **macOS**: `brew install glfw openal-soft` (Homebrew paths are probed automatically).
+* GLFW 3 and (optionally) OpenAL Soft shared libraries. These are **bundled** in `native/<rid>/` and
+  copied next to the executable on build (see `native/NOTICE.md` for versions, sources and licences):
+  * **Windows x64**: GLFW 3.4 + OpenAL Soft 1.24.3.
+  * **Linux x64**: GLFW 3.4 (glibc 2.34+) + OpenAL Soft 1.24.2 (glibc 2.38+, e.g. Ubuntu 24.04 / Debian 13).
+    On older distros install `libopenal1` from your package manager, or the game runs silently.
+  * **macOS** (arm64 and x64): GLFW 3.4. Sound uses Homebrew's `openal-soft` if installed, otherwise the
+    system OpenAL framework.
 
   The loader searches `$RIPNRAGE_NATIVE_DIR`, `<exe>/native/<rid>`, `<exe>/runtimes/<rid>/native`,
   `<exe>` and finally the system library paths. If OpenAL is missing the game runs silently.

@@ -39,10 +39,9 @@ Requirements:
 
 - .NET 10 SDK
 - A GPU and driver with OpenGL 3.3
-- GLFW 3, and optionally OpenAL Soft for sound (without OpenAL the game runs silently). These aren't in the repo:
-  - **Windows**: put `glfw3.dll` (and `OpenAL32.dll`) in `Standalone/native/win-x64/`.
-  - **Linux**: `sudo apt install libglfw3 libopenal1`.
-  - **macOS**: `brew install glfw openal-soft`.
+
+GLFW and OpenAL Soft are bundled for Windows x64, Linux x64 and macOS in `Standalone/native/`; see its
+[NOTICE.md](Standalone/native/NOTICE.md) for versions and licences.
 
 Build and run:
 
