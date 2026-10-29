@@ -181,10 +181,10 @@
         </struct>
         <key>individualSpriteSettings</key>
         <map type="IndividualSpriteSettingsMap">
-            <key type="filename">C:/Users/Moimis/Downloads/rifleman/rifleman_idle_01.png</key>
-            <key type="filename">C:/Users/Moimis/Downloads/rifleman/rifleman_idle_02.png</key>
-            <key type="filename">C:/Users/Moimis/Downloads/rifleman/rifleman_idle_03.png</key>
-            <key type="filename">C:/Users/Moimis/Downloads/rifleman/rifleman_idle_04.png</key>
+            <key type="filename">Idle/rifleman_idle_01.png</key>
+            <key type="filename">Idle/rifleman_idle_02.png</key>
+            <key type="filename">Idle/rifleman_idle_03.png</key>
+            <key type="filename">Idle/rifleman_idle_04.png</key>
             <struct type="IndividualSpriteSettings">
                 <key>pivotPoint</key>
                 <point_f>0.5,0.5</point_f>
@@ -200,10 +200,10 @@
         </map>
         <key>fileList</key>
         <array>
-            <filename>C:/Users/Moimis/Downloads/rifleman/rifleman_idle_04.png</filename>
-            <filename>C:/Users/Moimis/Downloads/rifleman/rifleman_idle_01.png</filename>
-            <filename>C:/Users/Moimis/Downloads/rifleman/rifleman_idle_02.png</filename>
-            <filename>C:/Users/Moimis/Downloads/rifleman/rifleman_idle_03.png</filename>
+            <filename>Idle/rifleman_idle_04.png</filename>
+            <filename>Idle/rifleman_idle_01.png</filename>
+            <filename>Idle/rifleman_idle_02.png</filename>
+            <filename>Idle/rifleman_idle_03.png</filename>
         </array>
         <key>ignoreFileList</key>
         <array/>
