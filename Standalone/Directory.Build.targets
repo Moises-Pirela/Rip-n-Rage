@@ -1,0 +1,25 @@
+<Project>
+  <!-- Runtime files for the executables (game and both editors), shared so every exe gets the same layout. -->
+  <PropertyGroup>
+    <StandaloneDir>$(MSBuildThisFileDirectory)</StandaloneDir>
+  </PropertyGroup>
+
+  <!-- GLFW / OpenAL shared libraries: copied beside the exe as native/<rid>/, where NativeLoader looks first. -->
+  <ItemGroup Condition="'$(OutputType)' == 'Exe'">
+    <None Include="$(StandaloneDir)native\**\*" Exclude="$(StandaloneDir)native\*.md"
+          Link="native\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+  <!--
+    Game data: only copied on publish. Development builds find these folders by walking up from the cwd / exe
+    directory, so editors save straight into the source tree instead of into a copy under bin/.
+  -->
+  <ItemGroup Condition="'$(OutputType)' == 'Exe'">
+    <None Include="$(StandaloneDir)assets\**\*;$(StandaloneDir)shaders\**\*;$(StandaloneDir)animations\**\*;$(StandaloneDir)levels\**\*"
+          Exclude="$(StandaloneDir)**\.DS_Store"
+          Link="$([MSBuild]::MakeRelative('$(StandaloneDir)', '%(FullPath)'))"
+          CopyToOutputDirectory="Never" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(StandaloneDir)tunables.cfg" Link="tunables.cfg"
+          CopyToOutputDirectory="Never" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

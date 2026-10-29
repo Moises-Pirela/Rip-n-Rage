@@ -102,31 +102,42 @@ namespace RipNRage.Engine
             if (options.DisablePostFx) Renderer.PostFx.Enabled = false;
         }
 
-        /// <summary>Finds the folder containing the Unity project's <c>Assets</c> (walks up from the executable / cwd).</summary>
+        /// <summary>
+        /// Finds the game's <c>assets</c> folder (sprites, textures, audio): <c>--assets</c>, then <c>RIPNRAGE_ASSETS</c>,
+        /// then an <c>assets</c> folder in the executable / cwd directory or any of their parents.
+        /// Either the assets folder itself or the folder containing it may be passed explicitly.
+        /// </summary>
         public static string ResolveAssetRoot(string explicitRoot)
         {
             if (!string.IsNullOrEmpty(explicitRoot))
-            {
-                if (Directory.Exists(Path.Combine(explicitRoot, "Assets"))) return explicitRoot;
-                if (Directory.Exists(Path.Combine(explicitRoot, "_Game"))) return Path.GetDirectoryName(Path.GetFullPath(explicitRoot));
-                throw new DirectoryNotFoundException("Asset root does not contain an Assets folder: " + explicitRoot);
-            }
+                return FindAssetsIn(explicitRoot) ?? throw new DirectoryNotFoundException("Not an assets folder (no Sprites inside): " + explicitRoot);
             string env = Environment.GetEnvironmentVariable("RIPNRAGE_ASSETS");
-            if (!string.IsNullOrEmpty(env) && Directory.Exists(Path.Combine(env, "Assets"))) return env;
+            if (!string.IsNullOrEmpty(env) && FindAssetsIn(env) is string fromEnv) return fromEnv;
             foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
             {
                 var dir = new DirectoryInfo(start);
                 while (dir != null)
                 {
-                    if (Directory.Exists(Path.Combine(dir.FullName, "Assets", "_Game"))) return dir.FullName;
+                    string candidate = Path.Combine(dir.FullName, "assets");
+                    if (IsAssetsFolder(candidate)) return candidate;
                     dir = dir.Parent;
                 }
             }
-            throw new DirectoryNotFoundException("Could not locate the game's Assets folder. Pass --assets <path-to-repo-root>.");
+            throw new DirectoryNotFoundException("Could not locate the game's assets folder. Pass --assets <path-to-Standalone/assets>.");
         }
 
-        /// <summary>Absolute path of a file under the Unity <c>Assets</c> folder.</summary>
-        public static string AssetPath(string relative) => Path.Combine(dataPath, "Assets", relative.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar));
+        private static bool IsAssetsFolder(string dir) => Directory.Exists(Path.Combine(dir, "Sprites"));
+
+        private static string FindAssetsIn(string dir)
+        {
+            dir = Path.GetFullPath(dir);
+            if (IsAssetsFolder(dir)) return dir;
+            string nested = Path.Combine(dir, "assets");
+            return IsAssetsFolder(nested) ? nested : null;
+        }
+
+        /// <summary>Absolute path of a file under the game's <c>assets</c> folder.</summary>
+        public static string AssetPath(string relative) => Path.Combine(dataPath, relative.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar));
 
         public static void Quit() { if (Current != null) Current._quit = true; }
 

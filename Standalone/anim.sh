@@ -5,4 +5,4 @@ cd "$(dirname "$0")"
 [ -x .dotnet/dotnet ] || command -v dotnet >/dev/null || tools/setup-dotnet.sh
 source tools/env.sh
 dotnet build -c Release --nologo -v q src/RipNRage.AnimEditor/RipNRage.AnimEditor.csproj
-exec dotnet src/RipNRage.AnimEditor/bin/Release/net8.0/RipNRageAnimEditor.dll "$@"
+exec dotnet src/RipNRage.AnimEditor/bin/Release/net10.0/RipNRageAnimEditor.dll "$@"

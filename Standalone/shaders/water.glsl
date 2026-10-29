@@ -1,4 +1,4 @@
-// Animated water: vertex waves + two scrolling normal maps (Assets/_Game/Textures/Normals) + fresnel tint + sun specular.
+// Animated water: vertex waves + two scrolling normal maps (assets/Textures/Normals) + fresnel tint + sun specular.
 // Material properties (see [material.water] in tunables.cfg): _WaveAmplitude, _WaveLength, _WaveSpeed, _Tiling, _ScrollSpeed,
 // _NormalStrength, _ShallowColor, _DeepColor, _Fresnel, _Opacity, _Specular; textures _NormalA, _NormalB.
 

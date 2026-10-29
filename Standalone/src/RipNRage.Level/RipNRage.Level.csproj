@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>RipNRage.Level</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RipNRage.Engine\RipNRage.Engine.csproj" />
+  </ItemGroup>
+
+</Project>

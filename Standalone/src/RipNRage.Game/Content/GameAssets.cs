@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace RipNRage.Game.Content
 {
     /// <summary>
-    /// Loads the art/audio from the original Unity <c>Assets/</c> folder and rebuilds, in code, the
+    /// Loads the art/audio from the <c>assets/</c> folder (restored from the original Unity project) and rebuilds, in code, the
     /// data that lived in Unity-only assets: animation clips (.anim), animator controllers
     /// (.controller / .overrideController) and ScriptableObjects (WeaponData, RageStateData, EnemyData).
     /// Every value below was read from the corresponding asset file.
@@ -99,7 +99,7 @@ namespace RipNRage.Game.Content
             Debug.LogWarning($"Exported {AnimationLibrary.Clips.Count} clips and {AnimationLibrary.Controllers.Count} controllers to {dir}");
         }
 
-        private static string A(string rel) => Application.AssetPath("_Game/" + rel);
+        private static string A(string rel) => Application.AssetPath(rel);
 
         private static void LoadSprites()
         {

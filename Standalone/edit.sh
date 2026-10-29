@@ -5,4 +5,4 @@ cd "$(dirname "$0")"
 [ -x .dotnet/dotnet ] || command -v dotnet >/dev/null || tools/setup-dotnet.sh
 source tools/env.sh
 dotnet build -c Release --nologo -v q src/RipNRage.Editor/RipNRage.Editor.csproj
-exec dotnet src/RipNRage.Editor/bin/Release/net8.0/RipNRageEditor.dll "$@"
+exec dotnet src/RipNRage.Editor/bin/Release/net10.0/RipNRageEditor.dll "$@"

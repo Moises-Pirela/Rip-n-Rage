@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>RipNRageAnimEditor</AssemblyName>
+    <RootNamespace>RipNRage.AnimEditor</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RipNRage.Engine\RipNRage.Engine.csproj" />
+    <ProjectReference Include="..\RipNRage.Game\RipNRage.Game.csproj" />
+  </ItemGroup>
+
+</Project>

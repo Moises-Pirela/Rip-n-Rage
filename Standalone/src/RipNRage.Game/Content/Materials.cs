@@ -17,8 +17,8 @@ namespace RipNRage.Game.Content
 
             // Animated water using the normal maps that shipped with the Unity project.
             Water = new Material("water") { blend = BlendMode.AlphaBlend, cull = CullMode.Off, depthWrite = false, renderQueue = 3000 };
-            Water.SetTexture("_NormalA", Texture2D.Load(Application.AssetPath("_Game/Textures/Normals/waternormal.png"), FilterMode.Trilinear, TextureWrapMode.Repeat));
-            Water.SetTexture("_NormalB", Texture2D.Load(Application.AssetPath("_Game/Textures/Normals/waternormal2.png"), FilterMode.Trilinear, TextureWrapMode.Repeat));
+            Water.SetTexture("_NormalA", Texture2D.Load(Application.AssetPath("Textures/Normals/waternormal.png"), FilterMode.Trilinear, TextureWrapMode.Repeat));
+            Water.SetTexture("_NormalB", Texture2D.Load(Application.AssetPath("Textures/Normals/waternormal2.png"), FilterMode.Trilinear, TextureWrapMode.Repeat));
             Water.SetFloat("_WaveAmplitude", 0.15f);
             Water.SetFloat("_WaveLength", 18f);
             Water.SetFloat("_WaveSpeed", 1.2f);

@@ -1,16 +1,18 @@
-# Rip-n-Rage — Standalone (Unity-free) build
+# Rip-n-Rage — Standalone engine and game
 
 ![standalone build](docs/screenshot.png)
 
 A from-scratch runtime for the Rip-n-Rage first-person shooter that **does not depend on Unity
-at all**. The original gameplay C# scripts (`Assets/_Game/Scripts`, `Assets/_AI_BehaviorTree`,
-`Assets/Tools`) were ported onto a small custom engine, and the game's own art/audio assets are
-loaded straight from the Unity `Assets/` folder (PNG sprite sheets, TexturePacker `.tpsheet`
-atlases, WAV audio, the TrenchBroom dock map).
+at all**. The original gameplay C# scripts (`_Game/Scripts`, `_AI_BehaviorTree`, `Tools`) were
+ported onto a small custom engine. The art and audio the game needs (PNG sprite sheets,
+TexturePacker `.tpsheet` atlases, WAV/MP3 audio, the TrenchBroom dock export) were restored from
+the old Unity project into `assets/`.
 
 ```
 Standalone/
 ├── RipNRage.sln
+├── Directory.Build.props       shared build settings (net10.0, unsafe code, warnings)
+├── Directory.Build.targets     copies native libs (build) and game data (publish) beside each exe
 ├── src/RipNRage.Engine/        custom engine (no external packages)
 │   ├── Platform/               GLFW + OpenGL 3.3 core bindings (P/Invoke, cross-platform loader)
 │   ├── Graphics/               render pipeline, PNG decoder, sprites/atlases, meshes, UI batch, font
@@ -21,66 +23,69 @@ Standalone/
 │   ├── Math/                   Vector2/3, Quaternion (Unity ZXY euler), Matrix4x4, Mathf, Random, curves
 │   └── Tween/                  DOTween-style tweens
 ├── src/RipNRage.Level/         level data model: brushes/entities, .map read/write, polygons, collision shapes
-├── src/RipNRage.Editor/        Quake-style level editor executable (RipNRageEditor)
-├── levels/                     .map levels (dock.map = the test area)
 ├── src/RipNRage.Game/
-│   ├── Scripts/                the ported game scripts (same files/classes as Assets/_Game/Scripts)
+│   ├── Scripts/                the ported game scripts (same files/classes as the Unity _Game/Scripts)
 │   ├── Tools/EnragedInjector.cs
 │   ├── Framework/              MonoBehaviour/ScriptableObject/attribute stand-ins, Prefab factories
 │   ├── Content/                prefabs, ScriptableObject data, animator graphs and the TestArea level
 │   │                           rebuilt in code from the values in the .prefab/.asset/.anim/.controller files
 │   └── Program.cs              entry point, CLI options, debug overlay, automation scripts
-└── native/linux-x64/           libglfw.so.3 (zlib licence) + libopenal.so.1 (LGPL) for convenience
+├── src/RipNRage.Editor/        Quake-style level editor executable (RipNRageEditor)
+├── src/RipNRage.AnimEditor/    sprite animation editor executable (RipNRageAnimEditor)
+├── assets/                     runtime art/audio: Sprites/, Textures/, Audio/, Levels/dock.obj
+├── animations/                 animation clips and controllers (JSON, hot-reloaded)
+├── levels/                     .map levels (dock.map = the test area)
+├── shaders/                    GLSL shaders (hot-reloaded)
+├── native/                     optional GLFW / OpenAL shared libraries, per runtime id (see below)
+└── tunables.cfg                post-processing / lighting settings (hot-reloaded)
 ```
 
-## Quick start (this VM — no internet, no root, no system .NET needed)
+Project references: `Engine` ← `Level` ← `Game` ← `Editor`, and `Engine` + `Game` ← `AnimEditor`.
 
-Everything required is inside this folder:
+## Requirements
 
-```bash
-cd Standalone
-./run.sh                       # builds with the private toolchain in ./.dotnet and runs the game
-./dist/linux-x64/RipNRage      # or: pre-built self-contained binary, needs no SDK/runtime at all
-```
-
-* `.dotnet/` – a private .NET 8 SDK (8.0.132). It was obtained from the **Ubuntu 24.04 package
-  archive** (`archive.ubuntu.com`), not from Microsoft, and unpacked with `dpkg-deb -x` — no root.
-  If the folder is ever missing, `tools/setup-dotnet.sh` recreates it the same way (the only
-  network access it needs is the Ubuntu archive, which this VM can reach).
-* `native/linux-x64/` – `libglfw.so.3` and `libopenal.so.1` (also from the Ubuntu archive).
-* `dist/linux-x64/` – output of `./build.sh` (`dotnet publish --self-contained`): a ~70 MB folder
-  with the runtime included. Copy it anywhere on an x64 Linux box with OpenGL 3.3 and run `RipNRage`.
-* The game finds the Unity `Assets/` folder by walking up from the executable/cwd (this repo),
-  or via `--assets <repo-root>` / `RIPNRAGE_ASSETS`.
-* The scripts default `DISPLAY` to `:1` (the VM's Xvfb). Mesa/llvmpipe software rendering works;
-  expect ~40–60 fps at 1280×720. On a real desktop just run the same commands.
-
-Helper scripts: `run.sh` (build + run), `edit.sh` (level editor), `anim.sh` (animation editor),
-`build.sh` (build + self-contained publish), `tools/setup-dotnet.sh` (toolchain install),
-`tools/env.sh` (`source` it to get `dotnet` on PATH).
-
-## Requirements (other machines)
-
-* .NET 8 SDK — any source: the bundled `.dotnet`, `tools/setup-dotnet.sh` (Ubuntu/Debian archive),
-  a distro package (`dotnet-sdk-8.0`) or Microsoft's installer. No NuGet packages are used —
-  `nuget.config` clears all package sources so the solution builds fully offline.
-* OpenGL 3.3 capable driver.
-* GLFW 3 and (optionally) OpenAL Soft shared libraries:
-  * **Linux x64** – bundled in `native/linux-x64` (copied next to the executable on build).
-  * **Windows** – put `glfw3.dll` (and `OpenAL32.dll` / `soft_oal.dll`) next to the executable or in
-    `native/win-x64/`.
-  * **macOS** – `brew install glfw openal-soft` (Homebrew paths are probed automatically).
+* **.NET 10 SDK.** Any install works: Microsoft's installer, a distro package, or
+  `tools/setup-dotnet.sh`, which installs a private copy into `.dotnet/` without root.
+  No NuGet packages are used. A plain build works offline. `nuget.config` limits package sources to
+  nuget.org, which is only contacted for the runtime packs a self-contained publish (`build.sh`) needs.
+* An OpenGL 3.3 capable driver.
+* GLFW 3 and (optionally) OpenAL Soft shared libraries. They are **not** in the repo:
+  * **Windows**: put `glfw3.dll` (and `OpenAL32.dll` or `soft_oal.dll`) in `native/win-x64/`.
+    They are copied next to the executable on build.
+  * **Linux**: `sudo apt install libglfw3 libopenal1` (or your distro's equivalent), or copy
+    `libglfw.so.3` / `libopenal.so.1` into `native/linux-x64/`.
+  * **macOS**: `brew install glfw openal-soft` (Homebrew paths are probed automatically).
 
   The loader searches `$RIPNRAGE_NATIVE_DIR`, `<exe>/native/<rid>`, `<exe>/runtimes/<rid>/native`,
   `<exe>` and finally the system library paths. If OpenAL is missing the game runs silently.
+
+## Quick start
+
+```bash
+cd Standalone
+./run.sh          # build + run the game
+./edit.sh         # level editor
+./anim.sh         # animation editor
+./build.sh        # build + self-contained Linux x64 publish into dist/linux-x64
+```
+
+On Windows: `run.cmd`, or the manual commands below.
+
+* `build.sh` publishes the game and both editors into `dist/linux-x64/` with the runtime included,
+  along with `assets/`, `shaders/`, `animations/`, `levels/` and `tunables.cfg`. Copy that folder
+  to any x64 Linux box with OpenGL 3.3 and run `RipNRage`.
+* The game finds `assets/` by walking up from the executable and the current directory. Override it
+  with `--assets <dir>` or `RIPNRAGE_ASSETS`, pointing at the assets folder itself or at the folder
+  that contains it.
+* `tools/env.sh` (`source` it) puts a private `.dotnet/` on PATH when one exists, and defaults
+  `DISPLAY` to `:1` when it is unset (handy for Xvfb on a headless box).
 
 ## Build & run (manual)
 
 ```bash
 cd Standalone
-source tools/env.sh                                           # puts ./.dotnet/dotnet on PATH
-dotnet build -c Release
-dotnet run -c Release --project src/RipNRage.Game -- --assets /path/to/repo-root
+dotnet build RipNRage.sln -c Release
+dotnet run -c Release --project src/RipNRage.Game
 ```
 
 ### Controls
@@ -103,6 +108,7 @@ dotnet run -c Release --project src/RipNRage.Game -- --assets /path/to/repo-root
 
 ```
 --width W --height H   window size           --no-vsync        --mute         --verbose
+--assets dir           assets folder (or the folder containing it); default: "assets" found in exe dir / cwd / parents
 --frames N             exit after N frames   --fixed-dt 0.0166 deterministic frame time
 --screenshot out.png   save on exit, or every --shot-interval N frames ("{n}" = frame number)
 --script name          automation: look | spin | walk | fire | weapons | jab | m1887 | glockfire | rocket | close | approach | rage | crates | sunward | water | killenemy
@@ -166,7 +172,7 @@ top, sharp → **bloom** (soft-knee bright pass, iterative blur at `bloom_scale`
 (EnragedPP: red colour filter + red vignette + chromatic aberration; DepressedPP: cold filter).
 
 Every effect is skipped when disabled, and the whole chain is bypassed when nothing is active.
-On this VM's software renderer (llvmpipe) the full chain costs roughly 60–90 ms/frame at 1280×720;
+On a software renderer (Mesa llvmpipe) the full chain costs roughly 60–90 ms/frame at 1280×720;
 use `render_scale = 0.6`, fewer bloom passes or disable DOF for a smoother run. On a GPU it is
 negligible. `RIPNRAGE_PROFILE=1 ./run.sh --frames 120 --mute` prints the per-stage cost.
 
@@ -202,7 +208,7 @@ How it works (`Engine/Graphics/Lighting/`, `PostFx/PostProcessStack.cs`):
 Debug helpers: `RIPNRAGE_DEBUG_SHADOW=1` also writes `<screenshot>_shadowmap.png`;
 `RIPNRAGE_DEBUG_SHADOW=2` renders meshes with their shadow factor only.
 
-Cost on this VM's software renderer at 1280×720 with everything on: ~90 ms/frame (shadow pass
+Cost on a software renderer at 1280×720 with everything on: ~90 ms/frame (shadow pass
 ~4 ms, volumetric ~25 ms). A "fast" preset — `resolution = 1024`, `steps = 10`, `scale = 0.35`,
 `render_scale = 0.7` — brings it to ~60 ms. On a GPU all of this is a few milliseconds.
 
@@ -244,7 +250,7 @@ hides the weapon layer. All values hot-reload like the rest of the file; the deb
   for occludees keep it conservative, so nothing visible is ever dropped). Point lights are culled the
   same way, which also removes them from the shading loops. The dock level is split into 16 m chunks
   per texture (`LevelLoader.MeshChunkSize`) so parts of the level behind walls are skipped too.
-  Typical cost on this VM: 0.1–0.3 ms/frame. Shadow casters and the viewmodel are never culled.
+  Typical cost on a software renderer: 0.1–0.3 ms/frame. Shadow casters and the viewmodel are never culled.
 * `debug_view = true` draws the depth buffer (white = near, black = empty) with the counters in the
   bottom-right corner; the overlay line reads e.g. `MESHES 6/30 (F6 O18)` = 6 drawn of 30, 6
   frustum-culled, 18 occluded.
@@ -275,7 +281,7 @@ hides the weapon layer. All values hot-reload like the rest of the file; the deb
   _WaveSpeed = 2.0
   _DeepColor = 0.05, 0.25, 0.45      ; r,g,b[,a] -> colour, one number -> float, "x, y" -> vec2
   shader = water                     ; blend = alphablend|additive|multiply|opaque, cull, queue, depth_write, alpha_cutoff
-  _NormalA = tex:_Game/Textures/Normals/waternormal.png
+  _NormalA = tex:Textures/Normals/waternormal.png
   ```
 
 Uniform contract for custom shaders (set by the engine when present): `uViewProj`, `uModel`,

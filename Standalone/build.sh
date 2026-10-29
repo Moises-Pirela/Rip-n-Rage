@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 [ -x .dotnet/dotnet ] || command -v dotnet >/dev/null || tools/setup-dotnet.sh
 source tools/env.sh
 dotnet build -c Release --nologo -v q RipNRage.sln
-dotnet publish -c Release --nologo -v q -r ubuntu.24.04-x64 --self-contained true -o dist/linux-x64 src/RipNRage.Game/RipNRage.Game.csproj
-dotnet publish -c Release --nologo -v q -r ubuntu.24.04-x64 --self-contained true -o dist/linux-x64 src/RipNRage.Editor/RipNRage.Editor.csproj
-dotnet publish -c Release --nologo -v q -r ubuntu.24.04-x64 --self-contained true -o dist/linux-x64 src/RipNRage.AnimEditor/RipNRage.AnimEditor.csproj
+dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.Game/RipNRage.Game.csproj
+dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.Editor/RipNRage.Editor.csproj
+dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.AnimEditor/RipNRage.AnimEditor.csproj
 echo "Self-contained build: dist/linux-x64/RipNRage (game), RipNRageEditor (level editor), RipNRageAnimEditor (animation editor)"

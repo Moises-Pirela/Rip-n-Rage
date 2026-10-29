@@ -17,7 +17,7 @@ namespace RipNRage.Game.Content.Level
             doc.worldspawn.Set("sun_elevation", "28");
             doc.worldspawn.Set("sun_azimuth", "35");
 
-            string objPath = Application.AssetPath("_Game/Scripts/PlayerSystems/dock.obj");
+            string objPath = Application.AssetPath("Levels/dock.obj");
             foreach (var b in MapFile.ImportObjBrushes(objPath, TestArea.MapScale, true, TestArea.DockOffset, "planks", 8f))
                 doc.Brushes.Add(b);
 

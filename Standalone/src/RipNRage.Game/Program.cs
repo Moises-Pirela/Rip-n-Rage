@@ -8,7 +8,7 @@ namespace RipNRage.Game
     /// TestArea scene and runs the main loop.
     ///
     /// Options:
-    ///   --assets &lt;dir&gt;        repo root containing the Unity "Assets" folder (auto-detected otherwise)
+    ///   --assets &lt;dir&gt;        the assets folder, or a folder containing it (auto-detected otherwise)
     ///   --width W --height H   window size (default 1280x720)
     ///   --no-vsync             disable vertical sync
     ///   --mute                 disable audio

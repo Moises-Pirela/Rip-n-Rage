@@ -6,4 +6,4 @@ cd "$(dirname "$0")"
 [ -x .dotnet/dotnet ] || command -v dotnet >/dev/null || tools/setup-dotnet.sh
 source tools/env.sh
 dotnet build -c Release --nologo -v q src/RipNRage.Game/RipNRage.Game.csproj
-exec dotnet src/RipNRage.Game/bin/Release/net8.0/RipNRage.dll "$@"
+exec dotnet src/RipNRage.Game/bin/Release/net10.0/RipNRage.dll "$@"

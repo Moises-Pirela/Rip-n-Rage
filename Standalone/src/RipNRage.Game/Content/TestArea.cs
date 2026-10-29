@@ -54,7 +54,7 @@ namespace RipNRage.Game.Content
             var env = new GameObject("---ENV---");
 
             // DOCK (Dock.blend instance at (0, -3.09, 0))
-            string objPath = Application.AssetPath("_Game/Scripts/PlayerSystems/dock.obj");
+            string objPath = Application.AssetPath("Levels/dock.obj");
             var dock = new GameObject("DOCK");
             dock.transform.SetParent(env.transform, false);
             dock.transform.localPosition = DockOffset;
