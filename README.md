@@ -81,6 +81,10 @@ options, automation scripts and the post-processing pipeline.
 | F12 | Screenshot |
 | Esc | Release mouse (press again to quit) |
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for what's done, what's broken and what's planned.
+
 ## License
 
 [MIT](LICENSE) © 2026 Moises Pirela
