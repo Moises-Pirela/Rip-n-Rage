@@ -125,6 +125,11 @@ namespace RipNRage.Game
                 else GameSession.StartLevel(levelPath);
                 if (loadSlot != null && !RipNRage.Game.Content.Level.GameSaveSystem.Load(loadSlot)) Console.Error.WriteLine("Could not load slot " + loadSlot);
                 app.Run();
+                if (script == "strafe" && !DemoScript.StrafePassed)
+                {
+                    Console.Error.WriteLine("[test] strafe FAIL: invariant failed or 600 frames were not completed");
+                    return 1;
+                }
                 return 0;
             }
             catch (Exception e)
@@ -313,6 +318,7 @@ namespace RipNRage.Game
     public class DemoScript : MonoBehaviour
     {
         public string scriptName = "look";
+        public static bool StrafePassed { get; private set; }
         private int _frame;
         private float _strafeDir;
 
@@ -513,7 +519,8 @@ namespace RipNRage.Game
                     if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {p.transform.position} grounded={cc?.isGrounded} pushout={(cc != null ? cc.LastCorrection * 100f : 0f):0}cm rewinds={cc?.StuckRewinds} falls={fr?.Falls} last={fr?.LastFallKind}");
                     if (_frame == 600)
                     {
-                        bool ok = (fr == null || fr.Falls == 0) && (cc == null || cc.StuckRewinds == 0) && !p.IsDead;
+                        bool ok = fr != null && fr.Falls == 0 && cc != null && cc.StuckRewinds == 0 && !p.IsDead;
+                        StrafePassed = ok;
                         Debug.LogWarning(ok ? "[test] strafe PASS: 600 frames of strafing and jumping on the dock, no fall, no stuck rewind"
                                             : $"[test] strafe FAIL: falls={fr?.Falls} ({fr?.LastFallKind}) rewinds={cc?.StuckRewinds} dead={p.IsDead} — {fr?.LastFallReport}");
                     }
