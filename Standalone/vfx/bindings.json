@@ -1,0 +1,61 @@
+{
+  "surfaces": {
+    "default": "impact_concrete",
+    "concrete": "impact_concrete",
+    "wood": "impact_wood",
+    "metal": "impact_metal",
+    "glass": "impact_glass",
+    "sand": "impact_sand",
+    "water": "impact_water",
+    "flesh": "blood_hit"
+  },
+  "bullets": {
+    "light": {
+      "tracer": "tracer_light",
+      "impactScale": 0.8,
+      "bloodScale": 0.8,
+      "impactOverride": ""
+    },
+    "heavy": {
+      "tracer": "tracer_heavy",
+      "impactScale": 1.3,
+      "bloodScale": 1.4,
+      "impactOverride": ""
+    },
+    "shell": {
+      "tracer": "tracer_shell",
+      "impactScale": 0.55,
+      "bloodScale": 0.6,
+      "impactOverride": ""
+    },
+    "energy": {
+      "tracer": "tracer_energy",
+      "impactScale": 1,
+      "bloodScale": 1,
+      "impactOverride": "impact_energy"
+    },
+    "explosive": {
+      "tracer": "",
+      "impactScale": 1,
+      "bloodScale": 1,
+      "impactOverride": ""
+    },
+    "enemy": {
+      "tracer": "",
+      "impactScale": 0.7,
+      "bloodScale": 0.7,
+      "impactOverride": ""
+    }
+  },
+  "explosions": {
+    "rocket": "explosion_rocket"
+  },
+  "trails": {
+    "rocket": "rocket_trail",
+    "bullet": "bullet_trail"
+  },
+  "deaths": {
+    "default": "blood_death"
+  },
+  "blood": "blood_hit"
+}

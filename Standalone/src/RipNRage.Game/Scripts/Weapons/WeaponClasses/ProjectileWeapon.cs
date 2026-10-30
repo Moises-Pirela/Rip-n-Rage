@@ -35,7 +35,11 @@ public abstract class ProjectileWeapon : Weapon
         weaponAnimator.SetBool(IsFiring, true);
         _audioSource.PlayOneShot(weaponData.fireSound);
 
-        GameObject projectile = Instantiate(projectilePrefab, projectileSpawn.position, Quaternion.LookRotation(projectileSpawn.forward));
+        // spread / bloom (standalone addition): rockets scatter a little too, less than bullets
+        float spread = CurrentSpread * weaponData.weaponStats.projectileSpreadScale;
+        AddBloom();
+        Vector3 dir = projectileSpawn.forward + projectileSpawn.right * Random.Range(-spread, spread) + projectileSpawn.up * Random.Range(-spread, spread);
+        GameObject projectile = Instantiate(projectilePrefab, projectileSpawn.position, Quaternion.LookRotation(dir.normalized));
         Projectile projectileClass = projectile.GetComponent<Projectile>();
         
         projectileClass.SetupProjectile(true);

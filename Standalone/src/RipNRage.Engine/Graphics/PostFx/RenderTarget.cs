@@ -70,8 +70,10 @@ namespace RipNRage.Engine.Graphics.PostFx
         public void Resize(int width, int height)
         {
             if (width == Width && height == Height) return;
+            bool compare = DepthCompare;
             Release();
             Create(width, height);
+            if (compare) SetDepthCompare(true);
         }
 
         public void Bind()
@@ -96,6 +98,35 @@ namespace RipNRage.Engine.Graphics.PostFx
         {
             GL.ActiveTexture(GL.TEXTURE0 + (uint)unit);
             GL.BindTexture(GL.TEXTURE_2D, DepthTexture);
+        }
+
+        /// <summary>
+        /// Switches the depth texture to hardware depth comparison (<c>sampler2DShadow</c>: one fetch returns a
+        /// bilinearly filtered 0..1 shadow factor) or back to plain depth reads. Shadow maps use compare mode;
+        /// a texture in compare mode must not be sampled with a regular <c>sampler2D</c>.
+        /// </summary>
+        public void SetDepthCompare(bool enabled)
+        {
+            if (DepthTexture == 0) return;
+            GL.BindTexture(GL.TEXTURE_2D, DepthTexture);
+            GL.TexParameteri(GL.TEXTURE_2D, GL.TEXTURE_COMPARE_MODE, (int)(enabled ? GL.COMPARE_REF_TO_TEXTURE : GL.NONE));
+            GL.TexParameteri(GL.TEXTURE_2D, GL.TEXTURE_COMPARE_FUNC, (int)GL.LEQUAL);
+            uint filter = enabled ? GL.LINEAR : GL.NEAREST;
+            GL.TexParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, (int)filter);
+            GL.TexParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, (int)filter);
+            GL.BindTexture(GL.TEXTURE_2D, 0);
+            DepthCompare = enabled;
+        }
+
+        public bool DepthCompare { get; private set; }
+
+        /// <summary>Copies this target's depth buffer into <paramref name="dst"/> (same size) with glBlitFramebuffer.</summary>
+        public void BlitDepthTo(RenderTarget dst)
+        {
+            GL.BindFramebuffer(GL.READ_FRAMEBUFFER, Framebuffer);
+            GL.BindFramebuffer(GL.DRAW_FRAMEBUFFER, dst.Framebuffer);
+            GL.BlitFramebuffer(0, 0, Width, Height, 0, 0, dst.Width, dst.Height, GL.DEPTH_BUFFER_BIT, GL.NEAREST);
+            GL.BindFramebuffer(GL.FRAMEBUFFER, dst.Framebuffer);
         }
 
         private void Release()

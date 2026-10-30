@@ -11,6 +11,28 @@ namespace RipNRage.Engine.Graphics
     }
 
     /// <summary>
+    /// Optional companion of <see cref="IUiDrawer"/>: drawers are sorted by this value (stable, ascending)
+    /// before drawing, so full-screen overlays (death screen, menus) reliably draw on top of the HUD
+    /// regardless of the order their GameObjects were created in. Drawers without it use <see cref="UiLayers.Default"/>.
+    /// </summary>
+    public interface IUiLayer
+    {
+        int UiLayer { get; }
+    }
+
+    /// <summary>Well-known UI layer values (lower draws first).</summary>
+    public static class UiLayers
+    {
+        public const int Background = -100;
+        public const int Default = 0;
+        public const int Hud = 0;
+        public const int Debug = 50;
+        public const int Overlay = 100;
+        public const int Menu = 200;
+        public const int Modal = 300;
+    }
+
+    /// <summary>
     /// Immediate-mode screen-space sprite batcher (pixel coordinates, origin bottom-left).
     /// Batches consecutive quads sharing a texture into one draw call.
     /// </summary>

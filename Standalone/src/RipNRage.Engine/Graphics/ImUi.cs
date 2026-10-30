@@ -2,12 +2,13 @@ using System;
 using RipNRage.Engine;
 using RipNRage.Engine.Graphics;
 
-namespace RipNRage.AnimEditor
+namespace RipNRage.Engine.Graphics
 {
     /// <summary>
     /// Tiny immediate-mode widget layer over <see cref="UiBatch"/> (pixel coordinates, origin bottom-left).
     /// Input is read straight from <see cref="Input"/>; a widget "consumes" the mouse click so overlapping
-    /// regions drawn later (the 3D viewport) do not react to it.
+    /// regions drawn later (the 3D viewport) do not react to it. Shared by the animation editor, the VFX editor
+    /// and any in-game tool UI.
     /// </summary>
     public sealed class ImUi
     {
@@ -120,6 +121,79 @@ namespace RipNRage.AnimEditor
                 if (Scroll != 0f) return Scroll > 0f ? 1 : -1;
             }
             return 0;
+        }
+
+        // ---- drag value -----------------------------------------------------------------------
+
+        private int _dragId = -1;
+        private float _dragStartX, _dragStartValue;
+        private int _nextDragId;
+        private bool _dragAny;
+
+        /// <summary>Call at the start of every frame (after <see cref="BeginFrame"/>) so widget ids are stable.</summary>
+        public void BeginWidgets() { _nextDragId = 0; _dragAny = false; }
+
+        /// <summary>
+        /// Numeric cell: drag horizontally to change the value by <paramref name="step"/> per 4 pixels (Shift ×10, Ctrl ÷10),
+        /// mouse wheel ±step, right click resets to <paramref name="reset"/>. Returns the new value (clamped to min..max).
+        /// Ids are assigned in call order, so call the same DragValue set every frame.
+        /// </summary>
+        public float DragValue(Rect r, string label, float value, float step, float min, float max, float reset, string format = null, Color? bg = null)
+        {
+            int id = _nextDragId++;
+            bool hover = !Modal && Hover(r);
+            bool active = _dragId == id;
+            float original = value;
+            if (active)
+            {
+                if (!MouseHeld) _dragId = -1;
+                else
+                {
+                    float mult = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 10f : Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl) ? 0.1f : 1f;
+                    float delta = (Mouse.x - _dragStartX) / 4f;
+                    value = _dragStartValue + delta * step * mult;
+                    if (MathF.Abs(step) >= 1f) value = MathF.Round(value / step) * step;
+                    _dragAny = true;
+                }
+            }
+            else if (hover && !ClickConsumed)
+            {
+                if (MouseDown) { _dragId = id; _dragStartX = Mouse.x; _dragStartValue = value; ClickConsumed = true; }
+                else if (RightDown) { value = reset; ClickConsumed = true; }
+                else if (Scroll != 0f) value += (Scroll > 0f ? 1f : -1f) * step * (Input.GetKey(KeyCode.LeftShift) ? 10f : 1f);
+            }
+            value = Mathf.Clamp(value, min, max);
+            if (MathF.Abs(value) < 1E-06f) value = 0f;
+
+            Batch.FillRect(r, active ? ButtonOn : hover ? ButtonHover : (bg ?? ButtonBg));
+            Border(r, hover || active ? Accent : PanelBorder);
+            string text = value.ToString(format ?? (MathF.Abs(step) >= 1f ? "0" : step >= 0.1f ? "0.0" : "0.00"), System.Globalization.CultureInfo.InvariantCulture);
+            float ty = r.y + (r.height + BitmapFont.GlyphH * FontScale) * 0.5f;
+            if (!string.IsNullOrEmpty(label)) Label(Fit(label, r.width * 0.5f - 6f), new Vector2(r.x + 4f, ty), TextDim);
+            float tw = TextWidth(text);
+            Label(text, new Vector2(r.xMax - tw - 4f, ty), value != original || active ? Accent : Text);
+            return value;
+        }
+
+        /// <summary>True while any DragValue is being dragged this frame (callers use it to mark documents dirty).</summary>
+        public bool Dragging => _dragId >= 0 || _dragAny;
+
+        /// <summary>Two-state button showing ON / OFF; returns the (possibly toggled) value.</summary>
+        public bool Toggle(Rect r, string label, bool value)
+        {
+            if (Button(r, label + ": " + (value ? "ON" : "OFF"), value)) return !value;
+            return value;
+        }
+
+        /// <summary>Small colour preview square.</summary>
+        public void Swatch(Rect r, Color c)
+        {
+            // checkerboard behind so alpha is visible
+            Batch.FillRect(r, new Color(0.35f, 0.35f, 0.35f, 1f));
+            Batch.FillRect(new Rect(r.x, r.y, r.width * 0.5f, r.height * 0.5f), new Color(0.6f, 0.6f, 0.6f, 1f));
+            Batch.FillRect(new Rect(r.x + r.width * 0.5f, r.y + r.height * 0.5f, r.width * 0.5f, r.height * 0.5f), new Color(0.6f, 0.6f, 0.6f, 1f));
+            Batch.FillRect(r, new Color(Mathf.Clamp01(c.r), Mathf.Clamp01(c.g), Mathf.Clamp01(c.b), Mathf.Clamp01(c.a)));
+            Border(r, PanelBorder);
         }
 
         // ---- vertical scrolling helper -------------------------------------------------------

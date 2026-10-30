@@ -1,0 +1,434 @@
+{
+  "name": "impact_metal",
+  "description": "Bullet on metal: bright flash, lots of ricocheting sparks, a grey scuff.",
+  "emitters": [
+    {
+      "name": "flash",
+      "enabled": true,
+      "sprite": "Particles/flare",
+      "frames": [],
+      "animateFrames": false,
+      "blend": "Additive",
+      "renderMode": "Billboard",
+      "lit": false,
+      "sortOrder": 5,
+      "delay": 0,
+      "burstMin": 1,
+      "burstMax": 1,
+      "rate": 0,
+      "duration": 0,
+      "shape": "Cone",
+      "coneAngle": 30,
+      "shapeRadius": 0,
+      "boxSize": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "offset": [
+        0,
+        0,
+        0.03
+      ],
+      "lifetime": {
+        "min": 0.06,
+        "max": 0.08
+      },
+      "speed": {
+        "min": 0,
+        "max": 0
+      },
+      "gravity": 0,
+      "drag": 0,
+      "constantForce": [
+        0,
+        0,
+        0
+      ],
+      "turbulence": 0,
+      "lifetimeFromDistance": false,
+      "sizeStart": {
+        "min": 0.28,
+        "max": 0.364
+      },
+      "sizeEndScale": 1.5,
+      "aspect": 1,
+      "stretchLength": 1,
+      "stretchVelocity": 0.05,
+      "rotation": {
+        "min": 0,
+        "max": 360
+      },
+      "rotationSpeed": {
+        "min": 0,
+        "max": 0
+      },
+      "colorStart": [
+        1,
+        0.95,
+        0.85,
+        1
+      ],
+      "colorEnd": [
+        1,
+        0.665,
+        0.34,
+        0
+      ],
+      "fadeIn": 0,
+      "brightness": 1,
+      "colorVariation": 0,
+      "collide": false,
+      "bounce": 0.3,
+      "friction": 0.6,
+      "collisionRadius": 0.02,
+      "dieOnCollision": false,
+      "collisionEffectMax": 6
+    },
+    {
+      "name": "sparks",
+      "enabled": true,
+      "sprite": "Particles/spark",
+      "frames": [],
+      "animateFrames": false,
+      "blend": "Additive",
+      "renderMode": "Stretched",
+      "lit": false,
+      "sortOrder": 0,
+      "delay": 0,
+      "burstMin": 10,
+      "burstMax": 16,
+      "rate": 0,
+      "duration": 0,
+      "shape": "Cone",
+      "coneAngle": 65,
+      "shapeRadius": 0,
+      "boxSize": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "lifetime": {
+        "min": 0.2,
+        "max": 0.55
+      },
+      "speed": {
+        "min": 5,
+        "max": 12
+      },
+      "gravity": 1,
+      "drag": 0.2,
+      "constantForce": [
+        0,
+        0,
+        0
+      ],
+      "turbulence": 0,
+      "lifetimeFromDistance": false,
+      "sizeStart": {
+        "min": 0.015,
+        "max": 0.03
+      },
+      "sizeEndScale": 1,
+      "aspect": 1,
+      "stretchLength": 2.5,
+      "stretchVelocity": 0.07,
+      "rotation": {
+        "min": 0,
+        "max": 360
+      },
+      "rotationSpeed": {
+        "min": 0,
+        "max": 0
+      },
+      "colorStart": [
+        1,
+        0.95,
+        0.7,
+        1
+      ],
+      "colorEnd": [
+        1,
+        0.5,
+        0.15,
+        0
+      ],
+      "fadeIn": 0,
+      "brightness": 1,
+      "colorVariation": 0,
+      "collide": true,
+      "bounce": 0.6,
+      "friction": 0.2,
+      "collisionRadius": 0.02,
+      "dieOnCollision": false,
+      "collisionEffectMax": 6
+    },
+    {
+      "name": "ring",
+      "enabled": true,
+      "sprite": "Particles/ring",
+      "frames": [],
+      "animateFrames": false,
+      "blend": "Additive",
+      "renderMode": "Aligned",
+      "lit": false,
+      "sortOrder": 0,
+      "delay": 0,
+      "burstMin": 1,
+      "burstMax": 1,
+      "rate": 0,
+      "duration": 0,
+      "shape": "Cone",
+      "coneAngle": 30,
+      "shapeRadius": 0,
+      "boxSize": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "offset": [
+        0,
+        0,
+        0.02
+      ],
+      "lifetime": {
+        "min": 0.12,
+        "max": 0.12
+      },
+      "speed": {
+        "min": 0,
+        "max": 0
+      },
+      "gravity": 0,
+      "drag": 0,
+      "constantForce": [
+        0,
+        0,
+        0
+      ],
+      "turbulence": 0,
+      "lifetimeFromDistance": false,
+      "sizeStart": {
+        "min": 0.1,
+        "max": 0.1
+      },
+      "sizeEndScale": 4,
+      "aspect": 1,
+      "stretchLength": 1,
+      "stretchVelocity": 0.05,
+      "rotation": {
+        "min": 0,
+        "max": 360
+      },
+      "rotationSpeed": {
+        "min": 0,
+        "max": 0
+      },
+      "colorStart": [
+        1,
+        0.9,
+        0.7,
+        0.8
+      ],
+      "colorEnd": [
+        1,
+        0.7,
+        0.4,
+        0
+      ],
+      "fadeIn": 0,
+      "brightness": 1,
+      "colorVariation": 0,
+      "collide": false,
+      "bounce": 0.3,
+      "friction": 0.6,
+      "collisionRadius": 0.02,
+      "dieOnCollision": false,
+      "collisionEffectMax": 6
+    },
+    {
+      "name": "dust",
+      "enabled": true,
+      "sprite": "Particles/dust",
+      "frames": [],
+      "animateFrames": false,
+      "blend": "Alpha",
+      "renderMode": "Billboard",
+      "lit": true,
+      "sortOrder": 0,
+      "delay": 0,
+      "burstMin": 1,
+      "burstMax": 2,
+      "rate": 0,
+      "duration": 0,
+      "shape": "Hemisphere",
+      "coneAngle": 30,
+      "shapeRadius": 0.05,
+      "boxSize": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "lifetime": {
+        "min": 0.6,
+        "max": 1.1
+      },
+      "speed": {
+        "min": 0.4,
+        "max": 1.2
+      },
+      "gravity": -0.05,
+      "drag": 2.5,
+      "constantForce": [
+        0,
+        0,
+        0
+      ],
+      "turbulence": 0,
+      "lifetimeFromDistance": false,
+      "sizeStart": {
+        "min": 0.1,
+        "max": 0.16
+      },
+      "sizeEndScale": 3,
+      "aspect": 1,
+      "stretchLength": 1,
+      "stretchVelocity": 0.05,
+      "rotation": {
+        "min": 0,
+        "max": 360
+      },
+      "rotationSpeed": {
+        "min": -30,
+        "max": 30
+      },
+      "colorStart": [
+        0.6,
+        0.6,
+        0.62,
+        0.3
+      ],
+      "colorEnd": [
+        0.6,
+        0.6,
+        0.62,
+        0
+      ],
+      "fadeIn": 0.1,
+      "brightness": 1,
+      "colorVariation": 0,
+      "collide": false,
+      "bounce": 0.3,
+      "friction": 0.6,
+      "collisionRadius": 0.02,
+      "dieOnCollision": false,
+      "collisionEffectMax": 6
+    },
+    {
+      "name": "mark",
+      "enabled": true,
+      "sprite": "Particles/dot",
+      "frames": [],
+      "animateFrames": false,
+      "blend": "Alpha",
+      "renderMode": "Aligned",
+      "lit": true,
+      "sortOrder": -1,
+      "delay": 0,
+      "burstMin": 1,
+      "burstMax": 1,
+      "rate": 0,
+      "duration": 0,
+      "shape": "Cone",
+      "coneAngle": 30,
+      "shapeRadius": 0,
+      "boxSize": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "offset": [
+        0,
+        0,
+        0.005
+      ],
+      "lifetime": {
+        "min": 20,
+        "max": 25
+      },
+      "speed": {
+        "min": 0,
+        "max": 0
+      },
+      "gravity": 0,
+      "drag": 0,
+      "constantForce": [
+        0,
+        0,
+        0
+      ],
+      "turbulence": 0,
+      "lifetimeFromDistance": false,
+      "sizeStart": {
+        "min": 0.04,
+        "max": 0.06
+      },
+      "sizeEndScale": 1,
+      "aspect": 1,
+      "stretchLength": 1,
+      "stretchVelocity": 0.05,
+      "rotation": {
+        "min": 0,
+        "max": 360
+      },
+      "rotationSpeed": {
+        "min": 0,
+        "max": 0
+      },
+      "colorStart": [
+        0.45,
+        0.45,
+        0.48,
+        0.8
+      ],
+      "colorEnd": [
+        0.45,
+        0.45,
+        0.48,
+        0
+      ],
+      "fadeIn": 0,
+      "brightness": 1,
+      "colorVariation": 0,
+      "collide": false,
+      "bounce": 0.3,
+      "friction": 0.6,
+      "collisionRadius": 0.02,
+      "dieOnCollision": false,
+      "collisionEffectMax": 6
+    }
+  ],
+  "hasLight": false,
+  "lightColor": [
+    1,
+    0.8,
+    0.5,
+    1
+  ],
+  "lightIntensity": 3,
+  "lightRange": 8,
+  "lightDuration": 0.15,
+  "lightDelay": 0,
+  "cullRadius": 3,
+  "scale": 1
+}

@@ -8,4 +8,5 @@ dotnet build -c Release --nologo -v q RipNRage.sln
 dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.Game/RipNRage.Game.csproj
 dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.Editor/RipNRage.Editor.csproj
 dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.AnimEditor/RipNRage.AnimEditor.csproj
-echo "Self-contained build: dist/linux-x64/RipNRage (game), RipNRageEditor (level editor), RipNRageAnimEditor (animation editor)"
+dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.VfxEditor/RipNRage.VfxEditor.csproj
+echo "Self-contained build: dist/linux-x64/RipNRage (game), RipNRageEditor (level editor), RipNRageAnimEditor (animation editor), RipNRageVfxEditor (effect editor)"

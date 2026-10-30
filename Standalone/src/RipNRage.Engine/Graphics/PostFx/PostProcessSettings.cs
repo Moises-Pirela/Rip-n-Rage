@@ -12,8 +12,6 @@ namespace RipNRage.Engine.Graphics.PostFx
         public bool enabled = true;
         /// <summary>Resolution of the 3D scene relative to the window (1 = native). Lower = faster on software/weak GPUs.</summary>
         public float renderScale = 1f;
-        /// <summary>Render-scale for the DOF blur buffers (0.5 = half res).</summary>
-        public float effectScale = 0.5f;
         /// <summary>Render-scale for the bloom buffers (0.25 = quarter res; cheap and soft).</summary>
         public float bloomScale = 0.25f;
         /// <summary>Use RGBA16F targets (needed only for HDR content; slower on software renderers).</summary>
@@ -21,7 +19,7 @@ namespace RipNRage.Engine.Graphics.PostFx
 
         /// <summary>True when at least one effect or colour adjustment would change the image.</summary>
         public bool AnyEffect =>
-            bloomEnabled || chromaticEnabled || vignetteEnabled || dofEnabled || motionBlurEnabled ||
+            bloomEnabled || chromaticEnabled || vignetteEnabled || motionBlurEnabled ||
             exposure != 1f || saturation != 1f || contrast != 1f || renderScale < 0.999f;
 
         // [bloom]
@@ -43,15 +41,6 @@ namespace RipNRage.Engine.Graphics.PostFx
         public float vignetteSmoothness = 0.5f;
         public float vignetteRoundness = 1.0f;
         public Color vignetteColor = Color.black;
-
-        // [dof]
-        public bool dofEnabled = true;
-        public bool dofAutofocus = false;
-        public float dofFocusDistance = 12f;
-        public float dofFocusRange = 8f;
-        public float dofFarBlurStart = 40f;
-        public float dofMaxBlur = 1.0f;
-        public bool dofNearBlur = true;
 
         // [motion_blur]
         public bool motionBlurEnabled = true;
@@ -76,7 +65,6 @@ namespace RipNRage.Engine.Graphics.PostFx
 
             enabled = B("postfx", "enabled", enabled);
             renderScale = Mathf.Clamp(F("postfx", "render_scale", renderScale), 0.25f, 1f);
-            effectScale = Mathf.Clamp(F("postfx", "effect_scale", effectScale), 0.25f, 1f);
             bloomScale = Mathf.Clamp(F("postfx", "bloom_scale", bloomScale), 0.125f, 1f);
             hdr = B("postfx", "hdr", hdr);
 
@@ -97,13 +85,6 @@ namespace RipNRage.Engine.Graphics.PostFx
             vignetteRoundness = Mathf.Clamp(F("vignette", "roundness", vignetteRoundness), 0f, 1f);
             vignetteColor = C("vignette", "color", vignetteColor);
 
-            dofEnabled = B("dof", "enabled", dofEnabled);
-            dofAutofocus = B("dof", "autofocus", dofAutofocus);
-            dofFocusDistance = F("dof", "focus_distance", dofFocusDistance);
-            dofFocusRange = Mathf.Max(0.01f, F("dof", "focus_range", dofFocusRange));
-            dofFarBlurStart = F("dof", "far_blur_start", dofFarBlurStart);
-            dofMaxBlur = Mathf.Clamp(F("dof", "max_blur", dofMaxBlur), 0f, 2f);
-            dofNearBlur = B("dof", "near_blur", dofNearBlur);
 
             motionBlurEnabled = B("motion_blur", "enabled", motionBlurEnabled);
             motionBlurIntensity = F("motion_blur", "intensity", motionBlurIntensity);

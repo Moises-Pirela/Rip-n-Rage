@@ -80,6 +80,7 @@ namespace RipNRage.Engine
             Time.Advance(realDeltaTime);
 
             // Fixed steps
+            Profiler.Begin("fixed update");
             _fixedAccumulator += Time.deltaTime;
             int steps = 0;
             float savedDt = Time.deltaTime;
@@ -97,18 +98,31 @@ namespace RipNRage.Engine
             Time.inFixedTimeStep = false;
             Time.deltaTime = savedDt;
             if (steps >= 8) _fixedAccumulator = 0f;
+            FixedStepsLastFrame = steps;
+            Profiler.End();
 
+            Profiler.Begin("update");
             RunStarts();
             foreach (var b in SnapshotBehaviours())
                 if (CanRun(b)) SafeCall(b, b.CallUpdate, "Update");
+            Profiler.End();
 
+            Profiler.Begin("coroutines");
             RunCoroutines();
+            Profiler.End();
 
+            Profiler.Begin("late update");
             foreach (var b in SnapshotBehaviours())
                 if (CanRun(b)) SafeCall(b, b.CallLateUpdate, "LateUpdate");
+            Profiler.End();
 
             ProcessDestroyQueue();
         }
+
+        /// <summary>FixedUpdate steps run in the last Tick (8 = the clamp hit: the simulation is falling behind real time).</summary>
+        public int FixedStepsLastFrame { get; private set; }
+        public int BehaviourCount => _behaviours.Count;
+        public int CoroutineCount => _coroutines.Count;
 
         private Behaviour[] SnapshotBehaviours() => _behaviours.ToArray();
 

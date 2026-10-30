@@ -47,9 +47,24 @@ public class GlockCrosshair : MonoBehaviour, ICrosshair
         TweenRunner.To(() => innerCrosshairImage.rectTransform.sizeDelta, v => innerCrosshairImage.rectTransform.sizeDelta = v, new Vector2(5,5), 0.25f, innerCrosshairImage.rectTransform);
     }
 
+    /// <summary>Standalone addition: the equipped weapon's current spread (direction offset); drawn as four ticks that open with bloom.</summary>
+    public float spread;
+    public Color spreadColor = new Color(1f, 1f, 1f, 0.85f);
+
     public void Draw(UiBatch ui)
     {
         CrosshairImage.Draw(ui);
         innerCrosshairImage.Draw(ui);
+        if (spread > 0f)
+        {
+            // 0.05 spread (~2.9°) ≈ 60 reference px from the centre at 77° fov on a 1080p canvas
+            float gap = (8f + spread * 1200f) * ui.Scale;
+            float len = 9f * ui.Scale, thick = Mathf.Max(1f, 2f * ui.Scale);
+            float cx = ui.Width * 0.5f, cy = ui.Height * 0.5f;
+            ui.FillRect(new Rect(cx - gap - len, cy - thick * 0.5f, len, thick), spreadColor);
+            ui.FillRect(new Rect(cx + gap, cy - thick * 0.5f, len, thick), spreadColor);
+            ui.FillRect(new Rect(cx - thick * 0.5f, cy - gap - len, thick, len), spreadColor);
+            ui.FillRect(new Rect(cx - thick * 0.5f, cy + gap, thick, len), spreadColor);
+        }
     }
 }

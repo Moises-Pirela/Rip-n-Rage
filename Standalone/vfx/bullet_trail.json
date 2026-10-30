@@ -1,0 +1,102 @@
+{
+  "name": "bullet_trail",
+  "description": "Thin hot trail behind an enemy slug (follows the projectile).",
+  "emitters": [
+    {
+      "name": "trail",
+      "enabled": true,
+      "sprite": "Particles/soft",
+      "frames": [],
+      "animateFrames": false,
+      "blend": "Additive",
+      "renderMode": "Billboard",
+      "lit": false,
+      "sortOrder": 0,
+      "delay": 0,
+      "burstMin": 0,
+      "burstMax": 0,
+      "rate": 90,
+      "duration": 0,
+      "shape": "Cone",
+      "coneAngle": 4,
+      "shapeRadius": 0,
+      "boxSize": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "lifetime": {
+        "min": 0.18,
+        "max": 0.26
+      },
+      "speed": {
+        "min": 0.2,
+        "max": 0.5
+      },
+      "gravity": 0,
+      "drag": 0,
+      "constantForce": [
+        0,
+        0,
+        0
+      ],
+      "turbulence": 0,
+      "lifetimeFromDistance": false,
+      "sizeStart": {
+        "min": 0.09,
+        "max": 0.09
+      },
+      "sizeEndScale": 0.2,
+      "aspect": 1,
+      "stretchLength": 1,
+      "stretchVelocity": 0.05,
+      "rotation": {
+        "min": 0,
+        "max": 360
+      },
+      "rotationSpeed": {
+        "min": 0,
+        "max": 0
+      },
+      "colorStart": [
+        1,
+        0.65,
+        0.25,
+        0.9
+      ],
+      "colorEnd": [
+        1,
+        0.3,
+        0.1,
+        0
+      ],
+      "fadeIn": 0,
+      "brightness": 1,
+      "colorVariation": 0,
+      "collide": false,
+      "bounce": 0.3,
+      "friction": 0.6,
+      "collisionRadius": 0.02,
+      "dieOnCollision": false,
+      "collisionEffectMax": 6
+    }
+  ],
+  "hasLight": false,
+  "lightColor": [
+    1,
+    0.8,
+    0.5,
+    1
+  ],
+  "lightIntensity": 3,
+  "lightRange": 8,
+  "lightDuration": 0.15,
+  "lightDelay": 0,
+  "cullRadius": 3,
+  "scale": 1
+}

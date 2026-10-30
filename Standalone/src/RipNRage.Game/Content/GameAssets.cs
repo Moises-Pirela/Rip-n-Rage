@@ -45,11 +45,46 @@ namespace RipNRage.Game.Content
             BuildAnimation();
             BuildData();
             RegisterAnimation();
+            RegisterVfx();
             Loaded = true;
         }
 
         /// <summary>Explicit animations folder (--animations); otherwise the nearest "animations" directory is used.</summary>
         public static string AnimationsPath;
+        /// <summary>Explicit vfx folder (--vfx); otherwise the nearest "vfx" directory is used (created next to animations/ when missing).</summary>
+        public static string VfxPath;
+
+        /// <summary>
+        /// Data-driven visual effects: the procedural particle atlas, the code-built default effects, then the
+        /// vfx/*.json files on top (hot reloaded). A missing or empty folder is filled with the defaults so the
+        /// VFX editor has files to work on.
+        /// </summary>
+        private static void RegisterVfx()
+        {
+            _ = RipNRage.Engine.Graphics.Particles.ParticleTextures.Atlas; // registers "Particles/*" with the SpriteLibrary
+            Vfx.DefaultEffects.RegisterAll();
+            string dir = RipNRage.Engine.Graphics.Particles.VfxLibrary.Locate(VfxPath);
+            if (dir == null)
+            {
+                string parent = AnimationLibrary.Directory != null ? System.IO.Path.GetDirectoryName(AnimationLibrary.Directory) : System.IO.Directory.GetCurrentDirectory();
+                dir = System.IO.Path.Combine(parent ?? ".", "vfx");
+                RipNRage.Engine.Graphics.Particles.VfxLibrary.SetDirectory(dir);
+                RipNRage.Engine.Graphics.Particles.VfxLibrary.SaveAll();
+                Debug.LogWarning($"VFX: created {dir} with {RipNRage.Engine.Graphics.Particles.VfxLibrary.Effects.Count} default effects");
+            }
+            else
+            {
+                RipNRage.Engine.Graphics.Particles.VfxLibrary.SetDirectory(dir);
+                int n = RipNRage.Engine.Graphics.Particles.VfxLibrary.LoadAll(quiet: true);
+                if (n == 0)
+                {
+                    RipNRage.Engine.Graphics.Particles.VfxLibrary.SaveAll();
+                    Debug.LogWarning($"VFX: {dir} was empty — wrote {RipNRage.Engine.Graphics.Particles.VfxLibrary.Effects.Count} default effects");
+                }
+                else Debug.LogWarning($"VFX: {dir} ({n} effects, hot reload on)");
+            }
+            Vfx.GameVfx.LoadBindings();
+        }
 
         /// <summary>
         /// Registers every atlas with <see cref="SpriteLibrary"/> and every clip/controller with <see cref="AnimationLibrary"/>,
@@ -296,8 +331,9 @@ namespace RipNRage.Game.Content
             {
                 name = "Glock",
                 ammoType = AmmoType.LIGHT, weaponType = WeaponType.SINGLE,
-                weaponRecoil = new WeaponRecoil(new Vector3(12, 0, 0), 12, 6),
-                weaponStats = new WeaponStats { bulletsPerShot = 2, fireRate = 0.15f, damagePerShot = 100, weaponSpread = 0, isUnlocked = true },
+                weaponRecoil = new WeaponRecoil(new Vector3(12, 1, 2), 12, 6, cameraShake: 0.06f),
+                weaponStats = new WeaponStats { bulletsPerShot = 2, fireRate = 0.15f, damagePerShot = 100, weaponSpread = 0.008f, isUnlocked = true,
+                    spreadMax = 0.06f, bloomPerShot = 0.014f, bloomRecovery = 0.12f, moveSpread = 0.02f, airSpread = 0.04f },
                 animatorOverrideController = GlockController,
                 fireSound = GlockShot,
                 spawnableVFX = Prefabs.BulletImpact,
@@ -307,8 +343,9 @@ namespace RipNRage.Game.Content
             {
                 name = "M1887",
                 ammoType = AmmoType.SHELL, weaponType = WeaponType.SINGLE,
-                weaponRecoil = new WeaponRecoil(new Vector3(12, 0, 0), 12, 6),
-                weaponStats = new WeaponStats { bulletsPerShot = 16, fireRate = 0.525f, damagePerShot = 200, weaponSpread = 0.05f, isUnlocked = true },
+                weaponRecoil = new WeaponRecoil(new Vector3(18, 2, 4), 14, 5, cameraShake: 0.35f),
+                weaponStats = new WeaponStats { bulletsPerShot = 16, fireRate = 0.525f, damagePerShot = 200, weaponSpread = 0.05f, isUnlocked = true,
+                    spreadMax = 0.09f, bloomPerShot = 0.02f, bloomRecovery = 0.08f, moveSpread = 0.015f, airSpread = 0.03f },
                 animatorOverrideController = M1887Controller,
                 fireSound = M1887Shot,
                 spawnableVFX = Prefabs.BulletImpact,
@@ -318,8 +355,9 @@ namespace RipNRage.Game.Content
             {
                 name = "MG338",
                 ammoType = AmmoType.HEAVY, weaponType = WeaponType.AUTO,
-                weaponRecoil = new WeaponRecoil(new Vector3(12, 3, 0), 12, 6),
-                weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.2f, damagePerShot = 1000, weaponSpread = 0, isUnlocked = true },
+                weaponRecoil = new WeaponRecoil(new Vector3(10, 3, 2), 14, 7, cameraShake: 0.16f),
+                weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.2f, damagePerShot = 1000, weaponSpread = 0.012f, isUnlocked = true,
+                    spreadMax = 0.1f, bloomPerShot = 0.013f, bloomRecovery = 0.15f, moveSpread = 0.03f, airSpread = 0.05f },
                 animatorOverrideController = MG338Controller,
                 fireSound = MG338Shot,
                 spawnableVFX = Prefabs.BulletImpact,
@@ -329,8 +367,9 @@ namespace RipNRage.Game.Content
             {
                 name = "RocketLauncher",
                 ammoType = AmmoType.EXPLOSIVE, weaponType = WeaponType.SINGLE,
-                weaponRecoil = new WeaponRecoil(new Vector3(5, 0, 0), 50, 25),
-                weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.25f, damagePerShot = 1000, weaponSpread = 0, isUnlocked = true },
+                weaponRecoil = new WeaponRecoil(new Vector3(22, 3, 6), 40, 6, cameraShake: 0.5f),
+                weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.25f, damagePerShot = 1000, weaponSpread = 0.004f, isUnlocked = true,
+                    spreadMax = 0.03f, bloomPerShot = 0.02f, bloomRecovery = 0.06f, moveSpread = 0.012f, airSpread = 0.025f, projectileSpreadScale = 1f },
                 animatorOverrideController = RocketLauncherController,
                 fireSound = RocketShot,
                 spawnableVFX = null,
@@ -341,7 +380,8 @@ namespace RipNRage.Game.Content
             RiflemanData = new EnemyData
             {
                 name = "RiflemanData",
-                movementSpeed = 10, attackRange = 10, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 0.75f,
+                movementSpeed = 11, attackRange = 12, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
+                attackWindup = 0.35f, burstCount = 3, burstInterval = 0.09f, staggerTime = 0.25f, alertDelay = 0.2f,
                 maxHealth = 1000, maxArmor = 0,
                 enemyAnimationData = new EnemyAnimationData
                 {

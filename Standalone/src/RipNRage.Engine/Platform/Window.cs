@@ -56,6 +56,7 @@ namespace RipNRage.Engine.Platform
             }
 
             Glfw.MakeContextCurrent(_handle);
+            VSync = vsync;
             Glfw.SwapInterval(vsync ? 1 : 0);
             GL.LoadFunctions(Glfw.GetProcAddress);
             GlVersion = GL.GetString(GL.VERSION);
@@ -88,6 +89,10 @@ namespace RipNRage.Engine.Platform
             Glfw.SetScrollCallback(_handle, _scrollCb);
             Glfw.SetCharCallback(_handle, _charCb);
         }
+
+        public bool VSync { get; private set; }
+        /// <summary>Changes the swap interval at runtime (graphics settings).</summary>
+        public void SetVSync(bool on) { VSync = on; Glfw.SwapInterval(on ? 1 : 0); }
 
         public bool ShouldClose => Glfw.WindowShouldClose(_handle) == Glfw.TRUE;
         public void Close() => Glfw.SetWindowShouldClose(_handle, Glfw.TRUE);

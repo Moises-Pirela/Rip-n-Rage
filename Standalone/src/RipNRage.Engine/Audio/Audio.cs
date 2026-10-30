@@ -69,6 +69,25 @@ namespace RipNRage.Engine.Audio
             return clip;
         }
 
+        /// <summary>
+        /// Builds a clip from 16-bit PCM samples generated in code (procedural sound effects: no asset file needed).
+        /// Interleaved for stereo. Returns a silent placeholder when the audio device is not initialised.
+        /// </summary>
+        public static unsafe AudioClip Create(string name, short[] samples, int sampleRate, int channelCount = 1)
+        {
+            if (samples == null) throw new ArgumentNullException(nameof(samples));
+            if (channelCount < 1 || channelCount > 2) throw new ArgumentOutOfRangeException(nameof(channelCount));
+            var clip = new AudioClip { name = name ?? "Procedural" };
+            clip.channels = channelCount; clip.frequency = sampleRate;
+            clip.length = samples.Length / (float)(sampleRate * channelCount);
+            if (!AudioEngine.IsInitialized || samples.Length == 0) return clip;
+            int format = channelCount == 1 ? AL.FORMAT_MONO16 : AL.FORMAT_STEREO16;
+            uint buf; AL.alGenBuffers(1, &buf);
+            fixed (short* p = samples) AL.alBufferData(buf, format, p, samples.Length * sizeof(short), sampleRate);
+            clip.Buffer = buf;
+            return clip;
+        }
+
         private unsafe void LoadWav(string path)
         {
             using var br = new BinaryReader(File.OpenRead(path));

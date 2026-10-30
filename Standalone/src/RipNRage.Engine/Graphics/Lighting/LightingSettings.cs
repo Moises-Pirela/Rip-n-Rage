@@ -17,6 +17,8 @@ namespace RipNRage.Engine.Graphics.Lighting
         public float specular = 0.25f;
         public float spriteWrap = 0.6f;       // wrapped lighting for billboard sprites (0 = hard lambert, 1 = fully wrapped)
         public int maxPointLights = 16;
+        /// <summary>Point lights uploaded per draw call (only the ones whose range touches the renderer's bounds); 0 = no per-draw culling.</summary>
+        public int lightsPerDraw = 6;
 
         // [sky]
         public Color skyZenith = new Color(0.18f, 0.38f, 0.76f, 1f);
@@ -35,8 +37,12 @@ namespace RipNRage.Engine.Graphics.Lighting
         public float shadowDistance = 70f;    // half-size of the shadow box around the camera
         public float shadowBias = 0.0015f;
         public float shadowNormalOffset = 0.05f;
-        public float shadowSoftness = 1.0f;   // PCF kernel spread in texels
+        public float shadowSoftness = 1.0f;   // 0 = one hardware-PCF tap; > 0 = four taps spread by this many texels
         public bool spriteShadows = true;
+        /// <summary>Cache the static casters' depth and only redraw them when the box moves / a mesh moves (sprites are drawn every frame).</summary>
+        public bool shadowCache = true;
+        /// <summary>Fraction of the box half-size the camera may drift before the box is re-centred and the static map re-rendered.</summary>
+        public float shadowRecenterFraction = 0.3f;
 
         // [volumetric_fog]
         public bool volumetricEnabled = true;
@@ -47,12 +53,14 @@ namespace RipNRage.Engine.Graphics.Lighting
         public float volSunScattering = 1.0f;
         public float volAnisotropy = 0.55f;    // Henyey-Greenstein g (0 = isotropic, 0.9 = strong forward shafts)
         public float volAmbient = 0.25f;
-        public int volSteps = 16;
+        public int volSteps = 10;
         public float volMaxDistance = 250f;
         public bool volShadows = true;
         public bool volPointLights = true;
-        public float volScale = 0.5f;          // resolution of the march relative to the scene
+        public float volScale = 0.35f;         // resolution of the march relative to the scene
         public float volDither = 1.0f;
+        /// <summary>Depth-aware upsampling of the low-resolution march (no halos at depth edges; allows scale 0.25..0.35).</summary>
+        public bool volUpsample = true;
 
         public Vector3 SunDirection
         {
@@ -80,6 +88,7 @@ namespace RipNRage.Engine.Graphics.Lighting
             specular = F("lighting", "specular", specular);
             spriteWrap = Mathf.Clamp01(F("lighting", "sprite_wrap", spriteWrap));
             maxPointLights = Mathf.Clamp(I("lighting", "max_point_lights", maxPointLights), 0, 16);
+            lightsPerDraw = Mathf.Clamp(I("lighting", "lights_per_draw", lightsPerDraw), 0, 16);
 
             skyZenith = C("sky", "zenith", skyZenith);
             skyHorizon = C("sky", "horizon", skyHorizon);
@@ -97,6 +106,8 @@ namespace RipNRage.Engine.Graphics.Lighting
             shadowNormalOffset = F("shadows", "normal_offset", shadowNormalOffset);
             shadowSoftness = Mathf.Clamp(F("shadows", "softness", shadowSoftness), 0f, 4f);
             spriteShadows = B("shadows", "sprite_shadows", spriteShadows);
+            shadowCache = B("shadows", "cache", shadowCache);
+            shadowRecenterFraction = Mathf.Clamp(F("shadows", "recenter", shadowRecenterFraction), 0.02f, 0.9f);
 
             volumetricEnabled = B("volumetric_fog", "enabled", volumetricEnabled);
             volDensity = Mathf.Max(0f, F("volumetric_fog", "density", volDensity));
@@ -112,6 +123,7 @@ namespace RipNRage.Engine.Graphics.Lighting
             volPointLights = B("volumetric_fog", "point_lights", volPointLights);
             volScale = Mathf.Clamp(F("volumetric_fog", "scale", volScale), 0.125f, 1f);
             volDither = Mathf.Clamp01(F("volumetric_fog", "dither", volDither));
+            volUpsample = B("volumetric_fog", "upsample", volUpsample);
         }
 
         private static T Get<T>(Dictionary<string, Dictionary<string, string>> sections, string sec, string key, T cur, Func<string, T> parse)

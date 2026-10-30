@@ -22,7 +22,7 @@
     directory, so editors save straight into the source tree instead of into a copy under bin/.
   -->
   <ItemGroup Condition="'$(OutputType)' == 'Exe'">
-    <None Include="$(StandaloneDir)assets\**\*;$(StandaloneDir)shaders\**\*;$(StandaloneDir)animations\**\*;$(StandaloneDir)levels\**\*"
+    <None Include="$(StandaloneDir)assets\**\*;$(StandaloneDir)shaders\**\*;$(StandaloneDir)animations\**\*;$(StandaloneDir)vfx\**\*;$(StandaloneDir)levels\**\*"
           Exclude="$(StandaloneDir)**\.DS_Store"
           Link="$([MSBuild]::MakeRelative('$(StandaloneDir)', '%(FullPath)'))"
           CopyToOutputDirectory="Never" CopyToPublishDirectory="PreserveNewest" Visible="false" />

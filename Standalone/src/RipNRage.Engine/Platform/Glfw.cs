@@ -84,5 +84,31 @@ namespace RipNRage.Engine.Platform
         [DllImport(Lib, EntryPoint = "glfwGetPrimaryMonitor", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr GetPrimaryMonitor();
         [DllImport(Lib, EntryPoint = "glfwFocusWindow", CallingConvention = CallingConvention.Cdecl)] public static extern void FocusWindow(IntPtr window);
         [DllImport(Lib, EntryPoint = "glfwGetWindowAttrib", CallingConvention = CallingConvention.Cdecl)] public static extern int GetWindowAttrib(IntPtr window, int attrib);
+
+        // ---- joysticks / gamepads (GLFW 3.3+: SDL_GameController-style mapping) ----
+        public const int JOYSTICK_1 = 0, JOYSTICK_LAST = 15;
+        public const int GAMEPAD_BUTTON_A = 0, GAMEPAD_BUTTON_B = 1, GAMEPAD_BUTTON_X = 2, GAMEPAD_BUTTON_Y = 3,
+            GAMEPAD_BUTTON_LEFT_BUMPER = 4, GAMEPAD_BUTTON_RIGHT_BUMPER = 5, GAMEPAD_BUTTON_BACK = 6, GAMEPAD_BUTTON_START = 7,
+            GAMEPAD_BUTTON_GUIDE = 8, GAMEPAD_BUTTON_LEFT_THUMB = 9, GAMEPAD_BUTTON_RIGHT_THUMB = 10,
+            GAMEPAD_BUTTON_DPAD_UP = 11, GAMEPAD_BUTTON_DPAD_RIGHT = 12, GAMEPAD_BUTTON_DPAD_DOWN = 13, GAMEPAD_BUTTON_DPAD_LEFT = 14;
+        public const int GAMEPAD_AXIS_LEFT_X = 0, GAMEPAD_AXIS_LEFT_Y = 1, GAMEPAD_AXIS_RIGHT_X = 2, GAMEPAD_AXIS_RIGHT_Y = 3,
+            GAMEPAD_AXIS_LEFT_TRIGGER = 4, GAMEPAD_AXIS_RIGHT_TRIGGER = 5;
+
+        /// <summary>GLFWgamepadstate: 15 buttons (GLFW_PRESS / GLFW_RELEASE) then 6 axes in -1..1.</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        public unsafe struct GamepadState
+        {
+            public fixed byte buttons[15];
+            public fixed float axes[6];
+        }
+
+        [DllImport(Lib, EntryPoint = "glfwJoystickPresent", CallingConvention = CallingConvention.Cdecl)] public static extern int JoystickPresent(int jid);
+        [DllImport(Lib, EntryPoint = "glfwJoystickIsGamepad", CallingConvention = CallingConvention.Cdecl)] public static extern int JoystickIsGamepad(int jid);
+        [DllImport(Lib, EntryPoint = "glfwGetGamepadState", CallingConvention = CallingConvention.Cdecl)] public static extern unsafe int GetGamepadState(int jid, GamepadState* state);
+        [DllImport(Lib, EntryPoint = "glfwGetGamepadName", CallingConvention = CallingConvention.Cdecl)] private static extern IntPtr GetGamepadNamePtr(int jid);
+        public static string GetGamepadName(int jid) { var p = GetGamepadNamePtr(jid); return p == IntPtr.Zero ? null : Marshal.PtrToStringAnsi(p); }
+        [DllImport(Lib, EntryPoint = "glfwGetJoystickName", CallingConvention = CallingConvention.Cdecl)] private static extern IntPtr GetJoystickNamePtr(int jid);
+        public static string GetJoystickName(int jid) { var p = GetJoystickNamePtr(jid); return p == IntPtr.Zero ? null : Marshal.PtrToStringAnsi(p); }
+        [DllImport(Lib, EntryPoint = "glfwUpdateGamepadMappings", CallingConvention = CallingConvention.Cdecl)] public static extern int UpdateGamepadMappings([MarshalAs(UnmanagedType.LPStr)] string mappings);
     }
 }

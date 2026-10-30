@@ -75,6 +75,7 @@ namespace RipNRage.Game.Content.Level
             var combat = EnragedInjector<CombatController>.GetInstance();
             var camCtrl = FPSCameraController.instance;
             if (player == null || combat == null || CurrentLevel == null) { Message("Nothing to save"); return false; }
+            if (player.IsDead) { Message("Cannot save: you are dead"); return false; }
 
             var save = new GameSave { level = CurrentLevelPath, time = DateTime.Now.ToString("s") };
             var p = save.player;
@@ -127,6 +128,7 @@ namespace RipNRage.Game.Content.Level
                 // keep the original checkpoint data in sync
                 SaveData.Current.playerStateData = new PlayerStateData(player.transform.position, player.transform.rotation, player.Health, player.Armor);
                 SaveData.Current.inventoryData = new InventoryData((int[])combat.inventory.ammo.Clone(), combat.inventory.currentWeaponIndex);
+                if (slot == "checkpoint") GameSession.CheckpointReached = true;
                 Message($"Game saved ({slot})");
                 return true;
             }
@@ -134,6 +136,44 @@ namespace RipNRage.Game.Content.Level
         }
 
         public static bool Exists(string slot) => File.Exists(SlotPath(slot));
+
+        /// <summary>Level path stored in a slot (as written by <see cref="Save"/>), or null when the slot is missing or unreadable.</summary>
+        public static string PeekLevel(string slot)
+        {
+            try
+            {
+                string path = SlotPath(slot);
+                if (!File.Exists(path)) return null;
+                return JsonSerializer.Deserialize<GameSave>(File.ReadAllText(path), Json)?.level;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// True when the "checkpoint" slot exists and belongs to <paramref name="levelPath"/> (default: the
+        /// level being played), i.e. dying can respawn the player at the last checkpoint instead of the level start.
+        /// </summary>
+        public static bool CheckpointAvailable(string levelPath = null)
+        {
+            levelPath ??= CurrentLevelPath;
+            string saved = PeekLevel("checkpoint");
+            if (string.IsNullOrEmpty(saved) || string.IsNullOrEmpty(levelPath)) return false;
+            try
+            {
+                string a = Path.GetFullPath(LevelLoader.Locate(saved) ?? saved);
+                string b = Path.GetFullPath(LevelLoader.Locate(levelPath) ?? levelPath);
+                return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        /// <summary>The slot "Continue" should load: the checkpoint when one exists, otherwise the quick save; null when there is nothing.</summary>
+        public static string ContinueSlot()
+        {
+            if (Exists("checkpoint")) return "checkpoint";
+            if (Exists("quick")) return "quick";
+            return null;
+        }
 
         /// <summary>Rebuilds the level and restores the saved state. Returns false if the slot does not exist.</summary>
         public static bool Load(string slot)
@@ -156,6 +196,7 @@ namespace RipNRage.Game.Content.Level
                     playerStateData = new PlayerStateData(new Vector3(save.player.x, save.player.y, save.player.z), Quaternion.identity, save.player.health, save.player.armor),
                     inventoryData = new InventoryData((int[])save.player.ammo.Clone(), save.player.weaponIndex),
                 };
+                GameSession.CheckpointReached = true; // the run continues from a save: dying goes back to the checkpoint
                 GameSession.Behaviour.StartCoroutine(ApplyWhenReady(save));
             });
             return true;

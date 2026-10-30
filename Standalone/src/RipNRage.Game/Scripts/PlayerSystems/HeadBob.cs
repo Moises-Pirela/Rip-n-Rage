@@ -20,6 +20,8 @@ public class HeadBob : MonoBehaviour
 
     private Vector3 startPos;
     private float timer;
+    /// <summary>Standalone addition: vertical offset added by the controller (slide crouch).</summary>
+    public float heightOffset;
 
     protected override void Start()
     {
@@ -33,12 +35,12 @@ public class HeadBob : MonoBehaviour
         if (controller._inputActions.MovementInput.y != 0 || controller._inputActions.MovementInput.x != 0)
         {
             timer += Time.deltaTime * frequency;
-            transform.localPosition = new Vector3(transform.localPosition.x, startPos.y + Mathf.Sin(timer) * waveLength, transform.localPosition.z);
+            transform.localPosition = new Vector3(transform.localPosition.x, startPos.y + heightOffset + Mathf.Sin(timer) * waveLength, transform.localPosition.z);
         }
         else
         {
             timer = 0;
-            transform.localPosition = new Vector3(transform.localPosition.x, Mathf.Lerp(transform.localPosition.y, startPos.y,
+            transform.localPosition = new Vector3(transform.localPosition.x, Mathf.Lerp(transform.localPosition.y, startPos.y + heightOffset,
             Time.deltaTime * frequency), transform.localPosition.z);
         }
     }

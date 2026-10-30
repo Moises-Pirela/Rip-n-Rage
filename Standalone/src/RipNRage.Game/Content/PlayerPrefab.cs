@@ -6,7 +6,7 @@ namespace RipNRage.Game.Content
     /// Builds the PlayerCharacter hierarchy from Assets/_Game/Prefabs/PlayerCharacter.prefab:
     ///
     /// PlayerCharacter [CharacterController h1.8 r0.5, AudioSource, FPSController, PlayerInputActions,
-    ///                  FPSCameraController, PlayerState, CombatController, HudController, RagePostprocess]
+    ///                  FPSCameraController, PlayerState, PlayerDeathSequence, CombatController, HudController, RagePostprocess]
     ///  ├ Orientation
     ///  ├ Camera (0, 0.5, 0) [HeadBob]
     ///  │   └ WorldCamera (fov 77) [Camera, CameraRecoil]
@@ -124,6 +124,16 @@ namespace RipNRage.Game.Content
 
             var state = player.AddComponent<PlayerState>();
             state.rageStates = new[] { GameAssets.NormalRage, GameAssets.EnragedRage, GameAssets.DepressedRage };
+
+            // ---- fall safety net: respawn at the last safe spot below the level's kill height (standalone addition) ----
+            player.AddComponent<FallRespawn>();
+            // ---- style meter: kills / headshots / weapon variety → F..S rank with S perks (standalone addition) ----
+            player.AddComponent<StyleMeter>();
+
+            // ---- death: camera fall + slow motion + "You are dead" screen (standalone addition) ----
+            var death = player.AddComponent<PlayerDeathSequence>();
+            death.cameraPivot = cameraGo.transform;
+            death.worldCamera = worldCamera.transform;
 
             var combat = player.AddComponent<CombatController>();
             combat.cameraTransform = worldCamera.transform;

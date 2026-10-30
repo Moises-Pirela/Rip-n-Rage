@@ -12,6 +12,10 @@ namespace RipNRage.Game.Content.Level
         public MapDocument document;
         public Vector3 playerStart = new Vector3(0, 2.6f, 0);
         public Quaternion playerRotation = Quaternion.identity;
+        /// <summary>World Y below which the player is respawned (worldspawn kill_y, else 1 m under the water plane, else 5 m under the lowest brush).</summary>
+        public float killY = -50f;
+        /// <summary>Worldspawn <c>fall_mode</c> ("die" / "respawn"); null keeps the game's default (<see cref="FallRespawn.Mode"/>).</summary>
+        public FallMode? fallMode;
         public readonly List<GameObject> entityObjects = new List<GameObject>();
     }
 
@@ -28,6 +32,13 @@ namespace RipNRage.Game.Content.Level
             var level = new LoadedLevel { document = doc, root = new GameObject("Level") };
             BuildBrushes(doc, level.root, preview);
             ApplyWorldspawn(doc.worldspawn);
+            level.killY = ComputeKillY(doc);
+            if (doc.worldspawn.properties.TryGetValue("fall_mode", out var fm))
+            {
+                if (fm.Equals("respawn", StringComparison.OrdinalIgnoreCase)) level.fallMode = FallMode.Respawn;
+                else if (fm.Equals("die", StringComparison.OrdinalIgnoreCase)) level.fallMode = FallMode.Die;
+                else Debug.LogWarning($"level: unknown fall_mode '{fm}' (expected die or respawn)");
+            }
 
             if (!preview) GameSaveSystem.CurrentLevel = level;
             for (int index = 0; index < doc.entities.Count; index++)
@@ -60,6 +71,16 @@ namespace RipNRage.Game.Content.Level
             return level;
         }
 
+        /// <summary>Kill height: explicit worldspawn "kill_y", else the water surface minus one metre, else five metres under the lowest brush.</summary>
+        private static float ComputeKillY(MapDocument doc)
+        {
+            if (doc.worldspawn.properties.ContainsKey("kill_y")) return doc.worldspawn.GetFloat("kill_y");
+            foreach (var e in doc.entities)
+                if (e.classname.Equals("water_plane", StringComparison.OrdinalIgnoreCase)) return e.origin.y - 1f;
+            var (min, _) = doc.Bounds;
+            return doc.Brushes.Count > 0 ? min.y - 5f : -50f;
+        }
+
         /// <summary>Level meshes are split into cubes of this size (metres) for culling.</summary>
         public static float MeshChunkSize = 16f;
 
@@ -84,7 +105,8 @@ namespace RipNRage.Game.Content.Level
                 mr.color = tex.tint;
                 mr.uvScale = Vector2.one;
                 if (tex.material != null) mr.material = tex.material();
-                mr.occluder = tex.visible; // transparent materials (water) are skipped by the renderer
+                mr.occluder = tex.visible && !tex.transparent; // transparent materials (water, glass) are skipped by the renderer
+                if (tex.transparent) { mr.transparent = true; mr.castsShadow = false; }
                 if (!tex.visible) { mr.color = new Color(1f, 0.5f, 1f, 0.35f); mr.transparent = true; mr.castsShadow = false; }
             }
 
@@ -98,6 +120,10 @@ namespace RipNRage.Game.Content.Level
                     go.transform.SetParent(geo.transform, false);
                     go.transform.position = b.Center;
                     go.layer = Layers.Walkable;
+                    // surface per face for the impact effects (hit normal → face → texture → surface)
+                    var surf = go.AddComponent<BrushSurface>();
+                    foreach (var f in b.faces) surf.faces.Add(new BrushSurface.FaceSurface { normal = f.plane.normal, surface = LevelTextures.Get(f.texture).surface });
+                    if (b.faces.Count > 0) surf.fallback = LevelTextures.Get(b.faces[0].texture).surface;
                     if (b.IsAxisAligned)
                     {
                         var col = go.AddComponent<BoxCollider>();

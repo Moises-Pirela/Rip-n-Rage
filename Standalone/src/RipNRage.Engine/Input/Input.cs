@@ -61,6 +61,69 @@ namespace RipNRage.Engine
         public static bool GetMouseButtonDown(int button) => _down[MouseBase + button];
         public static bool GetMouseButtonUp(int button) => _up[MouseBase + button];
 
+        /// <summary>Every key / mouse button that went down this frame (rebinding capture).</summary>
+        public static IEnumerable<KeyCode> KeysDown()
+        {
+            for (int i = 0; i < _down.Length; i++) if (_down[i]) yield return (KeyCode)i;
+        }
+
+        // ---- gamepad (first connected SDL-mapped controller; polled once per frame) ----
+        public const int GamepadButtonCount = 15, GamepadAxisCount = 6;
+        private static readonly bool[] _padHeld = new bool[GamepadButtonCount], _padDown = new bool[GamepadButtonCount], _padUp = new bool[GamepadButtonCount];
+        private static readonly float[] _padAxes = new float[GamepadAxisCount];
+        private static int _padId = -1;
+        private static double _padNextScan;
+        /// <summary>True while a gamepad is connected.</summary>
+        public static bool GamepadConnected => _padId >= 0;
+        public static string GamepadName { get; private set; } = "";
+        /// <summary>True when the last input event came from the gamepad (UI shows controller glyphs / hides the mouse cursor).</summary>
+        public static bool GamepadActive { get; private set; }
+        public static bool GetPadButton(int b) => (uint)b < GamepadButtonCount && _padHeld[b];
+        public static bool GetPadButtonDown(int b) => (uint)b < GamepadButtonCount && _padDown[b];
+        public static bool GetPadButtonUp(int b) => (uint)b < GamepadButtonCount && _padUp[b];
+        /// <summary>Raw axis in -1..1 (triggers are remapped to 0..1).</summary>
+        public static float GetPadAxis(int a) => (uint)a < GamepadAxisCount ? _padAxes[a] : 0f;
+        /// <summary>Automation: injects a gamepad button / axis for this frame.</summary>
+        public static void SimulatePadButton(int b, bool pressed) { if ((uint)b >= GamepadButtonCount) return; if (pressed && !_padHeld[b]) _padDown[b] = true; if (!pressed && _padHeld[b]) _padUp[b] = true; _padHeld[b] = pressed; if (pressed) GamepadActive = true; }
+        public static void SimulatePadAxis(int a, float v) { if ((uint)a < GamepadAxisCount) _padAxes[a] = v; }
+
+        private static unsafe void PollGamepad(double now)
+        {
+            for (int i = 0; i < GamepadButtonCount; i++) { _padDown[i] = false; _padUp[i] = false; }
+            if (_padId >= 0 && Platform.Glfw.JoystickPresent(_padId) == 0) { _padId = -1; GamepadName = ""; for (int i = 0; i < GamepadButtonCount; i++) _padHeld[i] = false; Array.Clear(_padAxes, 0, _padAxes.Length); }
+            if (_padId < 0)
+            {
+                if (now < _padNextScan) return;
+                _padNextScan = now + 1.0; // scanning every joystick slot each frame is not free on some platforms
+                for (int j = Platform.Glfw.JOYSTICK_1; j <= Platform.Glfw.JOYSTICK_LAST; j++)
+                    if (Platform.Glfw.JoystickPresent(j) != 0 && Platform.Glfw.JoystickIsGamepad(j) != 0)
+                    {
+                        _padId = j; GamepadName = Platform.Glfw.GetGamepadName(j) ?? Platform.Glfw.GetJoystickName(j) ?? "Gamepad";
+                        Debug.LogWarning("Gamepad connected: " + GamepadName);
+                        break;
+                    }
+                if (_padId < 0) return;
+            }
+            Platform.Glfw.GamepadState st;
+            if (Platform.Glfw.GetGamepadState(_padId, &st) == 0) return;
+            bool anyPad = false;
+            for (int i = 0; i < GamepadButtonCount; i++)
+            {
+                bool held = st.buttons[i] != 0;
+                if (held && !_padHeld[i]) { _padDown[i] = true; anyPad = true; }
+                if (!held && _padHeld[i]) _padUp[i] = true;
+                _padHeld[i] = held;
+            }
+            for (int a = 0; a < GamepadAxisCount; a++)
+            {
+                float v = st.axes[a];
+                if (a >= Platform.Glfw.GAMEPAD_AXIS_LEFT_TRIGGER) v = v * 0.5f + 0.5f; // triggers report -1 (released) .. 1 (pressed)
+                if (MathF.Abs(v - _padAxes[a]) > 0.05f && MathF.Abs(v) > 0.3f) anyPad = true;
+                _padAxes[a] = v;
+            }
+            if (anyPad) GamepadActive = true;
+        }
+
         public static float GetAxisRaw(string axis)
         {
             switch (axis)
@@ -120,7 +183,11 @@ namespace RipNRage.Engine
             _mouseDeltaAccum = Vector2.zero;
             mouseScrollDelta = new Vector2(0f, _scrollAccum);
             _scrollAccum = 0f;
+            if (anyKeyDown || mouseDelta.sqrMagnitude > 4f || mouseScrollDelta.y != 0f) GamepadActive = false;
+            try { PollGamepad(Time.realtimeSinceStartup); }
+            catch (Exception e) { if (!_padWarned) { _padWarned = true; Debug.LogWarning("gamepad polling unavailable: " + e.Message); } }
         }
+        private static bool _padWarned;
 
         internal static void EndFrame()
         {

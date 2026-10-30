@@ -4,8 +4,9 @@ using System.Collections.Generic;
 namespace RipNRage.Engine
 {
     /// <summary>
-    /// Convex polyhedron collider defined by world-space planes (Quake brushes). Raycasts use the
-    /// plane slab test; character movement uses a separating-axis test against the mover's box.
+    /// Convex polyhedron collider defined by world-space planes (Quake brushes). Raycasts use the plane slab
+    /// test; character movement uses the expanded-plane (Minkowski) overlap test, which yields a true minimum
+    /// translation vector instead of a projection overlap length.
     /// </summary>
     public sealed class ConvexCollider : Collider
     {
@@ -13,7 +14,7 @@ namespace RipNRage.Engine
         public Vector3[] vertices = Array.Empty<Vector3>();
         private Bounds _bounds;
 
-        /// <summary>Sets the shape from planes and its polygon vertices (used for bounds and SAT projections).</summary>
+        /// <summary>Sets the shape from planes and its polygon vertices (the vertices give the bounding box).</summary>
         public void SetShape(Plane[] worldPlanes, Vector3[] worldVertices)
         {
             planes = worldPlanes; vertices = worldVertices;
@@ -55,45 +56,91 @@ namespace RipNRage.Engine
         }
 
         /// <summary>
-        /// Separating-axis test of an AABB against this convex shape. Returns the penetration depth
-        /// along <paramref name="axis"/> (the axis used for resolution) or -1 when not intersecting.
+        /// True when an axis-aligned box overlaps this brush.
+        ///
+        /// The test is the half-space form of the Minkowski sum: every face plane is pushed outwards by the box's
+        /// support along that plane's normal, and the box centre is tested against the expanded planes. The box is
+        /// separated as soon as it is outside any one of them (a convex shape only needs a single separating plane),
+        /// so this never misses a real overlap. Without the extra bevel planes it can report an overlap for a box
+        /// that only just clears a sharp edge — conservative by at most a few centimetres, the classic Quake
+        /// trade-off, and always a *small* error, never a large one.
         /// </summary>
-        public float PenetrationAlong(Bounds box, int axis)
+        public bool Overlaps(Bounds box)
         {
-            if (!_bounds.Intersects(box)) return -1f;
-            var corners = BoxCorners(box);
-            // axes: 3 box axes + face normals
-            float penAlongAxis = 0f;
+            if (!_bounds.Intersects(box)) return false;
+            Vector3 c = box.center, e = (box.max - box.min) * 0.5f;
+            foreach (var p in planes)
+                if (p.Distance(c) - Support(p.normal, e) >= 0f) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Minimum translation vector that separates <paramref name="box"/> from this brush: the cheapest of the
+        /// face-normal and box-axis separating directions. <paramref name="normal"/> points out of the brush and
+        /// <paramref name="depth"/> is how far along it the box has to move. Because the depth is measured against
+        /// the *plane that is closest to clearing*, it is always the small real penetration — not the width of the
+        /// brush, which is what the old projection-overlap code returned for a box sitting inside a big slab.
+        /// </summary>
+        public bool ComputeMtv(Bounds box, out Vector3 normal, out float depth)
+        {
+            normal = Vector3.up; depth = 0f;
+            if (!_bounds.Intersects(box)) return false;
+            Vector3 c = box.center, e = (box.max - box.min) * 0.5f;
+            float best = float.MaxValue;
+            Vector3 bestN = Vector3.zero;
+            foreach (var p in planes)
+            {
+                float d = p.Distance(c) - Support(p.normal, e); // < 0 while the box is behind the expanded plane
+                if (d >= 0f) return false;
+                if (-d < best) { best = -d; bestN = p.normal; }
+            }
             for (int i = 0; i < 3; i++)
             {
+                float pushPos = _bounds.max[i] - box.min[i]; // move +i until the box clears the brush's far side
+                float pushNeg = box.max[i] - _bounds.min[i]; // move -i until it clears the near side
+                if (pushPos <= 0f || pushNeg <= 0f) return false;
                 Vector3 a = Vector3.zero; a[i] = 1f;
-                if (!Overlap(a, corners, out float pen)) return -1f;
-                if (i == axis) penAlongAxis = pen;
+                if (pushPos < best) { best = pushPos; bestN = a; }
+                if (pushNeg < best) { best = pushNeg; bestN = -a; }
             }
-            foreach (var p in planes) if (!Overlap(p.normal, corners, out _)) return -1f;
-            return penAlongAxis;
+            if (bestN == Vector3.zero || best >= float.MaxValue) return false;
+            normal = bestN; depth = best;
+            return true;
         }
 
-        private bool Overlap(Vector3 axis, Vector3[] boxCorners, out float pen)
+        /// <summary>
+        /// Distance the box has to travel along <paramref name="sign"/> * <paramref name="axis"/> before it stops
+        /// overlapping this brush (0 when it already does not, <see cref="float.MaxValue"/> when moving that way
+        /// can never separate them). Used to resolve an axis sweep without leaving the sweep's axis.
+        /// </summary>
+        public float SeparationAlong(Bounds box, int axis, float sign)
         {
-            Project(axis, boxCorners, out float aMin, out float aMax);
-            Project(axis, vertices, out float bMin, out float bMax);
-            pen = MathF.Min(aMax - bMin, bMax - aMin);
-            return aMax > bMin + 1E-5f && bMax > aMin + 1E-5f;
+            if (!Overlaps(box)) return 0f;
+            Vector3 c = box.center, e = (box.max - box.min) * 0.5f;
+            float best = float.MaxValue;
+            foreach (var p in planes)
+            {
+                float along = sign * p.normal[axis];
+                if (along <= 1E-4f) continue; // this face cannot be cleared by moving that way
+                float d = p.Distance(c) - Support(p.normal, e);
+                if (d >= 0f) return 0f;
+                float t = -d / along;
+                if (t < best) best = t;
+            }
+            // the brush's own bounding slab on the sweep axis is a separating plane too
+            float slab = sign > 0f ? _bounds.max[axis] - box.min[axis] : box.max[axis] - _bounds.min[axis];
+            if (slab > 0f && slab < best) best = slab;
+            return best;
         }
 
-        private static void Project(Vector3 axis, Vector3[] pts, out float min, out float max)
-        {
-            min = float.MaxValue; max = float.MinValue;
-            foreach (var p in pts) { float d = Vector3.Dot(axis, p); if (d < min) min = d; if (d > max) max = d; }
-        }
+        /// <summary>Half-width of an axis-aligned box with extents <paramref name="e"/> projected on <paramref name="n"/>.</summary>
+        private static float Support(Vector3 n, Vector3 e) => MathF.Abs(n.x) * e.x + MathF.Abs(n.y) * e.y + MathF.Abs(n.z) * e.z;
 
-        private static Vector3[] BoxCorners(Bounds b)
+        /// <summary>Legacy helper: penetration depth along an axis (the cheaper of the two directions), -1 when clear.</summary>
+        public float PenetrationAlong(Bounds box, int axis)
         {
-            var c = new Vector3[8];
-            for (int i = 0; i < 8; i++)
-                c[i] = new Vector3((i & 1) == 0 ? b.min.x : b.max.x, (i & 2) == 0 ? b.min.y : b.max.y, (i & 4) == 0 ? b.min.z : b.max.z);
-            return c;
+            if (!Overlaps(box)) return -1f;
+            return MathF.Min(SeparationAlong(box, axis, 1f), SeparationAlong(box, axis, -1f));
         }
 
         /// <summary>Which side of the box (along the axis) the shape is on, for push-out direction.</summary>

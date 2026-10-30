@@ -4,10 +4,14 @@ using System.Collections.Generic;
 
 // Ported from Assets/_Game/Scripts/PlayerSystems/PlayerInputActions.cs.
 // The Unity Input System (PlayerControls.inputactions + generated PlayerControls.cs + PlayerInput
-// "Send Messages") is replaced by polling the engine's Input each frame and dispatching the same
-// On* callbacks the PlayerInput component used to send. Bindings mirror PlayerControls.inputactions:
-//   Move = WASD, Look = mouse delta, Jump = Space, Fire = LMB, AltFire = RMB,
-//   ChangeWeapon1/2/3 = 1/2/3, SwapWeapon = mouse wheel.
+// "Send Messages") is replaced by the engine's InputSystem: named, rebindable actions of the "gameplay"
+// scheme (keyboard / mouse slot + gamepad slot each, saved in controls.json) polled every frame and
+// dispatched through the same On* callbacks the PlayerInput component used to send. Defaults mirror
+// PlayerControls.inputactions (WASD / mouse / Space / LMB / RMB / 1-4 / wheel) plus a gamepad layout
+// (left stick move, right stick look, RT fire, LT jab, A jump, D-pad weapons, bumpers cycle, Start pause).
+// While any UI screen owns the input the gameplay scheme is idle, so nothing here fires.
+// Disabling the component (pause menu, death) silences every input; on re-enable the fire button has
+// to be released once so the click that closed a menu does not fire the weapon.
 public class PlayerInputActions : MonoBehaviour
 {
     public Vector2 MovementInput { get; set; }
@@ -17,9 +21,15 @@ public class PlayerInputActions : MonoBehaviour
     public bool IsGrounded { get; set; }
 
     public bool IsFiring { get; set; }
+    /// <summary>Standalone additions: slide / crouch button state for the movement controller.</summary>
+    public bool SlidePressed { get; private set; }
+    public bool SlideHeld { get; private set; }
+    public bool DashPressed { get; private set; }
 
     private bool isBlockingInput;
     private bool _enabled;
+    /// <summary>After (re)enabling, the fire button must be released once before it counts: a click that closed a menu must not fire the gun.</summary>
+    private bool _waitForFireRelease;
 
     /// <summary>Unity's Mouse/delta is in pixels per frame; the camera code multiplies by sensitivity * fixedDeltaTime.</summary>
     public float lookScale = 1f;
@@ -37,6 +47,7 @@ public class PlayerInputActions : MonoBehaviour
     protected override void OnEnable()
     {
         _enabled = true;
+        _waitForFireRelease = true; // released once before it counts (see the header comment)
     }
 
     protected override void OnDisable()
@@ -45,35 +56,61 @@ public class PlayerInputActions : MonoBehaviour
         MovementInput = Vector2.zero;
         LookInput = Vector2.zero;
         IsFiring = false;
+        SlidePressed = SlideHeld = DashPressed = false;
     }
 
     protected override void Update()
     {
         if (!_enabled) return;
+        var G = InputSystem.Gameplay;
+        bool live = G.Enabled; // false while a menu / death screen / settings page owns the input
 
         // Fire.performed / Fire.canceled
-        IsFiring = overrideFiring ?? Input.GetMouseButton(0);
+        bool fireHeld = live && G["fire"].Held;
+        if (_waitForFireRelease && !fireHeld) _waitForFireRelease = false;
+        IsFiring = overrideFiring ?? (fireHeld && !_waitForFireRelease);
 
-        // Move (2D vector composite)
-        float x = (Input.GetKey(KeyCode.D) ? 1f : 0f) - (Input.GetKey(KeyCode.A) ? 1f : 0f);
-        float y = (Input.GetKey(KeyCode.W) ? 1f : 0f) - (Input.GetKey(KeyCode.S) ? 1f : 0f);
-        OnMove(overrideMove ?? new Vector2(x, y));
+        // Move (2D vector composite: digital keys or analog stick directions, whichever the action is bound to)
+        Vector2 move = Vector2.zero;
+        if (live)
+        {
+            move = new Vector2(G["move_right"].Value - G["move_left"].Value, G["move_forward"].Value - G["move_back"].Value);
+            if (move.sqrMagnitude > 1f) move = move.normalized;
+        }
+        OnMove(overrideMove ?? move);
 
-        // Look (mouse delta)
-        OnLook(overrideLook ?? Input.mouseDelta * lookScale);
+        // Look: mouse delta (pixels) + right stick scaled to the same units (FPSCameraController: degrees = value * 0.1)
+        Vector2 look = Vector2.zero;
+        if (live)
+        {
+            look = Input.mouseDelta * lookScale * InputSystem.mouseSensitivity;
+            if (InputSystem.invertMouseY) look.y = -look.y;
+            Vector2 stick = InputSystem.RightStick();
+            if (stick.sqrMagnitude > 0f)
+            {
+                Vector2 s = stick * (InputSystem.gamepadLookSpeed * Time.deltaTime * 10f);
+                if (InputSystem.invertGamepadY) s.y = -s.y;
+                look += s;
+            }
+        }
+        OnLook(overrideLook ?? look);
 
-        if (Input.GetKeyDown(KeyCode.Space)) OnJump();
+        if (live && G["jump"].Pressed) OnJump();
+        SlidePressed = live && !isBlockingInput && G["slide"].Pressed;
+        SlideHeld = live && !isBlockingInput && G["slide"].Held;
+        DashPressed = live && !isBlockingInput && G["dash"].Pressed;
 
         var combat = EnragedInjector<CombatController>.GetInstance();
-        if (combat != null)
+        if (combat != null && live)
         {
-            if (Input.GetMouseButtonDown(1)) combat.OnAltFire(true);
-            if (Input.GetKeyDown(KeyCode.Alpha1)) combat.OnChangeWeapon1();
-            if (Input.GetKeyDown(KeyCode.Alpha2)) combat.OnChangeWeapon2();
-            if (Input.GetKeyDown(KeyCode.Alpha3)) combat.OnChangeWeapon3();
-            if (Input.GetKeyDown(KeyCode.Alpha4)) combat.OnChangeWeapon4();
-            float scroll = Input.mouseScrollDelta.y;
-            if (scroll != 0f) combat.OnSwapWeapon(scroll);
+            if (G["alt_fire"].Pressed) combat.OnAltFire(true);
+            if (G["weapon_1"].Pressed) combat.OnChangeWeapon1();
+            if (G["weapon_2"].Pressed) combat.OnChangeWeapon2();
+            if (G["weapon_3"].Pressed) combat.OnChangeWeapon3();
+            if (G["weapon_4"].Pressed) combat.OnChangeWeapon4();
+            if (G["weapon_next"].Pressed) combat.OnSwapWeapon(1f);
+            else if (G["weapon_prev"].Pressed) combat.OnSwapWeapon(-1f);
+            if (G["weapon_last"].Pressed) combat.OnSwapToLastWeapon();
         }
     }
 

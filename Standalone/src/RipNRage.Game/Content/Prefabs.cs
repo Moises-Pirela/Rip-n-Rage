@@ -84,7 +84,7 @@ namespace RipNRage.Game.Content
             col.size = new Vector3(0.2f, 0.2f, 1f);
             Physics.RegisterMover(col);
             var p = go.AddComponent<RocketProjectile>();
-            p.projectileStats = new ProjectileStats { speed = 50, damage = 1000, range = 100, hitVFX = RocketExplosion };
+            p.projectileStats = new ProjectileStats { speed = 50, damage = 1000, range = 100, hitVFX = RocketExplosion, trailEffect = "rocket", explosionEffect = "rocket", bulletKey = "explosive" };
             var vis = new GameObject("Visual");
             vis.transform.SetParent(go.transform, false);
             var sr = vis.AddComponent<SpriteRenderer>();
@@ -107,14 +107,18 @@ namespace RipNRage.Game.Content
             col.size = new Vector3(0.2f, 0.2f, 1f);
             Physics.RegisterMover(col);
             var p = go.AddComponent<Projectile>();
-            p.projectileStats = new ProjectileStats { speed = 50, damage = 5, range = 100, hitVFX = BulletImpact };
+            // readability + lethality (standalone): slower but twice as damaging, a bright glowing slug with a trail and its own light
+            p.projectileStats = new ProjectileStats { speed = 40, damage = 10, range = 100, hitVFX = BulletImpact, bulletKey = "enemy", trailEffect = "bullet" };
             var vis = new GameObject("Visual");
             vis.transform.SetParent(go.transform, false);
             var sr = vis.AddComponent<SpriteRenderer>();
             sr.sprite = GameAssets.Glock["GlockFlash"];
             sr.billboard = true;
-            sr.color = new Color(1f, 0.8f, 0.3f, 1f);
-            vis.transform.localScale = Vector3.one * 0.03f;
+            sr.fullBright = true;
+            sr.color = new Color(1f, 0.75f, 0.25f, 1f);
+            vis.transform.localScale = Vector3.one * 0.06f;
+            var bl = go.AddComponent<Light>();
+            bl.type = LightType.Point; bl.color = new Color(1f, 0.7f, 0.3f, 1f); bl.range = 5f; bl.intensity = 1.4f;
             return go;
         });
 
@@ -169,6 +173,7 @@ namespace RipNRage.Game.Content
             const float S = 2.25f;
             var go = new GameObject("AR_Grunt");
             go.layer = Layers.Enemies;
+            go.AddComponent<AudioSource>(); // attack telegraph / shot / alert sounds (standalone)
             var capsule = go.AddComponent<CapsuleCollider>();
             capsule.radius = 0.15f * S;
             capsule.height = 1f * S;

@@ -108,6 +108,17 @@ namespace RipNRage.Engine.Graphics
 
         public bool TryGet(string spriteName, out Sprite sprite) => _sprites.TryGetValue(spriteName, out sprite);
 
+        /// <summary>Creates an empty atlas over a texture so sprites generated in code can be registered like TexturePacker ones.</summary>
+        public static SpriteAtlas Create(string name, Texture2D texture) => new SpriteAtlas { Name = name, Texture = texture };
+
+        /// <summary>Adds (or replaces) a sprite; <paramref name="rect"/> is in pixels with a bottom-left origin.</summary>
+        public Sprite Add(string spriteName, Rect rect, Vector2? pivot = null, float pixelsPerUnit = 100f)
+        {
+            var s = new Sprite(Texture, rect, pivot ?? new Vector2(0.5f, 0.5f), pixelsPerUnit, spriteName);
+            _sprites[spriteName] = s;
+            return s;
+        }
+
         public static SpriteAtlas Load(string tpsheetPath, float pixelsPerUnit = 100f, FilterMode filter = FilterMode.Trilinear)
         {
             var atlas = new SpriteAtlas { Name = Path.GetFileNameWithoutExtension(tpsheetPath) };

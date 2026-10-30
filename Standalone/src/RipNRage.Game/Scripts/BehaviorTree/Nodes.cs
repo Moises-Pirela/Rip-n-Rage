@@ -319,8 +319,19 @@ namespace AI.BehaviorTree
     {
         protected override bool Condition()
         {
-            if (blackboard.playerObject == null)
+            if (blackboard.playerObject == null || blackboard.playerObject.IsDestroyed)
+            {
+                blackboard.playerObject = null;
                 return false;
+            }
+
+            // a dead player is no longer a target: the grunt goes back to wandering (standalone addition)
+            var player = blackboard.playerObject.GetComponent<PlayerState>();
+            if (player != null && player.IsDead)
+            {
+                blackboard.playerObject = null;
+                return false;
+            }
             
             blackboard.MoveToTarget = blackboard.playerObject.transform.position;
             return true;

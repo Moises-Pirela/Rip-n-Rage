@@ -32,7 +32,10 @@ public class GameManager : MonoBehaviour, IManager
     {
         GetAllManagers();
 
-        SaveData.Current =  (SaveData)SaveManager.Load("Save1");
+        // The original re-read the legacy "Save1" checkpoint file here, which made every level start
+        // (including a restart after death) inherit the health and ammo of an old checkpoint and
+        // overwrote the state the save system had just prepared for a load. GameSession now resets
+        // SaveData.Current for a fresh start and GameSaveSystem.Load fills it in when restoring a game.
         
         foreach (IManager manager in _managers)
         {

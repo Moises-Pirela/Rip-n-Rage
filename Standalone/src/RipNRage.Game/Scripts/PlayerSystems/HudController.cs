@@ -145,6 +145,15 @@ public class HudController : MonoBehaviour, IUiDrawer
         ragePostprocess?.Draw(ui);
         foreach (var img in images) img.Draw(ui);
         foreach (var t in texts) t.Draw(ui);
-        (CurrentCrosshair as GlockCrosshair)?.Draw(ui);
+        // no crosshair on a corpse (the death screen takes over the centre of the screen)
+        if (playerState == null || !playerState.IsDead)
+        {
+            var cross = CurrentCrosshair as GlockCrosshair;
+            if (cross != null)
+            {
+                cross.spread = _combatController?.inventory?.equippedWeapon != null ? _combatController.inventory.equippedWeapon.CurrentSpread : 0f;
+                cross.Draw(ui);
+            }
+        }
     }
 }

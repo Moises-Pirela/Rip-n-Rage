@@ -7,10 +7,11 @@ namespace RipNRage.Engine.Graphics.PostFx
     /// <summary>
     /// Post-processing chain rendered through offscreen HDR targets:
     ///
-    ///   scene (colour + depth) → motion blur (camera reprojection) → depth of field (CoC from depth,
-    ///   half-res blur) → [first-person sprites composited on top, sharp] → bloom (soft-knee bright
-    ///   pass + iterative blur) → final composite: chromatic aberration, colour filter/exposure/
-    ///   saturation/contrast, vignette → UI drawn afterwards, unaffected.
+    ///   scene (colour + depth) → volumetric fog → motion blur (camera reprojection) → [first-person
+    ///   sprites composited on top, sharp] → bloom (soft-knee bright pass + iterative blur) → final
+    ///   composite: chromatic aberration, colour filter/exposure/saturation/contrast, vignette → UI drawn
+    ///   afterwards, unaffected. (Depth of field was removed: its half-resolution blur produced haloing
+    ///   artifacts around depth edges and the game reads better sharp.)
     ///
     /// All parameters come from <see cref="PostProcessSettings"/> (tunables.cfg, hot-reloaded) plus
     /// a per-frame <see cref="PostProcessVolumeOverride"/> pushed by gameplay.
@@ -48,10 +49,10 @@ namespace RipNRage.Engine.Graphics.PostFx
 
         private static bool IsWhite(Color c) => c.r == 1f && c.g == 1f && c.b == 1f;
 
-        private RenderTarget _scene, _tmp, _composite, _halfA, _halfB, _bloomA, _bloomB;
+        private RenderTarget _scene, _tmp, _composite, _bloomA, _bloomB;
         private RenderTarget _current; // target holding the processed world (+ first-person sprites)
         private bool _hdrTargets, _linearTargets;
-        private readonly Shader _copy, _blur, _motionBlur, _dof, _bright, _final;
+        private readonly Shader _copy, _blur, _motionBlur, _bright, _final;
         private uint _vao, _vbo;
         private Matrix4x4 _prevViewProj;
         private bool _hasPrev;
@@ -59,8 +60,8 @@ namespace RipNRage.Engine.Graphics.PostFx
 
         public RenderTarget SceneTarget => _scene;
 
-        // ---- optional GPU-stage profiling (RIPNRAGE_PROFILE=1): glFinish around each stage
-        private static readonly bool Profile = Environment.GetEnvironmentVariable("RIPNRAGE_PROFILE") == "1";
+        // ---- optional GPU-stage profiling (Profiler.SyncGpu: RIPNRAGE_PROFILE=1, --profile or F11): glFinish around each stage
+        private static bool Profile => Profiler.SyncGpu;
         private readonly System.Collections.Generic.Dictionary<string, double> _stageMs = new System.Collections.Generic.Dictionary<string, double>();
         private int _profileFrames;
         private readonly System.Diagnostics.Stopwatch _sw = new System.Diagnostics.Stopwatch();
@@ -85,7 +86,6 @@ namespace RipNRage.Engine.Graphics.PostFx
             _copy = new Shader(FsVert, CopyFrag, "pp.copy");
             _blur = new Shader(FsVert, BlurFrag, "pp.blur");
             _motionBlur = new Shader(FsVert, MotionBlurFrag, "pp.motionblur");
-            _dof = new Shader(FsVert, DofFrag, "pp.dof");
             _bright = new Shader(FsVert, BrightFrag, "pp.bright");
             _final = new Shader(FsVert, FinalFrag, "pp.final");
             _fog = new Shader(FsVert, FogFrag, "pp.volumetric");
@@ -108,7 +108,6 @@ namespace RipNRage.Engine.Graphics.PostFx
             // the 3D scene and the 1:1 passes run at render_scale; the final pass upsamples to the window
             width = Math.Max(1, (int)(width * Settings.renderScale));
             height = Math.Max(1, (int)(height * Settings.renderScale));
-            int hw = Math.Max(1, (int)(width * Settings.effectScale)), hh = Math.Max(1, (int)(height * Settings.effectScale));
             int bw = Math.Max(1, (int)(width * Settings.bloomScale)), bh = Math.Max(1, (int)(height * Settings.bloomScale));
             bool hdr = Settings.hdr;
             bool upsampling = Settings.renderScale < 0.999f;
@@ -120,15 +119,13 @@ namespace RipNRage.Engine.Graphics.PostFx
                 _scene = new RenderTarget(width, height, hdr, true, linear: upsampling);
                 _tmp = new RenderTarget(width, height, hdr, false, linear: upsampling);
                 _composite = new RenderTarget(width, height, hdr, false, linear: upsampling);
-                _halfA = new RenderTarget(hw, hh, hdr, false);
-                _halfB = new RenderTarget(hw, hh, hdr, false);
                 _bloomA = new RenderTarget(bw, bh, hdr, false);
                 _bloomB = new RenderTarget(bw, bh, hdr, false);
             }
             else
             {
                 _scene.Resize(width, height); _tmp.Resize(width, height); _composite.Resize(width, height);
-                _halfA.Resize(hw, hh); _halfB.Resize(hw, hh); _bloomA.Resize(bw, bh); _bloomB.Resize(bw, bh);
+                _bloomA.Resize(bw, bh); _bloomB.Resize(bw, bh);
             }
             _width = width; _height = height;
             _scene.Bind();
@@ -136,12 +133,12 @@ namespace RipNRage.Engine.Graphics.PostFx
 
         private void ReleaseTargets()
         {
-            _scene?.Dispose(); _tmp?.Dispose(); _composite?.Dispose(); _halfA?.Dispose(); _halfB?.Dispose(); _bloomA?.Dispose(); _bloomB?.Dispose(); _fogRT?.Dispose();
-            _scene = _tmp = _composite = _halfA = _halfB = _bloomA = _bloomB = _fogRT = null;
+            _scene?.Dispose(); _tmp?.Dispose(); _composite?.Dispose(); _bloomA?.Dispose(); _bloomB?.Dispose(); _fogRT?.Dispose();
+            _scene = _tmp = _composite = _bloomA = _bloomB = _fogRT = null;
         }
 
         /// <summary>
-        /// Runs the depth-based world effects (motion blur, DOF). Leaves the composite target bound so the
+        /// Runs the world effects (volumetric fog, motion blur). Leaves the composite target bound so the
         /// caller can draw first-person sprites on top of the processed world.
         /// </summary>
         public void ProcessWorld(Matrix4x4 view, Matrix4x4 proj, float near, float far)
@@ -154,6 +151,8 @@ namespace RipNRage.Engine.Graphics.PostFx
             RenderTarget src = _scene;
             RenderTarget Next(RenderTarget cur) => cur == _tmp ? _composite : _tmp;
             _time += Time.unscaledDeltaTime;
+            Matrix4x4 invViewProj = viewProj.inverse;
+            Vector3 camPos = view.inverse.GetPosition();
 
             // ---- volumetric fog (ray march at volScale, composite at full res)
             if (VolumetricActive)
@@ -167,8 +166,8 @@ namespace RipNRage.Engine.Graphics.PostFx
                 bool shadows = _lighting.volShadows && _shadow != null && _shadow.Ready;
                 _fog.SetInt("uShadowsOn", shadows ? 1 : 0);
                 if (shadows) { _shadow.BindTexture(1); _fog.SetInt("uShadowMap", 1); _fog.SetMatrix("uShadowMatrix", _shadow.ShadowMatrix); }
-                _fog.SetMatrix("uInvViewProj", viewProj.inverse);
-                _fog.SetVector("uCamPos", view.inverse.GetPosition());
+                _fog.SetMatrix("uInvViewProj", invViewProj);
+                _fog.SetVector("uCamPos", camPos);
                 _fog.SetVector("uSunDir", _sunDir);
                 _fog.SetVector("uSunColor", _sunColor);
                 _fog.SetVector("uAmbient", new Vector3(_lighting.ambientSky.r, _lighting.ambientSky.g, _lighting.ambientSky.b));
@@ -192,8 +191,11 @@ namespace RipNRage.Engine.Graphics.PostFx
                 var dst = Next(src);
                 dst.Bind();
                 _fogComposite.Use();
-                src.BindColor(0); _fogRT.BindColor(1);
-                _fogComposite.SetInt("uTex", 0); _fogComposite.SetInt("uFog", 1);
+                src.BindColor(0); _fogRT.BindColor(1); _scene.BindDepth(2);
+                _fogComposite.SetInt("uTex", 0); _fogComposite.SetInt("uFog", 1); _fogComposite.SetInt("uDepth", 2);
+                _fogComposite.SetInt("uUpsample", _lighting.volUpsample && _lighting.volScale < 0.999f ? 1 : 0);
+                _fogComposite.SetVector("uFogTexel", new Vector2(1f / _fogRT.Width, 1f / _fogRT.Height));
+                _fogComposite.SetVector("uProjZ", new Vector2(proj.m22, proj.m23));
                 DrawTriangle();
                 src = dst;
                 Mark("volumetric");
@@ -207,7 +209,7 @@ namespace RipNRage.Engine.Graphics.PostFx
                 _motionBlur.Use();
                 src.BindColor(0); _scene.BindDepth(1);
                 _motionBlur.SetInt("uTex", 0); _motionBlur.SetInt("uDepth", 1);
-                _motionBlur.SetMatrix("uInvViewProj", viewProj.inverse);
+                _motionBlur.SetMatrix("uInvViewProj", invViewProj);
                 _motionBlur.SetMatrix("uPrevViewProj", _prevViewProj);
                 _motionBlur.SetFloat("uIntensity", Settings.motionBlurIntensity);
                 _motionBlur.SetInt("uSamples", Settings.motionBlurSamples);
@@ -217,32 +219,6 @@ namespace RipNRage.Engine.Graphics.PostFx
                 Mark("motionblur");
             }
             _prevViewProj = viewProj;
-
-            // ---- depth of field
-            if (Settings.dofEnabled && Settings.dofMaxBlur > 0.001f)
-            {
-                // downsample to half res, then blur (two separable passes, radius scaled by max_blur)
-                Blit(src, _halfA);
-                BlurPass(_halfA, _halfB, new Vector2(1, 0), 2.5f * Settings.dofMaxBlur);
-                BlurPass(_halfB, _halfA, new Vector2(0, 1), 2.5f * Settings.dofMaxBlur);
-
-                var dst = Next(src);
-                dst.Bind();
-                _dof.Use();
-                src.BindColor(0); _halfA.BindColor(1); _scene.BindDepth(2);
-                _dof.SetInt("uSharp", 0); _dof.SetInt("uBlur", 1); _dof.SetInt("uDepth", 2);
-                _dof.SetVector("uProjZ", new Vector2(proj.m22, proj.m23));
-                _dof.SetFloat("uFocus", Settings.dofFocusDistance);
-                _dof.SetFloat("uRange", Settings.dofFocusRange);
-                _dof.SetFloat("uFarStart", Mathf.Max(0.01f, Settings.dofFarBlurStart));
-                _dof.SetFloat("uMaxBlur", Settings.dofMaxBlur);
-                _dof.SetInt("uNearBlur", Settings.dofNearBlur ? 1 : 0);
-                _dof.SetInt("uAutofocus", Settings.dofAutofocus ? 1 : 0);
-                _dof.SetFloat("uFar", far);
-                DrawTriangle();
-                src = dst;
-                Mark("dof");
-            }
 
             // leave the processed target bound for the first-person pass (no extra copy)
             _current = src;
@@ -353,7 +329,7 @@ namespace RipNRage.Engine.Graphics.PostFx
         public void Dispose()
         {
             ReleaseTargets();
-            _copy.Dispose(); _blur.Dispose(); _motionBlur.Dispose(); _dof.Dispose(); _bright.Dispose(); _final.Dispose(); _fog.Dispose(); _fogComposite.Dispose();
+            _copy.Dispose(); _blur.Dispose(); _motionBlur.Dispose(); _bright.Dispose(); _final.Dispose(); _fog.Dispose(); _fogComposite.Dispose();
             GL.DeleteVertexArray(_vao); GL.DeleteBuffer(_vbo);
         }
 
@@ -407,33 +383,15 @@ void main() {
     FragColor = vec4(col / float(uSamples), 1.0);
 }";
 
-        private const string DofFrag = @"#version 330 core
-in vec2 vUV;
-uniform sampler2D uSharp; uniform sampler2D uBlur; uniform sampler2D uDepth;
-uniform vec2 uProjZ; uniform float uFocus; uniform float uRange; uniform float uFarStart; uniform float uMaxBlur;
-uniform int uNearBlur; uniform int uAutofocus; uniform float uFar;
-out vec4 FragColor;
-float linearDepth(float d) { float ndc = d * 2.0 - 1.0; return uProjZ.y / (ndc - uProjZ.x); }
-void main() {
-    float z = linearDepth(texture(uDepth, vUV).r);
-    float focus = uAutofocus == 1 ? linearDepth(texture(uDepth, vec2(0.5)).r) : uFocus;
-    focus = min(focus, uFar * 0.5);
-    float nearEdge = focus - uRange * 0.5;
-    float farEdge = focus + uRange * 0.5;
-    float coc = 0.0;
-    if (z > farEdge) coc = clamp((z - farEdge) / uFarStart, 0.0, 1.0);
-    else if (z < nearEdge && uNearBlur == 1) coc = clamp((nearEdge - z) / max(nearEdge, 0.01), 0.0, 1.0);
-    coc = clamp(coc * uMaxBlur, 0.0, 1.0);
-    vec3 sharp = texture(uSharp, vUV).rgb;
-    vec3 blur = texture(uBlur, vUV).rgb;
-    FragColor = vec4(mix(sharp, blur, coc), 1.0);
-}";
-
-        // Ray-marched height fog with sun in-scattering (Henyey-Greenstein) shadowed by the shadow map,
-        // plus point-light scattering. Output: rgb = in-scattered light, a = transmittance.
+        // Volumetric height fog. The smooth parts are analytic: the optical depth of the exponential height
+        // profile along the ray (→ transmittance), the ambient in-scatter and the point-light glow are closed
+        // forms, so the ray march only has to answer one question per step — "is this point in the sun?" —
+        // with a single hardware-PCF fetch. The marched sun visibility is normalised by the analytic
+        // absorption, so the step count only changes shaft detail, never the overall brightness.
+        // Output: rgb = in-scattered light, a = transmittance. Runs at volScale resolution.
         private const string FogFrag = @"#version 330 core
 in vec2 vUV;
-uniform sampler2D uDepth; uniform sampler2D uShadowMap;
+uniform sampler2D uDepth; uniform sampler2DShadow uShadowMap;
 uniform mat4 uInvViewProj; uniform mat4 uShadowMatrix; uniform int uShadowsOn;
 uniform vec3 uCamPos; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uAmbient;
 uniform vec3 uFogAlbedo; uniform float uDensity; uniform float uHeight; uniform float uFalloff;
@@ -443,11 +401,29 @@ uniform int uLightCount; uniform vec3 uLightPos[8]; uniform vec3 uLightColor[8];
 out vec4 FragColor;
 float ign(vec2 p) { return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y)); }
 float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * 3.14159265 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+float densityAt(float y) { return uDensity * exp(-max(y - uHeight, 0.0) * uFalloff); }
 float shadowAt(vec3 p) {
-    if (uShadowsOn == 0) return 1.0;
     vec4 sc = uShadowMatrix * vec4(p, 1.0); vec3 q = sc.xyz / sc.w;
     if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z > 1.0) return 1.0;
-    return (q.z - 0.002 <= texture(uShadowMap, q.xy).r) ? 1.0 : 0.0;
+    return texture(uShadowMap, vec3(q.xy, q.z - 0.002));
+}
+// optical depth of density(y) = D (y <= h), D exp(-k (y - h)) (y > h) along o + d t, t in [0, len]
+float opticalDepth(vec3 o, vec3 d, float len) {
+    float k = uFalloff;
+    if (k < 1e-5) return uDensity * len;
+    float dy = d.y;
+    float tCross = abs(dy) > 1e-5 ? (uHeight - o.y) / dy : 1e30;
+    float b0, b1, a0, a1; // below / above segments
+    if (o.y <= uHeight) { b0 = 0.0; b1 = (dy > 0.0) ? min(tCross, len) : len; a0 = b1; a1 = len; }
+    else { a0 = 0.0; a1 = (dy < 0.0) ? min(tCross, len) : len; b0 = a1; b1 = len; }
+    float tau = uDensity * max(b1 - b0, 0.0);
+    float la = a1 - a0;
+    if (la > 0.0) {
+        float y0 = o.y + dy * a0;
+        float a = uDensity * exp(-k * max(y0 - uHeight, 0.0));
+        tau += abs(dy) < 1e-5 ? a * la : a * (1.0 - exp(-k * dy * la)) / (k * dy);
+    }
+    return tau;
 }
 void main() {
     float d = texture(uDepth, vUV).r;
@@ -457,36 +433,86 @@ void main() {
     float len = length(ray);
     vec3 dir = ray / max(len, 1e-4);
     len = min(len, uMaxDist);
-    float stepLen = len / float(uSteps);
-    float t = stepLen * uDither * ign(gl_FragCoord.xy);
-    float T = 1.0;
-    vec3 acc = vec3(0.0);
-    float phase = min(hg(dot(dir, -uSunDir), uAniso) * 4.0 * 3.14159265, 6.0); // normalised so g=0 gives 1; capped so the sun disc does not blow out
-    for (int i = 0; i < uSteps; i++) {
-        vec3 p = uCamPos + dir * t;
-        float dens = uDensity * exp(-max(p.y - uHeight, 0.0) * uFalloff);
-        if (dens > 1e-6) {
-            vec3 light = uSunColor * uSunScatter * phase * shadowAt(p) + uAmbient * uAmbientAmount;
-            for (int l = 0; l < uLightCount; l++) {
-                float dist = distance(uLightPos[l], p);
-                if (dist < uLightRange[l]) { float att = 1.0 - dist / uLightRange[l]; light += uLightColor[l] * att * att * 2.0; }
+
+    float tau = opticalDepth(uCamPos, dir, len);
+    float T = exp(-tau);
+    if (tau < 1e-4) { FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }   // looking over the fog: nothing scatters
+    float absorbed = 1.0 - T;
+
+    // ambient sky light: constant along the ray → analytic
+    vec3 acc = uAmbient * uAmbientAmount * absorbed;
+
+    // sunlight: Henyey-Greenstein phase (normalised so g = 0 gives 1, capped so the sun disc does not blow out)
+    if (uSunScatter > 0.0) {
+        float phase = min(hg(dot(dir, -uSunDir), uAniso) * 4.0 * 3.14159265, 6.0);
+        vec3 sun = uSunColor * uSunScatter * phase;
+        if (uShadowsOn == 0) acc += sun * absorbed;
+        else {
+            // march only for the shadowing: absorption-weighted average of the sun visibility along the ray
+            float stepLen = len / float(uSteps);
+            float t = stepLen * uDither * ign(gl_FragCoord.xy);
+            float Tm = 1.0, lit = 0.0;
+            for (int i = 0; i < uSteps; i++) {
+                vec3 p = uCamPos + dir * t;
+                float e = exp(-densityAt(p.y) * stepLen);
+                lit += Tm * (1.0 - e) * shadowAt(p);
+                Tm *= e;
+                t += stepLen;
             }
-            float s = dens * stepLen;
-            float e = exp(-s);
-            acc += T * light * uFogAlbedo * (1.0 - e);
-            T *= e;
+            float marched = 1.0 - Tm;
+            if (marched > 1e-5) acc += sun * absorbed * (lit / marched);
         }
-        t += stepLen;
     }
+
+    // point lights: closed-form glow along the chord of the ray through the light's range sphere
+    for (int l = 0; l < uLightCount; l++) {
+        vec3 L = uLightPos[l] - uCamPos;
+        float b = dot(L, dir);
+        float h2 = max(dot(L, L) - b * b, 1e-4);
+        float R = uLightRange[l];
+        if (h2 >= R * R) continue;
+        float h = sqrt(h2);
+        float c = sqrt(R * R - h2);
+        float chord = max(0.0, min(b + c, len) - max(b - c, 0.0));
+        if (chord <= 0.0) continue;
+        float att = 1.0 - h / R;
+        float Tl = exp(-opticalDepth(uCamPos, dir, clamp(b, 0.0, len)));
+        acc += uLightColor[l] * (2.0 * densityAt(uLightPos[l].y) * chord * att * att / 3.0) * Tl;
+    }
+
+    acc *= uFogAlbedo;
     acc = acc / (1.0 + acc); // soft roll-off keeps bright shafts inside the LDR target
     FragColor = vec4(acc, T);
 }";
 
+        // Composite: scene * transmittance + in-scatter. With uUpsample the low-resolution fog is upsampled
+        // bilaterally (bilinear weights × depth similarity against the full-resolution depth), which removes
+        // the halos a plain bilinear lookup leaves around depth edges and lets the march run at 1/3 resolution.
         private const string FogCompositeFrag = @"#version 330 core
-in vec2 vUV; uniform sampler2D uTex; uniform sampler2D uFog; out vec4 FragColor;
+in vec2 vUV; uniform sampler2D uTex; uniform sampler2D uFog; uniform sampler2D uDepth;
+uniform vec2 uFogTexel; uniform vec2 uProjZ; uniform int uUpsample;
+out vec4 FragColor;
+float linearDepth(float d) { float ndc = d * 2.0 - 1.0; return uProjZ.y / (ndc - uProjZ.x); }
 void main() {
-    vec4 fog = texture(uFog, vUV);
     vec3 scene = texture(uTex, vUV).rgb;
+    vec4 fog;
+    if (uUpsample == 0) fog = texture(uFog, vUV);
+    else {
+        vec2 fuv = vUV / uFogTexel - 0.5;
+        vec2 f0 = floor(fuv);
+        vec2 fr = fuv - f0;
+        float zc = abs(linearDepth(texture(uDepth, vUV).r));
+        vec4 sum = vec4(0.0); float wsum = 0.0;
+        for (int j = 0; j < 2; j++)
+            for (int i = 0; i < 2; i++) {
+                vec2 tc = (f0 + vec2(float(i), float(j)) + 0.5) * uFogTexel;
+                float w = (i == 0 ? 1.0 - fr.x : fr.x) * (j == 0 ? 1.0 - fr.y : fr.y);
+                float z = abs(linearDepth(texture(uDepth, tc).r));
+                w *= 1.0 / (1.0 + 8.0 * abs(z - zc) / max(zc, 0.5));
+                sum += texture(uFog, tc) * w; wsum += w;
+            }
+        fog = sum / max(wsum, 1e-5);
+    }
     FragColor = vec4(scene * fog.a + fog.rgb, 1.0);
 }";
 

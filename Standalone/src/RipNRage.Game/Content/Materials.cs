@@ -70,6 +70,16 @@ namespace RipNRage.Game.Content
         private AIState _state;
         private float _deadTimer = -1f;
         private Material _dissolve;
+        private float _telegraphUntil, _telegraphDuration;
+        private Color _telegraphColor;
+
+        /// <summary>Standalone addition: pulses the sprite in <paramref name="color"/> for <paramref name="duration"/> seconds (attack wind-up, alert).</summary>
+        public void Telegraph(float duration, Color color)
+        {
+            _telegraphUntil = Time.time + duration;
+            _telegraphDuration = Mathf.Max(0.01f, duration);
+            _telegraphColor = color;
+        }
 
         protected override void Start()
         {
@@ -90,11 +100,21 @@ namespace RipNRage.Game.Content
         protected override void Update()
         {
             if (target == null) return;
-            if (_flash > 0f)
+            if (Time.time < _telegraphUntil && _flash <= 0f)
+            {
+                // ramping pulse in the telegraph colour: the player reads "about to fire" / "noticed you"
+                float left = (_telegraphUntil - Time.time) / _telegraphDuration;
+                float pulse = 0.35f + 0.45f * (1f - left) * (0.6f + 0.4f * Mathf.Sin(Time.time * 28f));
+                target.propertyBlock.SetColor("_FlashColor", _telegraphColor);
+                target.propertyBlock.SetFloat("_Flash", pulse);
+            }
+            else if (_flash > 0f)
             {
                 _flash -= Time.deltaTime / flashDuration;
+                target.propertyBlock.SetColor("_FlashColor", new Color(1f, 1f, 1f, 0f)); // alpha 0 = white hit flash
                 target.propertyBlock.SetFloat("_Flash", Mathf.Clamp01(_flash) * 0.85f);
             }
+            else if (target.propertyBlock.GetFloat("_Flash") != 0f) target.propertyBlock.SetFloat("_Flash", 0f);
             if (_deadTimer >= 0f)
             {
                 _deadTimer += Time.deltaTime;

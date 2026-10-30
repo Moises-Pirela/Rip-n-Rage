@@ -45,6 +45,7 @@ namespace RipNRage.Engine.Graphics
             Embedded["sprite"] = (BuiltinShaders.SpriteVert, BuiltinShaders.SpriteFrag);
             Embedded["ui"] = (BuiltinShaders.UiVert, BuiltinShaders.UiFrag);
             Embedded["sky"] = (BuiltinShaders.SkyVert, BuiltinShaders.SkyFrag);
+            Embedded["particle"] = (BuiltinShaders.ParticleVert, BuiltinShaders.ParticleFrag);
         }
 
         /// <summary>Finds the shaders folder (explicit, RIPNRAGE_SHADERS, or a "shaders" dir up from cwd / exe).</summary>

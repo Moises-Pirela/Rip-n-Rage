@@ -38,6 +38,9 @@ public class CombatController : MonoBehaviour
         set => _canFire = value;
     }
     private bool _isFiring = false;
+    /// <summary>Set by <see cref="DisableCombat"/> (player death): no input path may fire, jab or switch weapons any more.</summary>
+    private bool _combatDisabled;
+    public bool IsCombatDisabled => _combatDisabled;
 
     private CameraRecoil _cameraRecoil;
     private static readonly int JabTrigger = Animator.StringToHash("Jab");
@@ -71,11 +74,34 @@ public class CombatController : MonoBehaviour
 
     protected override void Update()
     {
+        if (_combatDisabled) return;
+
         if (_playerInputActions.IsFiring)
         {
             //Debug.Log("Fire");
             Fire();
         }
+    }
+
+    /// <summary>
+    /// Player death (standalone addition): stops every combat coroutine, blocks firing / jabbing /
+    /// weapon switching for good and hides the first-person weapon and fists.
+    /// </summary>
+    public void DisableCombat()
+    {
+        if (_combatDisabled) return;
+        _combatDisabled = true;
+        StopAllCoroutines();
+        _comboCoroutine = null;
+        _allowJabCoroutine = null;
+        _comboStepCounter = 0;
+        _canFire = false;
+        _canJab = false;
+        if (weaponAnimator != null) weaponAnimator.gameObject.SetActive(false);
+        if (leftFistAnimator != null) leftFistAnimator.gameObject.SetActive(false);
+        if (rightFistAnimator != null) rightFistAnimator.gameObject.SetActive(false);
+        if (cameraTransform != null) cameraTransform.DOKill();
+        if (_playerInputActions != null) _playerInputActions.SetIsBlockingInput(true);
     }
 
     #region Input Events
@@ -92,6 +118,7 @@ public class CombatController : MonoBehaviour
 
     public void OnAltFire(bool isPressed)
     {
+        if (_combatDisabled) return;
         if (_playerInputActions.GetIsBlockingInput()) return;
 
         if (!isPressed) return;
@@ -140,6 +167,7 @@ public class CombatController : MonoBehaviour
 
     public void OnSwapWeapon(float value)
     {
+        if (_combatDisabled) return;
         if (_playerInputActions.GetIsBlockingInput()) return;
 
         int index = Mathf.FloorToInt(value);
@@ -178,6 +206,7 @@ public class CombatController : MonoBehaviour
 
     public void OnEndMeleeCombo()
     {
+        if (_combatDisabled) return; // a weapon's melee animation ending after death must not re-arm anything
         _comboStepCounter = 0;
         _canJab = true;
         _canFire = true;
@@ -201,6 +230,15 @@ public class CombatController : MonoBehaviour
         }
     }
 
+    private int _lastWeaponIndex = -1;
+
+    /// <summary>Quick swap (standalone addition): back to the weapon held before the current one.</summary>
+    public void OnSwapToLastWeapon()
+    {
+        if (_lastWeaponIndex < 0 || _lastWeaponIndex == inventory.currentWeaponIndex) return;
+        ChangeWeapon(_lastWeaponIndex);
+    }
+
     /// <summary>Save/load support (standalone addition).</summary>
     public void EquipWeaponIndex(int index)
     {
@@ -209,6 +247,7 @@ public class CombatController : MonoBehaviour
 
     private void ChangeWeapon(int index)
     {
+        if (_combatDisabled) return;
         if (_playerInputActions.GetIsBlockingInput()) return;
         if (index < 0 || index >= inventory.availableWeapons.Count) return;
         EquipWeapon(index);
@@ -216,6 +255,7 @@ public class CombatController : MonoBehaviour
 
     private void EquipWeapon(int index)
     {
+        if (inventory.equippedWeapon != null && index != inventory.currentWeaponIndex) _lastWeaponIndex = inventory.currentWeaponIndex;
         inventory.equippedWeapon = inventory.availableWeapons[index];
         inventory.currentWeaponIndex = index;
 

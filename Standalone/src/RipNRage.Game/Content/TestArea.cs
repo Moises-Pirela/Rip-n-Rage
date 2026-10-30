@@ -23,8 +23,12 @@ namespace RipNRage.Game.Content
             0xffff3f7f, 0xffff3f3f, 0xffff3f37, 0xffff3f3f, 0xffff3fff, 0xffff5fbf, 0xffff2009, 0xffff0001,
         };
 
-        /// <summary>Builds the scene from a .map level; with no level the legacy hard-coded arena is used.</summary>
-        public static void Build(string levelPath = null)
+        /// <summary>
+        /// Builds the scene from a .map level; with no level the legacy hard-coded arena is used.
+        /// With <paramref name="spawnPlayer"/> false no DungeonMaster (and therefore no player) is created;
+        /// instead a <see cref="MenuCamera"/> looks over the level from the player start (main menu backdrop).
+        /// </summary>
+        public static void Build(string levelPath = null, bool spawnPlayer = true)
         {
             GameAssets.Load();
             Materials.Load();
@@ -36,13 +40,22 @@ namespace RipNRage.Game.Content
                 var level = LevelLoader.Load(levelPath);
                 Debug.LogWarning($"Level: {levelPath} ({level.document.Brushes.Count} brushes, {level.document.entities.Count} entities)");
                 new GameObject("SkyRotator").AddComponent<SkyboxRotator>();
-                BuildDungeonMaster(level.playerStart, level.playerRotation);
+                FallRespawn.KillY = level.killY;
+                FallRespawn.SpawnPosition = level.playerStart;
+                FallRespawn.SpawnRotation = level.playerRotation;
+                if (level.fallMode.HasValue) FallRespawn.Mode = level.fallMode.Value;
+                if (spawnPlayer) BuildDungeonMaster(level.playerStart, level.playerRotation);
+                else MenuCamera.Create(level.playerStart, level.playerRotation);
                 return;
             }
 
             BuildEnvironment();
             BuildProps();
-            BuildDungeonMaster(new Vector3(0f, 2.6f, 8f), Quaternion.Euler(0f, 180f, 0f));
+            FallRespawn.KillY = -1.5f; // the legacy arena's water surface is at -0.5
+            FallRespawn.SpawnPosition = new Vector3(0f, 2.6f, 8f);
+            FallRespawn.SpawnRotation = Quaternion.Euler(0f, 180f, 0f);
+            if (spawnPlayer) BuildDungeonMaster(new Vector3(0f, 2.6f, 8f), Quaternion.Euler(0f, 180f, 0f));
+            else MenuCamera.Create(new Vector3(0f, 2.6f, 8f), Quaternion.Euler(0f, 180f, 0f));
             BuildPickups();
             BuildEnemies();
         }
@@ -59,6 +72,7 @@ namespace RipNRage.Game.Content
             dock.transform.SetParent(env.transform, false);
             dock.transform.localPosition = DockOffset;
             dock.layer = Layers.Walkable;
+            dock.AddComponent<SurfaceMaterial>().surface = Surfaces.Wood; // the box colliders below inherit it (GetComponentInParent)
             var mr = dock.AddComponent<MeshRenderer>();
             mr.mesh = Mesh.LoadObj(objPath, MapScale, 1f / 64f, mirrorX: true);
             mr.texture = ProceduralTextures.WoodPlanks(); // Dock.blend's materials were not exported; generated planks instead
@@ -91,6 +105,7 @@ namespace RipNRage.Game.Content
             sand.transform.SetParent(water.transform, false);
             sand.transform.localPosition = new Vector3(0f, -15f, 0f);
             sand.layer = Layers.Walkable;
+            sand.AddComponent<SurfaceMaterial>().surface = Surfaces.Sand;
             var sandMr = sand.AddComponent<MeshRenderer>();
             sandMr.mesh = Mesh.CreatePlane(Vector3.zero, 1732.1f, 1000f, 1f / 4f);
             sandMr.texture = ProceduralTextures.Sand();
@@ -209,6 +224,7 @@ namespace RipNRage.Game.Content
             post.transform.SetParent(parent.transform, false);
             post.transform.position = basePos;
             post.layer = Layers.Walkable;
+            post.AddComponent<SurfaceMaterial>().surface = Surfaces.Metal;
             var pole = post.AddComponent<MeshRenderer>();
             pole.mesh = Mesh.CreateBox(new Vector3(0, 2.6f, 0), new Vector3(0.28f, 5.2f, 0.28f), 1f);
             pole.texture = GameAssets.Texture13;
@@ -239,6 +255,7 @@ namespace RipNRage.Game.Content
             go.transform.SetParent(parent.transform, false);
             go.transform.position = basePos + new Vector3(0, size * 0.5f, 0);
             go.layer = Layers.Walkable;
+            go.AddComponent<SurfaceMaterial>().surface = Surfaces.Wood;
             var mr = go.AddComponent<MeshRenderer>();
             mr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * size, 1f / size);
             mr.texture = tex;

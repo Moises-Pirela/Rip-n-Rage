@@ -74,6 +74,7 @@ public class RagePostprocess : MonoBehaviour
     /// </summary>
     public void Draw(UiBatch ui)
     {
+        if (!RipNRage.Game.Content.GraphicsSettings.RageEffectsEnabled) return; // graphics menu: "rage screen effects"
         var stack = Application.Current?.Renderer?.PostFx;
         bool useStack = stack != null && stack.IsActive;
         DrawVolume(ui, enragedVolume, useStack ? stack : null, chromatic: 1.0f);

@@ -1,0 +1,102 @@
+{
+  "name": "tracer_light",
+  "description": "Pistol / light calibre tracer: thin fast yellow streak.",
+  "emitters": [
+    {
+      "name": "bolt",
+      "enabled": true,
+      "sprite": "Particles/streak",
+      "frames": [],
+      "animateFrames": false,
+      "blend": "Additive",
+      "renderMode": "Stretched",
+      "lit": false,
+      "sortOrder": 0,
+      "delay": 0,
+      "burstMin": 1,
+      "burstMax": 1,
+      "rate": 0,
+      "duration": 0,
+      "shape": "Cone",
+      "coneAngle": 0,
+      "shapeRadius": 0,
+      "boxSize": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "lifetime": {
+        "min": 0.3,
+        "max": 0.3
+      },
+      "speed": {
+        "min": 160,
+        "max": 160
+      },
+      "gravity": 0,
+      "drag": 0,
+      "constantForce": [
+        0,
+        0,
+        0
+      ],
+      "turbulence": 0,
+      "lifetimeFromDistance": true,
+      "sizeStart": {
+        "min": 0.04,
+        "max": 0.04
+      },
+      "sizeEndScale": 1,
+      "aspect": 1,
+      "stretchLength": 12,
+      "stretchVelocity": 0.004,
+      "rotation": {
+        "min": 0,
+        "max": 360
+      },
+      "rotationSpeed": {
+        "min": 0,
+        "max": 0
+      },
+      "colorStart": [
+        1,
+        0.85,
+        0.5,
+        0.9
+      ],
+      "colorEnd": [
+        1,
+        0.7,
+        0.3,
+        0.6
+      ],
+      "fadeIn": 0,
+      "brightness": 1,
+      "colorVariation": 0,
+      "collide": false,
+      "bounce": 0.3,
+      "friction": 0.6,
+      "collisionRadius": 0.02,
+      "dieOnCollision": false,
+      "collisionEffectMax": 6
+    }
+  ],
+  "hasLight": false,
+  "lightColor": [
+    1,
+    0.8,
+    0.5,
+    1
+  ],
+  "lightIntensity": 3,
+  "lightRange": 8,
+  "lightDuration": 0.15,
+  "lightDelay": 0,
+  "cullRadius": 1,
+  "scale": 1
+}

@@ -92,6 +92,16 @@ namespace RipNRage.Engine.Platform
         public const uint TEXTURE3 = 0x84C3;
         public const uint NONE = 0;
         public const uint POLYGON_OFFSET_FILL = 0x8037;
+        public const uint TIME_ELAPSED = 0x88BF;
+        public const uint SAMPLES_PASSED = 0x8914;
+        public const uint ANY_SAMPLES_PASSED = 0x8C2F;
+        public const uint SHADING_LANGUAGE_VERSION = 0x8B8C;
+        public const uint TIMESTAMP = 0x8E28;
+        public const uint QUERY_RESULT = 0x8866;
+        public const uint QUERY_RESULT_AVAILABLE = 0x8867;
+        public const uint TEXTURE_COMPARE_MODE = 0x884C;
+        public const uint TEXTURE_COMPARE_FUNC = 0x884D;
+        public const uint COMPARE_REF_TO_TEXTURE = 0x884E;
 
         // ---- function pointers ----
         private static delegate* unmanaged<uint, void> _clear;
@@ -154,6 +164,15 @@ namespace RipNRage.Engine.Platform
         private static delegate* unmanaged<int, int, int, int, void> _scissor;
         private static delegate* unmanaged<float, void> _lineWidth;
         private static delegate* unmanaged<void> _finish;
+        private static delegate* unmanaged<void> _flush;
+        private static delegate* unmanaged<byte, byte, byte, byte, void> _colorMask;
+        private static delegate* unmanaged<int, uint*, void> _genQueries;
+        private static delegate* unmanaged<int, uint*, void> _deleteQueries;
+        private static delegate* unmanaged<uint, uint, void> _beginQuery;
+        private static delegate* unmanaged<uint, void> _endQuery;
+        private static delegate* unmanaged<uint, uint, void> _queryCounter;
+        private static delegate* unmanaged<uint, uint, int*, void> _getQueryObjectiv;
+        private static delegate* unmanaged<uint, uint, ulong*, void> _getQueryObjectui64v;
         private static delegate* unmanaged<int, uint*, void> _genFramebuffers;
         private static delegate* unmanaged<int, uint*, void> _deleteFramebuffers;
         private static delegate* unmanaged<uint, uint, void> _bindFramebuffer;
@@ -243,6 +262,16 @@ namespace RipNRage.Engine.Platform
             _scissor = (delegate* unmanaged<int, int, int, int, void>)getProc("glScissor");
             _lineWidth = (delegate* unmanaged<float, void>)getProc("glLineWidth");
             _finish = (delegate* unmanaged<void>)getProc("glFinish");
+            _flush = (delegate* unmanaged<void>)getProc("glFlush");
+            _colorMask = (delegate* unmanaged<byte, byte, byte, byte, void>)getProc("glColorMask");
+            // timer queries (core since 3.3; optional — the profiler disables GPU timing when missing)
+            _genQueries = (delegate* unmanaged<int, uint*, void>)getProc("glGenQueries");
+            _deleteQueries = (delegate* unmanaged<int, uint*, void>)getProc("glDeleteQueries");
+            _beginQuery = (delegate* unmanaged<uint, uint, void>)getProc("glBeginQuery");
+            _endQuery = (delegate* unmanaged<uint, void>)getProc("glEndQuery");
+            _queryCounter = (delegate* unmanaged<uint, uint, void>)getProc("glQueryCounter");
+            _getQueryObjectiv = (delegate* unmanaged<uint, uint, int*, void>)getProc("glGetQueryObjectiv");
+            _getQueryObjectui64v = (delegate* unmanaged<uint, uint, ulong*, void>)getProc("glGetQueryObjectui64v");
             _genFramebuffers = (delegate* unmanaged<int, uint*, void>)getProc("glGenFramebuffers");
             _deleteFramebuffers = (delegate* unmanaged<int, uint*, void>)getProc("glDeleteFramebuffers");
             _bindFramebuffer = (delegate* unmanaged<uint, uint, void>)getProc("glBindFramebuffer");
@@ -355,6 +384,18 @@ namespace RipNRage.Engine.Platform
         public static void Scissor(int x, int y, int w, int h) => _scissor(x, y, w, h);
         public static void LineWidth(float w) => _lineWidth(w);
         public static void Finish() => _finish();
+        public static void Flush() { if (_flush != null) _flush(); }
+        public static void ColorMask(bool r, bool g, bool b, bool a) => _colorMask(r ? (byte)1 : (byte)0, g ? (byte)1 : (byte)0, b ? (byte)1 : (byte)0, a ? (byte)1 : (byte)0);
+
+        /// <summary>True when the GL timer-query entry points were found (GPU stage timing possible).</summary>
+        public static bool HasTimerQueries => _genQueries != null && _beginQuery != null && _endQuery != null && _getQueryObjectiv != null && _getQueryObjectui64v != null && _queryCounter != null;
+        public static uint GenQuery() { uint q; _genQueries(1, &q); return q; }
+        public static void DeleteQuery(uint q) => _deleteQueries(1, &q);
+        public static void BeginQuery(uint target, uint q) => _beginQuery(target, q);
+        public static void EndQuery(uint target) => _endQuery(target);
+        public static void QueryCounter(uint q, uint target) => _queryCounter(q, target);
+        public static bool QueryResultAvailable(uint q) { int v; _getQueryObjectiv(q, QUERY_RESULT_AVAILABLE, &v); return v != 0; }
+        public static ulong QueryResult64(uint q) { ulong v; _getQueryObjectui64v(q, QUERY_RESULT, &v); return v; }
         public static uint GenFramebuffer() { uint f; _genFramebuffers(1, &f); return f; }
         public static void DeleteFramebuffer(uint f) => _deleteFramebuffers(1, &f);
         public static void BindFramebuffer(uint target, uint f) => _bindFramebuffer(target, f);

@@ -1,7 +1,10 @@
 using System.Collections;
 using System.Collections.Generic;
 
-// Ported from Assets/_Game/Scripts/Weapons/WeaponClasses/M1887Shotgun.cs (logic unchanged).
+// Ported from Assets/_Game/Scripts/Weapons/WeaponClasses/M1887Shotgun.cs (logic unchanged except the
+// point-blank melee shot using the data-driven blood / impact effects like HitscanWeapon.Fire).
+using RipNRage.Game.Content.Vfx;
+
 public class M1887Shotgun : HitscanWeapon
 {
     public override void Melee()
@@ -50,13 +53,21 @@ public class M1887Shotgun : HitscanWeapon
             var entityState = hit.collider.GetComponent<EntityState>();
 
             GameObject hitVFX = null;
+            string bulletKey = GameVfx.AmmoKey(weaponData.ammoType);
 
             if (entityState != null)
             {
-                entityState.TakeDamage(weaponData.weaponStats.damagePerShot);
+                bool wasAlive = entityState.HealthState != EntityHealthState.DEAD;
+                bool headshot = entityState is AIState ai && ai.IsHeadshot(hit.point);
+                entityState.TakeDamage(weaponData.weaponStats.damagePerShot * (headshot ? 2f : 1f));
+                bool killed = wasAlive && entityState.HealthState == EntityHealthState.DEAD;
                 PlayerState.Current.AddToRage(0.05f);
-                //TODO: Apply blood hit effects
-                //hitVFX = Instantiate(weaponData.spawnableVFX, hit.point, Quaternion.LookRotation(hit.normal));
+                if (GameVfx.Available) GameVfx.Blood(hit.point, hit.normal, bulletKey, headshot ? 1.7f : 1f);
+                if (entityState is AIState) StyleMeter.Current?.RegisterHit(weaponData.name, headshot, killed);
+            }
+            else if (GameVfx.Available)
+            {
+                GameVfx.Impact(hit, bulletKey);
             }
             else
             {

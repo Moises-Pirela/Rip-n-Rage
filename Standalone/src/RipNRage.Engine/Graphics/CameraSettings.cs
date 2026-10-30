@@ -4,6 +4,16 @@ using System.Globalization;
 
 namespace RipNRage.Engine.Graphics
 {
+    /// <summary>How hidden geometry is detected.</summary>
+    public enum OcclusionMode
+    {
+        Off,
+        /// <summary>Hardware occlusion queries against the real depth buffer (GPU does the work; one frame of latency).</summary>
+        Gpu,
+        /// <summary>The legacy CPU software rasterizer (every occluder triangle rasterised on the CPU each frame).</summary>
+        Cpu,
+    }
+
     /// <summary>[camera], [viewmodel] and [culling] tunables.</summary>
     public sealed class CameraSettings
     {
@@ -26,7 +36,9 @@ namespace RipNRage.Engine.Graphics
 
         // [culling]
         public bool frustumCulling = true;
-        public bool occlusionCulling = true;
+        /// <summary>True when <see cref="occlusionMode"/> is not Off (kept for callers that only need on/off).</summary>
+        public bool occlusionCulling => occlusionMode != OcclusionMode.Off;
+        public OcclusionMode occlusionMode = OcclusionMode.Gpu;
         public int occlusionWidth = 192;
         public int occlusionHeight = 96;
         public bool cullLights = true;
@@ -51,7 +63,13 @@ namespace RipNRage.Engine.Graphics
             viewmodelExposure = Mathf.Max(0f, F("viewmodel", "exposure", viewmodelExposure));
 
             frustumCulling = B("culling", "frustum", frustumCulling);
-            occlusionCulling = B("culling", "occlusion", occlusionCulling);
+            if (sections.TryGetValue("culling", out var cul) && cul.TryGetValue("occlusion", out var occ))
+            {
+                string v = occ.Trim().ToLowerInvariant();
+                occlusionMode = v == "cpu" ? OcclusionMode.Cpu
+                    : (v == "false" || v == "off" || v == "0" || v == "no" || v == "none") ? OcclusionMode.Off
+                    : OcclusionMode.Gpu; // "gpu", "true", "on", "1"
+            }
             occlusionWidth = Mathf.Clamp(I("culling", "buffer_width", occlusionWidth), 32, 1024);
             occlusionHeight = Mathf.Clamp(I("culling", "buffer_height", occlusionHeight), 16, 512);
             cullLights = B("culling", "lights", cullLights);

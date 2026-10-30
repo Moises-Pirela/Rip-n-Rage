@@ -164,7 +164,7 @@ namespace RipNRage.Game.Content.Level
                 classname = "floor_plane", description = "Large textured ground plane (size w l, texture)",
                 gizmoColor = new Color(0.9f, 0.8f, 0.5f, 1f), pickExtents = new Vector3(2f, 0.2f, 2f),
                 defaults = { ["size"] = "200 200", ["texture"] = "sand" },
-                spawn = e => Plane(e, "FloorPlane", null, LevelTextures.Get(e.Get("texture", "sand")).Texture, Color.white, 1f / 4f, transparent: false, collider: true, water: false),
+                spawn = e => { var go = Plane(e, "FloorPlane", null, LevelTextures.Get(e.Get("texture", "sand")).Texture, Color.white, 1f / 4f, transparent: false, collider: true, water: false); go.AddComponent<SurfaceMaterial>().surface = LevelTextures.Get(e.Get("texture", "sand")).surface; return go; },
                 preview = e => Plane(e, "FloorPlane", null, LevelTextures.Get(e.Get("texture", "sand")).Texture, Color.white, 1f / 4f, transparent: false, collider: false, water: false),
             });
 
@@ -231,6 +231,7 @@ namespace RipNRage.Game.Content.Level
             var post = new GameObject("LampPost");
             post.transform.position = e.origin;
             post.layer = Layers.Walkable;
+            post.AddComponent<SurfaceMaterial>().surface = Surfaces.Metal;
             var pole = post.AddComponent<MeshRenderer>();
             pole.mesh = Mesh.CreateBox(new Vector3(0, 2.6f, 0), new Vector3(0.28f, 5.2f, 0.28f), 1f);
             pole.texture = GameAssets.Texture13; pole.color = new Color(0.35f, 0.35f, 0.38f, 1f);

@@ -111,6 +111,12 @@ out vec4 FragColor; void main() { FragColor = vec4(1.0, 0.0, 1.0, 1.0); }";
 
         /// <summary>GLSL shared by every lit surface shader: sun + hemisphere ambient + point lights + PCF shadows + distance fog.</summary>
         public const string LightingCommon = @"
+// Shared lighting for every lit surface shader (meshes and sprites).
+// Provided uniforms are set by the engine every frame; call shade()/applyFog()/sampleShadow().
+// The shadow map is a depth texture in hardware compare mode (sampler2DShadow): one fetch returns a
+// bilinearly filtered 0..1 visibility, so 1 tap (softness 0) or 4 taps replace a 9-tap manual PCF.
+// uLightCount / uLightPos... hold only the point lights that touch the object being drawn (per-draw culling).
+
 uniform vec3 uSunDir;        // direction the sunlight travels
 uniform vec3 uSunColor;      // colour * intensity
 uniform vec3 uAmbientSky;
@@ -119,7 +125,7 @@ uniform int uLightCount;
 uniform vec3 uLightPos[16];
 uniform vec3 uLightColor[16];
 uniform float uLightRange[16];
-uniform sampler2D uShadowMap;
+uniform sampler2DShadow uShadowMap;
 uniform mat4 uShadowMatrix;
 uniform int uShadowsOn;
 uniform float uShadowBias;
@@ -138,13 +144,18 @@ float sampleShadow(vec3 wp, vec3 n) {
     vec4 sc = uShadowMatrix * vec4(wp + n * uShadowNormalOffset, 1.0);
     vec3 p = sc.xyz / sc.w;
     if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
-    float s = 0.0;
-    for (int x = -1; x <= 1; x++)
-        for (int y = -1; y <= 1; y++) {
-            float d = texture(uShadowMap, p.xy + vec2(float(x), float(y)) * uShadowTexel * uShadowSoftness).r;
-            s += (p.z - uShadowBias <= d) ? 1.0 : 0.0;
-        }
-    s /= 9.0;
+    float z = p.z - uShadowBias;
+    float s;
+    if (uShadowSoftness <= 0.0) {
+        s = texture(uShadowMap, vec3(p.xy, z));
+    } else {
+        float o = uShadowTexel * uShadowSoftness * 0.75;
+        s = texture(uShadowMap, vec3(p.xy + vec2(-o, -o), z))
+          + texture(uShadowMap, vec3(p.xy + vec2( o, -o), z))
+          + texture(uShadowMap, vec3(p.xy + vec2(-o,  o), z))
+          + texture(uShadowMap, vec3(p.xy + vec2( o,  o), z));
+        s *= 0.25;
+    }
     vec2 e = abs(p.xy - 0.5) * 2.0;
     float fade = smoothstep(0.85, 1.0, max(e.x, e.y));
     return mix(s, 1.0, fade);
@@ -153,10 +164,10 @@ float sampleShadow(vec3 wp, vec3 n) {
 vec3 shade(vec3 albedo, vec3 n, vec3 wp, float wrap) {
     vec3 ambient = mix(uAmbientGround, uAmbientSky, n.y * 0.5 + 0.5);
     float ndl = clamp((dot(n, -uSunDir) + wrap) / (1.0 + wrap), 0.0, 1.0);
-    float shadow = sampleShadow(wp, n);
+    float shadow = ndl > 0.0 ? sampleShadow(wp, n) : 1.0;   // fully back-facing texels need no shadow fetch
     vec3 col = albedo * (ambient + uSunColor * ndl * shadow);
-    vec3 v = normalize(uCameraPos - wp);
     if (uSpecular > 0.0 && ndl > 0.0) {
+        vec3 v = normalize(uCameraPos - wp);
         vec3 h = normalize(v - uSunDir);
         col += uSunColor * shadow * pow(max(dot(n, h), 0.0), 32.0) * uSpecular * ndl;
     }
@@ -216,6 +227,43 @@ void main() {
     }
     vec3 flashColor = _FlashColor.a > 0.0 ? _FlashColor.rgb : vec3(1.0);
     c.rgb = mix(c.rgb, flashColor, clamp(_Flash, 0.0, 1.0));
+    FragColor = c;
+}";
+
+        /// <summary>Particle batches (ParticleRenderer): world-space quads with per-vertex colour; optional lighting/fog.</summary>
+        public const string ParticleVert = @"#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aUV;
+layout(location = 2) in vec4 aColor;
+uniform mat4 uViewProj;
+out vec2 vUV;
+out vec4 vColor;
+out vec3 vWorldPos;
+void main() {
+    vUV = aUV;
+    vColor = aColor;
+    vWorldPos = aPos;
+    gl_Position = uViewProj * vec4(aPos, 1.0);
+}";
+
+        public const string ParticleFrag = @"#version 330 core
+in vec2 vUV;
+in vec4 vColor;
+in vec3 vWorldPos;
+uniform sampler2D uTex;
+uniform int uLit;
+uniform int uMultiply;
+" + LightingCommon + @"
+out vec4 FragColor;
+void main() {
+    vec4 tex = texture(uTex, vUV);
+    vec4 c = tex * vColor;
+    if (c.a < 0.004) discard;
+    if (uLit == 1) {
+        vec3 lit = shade(c.rgb, vec3(0.0, 1.0, 0.0), vWorldPos, 1.0);
+        c.rgb = applyFog(lit, vWorldPos);
+    }
+    if (uMultiply == 1) c.rgb = mix(vec3(1.0), c.rgb, c.a); // multiply blend: alpha fades towards no darkening
     FragColor = c;
 }";
 

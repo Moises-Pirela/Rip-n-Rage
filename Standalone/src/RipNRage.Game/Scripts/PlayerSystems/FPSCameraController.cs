@@ -24,6 +24,9 @@ public class FPSCameraController : MonoBehaviour
     [SerializeField] public float zSwayAngle = 1.5f;
     [SerializeField] public float zSwayMultiplier = -50f;
     [SerializeField] public float zSmoothSway = 20f;
+    /// <summary>Standalone addition: extra roll requested by the movement controller (wall running); smoothed here.</summary>
+    public float externalRoll;
+    private float _extRollSmooth;
 
     protected override void Awake()
     {
@@ -56,7 +59,7 @@ public class FPSCameraController : MonoBehaviour
         xRotation -= mouseY;
         xRotation = Mathf.Clamp(xRotation, -90f, 90f);
 
-        float z = localRotation.eulerAngles.z;
+        float z = localRotation.eulerAngles.z - _extRollSmooth; // the sway state without the wall-run roll added last frame
         float x = localRotation.eulerAngles.x;
 
         float zLerp = Mathf.LerpAngle(z, 0, Time.deltaTime * zSmoothLerp);
@@ -66,8 +69,9 @@ public class FPSCameraController : MonoBehaviour
 
         zSway = Mathf.LerpAngle(z, zSway, Time.deltaTime * zSmoothLerp);
 
+        _extRollSmooth = Mathf.Lerp(_extRollSmooth, externalRoll, Time.deltaTime * 8f);
         localRotation = Quaternion.Euler(xRotation, desiredX,
-            _inputActions.MovementInput.x != 0 ? zSway : zLerp); //apply camera tilt
+            (_inputActions.MovementInput.x != 0 ? zSway : zLerp) + _extRollSmooth); //apply camera tilt
 
         playerCamera.transform.localRotation = localRotation;
 

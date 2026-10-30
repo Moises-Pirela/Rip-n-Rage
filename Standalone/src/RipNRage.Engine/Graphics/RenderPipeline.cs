@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using RipNRage.Engine.Graphics.Culling;
 using RipNRage.Engine.Graphics.Lighting;
+using RipNRage.Engine.Graphics.Particles;
 using RipNRage.Engine.Graphics.PostFx;
 using RipNRage.Engine.Platform;
 
@@ -43,19 +44,26 @@ namespace RipNRage.Engine.Graphics
         private readonly List<MeshRenderer> _visibleMeshes = new List<MeshRenderer>();
         private readonly List<SpriteRenderer> _visibleSprites = new List<SpriteRenderer>();
         private readonly List<IUiDrawer> _uiDrawers = new List<IUiDrawer>();
+        private readonly List<SpriteRenderer> _casters = new List<SpriteRenderer>();
 
         public UiBatch Ui { get; }
         public int DrawCalls { get; private set; }
         public bool DrawUi = true;
-        /// <summary>Post-processing chain (bloom, chromatic aberration, vignette, DOF, motion blur, volumetric fog).</summary>
+        /// <summary>Post-processing chain (bloom, chromatic aberration, vignette, motion blur, volumetric fog).</summary>
         public PostProcessStack PostFx { get; }
         /// <summary>Sun / ambient / fog / shadow tunables (shared with tunables.cfg when present).</summary>
         public LightingSettings Lighting { get; set; } = new LightingSettings();
         /// <summary>[camera] / [viewmodel] / [culling] tunables.</summary>
         public CameraSettings CameraConfig { get; set; } = new CameraSettings();
         public ShadowMap Shadows { get; }
-        /// <summary>Software occlusion buffer (rebuilt every frame from <see cref="MeshRenderer.occluder"/> meshes).</summary>
+        /// <summary>Batched renderer for the data-driven particle effects (<see cref="ParticleWorld"/>).</summary>
+        public ParticleRenderer Particles { get; }
+        /// <summary>Software occlusion buffer (legacy CPU path, <c>[culling] occlusion = cpu</c>).</summary>
         public OcclusionBuffer Occlusion { get; }
+        /// <summary>Hardware occlusion queries (default path, <c>[culling] occlusion = gpu</c>).</summary>
+        public GpuOcclusion GpuOcclusion { get; }
+        private readonly List<MeshRenderer> _occlusionCandidates = new List<MeshRenderer>();
+        private bool _gpuOcclusionThisFrame;
         /// <summary>Slack added to every renderer AABB before culling (covers shader vertex animation and sprite wobble).</summary>
         public static readonly Vector3 BoundsPadding = new Vector3(0.3f, 0.3f, 0.3f);
         /// <summary>Counters from the last frame's culling.</summary>
@@ -71,6 +79,14 @@ namespace RipNRage.Engine.Graphics
         private Vector3 _sunDir;
         private Vector3 _sunColor;
         private bool _shadowsThisFrame;
+        // per-draw point-light culling: only the lights whose range touches the renderer are uploaded
+        private readonly Vector3[] _dlPos = new Vector3[16];
+        private readonly Vector3[] _dlColor = new Vector3[16];
+        private readonly float[] _dlRange = new float[16];
+        private Shader _dlShader;
+        private int _dlMask = -1;
+        /// <summary>Per-draw light set uploads in the last frame (debug overlay).</summary>
+        public int LightUploads { get; private set; }
 
         public RenderPipeline()
         {
@@ -82,6 +98,8 @@ namespace RipNRage.Engine.Graphics
             PostFx = new PostProcessStack();
             Shadows = new ShadowMap();
             Occlusion = new OcclusionBuffer();
+            GpuOcclusion = GpuOcclusion.Available ? new GpuOcclusion() : null;
+            Particles = new ParticleRenderer();
 
             _quadVao = GL.GenVertexArray();
             _quadVbo = GL.GenBuffer();
@@ -110,17 +128,25 @@ namespace RipNRage.Engine.Graphics
         public void Render(Scene scene, int width, int height)
         {
             DrawCalls = 0;
+            LightUploads = 0;
+            _dlShader = null; _dlMask = -1;
             var cam = Camera.main;
             if (cam == null || width == 0 || height == 0)
             {
                 RenderTarget.BindDefault(width, height);
                 GL.ClearColor(0, 0, 0, 1); GL.Clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
+                // no camera (pure UI scenes such as a menu): still give the UI drawers their pass
+                if (cam == null && width > 0 && height > 0) { Collect(scene); DrawUiPass(width, height, null); }
+                GL.BindVertexArray(0);
                 return;
             }
 
+            Profiler.GpuFrameBegin();
+            Profiler.Begin("collect");
             Collect(scene);
             ApplyLightingSettings();
             GatherLights(cam);
+            Profiler.End();
             var cfg = CameraConfig ?? new CameraSettings();
             if (cfg.fov > 0f) cam.fieldOfView = cfg.fov;
             if (cfg.near > 0f) cam.nearClipPlane = cfg.near;
@@ -130,10 +156,12 @@ namespace RipNRage.Engine.Graphics
             _shadowsThisFrame = Lighting.shadowsEnabled;
             if (_shadowsThisFrame)
             {
-                var casters = new List<SpriteRenderer>();
-                foreach (var sr in _worldSprites) if (sr.lit) casters.Add(sr);
-                Shadows.Render(Lighting, _sunDir, cam, _meshes, casters);
+                Profiler.Begin("shadow map", gpu: true);
+                _casters.Clear();
+                foreach (var sr in _worldSprites) if (sr.lit) _casters.Add(sr);
+                Shadows.Render(Lighting, _sunDir, cam, _meshes, _casters);
                 DrawCalls++;
+                Profiler.End();
             }
 
             float aspect = (float)width / height;
@@ -146,7 +174,9 @@ namespace RipNRage.Engine.Graphics
             _fpPass = false; _overrideViewProj = false;
 
             // ---- visibility: frustum + occlusion culling of world renderers and point lights
+            Profiler.Begin("culling");
             CullWorld(cam, view, proj, viewProj, cfg);
+            Profiler.End();
 
             PostFx.SetSceneLighting(Lighting, _shadowsThisFrame ? Shadows : null, _sunDir, _sunColor, _lightPos, _lightColor, _lightRange, _lightCount);
             bool post = PostFx.IsActive;
@@ -156,43 +186,79 @@ namespace RipNRage.Engine.Graphics
             GL.Clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
 
             // ---- pass 1: sky
+            Profiler.Begin("sky", gpu: true);
             if (RenderSettings.drawSky) RenderSky(cam, proj);
+            Profiler.End();
 
             // ---- pass 2: world
+            Profiler.Begin("world", gpu: true);
             RenderWorld(cam, view, viewProj);
+            Profiler.End();
 
             // ---- post-processing (world effects) — leaves the composite target bound
             if (post)
             {
+                Profiler.Begin("postfx world (fog/motion blur)", gpu: true);
                 PostFx.ProcessWorld(view, proj, cam.nearClipPlane, cam.farClipPlane);
                 GL.ActiveTexture(GL.TEXTURE0);
+                Profiler.End();
             }
 
             // ---- pass 3: viewmodel (first-person weapon / hands) with its own FOV and depth range
+            Profiler.Begin("viewmodel", gpu: true);
             if (cfg.viewmodelEnabled) RenderViewmodel(cam, view, aspect, cfg);
+            Profiler.End();
 
             // ---- post-processing (lens effects) → default framebuffer
-            if (post) { PostFx.Finish(width, height); DrawCalls += 8; }
+            if (post)
+            {
+                Profiler.Begin("postfx final (bloom/lens)", gpu: true);
+                PostFx.Finish(width, height); DrawCalls += 8;
+                Profiler.End();
+            }
 
             // ---- pass 4: UI
-            if (DrawUi)
-            {
-                GL.Disable(GL.DEPTH_TEST);
-                GL.Disable(GL.CULL_FACE); // UI quads are wound CCW; a mesh material may have left back-face culling on
-                GL.Enable(GL.BLEND);
-                GL.BlendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA);
-                Ui.Begin(width, height);
-                foreach (var d in _uiDrawers)
-                {
-                    try { d.DrawUi(Ui); }
-                    catch (Exception e) { Debug.LogError($"DrawUi threw: {e}"); }
-                }
-                if (cfg.occlusionDebugView && cfg.occlusionCulling) DrawOcclusionDebug(cfg);
-                Ui.Flush();
-                GL.Disable(GL.SCISSOR_TEST); // in case a drawer left a clip rect pushed
-                DrawCalls++;
-            }
+            Profiler.Begin("ui", gpu: true);
+            DrawUiPass(width, height, cfg);
+            Profiler.End();
+            Profiler.GpuFrameEnd();
             GL.BindVertexArray(0);
+        }
+
+        /// <summary>Screen-space UI: every <see cref="IUiDrawer"/> in <see cref="IUiLayer"/> order (stable), then the debug views.</summary>
+        private void DrawUiPass(int width, int height, CameraSettings cfg)
+        {
+            if (!DrawUi) return;
+            GL.Disable(GL.DEPTH_TEST);
+            GL.Disable(GL.CULL_FACE); // UI quads are wound CCW; a mesh material may have left back-face culling on
+            GL.Enable(GL.BLEND);
+            GL.BlendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA);
+            Ui.Begin(width, height);
+            SortUiDrawers();
+            foreach (var d in _uiDrawers)
+            {
+                try { d.DrawUi(Ui); }
+                catch (Exception e) { Debug.LogError($"DrawUi threw: {e}"); }
+            }
+            if (cfg != null && cfg.occlusionDebugView && cfg.occlusionMode == OcclusionMode.Cpu) DrawOcclusionDebug(cfg);
+            Ui.Flush();
+            GL.Disable(GL.SCISSOR_TEST); // in case a drawer left a clip rect pushed
+            DrawCalls++;
+        }
+
+        private static int UiLayerOf(IUiDrawer d) => d is IUiLayer l ? l.UiLayer : UiLayers.Default;
+
+        /// <summary>Stable insertion sort by UI layer (the list is tiny; List.Sort is not stable).</summary>
+        private void SortUiDrawers()
+        {
+            for (int i = 1; i < _uiDrawers.Count; i++)
+            {
+                var item = _uiDrawers[i];
+                int layer = UiLayerOf(item);
+                int j = i - 1;
+                while (j >= 0 && UiLayerOf(_uiDrawers[j]) > layer) { _uiDrawers[j + 1] = _uiDrawers[j]; j--; }
+                _uiDrawers[j + 1] = item;
+            }
         }
 
         private void RenderSky(Camera cam, in Matrix4x4 proj)
@@ -219,11 +285,29 @@ namespace RipNRage.Engine.Graphics
         {
             GL.DepthFunc(GL.LEQUAL);
             GL.FrontFace(GL.CW); // left-handed world: clockwise-from-the-front triangles face the viewer
-            _visibleMeshes.Sort((a, b) => a.sharedMaterial.renderQueue.CompareTo(b.sharedMaterial.renderQueue));
+            // opaque: by queue, then front to back so early-Z rejects the expensive lit fragments of hidden geometry
+            _meshDepthCache.Clear();
+            foreach (var mr in _visibleMeshes)
+            {
+                RendererBounds.GetWorldAABB(mr, out var bmin, out var bmax);
+                _meshDepthCache[mr] = ((bmin + bmax) * 0.5f - _camPos).sqrMagnitude;
+            }
+            _visibleMeshes.Sort((a, b) =>
+            {
+                int q = a.sharedMaterial.renderQueue.CompareTo(b.sharedMaterial.renderQueue);
+                return q != 0 ? q : _meshDepthCache[a].CompareTo(_meshDepthCache[b]);
+            });
             foreach (var mr in _visibleMeshes)
             {
                 if (mr.sharedMaterial.IsTransparent) continue;
                 DrawMesh(mr);
+            }
+            if (_gpuOcclusionThisFrame)
+            {
+                // hardware occlusion: test every frustum-visible chunk's box against the depth buffer just written
+                Profiler.Begin("occlusion queries", gpu: false);
+                GpuOcclusion.IssueQueries(_occlusionCandidates, viewProj, _camPos, cam.nearClipPlane, Time.frameCount);
+                Profiler.End();
             }
             foreach (var mr in _visibleMeshes)
             {
@@ -235,12 +319,18 @@ namespace RipNRage.Engine.Graphics
             SortByDepth(_visibleSprites, view);
             foreach (var sr in _visibleSprites) DrawSprite(sr, cam, true);
 
+            // data-driven particle effects: batched, depth tested, no depth writes
+            Profiler.Begin("particles draw");
+            Particles.Render(cam, view, viewProj, (CameraConfig ?? new CameraSettings()).frustumCulling, PrepareShader);
+            DrawCalls += Particles.DrawCalls;
+            Profiler.End();
+
             DebugDraw.Render(viewProj);
         }
 
         /// <summary>
         /// First-person layer: same view as the world camera but its own projection (FOV / near / far), drawn on a
-        /// cleared depth buffer after the world post-process stage so DOF/motion blur/fog never smear the weapon.
+        /// cleared depth buffer after the world post-process stage so motion blur/fog never smear the weapon.
         /// Sprites sort by sortingOrder then depth; FirstPerson meshes are drawn first (depth tested among themselves).
         /// </summary>
         private void RenderViewmodel(Camera cam, in Matrix4x4 view, float aspect, CameraSettings cfg)
@@ -274,8 +364,12 @@ namespace RipNRage.Engine.Graphics
         {
             var st = Culling;
             st.Reset();
-            _visibleMeshes.Clear(); _visibleSprites.Clear();
-            bool frustumOn = cfg.frustumCulling, occlusionOn = cfg.occlusionCulling;
+            _visibleMeshes.Clear(); _visibleSprites.Clear(); _occlusionCandidates.Clear();
+            bool frustumOn = cfg.frustumCulling;
+            bool gpuOcc = cfg.occlusionMode == OcclusionMode.Gpu && GpuOcclusion != null;
+            bool occlusionOn = cfg.occlusionMode == OcclusionMode.Cpu; // the CPU rasterizer path
+            _gpuOcclusionThisFrame = gpuOcc;
+            int frame = Time.frameCount;
             Frustum frustum = frustumOn ? Frustum.FromViewProj(viewProj) : default;
 
             if (occlusionOn)
@@ -301,6 +395,12 @@ namespace RipNRage.Engine.Graphics
                     if (frustumOn && !frustum.IntersectsAABB(min, max)) { st.meshesFrustumCulled++; continue; }
                     // occluders themselves are tested too (a chunk entirely behind another wall still gets skipped)
                     if (occlusionOn && !Occlusion.IsVisible(min, max)) { st.meshesOccluded++; continue; }
+                }
+                if (gpuOcc)
+                {
+                    // the result of last frame's box query decides; the query for this frame is issued after the opaque pass
+                    _occlusionCandidates.Add(mr);
+                    if (!GpuOcclusion.IsVisible(mr, frame)) { st.meshesOccluded++; continue; }
                 }
                 _visibleMeshes.Add(mr);
             }
@@ -428,6 +528,7 @@ namespace RipNRage.Engine.Graphics
             sh.SetVector4("uTimeVec", Time.time, Mathf.Sin(Time.time), Mathf.Cos(Time.time), Time.deltaTime);
             sh.SetInt("uTex", 0);
             ApplyLightingUniforms(sh, _camPos);
+            if (sh == _dlShader) _dlMask = -1; // the global light list was just re-uploaded: forget the per-draw subset
             sh.SetFloat("uWrap", Lighting.spriteWrap);
             sh.SetInt("uDebugShadow", DebugShadowView ? 1 : 0);
         }
@@ -442,6 +543,7 @@ namespace RipNRage.Engine.Graphics
             mat.ApplyState();
             var sh = mat.shader;
             sh.SetMatrix("uModel", mr.transform.localToWorldMatrix);
+            if (_lightCount > 0 && Lighting.lightsPerDraw > 0 && RendererBounds.GetWorldAABB(mr, out var lmin, out var lmax)) SetDrawLights(sh, lmin, lmax);
             // legacy per-renderer fields act as defaults; material and property block override them
             sh.SetColor("uTint", mr.color);
             sh.SetVector("uUVScale", mr.uvScale);
@@ -451,6 +553,39 @@ namespace RipNRage.Engine.Graphics
             sh.SetInt("uTex", 0);
             mr.mesh.Draw();
             DrawCalls++;
+        }
+
+        /// <summary>
+        /// Uploads only the point lights whose range sphere touches the renderer's world AABB (at most
+        /// <see cref="LightingSettings.lightsPerDraw"/>). The surface shaders loop over uLightCount, so a level
+        /// with 16 visible lights costs each pixel only the 0–3 lights that can actually reach it. Consecutive
+        /// draws with the same shader and subset skip the upload.
+        /// </summary>
+        private void SetDrawLights(Shader sh, in Vector3 min, in Vector3 max)
+        {
+            int cap = Mathf.Min(Lighting.lightsPerDraw, 16);
+            int mask = 0, n = 0;
+            for (int i = 0; i < _lightCount && n < cap; i++)
+            {
+                Vector3 p = _lightPos[i]; float r = _lightRange[i];
+                // squared distance from the light to the box
+                float dx = p.x < min.x ? min.x - p.x : p.x > max.x ? p.x - max.x : 0f;
+                float dy = p.y < min.y ? min.y - p.y : p.y > max.y ? p.y - max.y : 0f;
+                float dz = p.z < min.z ? min.z - p.z : p.z > max.z ? p.z - max.z : 0f;
+                if (dx * dx + dy * dy + dz * dz > r * r) continue;
+                mask |= 1 << i;
+                _dlPos[n] = p; _dlColor[n] = _lightColor[i]; _dlRange[n] = r; n++;
+            }
+            if (sh == _dlShader && mask == _dlMask) return;
+            _dlShader = sh; _dlMask = mask;
+            sh.SetInt("uLightCount", n);
+            if (n > 0)
+            {
+                sh.SetVector3Array("uLightPos", _dlPos, n);
+                sh.SetVector3Array("uLightColor", _dlColor, n);
+                sh.SetFloatArray("uLightRange", _dlRange, n);
+            }
+            LightUploads++;
         }
 
         private void Collect(Scene scene)
@@ -478,6 +613,7 @@ namespace RipNRage.Engine.Graphics
         }
 
         private readonly Dictionary<SpriteRenderer, float> _depthCache = new Dictionary<SpriteRenderer, float>();
+        private readonly Dictionary<MeshRenderer, float> _meshDepthCache = new Dictionary<MeshRenderer, float>();
 
         private void SortByDepth(List<SpriteRenderer> list, Matrix4x4 view)
         {
@@ -513,6 +649,11 @@ namespace RipNRage.Engine.Graphics
             if (_fpPass) GL.Disable(GL.DEPTH_TEST); // first-person sprites sort by order, not depth
             bool lit = applyLighting && !sr.fullBright && (sr.lit || _fpPass);
             sh.SetInt("uLit", lit ? 1 : 0);
+            if (lit && _lightCount > 0 && Lighting.lightsPerDraw > 0)
+            {
+                if (_fpPass) SetDrawLights(sh, cam.transform.position - Vector3.one * 2f, cam.transform.position + Vector3.one * 2f);
+                else if (RendererBounds.GetWorldAABB(sr, out var lmin, out var lmax)) SetDrawLights(sh, lmin, lmax);
+            }
             Color tint = sr.color;
             if (lit)
             {
@@ -594,6 +735,8 @@ namespace RipNRage.Engine.Graphics
         {
             Ui.Dispose();
             PostFx.Dispose();
+            Particles.Dispose();
+            GpuOcclusion?.Dispose();
             Shadows.Dispose();
             Occlusion.Dispose();
             GL.DeleteVertexArray(_quadVao); GL.DeleteBuffer(_quadVbo); GL.DeleteBuffer(_quadEbo);

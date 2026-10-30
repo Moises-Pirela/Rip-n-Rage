@@ -1,0 +1,185 @@
+{
+  "name": "rocket_trail",
+  "description": "Smoke and exhaust glow following a rocket (spawned with Follow; open ended until stopped).",
+  "emitters": [
+    {
+      "name": "smoke",
+      "enabled": true,
+      "sprite": "Particles/smoke",
+      "frames": [],
+      "animateFrames": false,
+      "blend": "Alpha",
+      "renderMode": "Billboard",
+      "lit": true,
+      "sortOrder": 0,
+      "delay": 0,
+      "burstMin": 0,
+      "burstMax": 0,
+      "rate": 60,
+      "duration": 0,
+      "shape": "Cone",
+      "coneAngle": 10,
+      "shapeRadius": 0,
+      "boxSize": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "lifetime": {
+        "min": 0.6,
+        "max": 1
+      },
+      "speed": {
+        "min": 1,
+        "max": 2
+      },
+      "gravity": -0.05,
+      "drag": 1,
+      "constantForce": [
+        0,
+        0,
+        0
+      ],
+      "turbulence": 0,
+      "lifetimeFromDistance": false,
+      "sizeStart": {
+        "min": 0.15,
+        "max": 0.25
+      },
+      "sizeEndScale": 3.5,
+      "aspect": 1,
+      "stretchLength": 1,
+      "stretchVelocity": 0.05,
+      "rotation": {
+        "min": 0,
+        "max": 360
+      },
+      "rotationSpeed": {
+        "min": -40,
+        "max": 40
+      },
+      "colorStart": [
+        0.8,
+        0.78,
+        0.75,
+        0.6
+      ],
+      "colorEnd": [
+        0.6,
+        0.6,
+        0.6,
+        0
+      ],
+      "fadeIn": 0.05,
+      "brightness": 1,
+      "colorVariation": 0,
+      "collide": false,
+      "bounce": 0.3,
+      "friction": 0.6,
+      "collisionRadius": 0.02,
+      "dieOnCollision": false,
+      "collisionEffectMax": 6
+    },
+    {
+      "name": "exhaust",
+      "enabled": true,
+      "sprite": "Particles/soft",
+      "frames": [],
+      "animateFrames": false,
+      "blend": "Additive",
+      "renderMode": "Billboard",
+      "lit": false,
+      "sortOrder": 1,
+      "delay": 0,
+      "burstMin": 0,
+      "burstMax": 0,
+      "rate": 40,
+      "duration": 0,
+      "shape": "Cone",
+      "coneAngle": 8,
+      "shapeRadius": 0,
+      "boxSize": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "lifetime": {
+        "min": 0.08,
+        "max": 0.15
+      },
+      "speed": {
+        "min": 0.5,
+        "max": 1
+      },
+      "gravity": 0,
+      "drag": 0,
+      "constantForce": [
+        0,
+        0,
+        0
+      ],
+      "turbulence": 0,
+      "lifetimeFromDistance": false,
+      "sizeStart": {
+        "min": 0.2,
+        "max": 0.2
+      },
+      "sizeEndScale": 0.4,
+      "aspect": 1,
+      "stretchLength": 1,
+      "stretchVelocity": 0.05,
+      "rotation": {
+        "min": 0,
+        "max": 360
+      },
+      "rotationSpeed": {
+        "min": 0,
+        "max": 0
+      },
+      "colorStart": [
+        1,
+        0.7,
+        0.3,
+        1
+      ],
+      "colorEnd": [
+        1,
+        0.3,
+        0,
+        0
+      ],
+      "fadeIn": 0,
+      "brightness": 1,
+      "colorVariation": 0,
+      "collide": false,
+      "bounce": 0.3,
+      "friction": 0.6,
+      "collisionRadius": 0.02,
+      "dieOnCollision": false,
+      "collisionEffectMax": 6
+    }
+  ],
+  "hasLight": false,
+  "lightColor": [
+    1,
+    0.8,
+    0.5,
+    1
+  ],
+  "lightIntensity": 3,
+  "lightRange": 8,
+  "lightDuration": 0.15,
+  "lightDelay": 0,
+  "cullRadius": 6,
+  "scale": 1
+}
