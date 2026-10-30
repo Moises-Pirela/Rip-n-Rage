@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  managed-build-and-tests:
+    name: .NET 10 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    defaults:
+      run:
+        working-directory: Standalone
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Print prepared SDK information
+        run: dotnet --info
+      - name: Verify bundled license notices
+        shell: bash
+        run: |
+          test -f native/NOTICE.md
+          test -f native/licenses/GLFW-LICENSE.md
+          test -f native/licenses/OpenAL-Soft-COPYING.txt
+      - name: Restore
+        run: dotnet restore RipNRage.sln
+      - name: Build with .NET analyzers
+        run: dotnet build RipNRage.sln -c Release --no-restore -p:RunAnalyzers=true -p:EnableNETAnalyzers=true -p:AnalysisMode=Recommended
+      - name: Execute bounded engine assertions
+        run: dotnet run --project tests/RipNRage.EngineChecks/RipNRage.EngineChecks.csproj -c Release
+
+  strafe-regression:
+    name: Linux / scripted strafe invariant
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Standalone
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install headless OpenGL environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth libgl1-mesa-dri libgl1 libx11-6 libxcursor1 libxi6 libxrandr2 libxinerama1 libxxf86vm1 libasound2t64
+      - name: Build game
+        run: dotnet build src/RipNRage.Game/RipNRage.Game.csproj -c Release
+      - name: Verify strafe cannot fall through dock
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: >-
+          xvfb-run -a dotnet run --no-build -c Release
+          --project src/RipNRage.Game/RipNRage.Game.csproj --
+          --script strafe --frames 620 --fixed-dt 0.016667
+          --mute --gpu software --no-vsync --width 640 --height 360 --no-postfx
