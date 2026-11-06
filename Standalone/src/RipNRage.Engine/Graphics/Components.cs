@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace RipNRage.Engine.Graphics
@@ -40,6 +41,8 @@ namespace RipNRage.Engine.Graphics
         public bool flipY;
         /// <summary>When true the quad is rotated around Y each frame to face the active camera (Doom-style enemies/pickups).</summary>
         public bool billboard;
+        /// <summary>Extra rotation (degrees) of a billboard in its own plane — tumbling debris, ragdoll parts.</summary>
+        public float billboardRoll;
         /// <summary>Lit sprites receive sun/point lights and shadows; unlit ones are drawn at full brightness (first person).</summary>
         public bool lit;
         /// <summary>World sprites are rendered into the directional shadow map (alpha-tested billboard).</summary>
@@ -71,6 +74,27 @@ namespace RipNRage.Engine.Graphics
         public bool transparent;
         /// <summary>Rasterised into the software occlusion buffer (static level geometry). Dynamic props should leave this off.</summary>
         public bool occluder;
+
+        /// <summary>Set by the renderer for the frame when this mesh is drawn as part of an instanced group.</summary>
+        internal InstanceGroup instanceGroup;
+
+        /// <summary>What has to match for two meshes to share one instanced draw.</summary>
+        internal readonly struct InstanceKey : IEquatable<InstanceKey>
+        {
+            public readonly Mesh mesh; public readonly Material material; public readonly Texture2D texture;
+            public readonly Color color; public readonly Vector2 uvScale; public readonly float emissive;
+            public InstanceKey(Mesh mesh, Material material, Texture2D texture, Color color, Vector2 uvScale, float emissive)
+            { this.mesh = mesh; this.material = material; this.texture = texture; this.color = color; this.uvScale = uvScale; this.emissive = emissive; }
+            public bool Equals(InstanceKey o) => mesh == o.mesh && material == o.material && texture == o.texture && color.r == o.color.r && color.g == o.color.g && color.b == o.color.b && color.a == o.color.a && uvScale.x == o.uvScale.x && uvScale.y == o.uvScale.y && emissive == o.emissive;
+            public override bool Equals(object obj) => obj is InstanceKey k && Equals(k);
+            public override int GetHashCode() => HashCode.Combine(mesh, material, texture, color.r, color.g, uvScale.x, emissive);
+        }
+
+        internal sealed class InstanceGroup
+        {
+            public InstanceKey key;
+            public readonly List<MeshRenderer> items = new List<MeshRenderer>(16);
+        }
 
         private static Material _default, _defaultTransparent;
         public static Material DefaultMeshMaterial => _default ??= new Material(ShaderLibrary.Get("mesh"), "Mesh-Default");

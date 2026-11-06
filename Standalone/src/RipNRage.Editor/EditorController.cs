@@ -220,10 +220,13 @@ namespace RipNRage.Editor
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             bool alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
 
-            // ---- snapshot browser captures the keyboard while open
+            // ---- the physics settings panel and the snapshot browser capture the keyboard while open
+            if (cam != null) cam.enabled = !_physicsPanel.Open; // no fly-look while dragging values
+            if (_physicsPanel.Open) { _physicsPanel.HandleKeys(); DrawGizmos(); return; }
             if (_snapshotPanel) { SnapshotPanelInput(); DrawGizmos(); return; }
             if (Input.GetKeyDown(KeyCode.F7)) TakeSnapshot();
             if (Input.GetKeyDown(KeyCode.F8)) OpenSnapshotPanel();
+            if (Input.GetKeyDown(KeyCode.F9)) { _physicsPanel.Open = true; _physicsPanel.Revert(); }
 
             // ---- global keys
             if (Input.GetKeyDown(KeyCode.F1)) showHelp = !showHelp;
@@ -864,6 +867,8 @@ namespace RipNRage.Editor
 
         // ------------------------------------------------------------------ UI
 
+        private readonly PhysicsPanel _physicsPanel = new PhysicsPanel();
+
         public void DrawUi(UiBatch ui)
         {
             float s = Mathf.Max(1f, ui.Scale * 2f);
@@ -955,7 +960,7 @@ namespace RipNRage.Editor
                     "+/- PUSH/PULL FACE BY GRID   ARROWS/PGUP/PGDN NUDGE   R ROTATE 90",
                     "CTRL+D DUPLICATE   DEL DELETE   , . FACE TEXTURE (SHIFT: SCALE)   T TEXTURE BRUSH",
                     "[ ] GRID   H WORK PLANE FROM HOVER   G WIREFRAMES   TAB ENTITY MODE   V PAINT MODE   P/M/N QUICK-PLACE SPAWNS",
-                    "CTRL+S SAVE (+AUTO SNAPSHOT)   F7 SNAPSHOT   F8 SNAPSHOT BROWSER   CTRL+Z/Y UNDO/REDO   F5 SAVE+PLAY   F1 HIDE HELP",
+                    "CTRL+S SAVE (+AUTO SNAPSHOT)   F7 SNAPSHOT   F8 SNAPSHOT BROWSER   F9 PHYSICS SETTINGS   CTRL+Z/Y UNDO/REDO   F5 SAVE+PLAY   F1 HIDE HELP",
                 } : mode == EditMode.Paint ? new[]
                 {
                     "VERTEX PAINT   LMB HOLD: PAINT FACE   SHIFT+LMB: ERASE (WHITE)   CTRL+LMB: PICK COLOUR",
@@ -974,6 +979,8 @@ namespace RipNRage.Editor
                 ui.FillRect(new Rect(0, y - help.Length * 9 * s - 6, 640 * s, help.Length * 9 * s + 8), new Color(0, 0, 0, 0.45f));
                 foreach (var l in help) { ui.DrawText(l, new Vector2(8, y), s * 0.85f, white); y -= 9 * s; }
             }
+
+            _physicsPanel.Draw(ui);
         }
     }
 }

@@ -221,3 +221,151 @@
 "origin" "0 2.91 -50"
 "size" "30 4 4"
 }
+{
+"classname" "phys_door"
+"origin" "9 0.91 -5"
+"angle" "0"
+"size" "1.4 2.4 0.1"
+"mass" "25"
+"texture" "orange"
+"hinge" "left"
+"limits" "-100 100"
+"spring" "40"
+"damper" "12"
+"closed_angle" "0"
+}
+{
+"classname" "phys_pendulum"
+"origin" "9 5 -9"
+"length" "2.8"
+"start_angle" "45"
+"size" "0.7 0.7 0.7"
+"mass" "15"
+"shape" "sphere"
+"texture" "red"
+}
+{
+"classname" "phys_spring_prop"
+"origin" "9 5 -13"
+"length" "2.2"
+"stiffness" "120"
+"damper" "4"
+"max_length" "3.2"
+"size" "0.8 0.8 0.8"
+"mass" "10"
+"texture" "green"
+}
+{
+"classname" "phys_hinge"
+"origin" "9 1.51 -17.5"
+"size" "4 0.15 0.8"
+"mass" "20"
+"axis" "0 0 1"
+"limits" "-18 18"
+"texture" "orange"
+}
+{
+"classname" "prop_physics"
+"origin" "7.5 1.7 -17.5"
+"size" "0.7 0.7 0.7"
+"mass" "8"
+"texture" "purple"
+}
+{
+"classname" "phys_hinge"
+"origin" "9 4 -21.5"
+"size" "3.6 0.3 0.15"
+"mass" "12"
+"axis" "0 0 1"
+"motor" "70"
+"motor_torque" "150"
+"texture" "red"
+}
+{
+"classname" "phys_slider"
+"origin" "9 1.1 -25.5"
+"size" "1 1 1"
+"mass" "15"
+"axis" "1 0 0"
+"limits" "-2 2"
+"motor" "1.2"
+"motor_force" "400"
+"patrol" "1"
+"texture" "orange"
+}
+{
+"classname" "prop_physics"
+"targetname" "chain1"
+"origin" "9 4.1 -29.5"
+"size" "0.25 0.7 0.25"
+"mass" "3"
+"texture" "green"
+}
+{
+"classname" "joint_ball"
+"origin" "9 4.8 -29.5"
+"body" "chain1"
+"break_force" "900"
+}
+{
+"classname" "prop_physics"
+"targetname" "chain2"
+"origin" "9 3.3 -29.5"
+"size" "0.25 0.7 0.25"
+"mass" "3"
+"texture" "green"
+}
+{
+"classname" "joint_ball"
+"origin" "9 4.05 -29.5"
+"body" "chain2"
+"connected" "chain1"
+"break_force" "900"
+}
+{
+"classname" "prop_physics"
+"targetname" "chain3"
+"origin" "9 2.5 -29.5"
+"size" "0.25 0.7 0.25"
+"mass" "3"
+"texture" "green"
+}
+{
+"classname" "joint_ball"
+"origin" "9 3.25 -29.5"
+"body" "chain3"
+"connected" "chain2"
+"break_force" "900"
+}
+{
+"classname" "prop_physics"
+"targetname" "chain_weight"
+"origin" "9 1.6 -29.5"
+"size" "0.8 0.8 0.8"
+"mass" "12"
+"shape" "sphere"
+"texture" "red"
+}
+{
+"classname" "joint_ball"
+"origin" "9 2.45 -29.5"
+"body" "chain_weight"
+"connected" "chain3"
+"break_force" "900"
+}
+{
+"classname" "phys_fixed"
+"origin" "8.5 2.7 -33.5"
+"size" "1.8 0.12 0.8"
+"mass" "6"
+"break_force" "260"
+"break_torque" "220"
+"texture" "orange"
+}
+{
+"classname" "prop_physics"
+"origin" "8.2 2.84 -33.5"
+"size" "0.55 0.55 0.55"
+"mass" "5"
+"texture" "green"
+}

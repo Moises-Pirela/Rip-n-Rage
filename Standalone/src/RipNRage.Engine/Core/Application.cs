@@ -40,6 +40,8 @@ namespace RipNRage.Engine
         public bool ProfileSync;
         /// <summary>Which GPU to ask for (--gpu auto|high|software).</summary>
         public Platform.GpuPreference Gpu = Platform.GpuPreference.Auto;
+        /// <summary>Skip the renderer entirely (the window only clears): isolates simulation cost in benchmarks.</summary>
+        public bool NoRender;
     }
 
     /// <summary>
@@ -235,6 +237,7 @@ namespace RipNRage.Engine
                 ShaderLibrary.Poll(now);
                 Animation.AnimationLibrary.Poll(now);
                 Graphics.Particles.VfxLibrary.Poll(now);
+                Destruction.SkeletonLibrary.Poll(now);
                 Profiler.End();
 
                 Profiler.Begin("scene");
@@ -251,7 +254,7 @@ namespace RipNRage.Engine
                 Profiler.End();
 
                 Profiler.Begin("render");
-                Renderer.Render(Scene, Window.Width, Window.Height);
+                if (!Options.NoRender) Renderer.Render(Scene, Window.Width, Window.Height);
                 Profiler.End();
                 Profiler.Begin("present", gpu: false);
                 Window.SwapBuffers();

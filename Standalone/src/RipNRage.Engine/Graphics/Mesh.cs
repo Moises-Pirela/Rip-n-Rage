@@ -93,6 +93,27 @@ namespace RipNRage.Engine.Graphics
             GL.BindVertexArray(0);
         }
 
+        /// <summary>
+        /// Draws <paramref name="count"/> copies with one call; <paramref name="instanceVbo"/> holds one column-major
+        /// 4×4 model matrix per instance, fed to attribute locations 4–7 (the "instanced" shader variant).
+        /// </summary>
+        public void DrawInstanced(uint instanceVbo, int count)
+        {
+            if (count <= 0) return;
+            if (!_uploaded) Upload();
+            GL.BindVertexArray(_vao);
+            GL.BindBuffer(GL.ARRAY_BUFFER, instanceVbo);
+            for (uint i = 0; i < 4; i++)
+            {
+                GL.EnableVertexAttribArray(4 + i);
+                GL.VertexAttribPointer(4 + i, 4, GL.FLOAT, false, 16 * sizeof(float), (int)(i * 4 * sizeof(float)));
+                GL.VertexAttribDivisor(4 + i, 1);
+            }
+            GL.DrawElementsInstanced(GL.TRIANGLES, _indexCount, GL.UNSIGNED_INT, 0, count);
+            for (uint i = 0; i < 4; i++) { GL.VertexAttribDivisor(4 + i, 0); GL.DisableVertexAttribArray(4 + i); }
+            GL.BindVertexArray(0);
+        }
+
         public void Dispose()
         {
             if (!_uploaded) return;

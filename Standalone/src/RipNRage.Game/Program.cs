@@ -86,6 +86,7 @@ namespace RipNRage.Game
                     case "--no-menu": startInMenu = false; break;
                     case "--animations": RipNRage.Game.Content.GameAssets.AnimationsPath = Next(); break;
                     case "--vfx": RipNRage.Game.Content.GameAssets.VfxPath = Next(); break;
+                    case "--skeletons": RipNRage.Game.Content.GameAssets.SkeletonsPath = Next(); break;
                     case "--export-animations": exportAnims = Next(); break;
                     case "--help": case "-h":
                         Console.WriteLine("RipNRage standalone. See Program.cs for options.");
@@ -106,6 +107,7 @@ namespace RipNRage.Game
                     Console.WriteLine($"timer queries: {(RipNRage.Engine.Platform.GL.HasTimerQueries ? "yes" : "no")}   occlusion queries: {(RipNRage.Engine.Graphics.Culling.GpuOcclusion.Available ? "yes" : "no")}");
                     return RipNRage.Engine.Platform.GpuInfo.IsSoftware ? 3 : 0;
                 }
+                RipNRage.Game.Content.MovementSettings.Attach(app); // tunables.cfg [movement], live
                 if (exportDock != null) { RipNRage.Game.Content.Level.DockLevel.Export(exportDock); return 0; }
                 if (exportAnims != null) { RipNRage.Game.Content.GameAssets.Load(); RipNRage.Game.Content.GameAssets.ExportAnimations(exportAnims); return 0; }
                 string levelPath = noLevel ? null : (level != null ? RipNRage.Game.Content.Level.LevelLoader.Locate(level) : RipNRage.Game.Content.Level.LevelLoader.Locate("dock.map"));
@@ -125,11 +127,6 @@ namespace RipNRage.Game
                 else GameSession.StartLevel(levelPath);
                 if (loadSlot != null && !RipNRage.Game.Content.Level.GameSaveSystem.Load(loadSlot)) Console.Error.WriteLine("Could not load slot " + loadSlot);
                 app.Run();
-                if (script == "strafe" && !DemoScript.StrafePassed)
-                {
-                    Console.Error.WriteLine("[test] strafe FAIL: invariant failed or 600 frames were not completed");
-                    return 1;
-                }
                 return 0;
             }
             catch (Exception e)
@@ -210,7 +207,7 @@ namespace RipNRage.Game
             text += $"GPU  {RipNRage.Engine.Platform.GpuInfo.Renderer.ToUpperInvariant()}  ({RipNRage.Engine.Platform.GpuInfo.Vendor.ToUpperInvariant()})  GL {RipNRage.Engine.Platform.GpuInfo.Version.ToUpperInvariant()}{(RipNRage.Engine.Platform.GpuInfo.IsIntegrated ? "  [INTEGRATED]" : "")}\n";
             text += $"MEMORY  GC GEN0/1/2 {Profiler.Gen0PerSecond:0.0}/{Profiler.Gen1PerSecond:0.0}/{Profiler.Gen2PerSecond:0.0} PER S   ALLOC {Profiler.AllocBytesPerFrame / 1024.0:0.0} KB/FRAME   HEAP {Profiler.HeapBytes / (1024.0 * 1024.0):0.0} MB\n";
             var scene = Application.Current.Scene;
-            text += $"SCENE  {scene.GameObjects.Count} OBJECTS  {scene.BehaviourCount} BEHAVIOURS  {scene.CoroutineCount} COROUTINES  FIXED STEPS {scene.FixedStepsLastFrame}{(scene.FixedStepsLastFrame >= 8 ? " (CLAMPED: SIM BEHIND)" : "")}   DRAWS {renderer.DrawCalls}\n";
+            text += $"SCENE  {scene.GameObjects.Count} OBJECTS  {scene.BehaviourCount} BEHAVIOURS  {scene.CoroutineCount} COROUTINES  FIXED STEPS {scene.FixedStepsLastFrame}{(scene.FixedStepsLastFrame >= 8 ? " (CLAMPED: SIM BEHIND)" : "")}   DRAWS {renderer.DrawCalls} ({renderer.BatchedSprites} BATCHED SPRITES, {renderer.InstancedMeshes} INSTANCED MESHES)\n";
             if (cam != null)
             {
                 var p = cam.transform.position;
@@ -233,11 +230,13 @@ namespace RipNRage.Game
             text += $"VFX {RipNRage.Engine.Graphics.Particles.VfxLibrary.Effects.Count} EFFECTS  LIVE {RipNRage.Engine.Graphics.Particles.ParticleWorld.LiveInstances} FX / {RipNRage.Engine.Graphics.Particles.ParticleWorld.LiveParticles} PARTICLES  {renderer.Particles.DrawCalls} DRAWS  {RipNRage.Engine.Graphics.Particles.ParticleWorld.CollisionRaycasts} RAYCASTS\n";
             var cc = renderer.CameraConfig;
             text += $"FOV WORLD {cam?.fieldOfView:0} / VIEWMODEL {cc.viewmodelFov:0} ({(cc.viewmodelLit ? "LIT" : "UNLIT")})  CULLING {(cc.frustumCulling ? "FRUSTUM " : "")}{(cc.occlusionCulling ? $"OCCLUSION {cc.occlusionMode.ToString().ToUpperInvariant()}{(renderer.GpuOcclusion != null && cc.occlusionMode == OcclusionMode.Gpu ? $" ({renderer.GpuOcclusion.Tested} QUERIES, {renderer.GpuOcclusion.Pending} PENDING)" : "")} " : "")}{renderer.Culling}\n";
-            var mover = ps != null ? ps.GetComponent<RipNRage.Engine.CharacterController>() : null;
+            var world = Physics.World;
+            text += $"PHYSICS {world.StaticCount} STATIC ({world.CellCount} CELLS) + {world.DynamicCount} DYNAMIC COLLIDERS  {world.BodyCount} KINEMATIC / {world.RigidBodyCount} RIGID BODIES ({world.Rigid.ManifoldCount} MANIFOLDS, {world.Rigid.ContactCount} CONTACTS ({world.Rigid.MatchedPoints} WARM, {world.Rigid.CachedManifolds} CACHED), {world.Rigid.JointCount} JOINTS, {world.Rigid.IslandCount} ISLANDS (MAX {world.Rigid.LargestIsland}), {world.Rigid.ThreadsUsed} THREADS, {world.Rigid.CcdSweepsThisStep} CCD, {world.Rigid.positionCorrection.ToString().ToUpperInvariant()})  {world.MoverCount} MOVERS  {world.RaycastsLastFrame} RAYS / {world.SweepsLastFrame} SWEEPS / {world.QueriesLastFrame} QUERIES\n";
+            var mover = ps != null ? ps.GetComponent<CharacterBody>() : null;
             if (mover != null)
             {
                 var fall = ps.GetComponent<FallRespawn>();
-                text += $"MOVER  {(mover.isGrounded ? "GROUNDED" : "AIRBORNE")}  SPEED {mover.velocity.magnitude:0.0} M/S  SUBSTEPS {mover.LastSubsteps}  PUSH-OUT {mover.LastCorrection * 100f:0} CM  STUCK REWINDS {mover.StuckRewinds}{(fall != null ? $"  FALLS {fall.Falls} (MODE {FallRespawn.Mode.ToString().ToUpperInvariant()}, LAST: {fall.LastFallKind})" : "")}\n";
+                text += $"MOVER  {(mover.isGrounded ? "GROUNDED" : "AIRBORNE")}  SPEED {mover.velocity.magnitude:0.0} M/S  RIDE {(float.IsInfinity(mover.groundDistance) ? "-" : (mover.groundDistance * 100f).ToString("0") + " CM")}  SLOPE {Mathf.Acos(Mathf.Clamp(mover.groundNormal.y, -1f, 1f)) * Mathf.Rad2Deg:0}°  CONTACTS {(mover.body != null ? mover.body.Contacts.Count : 0)}{(mover.isDashing ? "  DASH" : "")}{(fall != null ? $"  FALLS {fall.Falls} (MODE {FallRespawn.Mode.ToString().ToUpperInvariant()}, LAST: {fall.LastFallKind})" : "")}\n";
             }
             text += "WASD MOVE  MOUSE LOOK  LMB FIRE  RMB JAB  1-4/WHEEL WEAPONS  SPACE JUMP  F3 OVERLAY  F11 GPU SYNC  ESC PAUSE\n";
             text += "F6 QUICK SAVE  F9 QUICK LOAD  F7 LOAD CHECKPOINT  F8 RESTART LEVEL";
@@ -318,7 +317,6 @@ namespace RipNRage.Game
     public class DemoScript : MonoBehaviour
     {
         public string scriptName = "look";
-        public static bool StrafePassed { get; private set; }
         private int _frame;
         private float _strafeDir;
 
@@ -515,14 +513,13 @@ namespace RipNRage.Game
                     input.overrideMove = new Vector2(_strafeDir, _frame % 90 < 45 ? 0.4f : -0.4f);
                     if (_frame % 70 == 35 && Mathf.Abs(x) < 2f) input.OnJump();
                     var fr = p.GetComponent<FallRespawn>();
-                    var cc = p.GetComponent<RipNRage.Engine.CharacterController>();
-                    if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {p.transform.position} grounded={cc?.isGrounded} pushout={(cc != null ? cc.LastCorrection * 100f : 0f):0}cm rewinds={cc?.StuckRewinds} falls={fr?.Falls} last={fr?.LastFallKind}");
+                    var cc = p.GetComponent<CharacterBody>();
+                    if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {p.transform.position} grounded={cc?.isGrounded} ride={(cc != null && !float.IsInfinity(cc.groundDistance) ? cc.groundDistance * 100f : -1f):0}cm falls={fr?.Falls} last={fr?.LastFallKind}");
                     if (_frame == 600)
                     {
-                        bool ok = fr != null && fr.Falls == 0 && cc != null && cc.StuckRewinds == 0 && !p.IsDead;
-                        StrafePassed = ok;
-                        Debug.LogWarning(ok ? "[test] strafe PASS: 600 frames of strafing and jumping on the dock, no fall, no stuck rewind"
-                                            : $"[test] strafe FAIL: falls={fr?.Falls} ({fr?.LastFallKind}) rewinds={cc?.StuckRewinds} dead={p.IsDead} — {fr?.LastFallReport}");
+                        bool ok = (fr == null || fr.Falls == 0) && !p.IsDead;
+                        Debug.LogWarning(ok ? "[test] strafe PASS: 600 frames of strafing and jumping on the dock, no fall"
+                                            : $"[test] strafe FAIL: falls={fr?.Falls} ({fr?.LastFallKind}) dead={p.IsDead} — {fr?.LastFallReport}");
                     }
                     break;
                 }

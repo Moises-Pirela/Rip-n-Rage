@@ -6,4 +6,5 @@ global using RipNRage.Engine.Animation;
 global using RipNRage.Engine.Audio;
 global using RipNRage.Engine.Tweening;
 global using RipNRage.Engine.AI;
+global using RipNRage.Engine.Destruction;
 global using Random = RipNRage.Engine.Random;

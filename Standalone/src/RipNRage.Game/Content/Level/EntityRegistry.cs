@@ -21,6 +21,8 @@ namespace RipNRage.Game.Content.Level
         public Func<MapEntity, GameObject> preview;
         /// <summary>Half-size of the selection box around the origin (editor picking).</summary>
         public Vector3 pickExtents = new Vector3(0.5f, 0.5f, 0.5f);
+        /// <summary>Spawned after every other entity (joints that connect entities by targetname).</summary>
+        public bool deferred;
     }
 
     /// <summary>Writes a full game save ("checkpoint" slot) when the player enters the volume (once).</summary>
@@ -131,6 +133,18 @@ namespace RipNRage.Game.Content.Level
 
             Add(new EntityDefinition
             {
+                classname = "prop_physics", description = "Rigid-body prop (size w h l, mass, texture; shape box|sphere|capsule; targetname for joints)",
+                gizmoColor = new Color(1f, 0.6f, 0.2f, 1f), pickExtents = new Vector3(0.5f, 0.5f, 0.5f),
+                defaults = { ["size"] = "1 1 1", ["mass"] = "10", ["texture"] = "orange", ["shape"] = "box" },
+                numericProps = { ("mass", 1f) },
+                spawn = e => PhysicsEntities.Prop(e, false),
+                preview = e => PhysicsEntities.Prop(e, true),
+            });
+
+            PhysicsEntities.Register(Add);
+
+            Add(new EntityDefinition
+            {
                 classname = "light", description = "Point light (color r g b, intensity, range)",
                 gizmoColor = new Color(1f, 1f, 0.6f, 1f), pickExtents = new Vector3(0.35f, 0.35f, 0.35f),
                 defaults = { ["color"] = "1 0.85 0.6", ["intensity"] = "1.5", ["range"] = "18" },
@@ -235,7 +249,7 @@ namespace RipNRage.Game.Content.Level
             var pole = post.AddComponent<MeshRenderer>();
             pole.mesh = Mesh.CreateBox(new Vector3(0, 2.6f, 0), new Vector3(0.28f, 5.2f, 0.28f), 1f);
             pole.texture = GameAssets.Texture13; pole.color = new Color(0.35f, 0.35f, 0.38f, 1f);
-            var col = post.AddComponent<BoxCollider>(); col.center = new Vector3(0, 2.6f, 0); col.size = new Vector3(0.4f, 5.2f, 0.4f);
+            var col = post.AddComponent<BoxCollider>(); col.center = new Vector3(0, 2.6f, 0); col.size = new Vector3(0.4f, 5.2f, 0.4f); col.isStatic = true;
             var head = new GameObject("LampHead"); head.transform.SetParent(post.transform, false); head.transform.localPosition = new Vector3(0, 5.4f, 0);
             var headMr = head.AddComponent<MeshRenderer>();
             headMr.mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.7f, 0.5f, 0.7f), 1f);
@@ -257,7 +271,7 @@ namespace RipNRage.Game.Content.Level
             var mr = go.AddComponent<MeshRenderer>();
             mr.mesh = Mesh.CreatePlane(Vector3.zero, w, l, uvScale);
             mr.texture = texture; mr.color = color; mr.transparent = transparent; mr.castsShadow = false; mr.material = material;
-            if (collider) { var c = go.AddComponent<BoxCollider>(); c.size = new Vector3(w, 2f, l); c.center = new Vector3(0, -1f, 0); }
+            if (collider) { var c = go.AddComponent<BoxCollider>(); c.size = new Vector3(w, 2f, l); c.center = new Vector3(0, -1f, 0); c.isStatic = true; }
             if (water)
             {
                 var trig = go.AddComponent<BoxCollider>(); trig.isTrigger = true; trig.size = new Vector3(w, 100f, l); trig.center = new Vector3(0, -50f, 0);

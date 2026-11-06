@@ -13,7 +13,7 @@ public abstract class Weapon : MonoBehaviour
     protected LayerMask _LayerMask;
 
     protected float _bloom;
-    private CharacterController _playerBody;
+    private CharacterBody _playerBody;
     public float Bloom => _bloom;
 
     /// <summary>Spread for the next shot: base + bloom + movement and air penalties (direction offset per unit forward).</summary>
@@ -35,7 +35,7 @@ public abstract class Weapon : MonoBehaviour
         }
     }
 
-    private CharacterController PlayerBody => _playerBody ??= GetComponentInParent<CharacterController>();
+    private CharacterBody PlayerBody => _playerBody ??= GetComponentInParent<CharacterBody>();
 
     /// <summary>Call once per shot.</summary>
     protected void AddBloom()

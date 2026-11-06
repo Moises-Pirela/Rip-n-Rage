@@ -15,28 +15,38 @@ namespace RipNRage.Engine
         private Transform _parent;
         private readonly List<Transform> _children = new List<Transform>();
 
+        // World-matrix cache. Every local change takes a fresh, globally increasing stamp; a transform's world stamp
+        // is the newest stamp on its parent chain, so a cached matrix is valid exactly while nothing above changed.
+        private static long _stampCounter;
+        private long _localStamp = ++_stampCounter;
+        private long _cachedStamp = -1;
+        private Matrix4x4 _cachedLocalToWorld, _cachedWorldToLocal;
+        private bool _hasWorldToLocal;
+        private void Touch() => _localStamp = ++_stampCounter;
+        internal long WorldStamp { get { long s = _localStamp; for (var p = _parent; p != null; p = p._parent) if (p._localStamp > s) s = p._localStamp; return s; } }
+
         internal Transform(GameObject go) { gameObject = go; }
 
-        public Vector3 localPosition { get => _localPosition; set => _localPosition = value; }
-        public Quaternion localRotation { get => _localRotation; set => _localRotation = value; }
-        public Vector3 localScale { get => _localScale; set => _localScale = value; }
+        public Vector3 localPosition { get => _localPosition; set { _localPosition = value; Touch(); } }
+        public Quaternion localRotation { get => _localRotation; set { _localRotation = value; Touch(); } }
+        public Vector3 localScale { get => _localScale; set { _localScale = value; Touch(); } }
 
         public Vector3 localEulerAngles
         {
             get => _localRotation.eulerAngles;
-            set => _localRotation = Quaternion.Euler(value);
+            set => localRotation = Quaternion.Euler(value);
         }
 
         public Vector3 position
         {
             get => _parent == null ? _localPosition : _parent.localToWorldMatrix.MultiplyPoint3x4(_localPosition);
-            set => _localPosition = _parent == null ? value : _parent.worldToLocalMatrix.MultiplyPoint3x4(value);
+            set { _localPosition = _parent == null ? value : _parent.worldToLocalMatrix.MultiplyPoint3x4(value); Touch(); }
         }
 
         public Quaternion rotation
         {
             get => _parent == null ? _localRotation : _parent.rotation * _localRotation;
-            set => _localRotation = _parent == null ? value : Quaternion.Inverse(_parent.rotation) * value;
+            set { _localRotation = _parent == null ? value : Quaternion.Inverse(_parent.rotation) * value; Touch(); }
         }
 
         public Vector3 eulerAngles
@@ -78,6 +88,7 @@ namespace RipNRage.Engine
             _parent?._children.Remove(this);
             _parent = newParent;
             _parent?._children.Add(this);
+            Touch();
             if (worldPositionStays)
             {
                 position = worldPos;
@@ -91,14 +102,36 @@ namespace RipNRage.Engine
                         ps.z != 0 ? worldScale.z / ps.z : worldScale.z);
                 }
                 else _localScale = worldScale;
+                Touch();
             }
         }
 
         public Matrix4x4 localMatrix => Matrix4x4.TRS(_localPosition, _localRotation, _localScale);
 
-        public Matrix4x4 localToWorldMatrix => _parent == null ? localMatrix : _parent.localToWorldMatrix * localMatrix;
+        /// <summary>World matrix, cached until this transform or anything above it changes.</summary>
+        public Matrix4x4 localToWorldMatrix
+        {
+            get
+            {
+                long stamp = WorldStamp;
+                if (stamp != _cachedStamp)
+                {
+                    _cachedLocalToWorld = _parent == null ? localMatrix : _parent.localToWorldMatrix * localMatrix;
+                    _cachedStamp = stamp; _hasWorldToLocal = false;
+                }
+                return _cachedLocalToWorld;
+            }
+        }
 
-        public Matrix4x4 worldToLocalMatrix => localToWorldMatrix.inverse;
+        public Matrix4x4 worldToLocalMatrix
+        {
+            get
+            {
+                Matrix4x4 l2w = localToWorldMatrix; // refreshes the cache stamp
+                if (!_hasWorldToLocal) { _cachedWorldToLocal = l2w.inverse; _hasWorldToLocal = true; }
+                return _cachedWorldToLocal;
+            }
+        }
 
         public Vector3 TransformPoint(Vector3 p) => localToWorldMatrix.MultiplyPoint3x4(p);
         public Vector3 InverseTransformPoint(Vector3 p) => worldToLocalMatrix.MultiplyPoint3x4(p);

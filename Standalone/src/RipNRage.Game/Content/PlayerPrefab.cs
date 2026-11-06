@@ -5,7 +5,7 @@ namespace RipNRage.Game.Content
     /// <summary>
     /// Builds the PlayerCharacter hierarchy from Assets/_Game/Prefabs/PlayerCharacter.prefab:
     ///
-    /// PlayerCharacter [CharacterController h1.8 r0.5, AudioSource, FPSController, PlayerInputActions,
+    /// PlayerCharacter [CapsuleCollider r0.4 h1.3 + RigidBody 80 kg + CharacterBody (ride 0.5 → 1.8 m tall, transform 0.9 m above the feet), AudioSource, FPSController, PlayerInputActions,
     ///                  FPSCameraController, PlayerState, PlayerDeathSequence, CombatController, HudController, RagePostprocess]
     ///  ├ Orientation
     ///  ├ Camera (0, 0.5, 0) [HeadBob]
@@ -32,8 +32,15 @@ namespace RipNRage.Game.Content
             player.tag = "Player";
             player.layer = Layers.Player;
 
-            var cc = player.AddComponent<CharacterController>();
-            cc.height = 1.8f; cc.radius = 0.5f; cc.skinWidth = 0.08f; cc.stepOffset = 0.3f; cc.center = Vector3.zero;
+            // force-driven body: a capsule floating half a metre above the ground on a spring (see CharacterBody);
+            // the capsule spans 0.5..1.8 m above the feet, the transform sits 0.9 m up like the old box mover did
+            var capsule = player.AddComponent<CapsuleCollider>();
+            capsule.radius = 0.4f; capsule.height = 1.3f; capsule.center = new Vector3(0f, 0.25f, 0f);
+            var body = player.AddComponent<RigidBody>();
+            body.mass = 80f;
+            var motor = player.AddComponent<CharacterBody>();
+            motor.profile = CharacterProfileKind.Player; // tunables.cfg [character]
+            motor.groundMask = ~((1 << Layers.Player) | (1 << Layers.Projectile) | (1 << Layers.VisionSensor) | (1 << Layers.Pickup));
 
             var footAudio = player.AddComponent<AudioSource>();
 
@@ -113,6 +120,7 @@ namespace RipNRage.Game.Content
             fps.gravityMultiplier = 2.5f; fps.stickToGroundForce = 5f; fps.groundLayer = 3895; fps.rayLength = 0.1f; fps.raySphereRadius = 0.1f;
             fps.obstacleLayers = 2304; fps.rayObstacleLength = 0.1f; fps.rayObstacleSphereRadius = 0.1f;
             fps.smoothRotateSpeed = 5f; fps.smoothInputSpeed = 5f; fps.smoothVelocitySpeed = 5f; fps.smoothFinalDirectionSpeed = 5f;
+            MovementSettings.Current.ApplyTo(fps); // tunables.cfg [movement] overrides the prefab values (and keeps doing so live)
             sway.controller = fps;
             bob.controller = fps;
 

@@ -19,7 +19,8 @@ Standalone/
 │   ├── Core/                   GameObject / Behaviour / Transform / Scene / coroutines / time
 │   ├── Animation/              sprite animation clips + Unity-style Animator state machine
 │   ├── Audio/                  OpenAL bindings, WAV loader, AudioSource
-│   ├── Physics/                colliders, raycasts, CharacterController, layer matrix, triggers, nav agent
+│   ├── Physics/                collision world (grid broadphase), sphere/capsule/box/brush/mesh colliders, GJK + conservative-advancement sweeps, move-and-slide, KinematicBody, CharacterController, RigidBody (contact solver: soft / Baumgarte / NGS, static-dynamic friction, warm-start cache, CCD), joints (ball / distance / spring / hinge / slider / fixed constraints + Unity-style Joint components with limits, motors, springs, break force), physics materials, triggers, nav agent
+│   ├── Destruction/            sprite destruction: skeletons (JSON), the SpriteRagdoll slicer (cut-out sprite pieces on jointed rigid bodies)
 │   ├── Math/                   Vector2/3, Quaternion (Unity ZXY euler), Matrix4x4, Mathf, Random, curves
 │   └── Tween/                  DOTween-style tweens
 ├── src/RipNRage.Level/         level data model: brushes/entities, .map read/write, polygons, collision shapes
@@ -33,16 +34,19 @@ Standalone/
 ├── src/RipNRage.Editor/        Quake-style level editor executable (RipNRageEditor)
 ├── src/RipNRage.AnimEditor/    sprite animation editor executable (RipNRageAnimEditor)
 ├── src/RipNRage.VfxEditor/     particle effect editor executable (RipNRageVfxEditor)
+├── src/RipNRage.SkeletonEditor/ sprite destruction skeleton editor executable (RipNRageSkeletonEditor)
+├── src/RipNRage.Benchmark/     physics / engine benchmark executable (RipNRageBenchmark, bench.sh)
 ├── assets/                     runtime art/audio: Sprites/, Textures/, Audio/, Levels/dock.obj
 ├── animations/                 animation clips and controllers (JSON, hot-reloaded)
 ├── vfx/                        particle effects + bindings (JSON, hot-reloaded; filled with the defaults on first run)
+├── skeletons/                  sprite destruction skeletons (JSON, hot-reloaded; rifleman.json ships, see skeleton.sh)
 ├── levels/                     .map levels (dock.map = the test area)
 ├── shaders/                    GLSL shaders (hot-reloaded)
 ├── native/                     optional GLFW / OpenAL shared libraries, per runtime id (see below)
 └── tunables.cfg                post-processing / lighting settings (hot-reloaded)
 ```
 
-Project references: `Engine` ← `Level` ← `Game` ← `Editor`, and `Engine` + `Game` ← `AnimEditor` / `VfxEditor`.
+Project references: `Engine` ← `Level` ← `Game` ← `Editor`, and `Engine` + `Game` ← `AnimEditor` / `VfxEditor` / `SkeletonEditor`.
 
 ## Requirements
 
@@ -70,6 +74,7 @@ cd Standalone
 ./edit.sh         # level editor
 ./anim.sh         # animation editor
 ./vfx.sh          # particle effect editor
+./skeleton.sh     # sprite destruction skeleton editor
 ./build.sh        # build + self-contained Linux x64 publish into dist/linux-x64
 ```
 
@@ -301,13 +306,63 @@ TIME)` when that mode is on). F3 cycles: off → one line → full profiler:
 * **Memory**: GC gen 0/1/2 collections per second, managed bytes allocated per frame on the main thread, heap
   size. **Scene**: objects, behaviours, coroutines, fixed steps run this frame (`8 (CLAMPED)` means the
   simulation cannot keep up with real time), draw calls, particles and their collision raycasts.
-* **Mover**: the player's character controller — grounded/airborne, speed, collision sub-steps taken this
-  frame, the depenetration push-out applied (`PUSH-OUT`, normally 0 cm), how often it had to be rewound out of
-  geometry (`STUCK REWINDS`, should stay 0) and how many times the fall-respawn caught the player (`FALLS`).
+* **Physics**: colliders in the world (static ones in the broadphase grid + dynamic ones), kinematic and rigid
+  bodies (with their contact manifolds / points), movers (trigger-checked colliders) and the raycasts / shape
+  sweeps / broadphase queries of the last frame.
+* **Mover**: the player's force-driven body — grounded/airborne, speed, the ride gap under the capsule (`RIDE`,
+  50 cm when resting), the slope under it, its contacts this step, whether it is dashing, and how many times the
+  fall-respawn caught the player (`FALLS`).
 
 `--perf-log 2` prints the same summary to the console every two seconds; `--perf-csv run.csv` writes a row per
 frame for spreadsheets. The end-of-run line (`--frames N`) reports the real average frame time and notes when
 the simulation delta was fixed.
+
+## Renderer batching (sprites, instanced meshes)
+
+World sprites that share a texture, the default sprite material and lighting state are drawn in **batches**
+(`SpriteBatch`): their quads or tight polygon meshes are written in world space — position, uv, per-vertex tint,
+lighting normal — into one vertex buffer per flush, uploaded with an orphaning `glBufferData` (a `glBufferSubData`
+into a buffer still being read stalls the driver: that is what made 3500 ragdoll pieces cost 875 ms a frame) and
+drawn with the `sprite@spritebatch` shader variant, which `ShaderLibrary.GetVariant` derives mechanically from the
+sprite shader (the `uModel` / `uTint` / `uSpriteNormal` uniforms become attributes; the variant follows hot
+reloads of `sprite.glsl`). Depth order is kept: batchable runs flush whenever a sprite with a custom material or a
+property block (hit flash, dissolve) has to be drawn in place, and a batch closes when its bounds would grow past
+40 m so the per-draw point-light subset stays local. The shadow pass uses the same batches with a depth-only
+shader. Opaque **meshes** that are identical (same mesh, material, texture, colour, uv scale, emissive, no property
+block) are drawn with `glDrawElementsInstanced` through the `@instanced` variant of their shader (one model matrix
+per instance in attributes 4–7); groups are split at 48 m for the light subset too. `SpriteBatching` /
+`MeshInstancing` on the pipeline turn either off; the F3 overlay counts batched sprites and instanced meshes.
+
+## Benchmark (`bench.sh`, `RipNRageBenchmark`)
+
+`src/RipNRage.Benchmark` is a separate executable with no game logic that stress-tests the engine scenario by
+scenario in one window and grades each against a time budget:
+
+| Scenario | What runs | Default |
+|---|---|---|
+| `crates` | one-metre rigid-body crates dropped in a loose block that tumbles into a heap; a blast every 4 s keeps it colliding (box/box SAT + clipping, stacking, sleeping, warm start) | 1000 |
+| `ragdolls` | billboard sprite enemies sliced into ragdolls with `SpriteRagdoll` — box / capsule pieces on ball constraints, piece/piece and piece/floor contacts; a blast every 5 s | 500 |
+| `projectiles` | swept `KinematicBody` projectiles (Stop mode, trigger volumes, per-frame) kept in the air from ring emitters through a field of pillars | 1000 in flight |
+| `ground` | force-driven `CharacterBody` runners at 12–16 m/s on a hilly `MeshCollider` terrain of ~29k triangles (ground sphere casts, capsule/triangle contacts) | 200 |
+
+```bash
+./bench.sh                                   # all four, 3 s warm-up + 12 s measured each, report in the console
+./bench.sh --scenario crates --crates 2000   # one scenario, more of it
+./bench.sh --no-render --report bench.md --csv bench.csv   # simulation cost only; markdown + per-frame CSV
+./bench.sh --scale 2 --strict                # twice everything; exit code 3 when a budget is missed (CI)
+```
+
+Every frame is sampled at the profiler's end-of-frame hook (`Profiler.FrameEnded`) so the *stage* times of that
+very frame are recorded: frame, physics, scene and render ms, fixed steps run, rigid bodies (awake), islands
+(largest), threads, manifolds / contacts / joints, kinematic bodies, broadphase queries / sweeps / raycasts, draw
+calls, allocations. The rigid-body step runs inside the scene's fixed loop (stage `fixed physics`), and a slow
+frame runs several fixed steps, so the physics budget is judged **per fixed step**: `fixed physics / steps` plus
+the per-frame mover / trigger pass. The report is a table with average / p99 / max per scenario and **PASS /
+FAIL** against `--budget-frame` (16.7 ms) and `--budget-physics` (8 ms per step); `--duration`, `--warmup`,
+`--scale`, `--crates/--ragdolls/--projectiles/--runners`, `--threads`, `--fixed-dt` and `--gpu software`
+(headless machines) adjust the run. The scenarios are what drove the dynamic broadphase grid, the cached world
+inertia / rotation matrices, the Gauss-map edge pruning, the island / graph-coloured multithreaded solver, the
+allocation-free scene loop and the sprite batching / mesh instancing above.
 
 ## Render passes, viewmodel FOV & culling (`tunables.cfg`)
 
@@ -444,26 +499,12 @@ the level start; MAIN MENU returns to the title screen.
 Enemies drop a dead player as their target and go back to wandering; damage to a corpse is ignored and
 the HUD shows the death portrait. `--script die` automates the whole loop (kill, wait, RESTART).
 
-**Falling / clipping.** Four independent fixes, because the symptom ("I fell through the world", "I was
-teleported into the air") had several causes:
-
-1. **Sub-stepping** — every collision sweep is split into steps of at most `CharacterController.MaxSubstep`
-   (0.2 m). A long frame used to move the player's box metres at once and let it jump clean over a floor slab
-   or a wall; that can no longer happen regardless of frame time (the simulation step is also capped at 100 ms).
-2. **Clamped push-back** — a blocked sweep may be cut short, down to standing still, but can never end up
-   *behind* where that step started. The raw "how deep am I in this collider" numbers are the *collider's* own
-   extents once the box is contained in it, so an unclamped push-back could fling the player tens of metres:
-   on the dock's rotated pier, a 2 cm sink plus one 10 cm walk step resolved to a **94 m** jump sideways into
-   the void, which then read as a random mid-air teleport followed by the endless fall/respawn loop.
-3. **Real minimum translation vector** — the depenetration pass after every move pushes the box out along the
-   genuinely shortest exit: for a box the cheapest of its six faces, for a brush the cheapest of its face
-   planes (expanded by the box's support — the Minkowski/Quake form, so slopes resolve along their own normal)
-   and the three box axes. Pushing *down* is charged double, so the mover pops up out of floors while a
-   shallow head-bump into a ceiling still resolves downwards. Surfaces that do not face the axis being swept
-   (the floor under your feet while you walk, a wall you brush while you fall) no longer block that axis.
-4. **Rewind instead of teleport** — if a move still needs a push-out bigger than `maxCorrection` (0.6 m) the
-   mover was already badly stuck, so it returns to the last position that was verified free of geometry rather
-   than being shot out of a slab. The F3 overlay's `MOVER` line shows `PUSH-OUT` and `STUCK REWINDS`.
+**Falling / clipping.** The player is a force-driven rigid body (`CharacterBody`, see
+[Physics](#physics-collision-world-move-and-slide-kinematic-bodies)) simulated by the rigid-body solver with
+continuous collision: its motion is swept every substep and clamped at the first contact, so a long frame cannot
+push it through a floor slab or a wall whatever the frame time (the simulation step is also capped at 100 ms),
+and the contact solver pushes a capsule that does start inside geometry out along the contact normal. The F3
+overlay's `MOVER` line shows the ride gap and the slope under the player.
 
 On the rendering side the GPU occlusion culler
 never culls geometry within 6 m of the camera and re-tests meshes that re-enter the view, so the floor you
@@ -494,6 +535,290 @@ health and ammo of an old checkpoint.
 
 UI drawers can implement `IUiLayer` (engine) to control their draw order: HUD 0, debug overlay 50,
 menus 200, the death screen 300 — so overlays always draw above the HUD regardless of object order.
+
+## Physics: collision world, move-and-slide, kinematic bodies
+
+`src/RipNRage.Engine/Physics/` is a self-contained physics engine (no packages, no unsafe code): a collision
+world with exact sweeps for everything that moves by code, triangle-mesh collision, and rigid bodies with a
+soft-step contact solver.
+
+**World** (`PhysicsWorld`, reachable as `Physics.World`). Every `Collider` registers itself. Colliders marked
+`isStatic` (every brush, the level props) have their bounds cached once in a uniform grid (8 m cells; a shape
+spanning more than 64 cells goes on a short "large" list instead); dynamic colliders (characters, projectiles,
+pickups, rigid bodies) live in a second, finer grid (`DynamicCellSize`, 2 m) by a **fat box** — their bounds
+plus `FatMargin` (25 cm) — and are re-bucketed only when their real bounds leave it (`Touch`, called by every
+body that writes its pose; `RefreshDynamics` once per fixed step catches transforms moved by scripts), so
+resting and slow bodies cost nothing and a query against five thousand movers visits a handful of cells
+instead of the whole list. Queries visit the grid cells they touch, with a stamp so a shape that spans several
+cells is tested once, and raycasts walk both grids along the ray (3D DDA) and stop as soon as the best hit is
+nearer than the next cell. Candidate lists come from a pool: no query allocates. `ConvexCollider` is static by nature (world-space planes); set `isStatic = true` on any `BoxCollider`
+that never moves (and call `RefreshBounds()` if it ever does).
+
+**Shapes.** The general-purpose collider components are `SphereCollider`, `CapsuleCollider` (along the local Y
+axis), `BoxCollider` (oriented by its transform), `ConvexCollider` (brushes) and `MeshCollider`; each exposes
+its exact world-space `CollisionShape` — a polytopal *core* (a point, a segment, eight corners, the brush's
+vertices) plus a rounding radius. Every query is exact for every pair: distance, overlap and sweeps between
+spheres, capsules, boxes, brushes and triangles go through `ConvexDistance` — **GJK** on the cores with the radii
+subtracted afterwards (flat features only, which keeps it robust; witness points from the final simplex's
+barycentrics) and **conservative advancement** for sweeps (advance by the current distance over the closing
+speed until within the skin), which yields the true time of impact along the whole motion. Axis-aligned box
+movers against brushes and meshes keep a faster exact path: every solid is also a `ConvexHull` (outward planes
+with **bevel planes**, Quake's Minkowski trick — `ConvexHull.TraceBox` / `BoxPenetration`). Sweeps stop a `skin`
+(1 cm) short of the surface so the next one never starts inside. Raycasts are exact for all of them too
+(`Physics.RayCapsule`, `RaySphere`, hulls, Möller–Trumbore for meshes).
+
+**Queries** (`Physics.*`): `Raycast` (Unity signatures), `SphereCast` / `CapsuleCast` / `BoxCast` (oriented
+too) / `ShapeCast` — all continuous sweeps — `SphereCastAll`, exact `OverlapSphere` / `OverlapBox` /
+`OverlapCapsule` / `OverlapShape`, `CheckSphere` / `CheckBox` / `CheckCapsule` / `CheckShape`,
+`ComputeDistance` (closest points of two shapes) and `ComputePenetration` (the way out of a collider), and for
+movement `Sweep`, `MoveAndCollide` (move until the first contact) and `MoveAndSlide` — each with a
+`CollisionShape` overload, so a sphere, capsule or oriented box can be moved with the same solver as a box. A `QueryFilter` says what a query may see:
+layer mask, an optional `self` collider whose hierarchy is skipped and whose layer-matrix row is applied, an extra
+`ignore` transform, whether triggers count, and a predicate for per-collider vetoes.
+
+**Move and slide** (`KinematicSolver`, via `Physics.MoveAndSlide(center, halfExtents, motion, MoveSettings,
+MoveResult)`). Collide-and-slide in the PM_FlyMove lineage with the floor handling of a modern character
+controller: the box is swept along what is left of the motion, stops at the first contact and the remainder is
+redirected along the surface; walls and ceilings lose the component into the plane, floors (surfaces flatter
+than `floorMaxAngle`) keep the *horizontal* motion and follow the slope with it, so a box standing on a slope
+does not creep downhill; a second plane turns the motion into the crease between the two, a third stops it, and
+the motion is never turned back against its original direction. Ledges up to `stepHeight` are climbed by
+re-tracing from a raised position (up, forward, down — only accepted when the box lands on a floor higher than
+before, so steep slopes cannot be "stepped" up), and a box that was on the ground is snapped back down onto a
+floor within `snapLength` (stairs down, slope crests) unless it is moving up. Before all that the box is pushed
+out of anything it starts inside (`depenetration`); the result reports the contacts (collider, point, normal,
+floor / wall / ceiling), the ground, the remainder of the motion and `ClipVelocity()` to keep a body's velocity
+consistent with what it touched. The broadphase runs once per move; one `MoveResult` is reused per mover.
+
+**Bodies.** `KinematicBody` is the component for entities and objects moved by code — enemies, projectiles,
+thrown things, moving props. It integrates its `velocity` with gravity (`gravityScale`), `drag` and a terminal
+speed, moves through `MoveAndSlide` and responds per `motionMode`: `Slide` (characters — velocity clipped by the
+contacts), `Bounce` (`bounciness` / `friction`, comes to rest below `restSpeed` on a floor) or `Stop` (stops dead
+at the first contact and stays `Stopped` until told otherwise — projectiles). `simulation` picks when it moves:
+`FixedStep` (after the FixedUpdate callbacks of every fixed step), `PerFrame` (after Update, for things that
+must look smooth at any frame rate) or `Manual` (`Move(motion)` / `Simulate(dt)`). The shape is the collider on
+the object or explicit `halfExtents`; `collisionMask`, `useLayerMatrix`, `collideWithTriggers`, `ignore` and
+`collisionPredicate` make up its filter; `Collided` fires per contact after the move with the exact point and
+normal; `reportTriggers` registers the collider as a mover so `ITriggerListener` callbacks fire for it.
+`CharacterController` (the player: a box by default, or a true capsule with `controllerShape = Capsule`, which
+rounds corners and slides around edges like Unity's) and `NavMeshAgent` (enemies: gravity, wall sliding, 0.4 m
+steps, their capsule collider as the exact shape) are thin shells over the same solver, keeping their
+Unity-shaped APIs.
+Projectiles fly as `Stop` bodies swept every frame (`Prefabs.AddProjectileBody`): they cannot skip through a
+wall or an enemy at any speed or frame time, they detonate at the exact contact point, and the contact is handed
+to the same `OnTriggerEnter` the original scripts implement (trigger volumes such as the water still arrive
+through the trigger pass).
+
+**Settings** (`PhysicsSettings`, `tunables.cfg`). Every global knob of the simulation lives in `tunables.cfg`
+next to the rendering tunables and is hot-reloaded the same way: `[physics]` (tick rate = the fixed step,
+max steps per frame, max frame delta, gravity), `[collision]` (contact margin, sweep skin, broadphase cell,
+CCD skin, body speed caps, sleep threshold / delay), `[solver]` (substeps, velocity / relax / position
+iterations, position-correction mode, warm starting, contact cache lifetime, friction model, contact hertz /
+damping, Baumgarte factor, slops, max correction / bias velocity, restitution threshold, the level surfaces'
+static / dynamic friction, restitution and combine modes, joint hertz / damping), `[movers]` (kinematic
+floor angle, slide iterations, agent step height / slope, push mass), `[character]` / `[enemy_character]`
+(the force-driven bodies: mass, ride height, spring frequency / damping / cap, ground tolerance, slope,
+accelerations, jump grace) and `[movement]` (the player's speeds, jump, gravity multiplier, smoothing, slide,
+wall run and dash). `PhysicsSettings.ApplyToWorld` pushes them into the engine, the defaults of new bodies /
+joints / agents and the live characters (`CharacterBody.profile` Player / Enemy follows the shared profiles);
+`MovementSettings` does the same for the FPS controller. The level editor's **physics panel** (`F9`) edits all
+of them with drag cells — three pages: step / collision / solver, characters / movers, player movement —
+applies them to the editor's world as you drag and saves them back into the file (existing keys keep their
+place and comments), which a running game picks up within half a second.
+
+**Triggers.** Any collider with `isTrigger` is a trigger volume; any collider can be a trigger source. Once per
+frame, after the per-frame bodies, every mover (characters, kinematic bodies, projectiles and every rigid body's
+collider) is tested against the trigger volumes near it with the **exact shapes** (a sphere trigger is a
+sphere, not its bounding box) and the pairs are diffed against the previous frame: enter / stay / exit go to
+`ITriggerListener` / `ITriggerStayListener` components on both objects and to the colliders' own `TriggerEnter`
+/ `TriggerStay` / `TriggerExit` events (no component needed). Mesh triggers use their bounds.
+
+**Mesh collision** (`MeshCollider`). A rendered `Mesh` (or explicit triangles) collides as a static triangle
+surface: the triangles are baked to world space when the collider registers (`RefreshBounds()` re-bakes after a
+move) and indexed by an AABB tree, so raycasts (Möller–Trumbore, nearest-first traversal), box sweeps and rigid
+bodies only touch the triangles near them. Triangles are double-sided and have no thickness; for the box sweeps
+each one becomes a small bevelled `ConvexHull` on first use (Quake 3's patch collision), which is exact and does
+not catch on the edges between triangles. The legacy arena's dock now collides as the `dock.obj` mesh itself —
+the slanted pier is exact instead of a grid of boxes.
+
+**Rigid bodies** (`RigidBody`). A body has mass, a box, sphere or capsule inertia tensor from its `BoxCollider` /
+`SphereCollider` / `CapsuleCollider` (other colliders are simulated as their bounding box), linear and angular velocity, damping,
+`restitution`, `staticFriction` and `friction` (dynamic), forces and torques (`AddForce`, `AddTorque`, `AddForceAtPosition`,
+`AddImpulse(AtPosition)`, `AddExplosionForce`, the four `ForceMode`s), `isKinematic` (infinite mass, moved by its
+velocity or transform, pushes everything), `freezeRotation`, sleeping (`sleepThreshold` / `sleepDelay`, woken by
+forces and by moving bodies), a `Collided` event with point, normal, impulse and approach speed, and
+`MovePosition` / `MoveRotation` for teleports. Bodies collide with every solid (brushes, meshes, props, the
+player and other movers, which they treat as immovable) and with each other; the player and kinematic bodies in
+turn shove them (`pushMass`: bodies lighter than it take the mover's speed, heavier ones proportionally less).
+
+*Narrow phase* (`ConvexShape`, `ContactGeneration`): polytopes carry full topology (vertices, face polygons,
+edges with their two faces). Box/box, box/brush and box/triangle use the separating-axis test over both shapes'
+face normals and the edge pairs — only those whose arcs cross on the Gauss map, i.e. that build a face of the
+Minkowski difference (Gregorius' test; a box pair goes from 144 edge pairs to about 18) — faces preferred over
+edges by a small tolerance, and the reference face stays on the same shape unless the other is clearly better,
+so manifolds do not flip between steps; the contact manifold is the
+incident face clipped against the reference face's side planes (Sutherland–Hodgman), up to 8 points, or the
+closest points of the two edges. Spheres and capsules use GJK closest points: a capsule gets its two end
+spheres against the other shape's support plane so it rests flat, plus the closest pair, and rounded/rounded
+pairs (including the player's capsule or any sphere / capsule collider) the same way. Contacts are kept alive
+while the shapes are within a 1 cm margin. Against mesh triangles the triangle's own normal wins whenever its
+penetration is shallow, the usual mitigation for bodies catching on internal edges of a tessellated floor.
+
+*Solver* (`RigidSolver` + `ContactSolver`, Erin Catto's soft-step scheme): each fixed step is cut into 4
+substeps; every substep integrates velocities, warm-starts joints and contacts with the impulses cached from the
+previous step, solves the joints then the contacts `velocityIterations` times with position bias, clamps
+continuous-collision motion, integrates positions, solves again without bias (`relaxIterations`, so the
+velocities end up consistent) and, in NGS mode, runs `positionIterations` position passes. Restitution is
+applied after the substeps (contacts that approached faster than `restitutionThreshold` bounce), then the
+impulses are stored in the contact cache, constraints may break and resting bodies fall asleep.
+
+*Position correction* (`positionCorrection`): **Soft** (default) treats every contact and joint as a stiff
+spring-damper (`contactHertz` 30 Hz / `dampingRatio` 10, capped at a quarter of the substep rate) that works
+penetration out without injecting energy — this is what keeps tall stacks still and lets them sleep; the classic
+solver was tried first and a six-box stack "breathed" itself apart. **Baumgarte** adds a velocity bias of
+`baumgarte` × error / h (clamped to `maxBiasVelocity`), the classic sequential-impulse look (bouncier, can add
+energy). **NGS** (non-linear Gauss-Seidel) leaves the velocity solve unbiased and pushes the poses apart directly
+after it (`baumgarte` fraction per pass, at most `maxLinearCorrection`, ignoring `linearSlop` of penetration and
+`angularSlop` of joint error) — no velocity is added, so it is the gentlest on resting stacks but the softest on
+deep penetration. Slightly separated contact points are speculative in every mode: they may only approach
+enough to touch this substep.
+
+*Friction* (`frictionModel`): **StaticDynamic** (default) is a Coulomb cone with two coefficients — a contact
+point that was (nearly) at rest tangentially at the start of the step (slower than `slipSpeed`, 5 cm/s) is held
+inside the static cone μs·N, so a crate on a slope below the static angle does not creep, while a point that was
+already sliding is bounded by the dynamic cone μd·N (the lower coefficient: once moving it keeps going on a
+slope steeper than the dynamic angle, and a sliding crate on a floor decelerates at μd·g until it sticks);
+**Coulomb** uses μd alone. The coefficients come from the two
+surfaces: a collider's `PhysicsMaterial` (`staticFriction`, `dynamicFriction`, `restitution`, `frictionCombine` /
+`restitutionCombine` — Average, Minimum, Maximum or Multiply, the stricter mode of the pair winning), else its
+rigid body's values, else the solver's defaults for level geometry (`staticFriction` 0.6 / `dynamicFriction`
+0.5 / `staticRestitution` 0).
+
+*Islands and threads* (`[solver] threads`, 0 = one per core): every step the awake bodies are grouped by
+union-find over the contacts and joints that connect two dynamic bodies (static, kinematic and sleeping bodies
+connect nothing). Each island is solved on its own — Gauss-Seidel inside, independent of every other island — so
+the islands are distributed over worker threads (`Parallel.For`), and an island only falls asleep when *every*
+body in it has rested for the sleep delay (no more crates dozing off under a moving stack). An island with
+`colorIslandThreshold` (96) bodies or more — a heap of a thousand crates is one island — is **graph coloured**
+like Box2D v3: its contacts and joints greedily take the lowest colour none of their dynamic bodies has yet
+(24 colours, the rest go to a sequential overflow list), the colours are solved one after another, and within a
+colour every constraint runs in parallel because no two touch the same body. The narrow phase (one body's pairs
+per work item, per-thread scratch, a stamp-free broadphase query) and the contact preparation are parallel as
+well; the broadphase updates, continuous-collision sweeps, contact cache writes, events and sleeping stay on the
+calling thread. The F3 overlay shows islands / largest island / threads; `threads = 1` turns it all off.
+
+The threads come from the engine's own **job system** (`JobSystem`, `Physics/JobSystem.cs`): persistent workers
+that spin while a step is running and block between steps, and *multi-stage dispatches* — one dispatch carries a
+whole substep phase as a sequence of stages (the small islands as independent items, integrate the large island's
+bodies, warm-start colour 0, 1, …, solve colour 0, 1, …, the overflow list as a single-item stage); workers pull
+chunks of the current stage from an atomic counter and barrier among themselves before moving to the next stage,
+so nothing returns to the calling thread and nothing is allocated per stage. A step is about eleven dispatches
+(narrow phase, prepare, 2 per substep, restitution) carrying ~150 stages; the first version used a `Parallel.For`
+per colour per pass and spent more time in thread-pool latency than in arithmetic (the benchmark showed
+~285 KB of allocations and ~175 dispatches per step). `RigidBody.collisionGroup` (Box2D's group index: bodies in
+the same negative group never collide) lets a ragdoll skip every pair between its own pieces before the narrow
+phase sees them (`RagdollOptions.selfCollision` turns the old behaviour back on). The rigid step is broken down in
+the profiler (`rigid begin / narrowphase / prepare / islands / solve / ccd / finish`) and in the benchmark report.
+
+*Warm starting and the contact cache*: the contact solver keeps every manifold's accumulated normal and
+friction impulses keyed by the body / collider pair (per triangle for meshes) and matches the new step's
+points by *feature id* (which vertex / edge pair of the two polytopes produced them), falling back to the
+nearest cached anchor within 2 cm; a manifold survives `contactCacheLifetime` steps of separation so a brief
+bounce does not lose its warm start. `warmStarting = false` runs the solver cold (every step starts from zero
+impulses — useful to see what the cache buys). `ManifoldPoint.persistent` / `age` and the solver's
+`CachedManifolds` / `MatchedPoints` expose what happened. `Physics.World.Rigid` exposes all of the tuning
+(`substeps`, `positionCorrection`, `velocityIterations`, `relaxIterations`, `positionIterations`,
+`warmStarting`, `contactCacheLifetime`, `frictionModel`, `slipSpeed`, `contactHertz`, `dampingRatio`, `baumgarte`,
+`linearSlop`, `angularSlop`, `maxLinearCorrection`, `maxBiasVelocity`, `restitutionThreshold`,
+`staticFriction`, `dynamicFriction`, `staticRestitution`, `frictionCombine`, `restitutionCombine`, `threads`,
+`parallelThreshold`, `colorIslandThreshold`).
+
+*Continuous collision* (`RigidBody.collisionDetection`, Unity's names): `Discrete` finds contacts from the
+poses once per step; `Continuous` sweeps the body's exact shape (conservative advancement) against the static
+world — brushes, meshes, props, the player and other movers — in every substep in which it would move more than
+half its smallest extent, and clamps that substep's displacement at the first contact (it then sits within the
+contact margin, so the next step's manifold bounces or rests it); `ContinuousDynamic` additionally sweeps it
+against the other rigid bodies with their own motion. Nothing a swept body meets can be skipped, however fast it
+goes (`maxSpeed` still caps speeds at 80 m/s). The sweeps are translational: a body keeps its orientation within
+a substep (a fast-spinning thin plank could clip a corner). The arena's crates are `Continuous`, the balls
+`ContinuousDynamic`; the F3 overlay counts the CCD sweeps of the last step.
+
+*Characters* (`CharacterBody`): every entity that walks is a force-driven rigid body now. The component takes
+the capsule `RigidBody` on its object (never rotates, never sleeps, no contact friction, continuous collision,
+interpolated transform) and keeps it `rideHeight` above the ground on a spring: a downward sphere cast finds the
+ground, the spring's acceleration (`rideFrequency`, `rideDamping`, capped at `maxRideAcceleration`) pulls the
+capsule to the ride height — so ledges lower than the ride height are climbed without any step logic, slopes are
+followed, and the body never scrapes the floor. Steering is `Move(desiredHorizontalVelocity)` once per frame:
+the fixed step accelerates the body towards it (`acceleration` on the ground, `airAcceleration` in the air,
+`stopDeceleration` when nothing is asked), riding along with whatever it stands on. `Jump`, `Dash` (exact velocity
+with gravity off for a duration), `AddVelocityChange` (knockback, rocket jumps) and `ClampVerticalVelocity`
+(wall-run glide) are impulses; a jump or an upward push lets the spring go for `jumpGrace` seconds. Walls,
+ceilings, crates and other characters are handled by the contact solver — the player pushes crates with its 80
+kg and is shoved by blasts and by enemies, and enemies shove each other. The `FPSController` keeps all of its
+feel (bunny hop, slide, wall run, dash, landing, rage / style speed) and only computes the velocity it wants;
+the `NavMeshAgent` drives a `CharacterBody` when the enemy has one. Rigid bodies are simulated at 50 Hz and a
+body with `interpolate` writes its transform every frame blended between the last two steps
+(`Scene.FixedAlpha`), so the player moves smoothly at any frame rate. The old kinematic `CharacterController` /
+`KinematicBody` movers remain for things that should not be part of the force simulation (projectiles).
+
+*Joints* come in two layers. The solver layer is `Constraint` and its subclasses (`Physics.World.AddConstraint`,
+two bodies or a body and the world with `bodyB = null`), solved in the same substeps as the contacts — joints
+first, then contacts, in the biased, relax and position passes — warm-started from their accumulated impulses
+(`hertz` / `dampingRatio` set the stiffness of their rigid rows in Soft mode, `collideConnected` lets the two
+bodies still collide) and **breakable**: `breakForce` (N) / `breakTorque` (N·m) are compared with the reaction the
+constraint had to transmit (`lastForce`, `lastTorque`, the peak substep impulse over the step length); when
+exceeded it snaps (`Broke` event, removed from the world). Jointed bodies keep each other awake.
+
+- **`BallConstraint`** — ball-and-socket, the anchors stay together (3×3 effective mass). Ragdolls, chains.
+- **`DistanceConstraint`** — the anchor distance stays in [`minLength`, `maxLength`]: a rod (equal), a rope
+  (min 0) or a slack range; with `stiffness` (N/m) / `damping` (N·s/m) it pulls towards `restLength` inside
+  that range. **`SpringConstraint`** is the spring preset (no hard limits unless asked for).
+- **`HingeConstraint`** — one shared axis through the anchors, with optional limits (`lowerLimit` /
+  `upperLimit` degrees), a motor (`motorSpeed` rad/s up to `maxMotorTorque`, `motorFreeSpin` = never brakes)
+  and a torsion spring (`springStiffness` N·m/rad, `springDamping`, `springTargetAngle` — a self-closing door).
+  `angle` / `angularSpeed` describe A's rotation relative to B (right-hand rule about the axis).
+- **`SliderConstraint`** — prismatic: A translates along an axis fixed in B and keeps its orientation, with
+  optional limits (`lowerLimit` / `upperLimit` m), a linear motor (`motorSpeed` m/s up to `maxMotorForce`) and a
+  spring (`springStiffness` N/m, `springDamping`, `springTargetPosition`). `position` / `speed` are A's travel.
+- **`FixedConstraint`** — a weld: relative position and orientation locked (breakable shelves, glued pieces).
+
+Springs are real spring-dampers (Catto's soft-constraint form with ω = √(k/m), ζ = c/2√(km) from the row's
+effective mass), applied in the biased pass only so the relax pass does not stiffen them; motors are
+velocity rows with an impulse budget of force × substep; limits are inequality rows that go speculative when
+open (they may close the gap this substep but not more).
+
+The component layer is Unity's: a **`Joint`** behaviour on the object with the `RigidBody` — `BallJoint`,
+`DistanceJoint`, `SpringJoint`, `HingeJoint`, `SliderJoint`, `FixedJoint` — with `connectedBody` (null = the
+world), `anchor` / `axis` in the object's local space, `autoConfigureConnectedAnchor` / `connectedAnchor`,
+`breakForce` / `breakTorque`, `enableCollision`, and for hinges and sliders `useLimits` + `limits {min, max}`,
+`useMotor` + `motor {targetVelocity, force, freeSpin}` (deg/s and N·m for hinges, m/s and N for sliders),
+`useSpring` + `spring {spring, damper, targetPosition}`; `angle` / `velocity` / `position` read the state. The
+constraint is built when the component is enabled (the RigidBody is woken first, so component order does not
+matter), the editable fields are pushed to it every fixed step (so a motor can be reversed or a limit edited at
+run time), motors keep their bodies awake, and a break fires `JointBroke` and disables the component.
+
+In the game: `prop_physics` entities (`size`, `mass`, `texture`, `shape box|sphere|capsule`, `targetname`) can
+be placed in levels, the legacy arena has a stack of loose crates and two balls near the start, rocket
+explosions throw them (`ProjectileStats.explosionImpulse` / `explosionRadius`), bullets and projectiles shove
+them (`hitImpulse`) and walking into them pushes them. The **physics entities** (`PhysicsEntities`) build
+machines and puzzles out of joints: `phys_door` (a panel hinged along an edge — `hinge left|right|top|bottom`,
+`limits "min max"`, `spring` / `damper` / `closed_angle` for a self-closing door, `motor` / `motor_torque` for a
+powered one), `phys_hinge` (a prop turning about a local `axis` through `pivot` — seesaws, levers, windmills,
+rotating platforms; limits / motor / spring), `phys_slider` (a prop on a rail along `axis` — pistons, lifts,
+sliding doors; `limits`, `motor` m/s + `motor_force`, `patrol 1` to shuttle between the limits, `spring` + `target`), `phys_pendulum` (a prop hanging
+`length` below the origin on a rod or `rope 1`, swung out by `start_angle`), `phys_spring_prop` (a prop on a
+spring: `length`, `stiffness`, `damper`, `max_length`) and `phys_fixed` (welded in place until `break_force` /
+`break_torque`). The connector entities `joint_hinge`, `joint_slider`, `joint_fixed`, `joint_ball`,
+`joint_distance` and `joint_spring` are spawned after everything else and join two props by `targetname`
+(`body` = the prop the joint sits on, `connected` = the other, absent = the world; the origin is the anchor,
+`axis` / `angle` orient hinges and sliders, plus the same limit / motor / spring keys, `connected_anchor`,
+`min` / `max` / `rope` / `rest` / `stiffness`, `break_force` / `break_torque`, `collide 1`). The arena's
+**physics playground** east of the start (`PhysicsPlayground`) has one of everything: a swing door that
+closes on a spring, a pendulum, a crate on a bungee spring, a seesaw, a motorised windmill, a piston that
+patrols its rail (`SliderPatrol` reverses the motor at the limits), a hanging chain that breaks under a big
+enough blow and a shelf welded to a post that snaps off; `levels/dock.map` carries the same set as entities
+(door, pendulum, bungee crate, seesaw, windmill, patrolling piston, a `joint_ball` chain of `prop_physics`
+links, breakable shelf) along its east side.
 
 ## Combat & movement feel
 
@@ -574,6 +899,46 @@ them (Shift ×10, Ctrl ÷10, wheel, RMB resets), click sprites to open the palet
 tracers fly in towards the anchor. Ctrl+S saves, Ctrl+Z/Y undo, F1 lists every key. Edits apply to the running
 effect immediately; structural changes (counts, sprites, lifetimes) restart it.
 
+## Sprite destruction (`skeletons/`, `skeleton.sh`)
+
+Dying sprites are **sliced like a ragdoll**: the enemy's billboard is cut into pieces along a *destruction
+skeleton*, each piece becomes a rigid body hung off its parent with a ball joint, the killing blow throws the
+part it hit, and explosions tear every joint and scatter the pieces. The pieces are real sprites (only their
+polygon of the texture is drawn, lit and shadowed like the original), they tumble in their billboard plane (the
+body's roll is read back into `SpriteRenderer.billboardRoll`), collide with the level but not with characters
+or projectiles (layer `OnlyGroundCollision`), and fade out after the skeleton's `lifetime`.
+
+**Skeletons** (`skeletons/<name>.json`, `Engine/Destruction/SpriteSkeleton.cs`) are *not* animation
+skeletons — nothing is posed with them; they only say where to cut and what hangs off what. A skeleton names a
+sheet texture (`texture`, relative to assets/), its grid (`frames` × `sides`), `pixelsPerUnit`, the pieces'
+`depth` and `lifetime`, and a list of **views**, one per sheet side (`side`, reference `frame`). Each view lists
+**parts**: a `name`, a `parent` (empty = root), a `pivot` (the joint, where the part hangs off its parent), a
+`polygon` outline, `mass`, `shape` (`Box` or `Capsule`), `breakImpulse` (0 = never tears) and `loose` (starts
+detached). Coordinates are normalised (0..1, bottom-left origin) inside the cell, so one view serves every frame
+of that side, whichever sheet (idle, run, attack) the sprite currently shows. `rifleman.json` ships (head, torso,
+two arms with the rifle, two legs); `EnemyData.skeleton` names the skeleton an enemy uses (empty = the old
+death animation only). The game reloads saved skeletons live; `--skeletons dir` overrides the folder.
+
+**Runtime.** `SpriteRagdoll.Spawn(skeleton, sprite, position, scale, RagdollOptions, template)` slices any
+sprite the sheet produced (`Sprite.Cut` makes the cut-out sprites, ear-clipping their polygons) and returns the
+ragdoll: `parts`, `Detach(name)` (dismemberment), `BreakAll()`, `AddImpulseAt`, `AddExplosion`, `Nearest`,
+`PartDetached`. `EnemyDestruction` (on the rifleman prefab) does it on death using `DamageInfo` — the hit point,
+direction and impulse the weapons report right before `TakeDamage` (`WeaponStats.hitImpulse`; rockets report an
+explosion, which gibs).
+
+**The skeleton editor** (`./skeleton.sh [--skeleton rifleman]`, `src/RipNRage.SkeletonEditor`). Left: the
+skeleton files and every sheet under `assets/Sprites` (set its frames / sides, `Ctrl+N` makes a skeleton from
+it). Centre: the view's reference cell with the parts drawn over it — `N` names a new part and you trace its
+outline by clicking (Enter or the first vertex closes it, Backspace undoes a vertex), click a part to select it,
+drag vertices and the pivot, `I` inserts a vertex on the nearest edge, `Del` deletes a vertex or the part, `J`
+places the pivot, `P` picks the parent by clicking it, `L` marks it loose; wheel zooms, middle / right drag pans,
+`F` fits. Right: frames / sides / pixels per unit / depth / lifetime, the views (`+ VIEW` adds one for the next
+side with the current parts copied, `,` `.` change the side, `[` `]` the reference frame), the parts with their
+parent, and the selected part's mass, break impulse, shape and loose flag. `Tab` switches to the **physics
+preview**: the cell stands on a plank floor, `Space` slices it into a ragdoll with the real solver (the same code
+the game runs), `Ctrl+Space` gibs it, clicking a piece tears it off, `K` breaks every joint, `Up` sets off a
+blast, `R` resets, right-drag orbits. `Ctrl+Z` / `Ctrl+Y` undo / redo, `Ctrl+S` saves, `F1` lists the keys.
+
 ## Saving & loading
 
 `Content/Level/GameSaveSystem.cs` writes JSON saves to `<persistentDataPath>/saves/<slot>.json`
@@ -617,6 +982,7 @@ game's own `LevelLoader` in preview mode, with the lighting/shadows/fog from `tu
 | P / M / N | quick-place (any mode) the player start (moves the existing one), a `monster_rifleman`, a `monster_spawner` at the cursor |
 | Ctrl+S, Ctrl+Z/Y, F5, F1 | save (+ automatic snapshot), undo/redo, save + launch the game on this level, help |
 | F7 / F8 | take a snapshot / open the snapshot browser (Up/Down select, Enter restore — undoable —, Del delete) |
+| F9 | physics settings panel: every simulation / collision / character / player-movement tunable, saved to `tunables.cfg` (Tab = page, Ctrl+S = save, Esc = close) |
 
 **Snapshots** are timestamped copies of the level in `.snapshots/<levelname>/` next to the file:
 manual ones (`…-manual.map`) and an automatic one on every save (`…-auto.map`, the last 20 are
@@ -636,8 +1002,9 @@ the `white` texture for pure colours).
 
 Texture names come from `LevelTextures` (planks, sand, grid, dark, orange, green, purple, red, white,
 metal, lamp, water, clip = invisible collision, sky = invisible) and entity classes from
-`EntityRegistry` (`info_player_start`, `monster_rifleman`, `item_ammo_*`, `light`, `lamp_post`,
-`water_plane`, `floor_plane`, `trigger_checkpoint`) — both in `src/RipNRage.Game/Content/Level/`, so
+`EntityRegistry` (`info_player_start`, `monster_rifleman`, `item_ammo_*`, `prop_physics`, the `phys_*` machines
+and `joint_*` connectors, `light`, `lamp_post`, `water_plane`, `floor_plane`, `trigger_checkpoint`) — both in
+`src/RipNRage.Game/Content/Level/`, so
 adding a texture or entity type is one line for the game *and* the editor. Worldspawn keys
 `sun_elevation`, `sun_azimuth`, `sun_color`, `sky_zenith`, `sky_horizon`, `fog_color` override the cfg.
 
@@ -710,7 +1077,7 @@ Not covered (different system): the enemy 4/8-direction sheets (`AnimationStateC
 | Prefabs / ScriptableObjects / `.anim` / `.controller` | code in `Content/` with the serialized values copied from the asset files |
 | `SpriteRenderer`, `Sprite`, TexturePacker importer | `Graphics/SpriteRenderer`, `Sprite`, `SpriteAtlas` (polygon meshes supported) |
 | `Animator` / `AnimatorOverrideController` / animation events | `Animation/Animator` (bool, trigger, float params; exit-time & Any-State transitions; events); clips/controllers as JSON in `animations/` (hot reload, `anim.sh` editor) |
-| `CharacterController`, `Physics.Raycast/SphereCast(All)`, `OnTriggerEnter`, layers | `Physics/` (axis-separated AABB sweeps, ray vs box/sphere, `ITriggerListener`, collision matrix) |
+| `CharacterController`, `Physics.Raycast/SphereCast(All)`, `OnTriggerEnter`, layers, `Rigidbody`, `MeshCollider`, `CharacterJoint` (ragdolls) | `Physics/` (collision world with a grid broadphase, exact box-vs-hull sweeps, `Physics.MoveAndSlide`, `KinematicBody`, `RigidBody` + contact solver, `Joint` components (`HingeJoint`, `SliderJoint`, `SpringJoint`, `DistanceJoint`, `BallJoint`, `FixedJoint` over the solver's `*Constraint`s), `PhysicsMaterial`, `MeshCollider` with an AABB tree, `ITriggerListener`, collision matrix); `Destruction/` slices sprites into jointed pieces |
 | `NavMeshAgent`, `NavMesh.SamplePosition` | straight-line steering agent that sticks to geometry (no baked navmesh yet) |
 | Unity Input System (`PlayerControls.inputactions`) | `InputSystem` action maps (gameplay / UI schemes, rebindable keyboard + gamepad slots, `controls.json`); `PlayerInputActions` dispatches the same On* callbacks |
 | `AudioSource` / `AudioClip` | OpenAL-backed equivalents (WAV only for now) |
@@ -727,6 +1094,14 @@ switching stay in sync; the `0` glyph of the built-in font is plain.
 
 ## Known gaps / next steps
 
+* Physics: rigid bodies are boxes, spheres and capsules (convex-mesh bodies are not implemented), joints are
+  ball / distance / spring / hinge / slider / fixed (no cone-twist or 6-DOF configurable joint), continuous
+  collision is translational (orientation is not swept within a substep), movers push bodies but are not pushed
+  back, mesh triggers overlap by bounds, the simulation is not deterministic with `threads > 1` (the order in
+  which worker threads hand in contacts changes the Gauss-Seidel order), and rigid-body poses are not saved in
+  save games.
+  The mesh "ghost edge" handling is a heuristic (triangle normal preferred for shallow contacts), not a full
+  edge-adjacency test.
 * MP3/FLAC audio (`mg338.mp3`, melee hits, music) is not decoded yet — only PCM WAV.
 * Katana and Sonic Shotgun have sprites/animations but no weapon class in the original project
   either; they are loaded but not in the inventory.

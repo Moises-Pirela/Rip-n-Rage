@@ -46,6 +46,7 @@ namespace RipNRage.Game.Content
             BuildData();
             RegisterAnimation();
             RegisterVfx();
+            RegisterSkeletons();
             Loaded = true;
         }
 
@@ -53,6 +54,29 @@ namespace RipNRage.Game.Content
         public static string AnimationsPath;
         /// <summary>Explicit vfx folder (--vfx); otherwise the nearest "vfx" directory is used (created next to animations/ when missing).</summary>
         public static string VfxPath;
+        /// <summary>Explicit skeletons folder (--skeletons); otherwise the nearest "skeletons" directory is used (created next to animations/ when missing).</summary>
+        public static string SkeletonsPath;
+
+        /// <summary>
+        /// Sprite destruction skeletons (skeletons/*.json, hot reloaded). A missing folder is created with the
+        /// code-built rifleman skeleton so the skeleton editor and the game have something to start from.
+        /// </summary>
+        private static void RegisterSkeletons()
+        {
+            string dir = SkeletonLibrary.Locate(SkeletonsPath);
+            if (dir == null)
+            {
+                string parent = AnimationLibrary.Directory != null ? System.IO.Path.GetDirectoryName(AnimationLibrary.Directory) : System.IO.Directory.GetCurrentDirectory();
+                dir = System.IO.Path.Combine(parent ?? ".", "skeletons");
+            }
+            SkeletonLibrary.SetDirectory(dir);
+            SkeletonLibrary.LoadAll();
+            if (SkeletonLibrary.Get("rifleman") == null)
+            {
+                try { SkeletonLibrary.Save(DefaultSkeletons.Rifleman()); Debug.LogWarning("Skeletons: wrote the default rifleman skeleton to " + dir); }
+                catch (System.Exception e) { Debug.LogError("Skeletons: could not write the default rifleman skeleton: " + e.Message); SkeletonLibrary.Register(DefaultSkeletons.Rifleman()); }
+            }
+        }
 
         /// <summary>
         /// Data-driven visual effects: the procedural particle atlas, the code-built default effects, then the
@@ -332,7 +356,7 @@ namespace RipNRage.Game.Content
                 name = "Glock",
                 ammoType = AmmoType.LIGHT, weaponType = WeaponType.SINGLE,
                 weaponRecoil = new WeaponRecoil(new Vector3(12, 1, 2), 12, 6, cameraShake: 0.06f),
-                weaponStats = new WeaponStats { bulletsPerShot = 2, fireRate = 0.15f, damagePerShot = 100, weaponSpread = 0.008f, isUnlocked = true,
+                weaponStats = new WeaponStats { bulletsPerShot = 2, fireRate = 0.15f, damagePerShot = 100, weaponSpread = 0.008f, isUnlocked = true, hitImpulse = 5f,
                     spreadMax = 0.06f, bloomPerShot = 0.014f, bloomRecovery = 0.12f, moveSpread = 0.02f, airSpread = 0.04f },
                 animatorOverrideController = GlockController,
                 fireSound = GlockShot,
@@ -344,7 +368,7 @@ namespace RipNRage.Game.Content
                 name = "M1887",
                 ammoType = AmmoType.SHELL, weaponType = WeaponType.SINGLE,
                 weaponRecoil = new WeaponRecoil(new Vector3(18, 2, 4), 14, 5, cameraShake: 0.35f),
-                weaponStats = new WeaponStats { bulletsPerShot = 16, fireRate = 0.525f, damagePerShot = 200, weaponSpread = 0.05f, isUnlocked = true,
+                weaponStats = new WeaponStats { bulletsPerShot = 16, fireRate = 0.525f, damagePerShot = 200, weaponSpread = 0.05f, isUnlocked = true, hitImpulse = 12f,
                     spreadMax = 0.09f, bloomPerShot = 0.02f, bloomRecovery = 0.08f, moveSpread = 0.015f, airSpread = 0.03f },
                 animatorOverrideController = M1887Controller,
                 fireSound = M1887Shot,
@@ -356,7 +380,7 @@ namespace RipNRage.Game.Content
                 name = "MG338",
                 ammoType = AmmoType.HEAVY, weaponType = WeaponType.AUTO,
                 weaponRecoil = new WeaponRecoil(new Vector3(10, 3, 2), 14, 7, cameraShake: 0.16f),
-                weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.2f, damagePerShot = 1000, weaponSpread = 0.012f, isUnlocked = true,
+                weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.2f, damagePerShot = 1000, weaponSpread = 0.012f, isUnlocked = true, hitImpulse = 25f,
                     spreadMax = 0.1f, bloomPerShot = 0.013f, bloomRecovery = 0.15f, moveSpread = 0.03f, airSpread = 0.05f },
                 animatorOverrideController = MG338Controller,
                 fireSound = MG338Shot,
@@ -383,6 +407,7 @@ namespace RipNRage.Game.Content
                 movementSpeed = 11, attackRange = 12, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
                 attackWindup = 0.35f, burstCount = 3, burstInterval = 0.09f, staggerTime = 0.25f, alertDelay = 0.2f,
                 maxHealth = 1000, maxArmor = 0,
+                skeleton = "rifleman",
                 enemyAnimationData = new EnemyAnimationData
                 {
                     IdleAnimation = new AnimationSheet { AnimationFrames = 1, Sides = 4, AnimationFramesPerSecond = 1, TextureSheet = RiflemanIdle },

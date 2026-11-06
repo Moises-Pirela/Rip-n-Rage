@@ -39,6 +39,10 @@ public class AIState : EntityState
         if (capsule != null) capsule.enabled = false;
         var agent = GetComponent<NavMeshAgent>();
         if (agent != null) agent.enabled = false;
+        var motor = GetComponent<CharacterBody>();
+        if (motor != null) motor.enabled = false;
+        var body = GetComponent<RigidBody>();
+        if (body != null) body.enabled = false; // the ragdoll pieces are the corpse
         GameVfx.Death(data != null ? data.name : null, transform.position + Vector3.up * 0.4f);
         OnDieCallback?.Invoke();
     }

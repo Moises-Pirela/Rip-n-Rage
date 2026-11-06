@@ -9,4 +9,6 @@ dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o di
 dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.Editor/RipNRage.Editor.csproj
 dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.AnimEditor/RipNRage.AnimEditor.csproj
 dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.VfxEditor/RipNRage.VfxEditor.csproj
-echo "Self-contained build: dist/linux-x64/RipNRage (game), RipNRageEditor (level editor), RipNRageAnimEditor (animation editor), RipNRageVfxEditor (effect editor)"
+dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.SkeletonEditor/RipNRage.SkeletonEditor.csproj
+dotnet publish -c Release --nologo -v q -r linux-x64 --self-contained true -o dist/linux-x64 src/RipNRage.Benchmark/RipNRage.Benchmark.csproj
+echo "Self-contained build: dist/linux-x64/RipNRage (game), RipNRageEditor (level editor), RipNRageAnimEditor (animation editor), RipNRageVfxEditor (effect editor), RipNRageSkeletonEditor (sprite destruction skeleton editor), RipNRageBenchmark (physics / engine benchmark)"

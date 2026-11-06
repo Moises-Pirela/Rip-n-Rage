@@ -72,7 +72,7 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
 
     private struct Sample { public Vector3 pos; public float yaw; public float time; }
 
-    private CharacterController _cc;
+    private CharacterBody _cc;
     private FPSController _fps;
     private PlayerInputActions _input;
     private PlayerState _state;
@@ -89,7 +89,7 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
 
     protected override void Start()
     {
-        _cc = GetComponent<CharacterController>();
+        _cc = GetComponent<CharacterBody>();
         _fps = GetComponent<FPSController>();
         _input = GetComponent<PlayerInputActions>();
         _state = GetComponent<PlayerState>();
@@ -233,11 +233,10 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
     {
         if (_cc == null) return true;
         float r = Mathf.Max(0.05f, _cc.radius - 0.1f);
-        float half = Mathf.Max(_cc.height, _cc.radius * 2f) * 0.5f;
-        float reach = half + supportDepth;
+        float reach = _cc.standingHeight + supportDepth; // from the transform down to the ground under the feet, plus the margin
         for (int i = 0; i < 4; i++)
         {
-            Vector3 corner = center + _cc.center + new Vector3((i & 1) == 0 ? -r : r, 0f, (i & 2) == 0 ? -r : r);
+            Vector3 corner = center + new Vector3((i & 1) == 0 ? -r : r, 0f, (i & 2) == 0 ? -r : r);
             if (!Physics.Raycast(corner, Vector3.down, reach, GroundMask)) return false;
         }
         return true;

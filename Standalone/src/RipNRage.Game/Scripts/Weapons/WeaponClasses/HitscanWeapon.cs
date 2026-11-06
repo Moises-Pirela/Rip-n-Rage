@@ -76,7 +76,9 @@ public abstract class HitscanWeapon : Weapon
                 // headshots (top of an enemy's capsule) deal double damage; hits and kills feed the style meter
                 bool wasAlive = entityState.HealthState != EntityHealthState.DEAD;
                 bool headshot = entityState is AIState ai && ai.IsHeadshot(hit.point);
+                DamageInfo.Report(hit.point, finalDirection, weaponData.weaponStats.hitImpulse > 0f ? weaponData.weaponStats.hitImpulse : 6f);
                 entityState.TakeDamage(weaponData.weaponStats.damagePerShot * (headshot ? 2f : 1f));
+                DamageInfo.Clear();
                 bool killed = wasAlive && entityState.HealthState == EntityHealthState.DEAD;
                 PlayerState.Current.AddToRage(0.1f);
                 if (vfx) GameVfx.Blood(hit.point, hit.normal, bulletKey, headshot ? 1.7f : 1f);
@@ -87,6 +89,9 @@ public abstract class HitscanWeapon : Weapon
             else if (vfx)
             {
                 GameVfx.Impact(hit, bulletKey);
+                // bullets shove loose props, swing doors, set pendulums going
+                var rb = hit.collider.attachedRigidbody;
+                if (rb != null && !rb.isKinematic) rb.AddImpulseAtPosition(finalDirection.normalized * (weaponData.weaponStats.hitImpulse > 0f ? weaponData.weaponStats.hitImpulse : 6f), hit.point);
             }
             else
             {

@@ -21,6 +21,8 @@ public struct WeaponStats
     public float airSpread;
     /// <summary>Multiplier for the spread applied to projectiles (rockets are steadier than bullets; 0 = no projectile spread).</summary>
     public float projectileSpreadScale;
+    /// <summary>Standalone addition: impulse (N·s) a hit gives the thing it kills (throws ragdoll parts); 0 = the weapon class default.</summary>
+    public float hitImpulse;
 
     public WeaponStats(int bulletsPerShot, float fireRate, bool isUnlocked)
     {
@@ -29,6 +31,6 @@ public struct WeaponStats
         this.isUnlocked = false;
         damagePerShot = 0;
         weaponSpread = 0;
-        spreadMax = 0; bloomPerShot = 0; bloomRecovery = 0; moveSpread = 0; airSpread = 0; projectileSpreadScale = 0;
+        spreadMax = 0; bloomPerShot = 0; bloomRecovery = 0; moveSpread = 0; airSpread = 0; projectileSpreadScale = 0; hitImpulse = 0;
     }
 }

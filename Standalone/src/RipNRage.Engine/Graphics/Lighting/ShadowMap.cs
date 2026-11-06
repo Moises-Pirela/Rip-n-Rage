@@ -21,7 +21,7 @@ namespace RipNRage.Engine.Graphics.Lighting
     {
         private RenderTarget _target;       // live map: static blit + dynamic casters, compare-mode sampled
         private RenderTarget _static;       // cached static casters
-        private readonly Shader _meshDepth, _spriteDepth;
+        private readonly Shader _meshDepth, _spriteDepth, _spriteDepthBatch;
         private uint _quadVao, _quadVbo;
         private readonly float[] _quad = new float[4 * 5];
 
@@ -49,6 +49,7 @@ namespace RipNRage.Engine.Graphics.Lighting
         {
             _meshDepth = new Shader(MeshDepthVert, DepthFrag, "shadow.mesh");
             _spriteDepth = new Shader(SpriteDepthVert, SpriteDepthFrag, "shadow.sprite");
+            _spriteDepthBatch = new Shader(SpriteDepthBatchVert, SpriteDepthFrag, "shadow.spritebatch");
             _quadVao = GL.GenVertexArray();
             _quadVbo = GL.GenBuffer();
             GL.BindVertexArray(_quadVao);
@@ -68,7 +69,7 @@ namespace RipNRage.Engine.Graphics.Lighting
         public void Invalidate() { _staticDirty = true; _hasCenter = false; }
 
         /// <summary>Renders (or refreshes) the shadow map for this frame.</summary>
-        public unsafe void Render(LightingSettings cfg, Vector3 sunDir, Camera cam, List<MeshRenderer> meshes, List<SpriteRenderer> sprites)
+        public unsafe void Render(LightingSettings cfg, Vector3 sunDir, Camera cam, List<MeshRenderer> meshes, List<SpriteRenderer> sprites, SpriteBatch batch = null)
         {
             if (_target == null || _target.Width != cfg.shadowResolution)
             {
@@ -134,14 +135,35 @@ namespace RipNRage.Engine.Graphics.Lighting
                 _spriteDepth.SetInt("uTex", 0);
                 GL.ActiveTexture(GL.TEXTURE0);
                 float r2 = r * 1.1f;
+                if (batch != null) { batch.MaxExtent = float.PositiveInfinity; batch.Begin(); } // depth only: no light subset to keep local
                 foreach (var sr in sprites)
                 {
                     if (sr.sprite == null || !sr.castsShadow) continue;
                     // cheap reject: sprite centre outside the light box
                     Vector3 lp = lightView.MultiplyPoint3x4(sr.transform.position);
                     if (MathF.Abs(lp.x - c.x) > r2 || MathF.Abs(lp.y - c.y) > r2) continue;
-                    DrawSpriteQuad(sr, cam);
+                    if (batch != null && SpriteBatch.Batchable(sr)) batch.Add(sr, cam, false, Vector3.up);
+                    else DrawSpriteQuad(sr, cam);
                     DynamicCasters++;
+                }
+                if (batch != null)
+                {
+                    // every batchable caster in a few draws: the batch geometry is world space, only the texture changes
+                    batch.End();
+                    if (batch.SpriteCount > 0)
+                    {
+                        _spriteDepthBatch.Use();
+                        _spriteDepthBatch.SetMatrix("uViewProj", ViewProj);
+                        _spriteDepthBatch.SetInt("uTex", 0);
+                        batch.Bind();
+                        var batches = batch.Batches;
+                        for (int i = 0; i < batches.Count; i++)
+                        {
+                            GL.BindTexture(GL.TEXTURE_2D, batches[i].texture.Handle);
+                            batch.Draw(batches[i]);
+                        }
+                        GL.BindVertexArray(0);
+                    }
                 }
             }
             GL.Disable(GL.POLYGON_OFFSET_FILL);
@@ -222,6 +244,7 @@ namespace RipNRage.Engine.Graphics.Lighting
             {
                 Vector3 toCam = cam.transform.position - sr.transform.position; toCam.y = 0f;
                 Quaternion rot = toCam.sqrMagnitude > 1E-06f ? Quaternion.LookRotation(-toCam.normalized) : Quaternion.identity;
+                if (sr.billboardRoll != 0f) rot = rot * Quaternion.AngleAxis(sr.billboardRoll, Vector3.forward);
                 model = Matrix4x4.TRS(sr.transform.position, rot, sr.transform.lossyScale);
             }
             else model = sr.transform.localToWorldMatrix;
@@ -231,6 +254,7 @@ namespace RipNRage.Engine.Graphics.Lighting
             Set(0, min.x, min.y, u0, v0); Set(1, max.x, min.y, u1, v0); Set(2, min.x, max.y, u0, v1); Set(3, max.x, max.y, u1, v1);
             GL.BindVertexArray(_quadVao);
             GL.BindBuffer(GL.ARRAY_BUFFER, _quadVbo);
+            GL.BufferData(GL.ARRAY_BUFFER, _quad.Length * sizeof(float), null, GL.DYNAMIC_DRAW); // orphan: no stall on the previous draw
             fixed (float* p = _quad) GL.BufferSubData(GL.ARRAY_BUFFER, 0, _quad.Length * sizeof(float), p);
             GL.DrawArrays(GL.TRIANGLE_STRIP, 0, 4);
         }
@@ -260,7 +284,7 @@ namespace RipNRage.Engine.Graphics.Lighting
         public void Dispose()
         {
             _target?.Dispose(); _static?.Dispose();
-            _meshDepth.Dispose(); _spriteDepth.Dispose();
+            _meshDepth.Dispose(); _spriteDepth.Dispose(); _spriteDepthBatch.Dispose();
             GL.DeleteVertexArray(_quadVao); GL.DeleteBuffer(_quadVbo);
         }
 
@@ -276,6 +300,11 @@ void main() { }";
 layout(location = 0) in vec3 aPos; layout(location = 1) in vec2 aUV;
 uniform mat4 uViewProj; uniform mat4 uModel; out vec2 vUV;
 void main() { vUV = aUV; gl_Position = uViewProj * uModel * vec4(aPos, 1.0); }";
+
+        private const string SpriteDepthBatchVert = @"#version 330 core
+layout(location = 0) in vec3 aPos; layout(location = 1) in vec2 aUV;
+uniform mat4 uViewProj; out vec2 vUV;
+void main() { vUV = aUV; gl_Position = uViewProj * vec4(aPos, 1.0); }";
 
         private const string SpriteDepthFrag = @"#version 330 core
 in vec2 vUV; uniform sampler2D uTex;

@@ -30,4 +30,7 @@ public class EnemyData : ScriptableObject
     [Space(10)]
     [Header("Animation Settings")]
     public EnemyAnimationData enemyAnimationData;
+
+    /// <summary>Standalone addition: skeletons/&lt;name&gt;.json used to slice the sprite into a ragdoll on death (empty = death animation only).</summary>
+    public string skeleton = "";
 }

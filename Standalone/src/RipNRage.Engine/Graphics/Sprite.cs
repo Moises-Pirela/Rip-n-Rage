@@ -50,6 +50,98 @@ namespace RipNRage.Engine.Graphics
             uv = new Vector2((rect.x + v.x) / texture.width, (rect.y + v.y) / texture.height);
         }
 
+        /// <summary>
+        /// A new sprite showing only a polygon of this one (pixel coordinates relative to this sprite's rect,
+        /// bottom-left origin, any winding, concave allowed): the piece's rect is the polygon's bounds and its mesh the
+        /// triangulated polygon, so only that region of the texture is drawn. <paramref name="pivotPx"/> is the new
+        /// pivot, also relative to this sprite's rect (the polygon's centroid when null). <paramref name="pixelsPerUnit"/>
+        /// overrides the piece's scale (0 = the same as this sprite).
+        /// </summary>
+        public Sprite Cut(Vector2[] polygonPx, Vector2? pivotPx = null, string pieceName = null, float pixelsPerUnit = 0f)
+        {
+            if (polygonPx == null || polygonPx.Length < 3) return this;
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            foreach (var p in polygonPx) { minX = MathF.Min(minX, p.x); minY = MathF.Min(minY, p.y); maxX = MathF.Max(maxX, p.x); maxY = MathF.Max(maxY, p.y); }
+            minX = Mathf.Clamp(minX, 0f, rect.width); maxX = Mathf.Clamp(maxX, 0f, rect.width);
+            minY = Mathf.Clamp(minY, 0f, rect.height); maxY = Mathf.Clamp(maxY, 0f, rect.height);
+            float w = MathF.Max(maxX - minX, 1f), h = MathF.Max(maxY - minY, 1f);
+            Vector2 pv = pivotPx ?? Centroid(polygonPx);
+            var piece = new Sprite(texture, new Rect(rect.x + minX, rect.y + minY, w, h), new Vector2((pv.x - minX) / w, (pv.y - minY) / h), pixelsPerUnit > 0f ? pixelsPerUnit : this.pixelsPerUnit, pieceName ?? name + "_piece");
+            var verts = new Vector2[polygonPx.Length];
+            for (int i = 0; i < verts.Length; i++) verts[i] = new Vector2(Mathf.Clamp(polygonPx[i].x, 0f, rect.width) - minX, Mathf.Clamp(polygonPx[i].y, 0f, rect.height) - minY);
+            var tris = Triangulate(verts);
+            if (tris.Length >= 3) piece.SetMesh(verts, tris);
+            return piece;
+        }
+
+        /// <summary>Area centroid of a polygon (its average vertex when degenerate).</summary>
+        public static Vector2 Centroid(Vector2[] poly)
+        {
+            float area = 0f; Vector2 c = Vector2.zero;
+            for (int i = 0; i < poly.Length; i++)
+            {
+                Vector2 a = poly[i], b = poly[(i + 1) % poly.Length];
+                float cr = a.x * b.y - b.x * a.y;
+                area += cr; c += (a + b) * cr;
+            }
+            if (MathF.Abs(area) < 1E-06f)
+            {
+                c = Vector2.zero;
+                foreach (var p in poly) c += p;
+                return poly.Length > 0 ? c / poly.Length : Vector2.zero;
+            }
+            return c / (3f * area);
+        }
+
+        /// <summary>Ear-clipping triangulation of a simple polygon (either winding); returns index triples.</summary>
+        public static int[] Triangulate(Vector2[] poly)
+        {
+            int n = poly.Length;
+            if (n < 3) return Array.Empty<int>();
+            // work counter-clockwise
+            float signed = 0f;
+            for (int i = 0; i < n; i++) { Vector2 a = poly[i], b = poly[(i + 1) % n]; signed += a.x * b.y - b.x * a.y; }
+            var idx = new List<int>(n);
+            for (int i = 0; i < n; i++) idx.Add(signed >= 0f ? i : n - 1 - i);
+            var result = new List<int>((n - 2) * 3);
+            int guard = 0;
+            while (idx.Count > 3 && guard++ < n * n)
+            {
+                bool clipped = false;
+                for (int i = 0; i < idx.Count; i++)
+                {
+                    int i0 = idx[(i + idx.Count - 1) % idx.Count], i1 = idx[i], i2 = idx[(i + 1) % idx.Count];
+                    Vector2 a = poly[i0], b = poly[i1], c = poly[i2];
+                    if (Cross2(b - a, c - a) <= 1E-09f) continue; // reflex or degenerate: not an ear
+                    bool inside = false;
+                    for (int k = 0; k < idx.Count && !inside; k++)
+                    {
+                        int j = idx[k];
+                        if (j == i0 || j == i1 || j == i2) continue;
+                        inside = PointInTriangle(poly[j], a, b, c);
+                    }
+                    if (inside) continue;
+                    result.Add(i0); result.Add(i1); result.Add(i2);
+                    idx.RemoveAt(i);
+                    clipped = true;
+                    break;
+                }
+                if (!clipped) break; // degenerate polygon: fan the rest
+            }
+            if (idx.Count == 3) { result.Add(idx[0]); result.Add(idx[1]); result.Add(idx[2]); }
+            else for (int i = 1; i + 1 < idx.Count; i++) { result.Add(idx[0]); result.Add(idx[i]); result.Add(idx[i + 1]); }
+            return result.ToArray();
+        }
+
+        private static float Cross2(Vector2 a, Vector2 b) => a.x * b.y - a.y * b.x;
+
+        private static bool PointInTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+        {
+            float d1 = Cross2(b - a, p - a), d2 = Cross2(c - b, p - b), d3 = Cross2(a - c, p - c);
+            bool neg = d1 < 0f || d2 < 0f || d3 < 0f, pos = d1 > 0f || d2 > 0f || d3 > 0f;
+            return !(neg && pos);
+        }
+
         /// <summary>Creates a sprite covering the whole texture.</summary>
         public static Sprite FromTexture(Texture2D tex, Vector2? pivot = null, float pixelsPerUnit = 100f) =>
             new Sprite(tex, new Rect(0, 0, tex.width, tex.height), pivot ?? new Vector2(0.5f, 0.5f), pixelsPerUnit, tex.name);

@@ -50,6 +50,7 @@ namespace RipNRage.Editor
                 app.Renderer.PostFx.Enabled = false;
                 GameAssets.Load();
                 Materials.Load();
+                MovementSettings.Attach(app); // the physics panel edits tunables.cfg [movement] too
 
                 var camGo = new GameObject("EditorCamera");
                 var cam = camGo.AddComponent<Camera>();

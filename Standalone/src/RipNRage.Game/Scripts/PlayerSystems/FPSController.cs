@@ -2,14 +2,17 @@ using System;
 using System.Collections;
 
 // Ported from Assets/_Game/Scripts/PlayerSystems/FPSController.cs.
-// CharacterController / Physics / AnimationCurve / AudioSource are the engine's replacements;
-// the locomotion logic is unchanged. Serialized fields are public so the player factory can apply
-// the values stored in PlayerCharacter.prefab.
+// Physics / AnimationCurve / AudioSource are the engine's replacements; the locomotion logic is unchanged but the
+// player is now a force-driven rigid body (CharacterBody): this script computes the velocity it wants and hands it
+// to the motor (Move), jumps and dashes are impulses, gravity is the body's own, knockback is a velocity change —
+// so the player pushes crates with its mass, is shoved by blasts and bodies, and slides along walls through the
+// contact solver. Serialized fields are public so the player factory can apply the values stored in
+// PlayerCharacter.prefab.
 // Standalone additions (movement feel): sliding (crouch while running: capsule shrinks, camera drops, a speed
 // boost decays with friction; jumping out of a slide keeps the momentum), wall running (airborne next to a wall
 // while pushing forward: reduced gravity, speed along the wall, camera tilt, wall jump away from the wall),
 // external impulses (explosion knockback / rocket jumps) and the style meter's S-rank speed bonus.
-[RequireComponent(typeof(CharacterController))]
+[RequireComponent(typeof(CharacterBody))]
 public class FPSController : MonoBehaviour
 {
     [Space, Header("Data")]
@@ -103,7 +106,7 @@ public class FPSController : MonoBehaviour
     [Range(1f, 100f)] [SerializeField] public float smoothFinalDirectionSpeed = 5f;
 
     #region Components / Custom Classes / Caches
-    private CharacterController m_characterController;
+    private CharacterBody m_characterController; // the force-driven body (name kept so the ported code reads the same)
     private Transform m_yawTransform;
     private Transform m_camTransform;
     private HeadBob m_headBob;
@@ -166,8 +169,16 @@ public class FPSController : MonoBehaviour
         ProgressStepCycle(m_smoothCurrentSpeed);
     }
 
+    private int _movementVersion = -1;
+
     protected override void Update()
     {
+        if (_movementVersion != RipNRage.Game.Content.MovementSettings.Version)
+        {
+            // tunables.cfg [movement] changed (file reload or the editor's physics panel): take the new values
+            _movementVersion = RipNRage.Game.Content.MovementSettings.Version;
+            RipNRage.Game.Content.MovementSettings.Current.ApplyTo(this);
+        }
         if (m_characterController != null)
         {
             // Check if Grounded,Wall etc
@@ -204,11 +215,11 @@ public class FPSController : MonoBehaviour
     protected virtual void GetComponents()
     {
         m_AudioSource = GetComponent<AudioSource>();
-        m_characterController = GetComponent<CharacterController>();
+        m_characterController = GetComponent<CharacterBody>();
         _inputActions = GetComponent<PlayerInputActions>();
         m_headBob = GetComponentInChildren<HeadBob>();
         _cameraController = GetComponent<FPSCameraController>();
-        _standHeight = m_characterController.height; _standCenter = m_characterController.center;
+        _standHeight = m_characterController.height; _standCenter = m_characterController.capsule != null ? m_characterController.capsule.center : Vector3.zero;
         m_initHeight = m_characterController.height;
         //m_cameraController = GetComponentInChildren<CameraController>();
         //m_yawTransform = m_cameraController.transform;
@@ -220,7 +231,7 @@ public class FPSController : MonoBehaviour
        // m_characterController.center = new Vector3(0f, m_characterController.height / 2f + m_characterController.skinWidth, 0f);
 
         // Sphere radius not included. If you want it to be included just decrease by sphere radius at the end of this equation
-        m_finalRayLength = rayLength + m_characterController.center.y;
+        m_finalRayLength = rayLength + _standCenter.y;
 
         _inputActions.IsGrounded = true;
         m_previouslyGrounded = true;
@@ -310,7 +321,7 @@ public class FPSController : MonoBehaviour
     #region Locomotion Calculation Methods
     protected virtual bool CheckIfGrounded()
     {
-        Vector3 _origin = transform.position + m_characterController.center;
+        Vector3 _origin = transform.position + _standCenter;
 
         bool _hitGround = m_characterController.isGrounded; //Physics.SphereCast(_origin,raySphereRadius,Vector3.down,out m_hitInfo,m_finalRayLength,groundLayer);
         Debug.DrawRay(_origin, Vector3.down * (m_finalRayLength), Color.red);
@@ -323,7 +334,7 @@ public class FPSController : MonoBehaviour
     protected virtual void CheckIfWall()
     {
 
-        Vector3 _origin = transform.position + m_characterController.center;
+        Vector3 _origin = transform.position + _standCenter;
         RaycastHit _wallInfo;
 
         bool _hitWall = false;
@@ -401,9 +412,7 @@ public class FPSController : MonoBehaviour
                     _slideTime = 0f;
                     _slideDir = dir.normalized;
                     _slideSpeed = Mathf.Max(dir.magnitude, runSpeed) + slideSpeedBoost;
-                    float drop = (_standHeight - slideHeight) * 0.5f;
-                    m_characterController.height = slideHeight;
-                    m_characterController.center = _standCenter - new Vector3(0f, drop, 0f);
+                    m_characterController.SetHeight(slideHeight); // the capsule shrinks from the top, the bottom stays on the ground
                 }
             }
             if (m_headBob != null) m_headBob.heightOffset = Mathf.Lerp(m_headBob.heightOffset, 0f, dt * 10f);
@@ -423,7 +432,7 @@ public class FPSController : MonoBehaviour
         if (_inputActions.IsJumping && grounded)
         {
             // slide jump: keep the momentum, pop up
-            m_finalMoveVector.y = jumpSpeed;
+            m_characterController.Jump(jumpSpeed);
             _inputActions.IsJumping = false;
             _inputActions.IsGrounded = false;
             m_previouslyGrounded = true;
@@ -438,8 +447,7 @@ public class FPSController : MonoBehaviour
     {
         IsSliding = false;
         _slideCooldownTimer = slideCooldown;
-        m_characterController.height = _standHeight;
-        m_characterController.center = _standCenter;
+        m_characterController.SetHeight(_standHeight);
     }
 
     protected virtual void UpdateWallRun()
@@ -453,7 +461,7 @@ public class FPSController : MonoBehaviour
             return;
         }
 
-        Vector3 origin = transform.position + m_characterController.center;
+        Vector3 origin = transform.position + _standCenter;
         Vector3 fwd = _cameraController != null ? _cameraController.orientation.forward : transform.forward;
         Vector3 rightDir = Vector3.Cross(Vector3.up, fwd).normalized;
         float reach = m_characterController.radius + wallCheckDistance;
@@ -485,13 +493,15 @@ public class FPSController : MonoBehaviour
         along.Normalize();
         Vector3 run = along * wallRunSpeed - _wallNormal * 1.5f; // hug the wall so the side ray keeps seeing it
         m_finalMoveVector.x = run.x; m_finalMoveVector.z = run.z;
-        if (m_finalMoveVector.y < -3f) m_finalMoveVector.y = -3f; // glide instead of falling
+        m_characterController.ClampVerticalVelocity(-3f); // glide instead of falling
 
         if (_inputActions.IsJumping)
         {
             // wall jump: away from the wall, up, keep the run speed
             Vector3 launch = along * wallRunSpeed * 0.8f + _wallNormal * wallJumpAway;
-            m_finalMoveVector.x = launch.x; m_finalMoveVector.z = launch.z; m_finalMoveVector.y = wallJumpUp;
+            m_finalMoveVector.x = launch.x; m_finalMoveVector.z = launch.z;
+            m_characterController.AddVelocityChange(new Vector3(launch.x - m_characterController.velocity.x, 0f, launch.z - m_characterController.velocity.z));
+            m_characterController.Jump(wallJumpUp - Mathf.Max(m_characterController.velocity.y, 0f));
             _inputActions.IsJumping = false;
             _wallJumpCooldown = 0.35f;
             PlayJumpSound();
@@ -527,6 +537,7 @@ public class FPSController : MonoBehaviour
             if (IsWallRunning) EndWallRun();
             if (!grounded) _airDashesLeft--;
             IsDashing = true; _dashTimer = dashDuration; _dashDir = dir; _dashCooldownTimer = dashCooldown;
+            m_characterController.Dash(dir * dashSpeed, dashDuration); // an impulse burst with gravity off
             EnragedInjector<CameraRecoil>.GetInstance()?.AddTrauma(0.14f);
             if (m_AudioSource != null) m_AudioSource.PlayOneShot(RipNRage.Game.Content.ProceduralSounds.Dash, 0.6f);
             RipNRage.Game.Content.Vfx.GameVfx.Spawn("dash", transform.position - dir * 0.6f, -dir);
@@ -536,22 +547,25 @@ public class FPSController : MonoBehaviour
         _dashTimer -= dt;
         m_finalMoveVector.x = _dashDir.x * dashSpeed;
         m_finalMoveVector.z = _dashDir.z * dashSpeed;
-        m_finalMoveVector.y = 0f;
         if (_dashTimer <= 0f)
         {
             IsDashing = false;
+            m_characterController.StopDash();
             // hand back a fast but normal run so the dash does not end in a dead stop
             m_finalMoveVector.x = _dashDir.x * runSpeed * 1.1f;
             m_finalMoveVector.z = _dashDir.z * runSpeed * 1.1f;
         }
     }
 
-    /// <summary>World-space velocity change applied on the next movement step (explosion knockback, rocket jumps).</summary>
+    /// <summary>World-space velocity change (explosion knockback, rocket jumps), applied to the body at once.</summary>
     public void AddImpulse(Vector3 impulse)
     {
-        _pendingImpulse += impulse;
-        const float maxImpulse = 40f; // defensive cap: a mistuned knockback must not fling the player through the world in one step
-        if (_pendingImpulse.sqrMagnitude > maxImpulse * maxImpulse) _pendingImpulse = _pendingImpulse.normalized * maxImpulse;
+        const float maxImpulse = 40f; // defensive cap: a mistuned knockback must not fling the player into orbit
+        if (impulse.sqrMagnitude > maxImpulse * maxImpulse) impulse = impulse.normalized * maxImpulse;
+        if (m_characterController == null) { _pendingImpulse += impulse; return; }
+        if (IsDashing) { IsDashing = false; m_characterController.StopDash(); }
+        m_characterController.AddVelocityChange(impulse);
+        if (impulse.y > 0f) { _inputActions.IsGrounded = false; m_previouslyGrounded = true; }
     }
 
     #endregion
@@ -563,9 +577,6 @@ public class FPSController : MonoBehaviour
 
         m_finalMoveVector.x = finalVector.x;
         m_finalMoveVector.z = finalVector.z;
-
-        if (m_characterController.isGrounded)
-            m_finalMoveVector.y += finalVector.y;
     }
     #endregion
 
@@ -617,7 +628,7 @@ public class FPSController : MonoBehaviour
     {
         if (_inputActions.IsJumping)
         {
-            m_finalMoveVector.y = jumpSpeed;
+            m_characterController.Jump(jumpSpeed); // an impulse; the ride spring lets go for a moment
 
             m_previouslyGrounded = true;
             _inputActions.IsGrounded = false;
@@ -626,37 +637,33 @@ public class FPSController : MonoBehaviour
         }
     }
 
+    /// <summary>Gravity is the body's own now: this only picks its scale (wall runs glide) and times the air / jump.</summary>
     protected virtual void ApplyGravity()
     {
-        if (IsDashing) { m_finalMoveVector.y = 0f; return; } // the dash ignores gravity for its duration
-        if (m_characterController.isGrounded && m_finalMoveVector.y <= 0.01f)
+        if (IsDashing) return; // the dash switches gravity off itself
+        if (m_characterController.isGrounded)
         {
             m_inAirTimer = 0f;
-            m_finalMoveVector.y = -stickToGroundForce;
-
-             HandleJump();  
-             _inputActions.IsJumping = false;
+            HandleJump();
+            _inputActions.IsJumping = false;
         }
-        else
-        {
-            m_inAirTimer += Time.deltaTime;
-            float g = IsWallRunning ? wallRunGravity : 1f;
-            m_finalMoveVector += Physics.gravity * gravityMultiplier * g * Time.deltaTime;
-        }
+        else m_inAirTimer += Time.deltaTime;
+        float g = IsWallRunning ? wallRunGravity : 1f;
+        m_characterController.gravityScale = gravityMultiplier * g;
 
         if (_pendingImpulse != Vector3.zero)
         {
-            m_finalMoveVector += _pendingImpulse;
+            m_characterController.AddVelocityChange(_pendingImpulse);
             if (_pendingImpulse.y > 0f) { _inputActions.IsGrounded = false; m_previouslyGrounded = true; }
             _pendingImpulse = Vector3.zero;
         }
     }
 
+    /// <summary>Hands the horizontal velocity this frame wants to the motor; it accelerates the body towards it with forces.</summary>
     protected virtual void ApplyMovement()
     {
         if (!m_characterController.enabled) return;
-
-        m_characterController.Move(m_finalMoveVector * Time.deltaTime);
+        m_characterController.Move(new Vector3(m_finalMoveVector.x, 0f, m_finalMoveVector.z));
     }
 
     /// <summary>Standalone addition: drops every accumulated velocity (fall respawn / teleports).</summary>
@@ -664,6 +671,7 @@ public class FPSController : MonoBehaviour
     {
         _pendingImpulse = Vector3.zero;
         IsDashing = false;
+        m_characterController?.ResetVelocity();
         if (IsSliding) EndSlide();
         if (IsWallRunning) EndWallRun();
         m_finalMoveVector = Vector3.zero;

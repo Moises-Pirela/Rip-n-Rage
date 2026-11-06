@@ -148,11 +148,26 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Call after SwapBuffers: publishes window statistics, reads back GPU queries, samples the GC.</summary>
+        /// <summary>Raised at the end of every frame with every stage's <see cref="Stage.cpuMs"/> of that frame still intact (benchmarks sample here).</summary>
+        public static event Action FrameEnded;
+        /// <summary>Bytes allocated on the main thread during the frame that just ended.</summary>
+        public static long AllocBytesThisFrame { get; private set; }
+
+        /// <summary>This frame's CPU time of a stage (0 when it did not run).</summary>
+        public static double StageMs(string name) => _byName.TryGetValue(name, out var s) ? s.cpuMs : 0.0;
+
+        /// <summary>CPU time of the frame that just ended, from BeginFrame to EndFrame (excludes the wait for vsync at the next BeginFrame).</summary>
+        public static double FrameElapsedMs { get; private set; }
+
         public static void EndFrame()
         {
+            FrameElapsedMs = Ms(_sw.ElapsedTicks - _frameStartTicks);
             long allocNow = GC.GetAllocatedBytesForCurrentThread();
-            _allocSum += Math.Max(0, allocNow - _allocAtFrameStart);
+            AllocBytesThisFrame = Math.Max(0, allocNow - _allocAtFrameStart);
+            _allocSum += AllocBytesThisFrame;
             if (GpuTimersAvailable) foreach (var s in _stages) ReadGpu(s);
+            try { FrameEnded?.Invoke(); }
+            catch (Exception e) { Debug.LogError("Profiler.FrameEnded handler threw: " + e); }
 
             double now = _sw.Elapsed.TotalSeconds;
             if (now - _windowStart < WindowSeconds || _windowFrames == 0) return;

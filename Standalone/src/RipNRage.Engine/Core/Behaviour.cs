@@ -84,6 +84,20 @@ namespace RipNRage.Engine
             Start();
         }
 
+        // ---- which callbacks a type overrides (reflected once per type; the scene only visits behaviours that have them) ----
+        internal const byte HasFixedUpdate = 1, HasUpdate = 2, HasLateUpdate = 4;
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<System.Type, byte> _updateFlags = new System.Collections.Concurrent.ConcurrentDictionary<System.Type, byte>();
+
+        internal static byte UpdateFlagsOf(System.Type t)
+        {
+            if (_updateFlags.TryGetValue(t, out byte f)) return f;
+            const System.Reflection.BindingFlags bf = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+            bool Overrides(string name) { var m = t.GetMethod(name, bf, null, System.Type.EmptyTypes, null); return m != null && m.DeclaringType != typeof(Behaviour); }
+            f = (byte)((Overrides("FixedUpdate") ? HasFixedUpdate : 0) | (Overrides("Update") ? HasUpdate : 0) | (Overrides("LateUpdate") ? HasLateUpdate : 0));
+            _updateFlags[t] = f;
+            return f;
+        }
+
         protected virtual void Awake() { }
         protected virtual void Start() { }
         protected virtual void OnEnable() { }

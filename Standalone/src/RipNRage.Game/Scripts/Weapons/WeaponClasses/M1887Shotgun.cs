@@ -59,7 +59,9 @@ public class M1887Shotgun : HitscanWeapon
             {
                 bool wasAlive = entityState.HealthState != EntityHealthState.DEAD;
                 bool headshot = entityState is AIState ai && ai.IsHeadshot(hit.point);
+                DamageInfo.Report(hit.point, finalDirection, weaponData.weaponStats.hitImpulse > 0f ? weaponData.weaponStats.hitImpulse : 9f);
                 entityState.TakeDamage(weaponData.weaponStats.damagePerShot * (headshot ? 2f : 1f));
+                DamageInfo.Clear();
                 bool killed = wasAlive && entityState.HealthState == EntityHealthState.DEAD;
                 PlayerState.Current.AddToRage(0.05f);
                 if (GameVfx.Available) GameVfx.Blood(hit.point, hit.normal, bulletKey, headshot ? 1.7f : 1f);

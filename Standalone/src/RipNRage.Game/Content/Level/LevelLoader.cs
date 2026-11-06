@@ -17,6 +17,10 @@ namespace RipNRage.Game.Content.Level
         /// <summary>Worldspawn <c>fall_mode</c> ("die" / "respawn"); null keeps the game's default (<see cref="FallRespawn.Mode"/>).</summary>
         public FallMode? fallMode;
         public readonly List<GameObject> entityObjects = new List<GameObject>();
+        /// <summary>Spawned entities by their <c>targetname</c> key.</summary>
+        public readonly Dictionary<string, GameObject> named = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
+
+        public GameObject Find(string targetname) => !string.IsNullOrEmpty(targetname) && named.TryGetValue(targetname, out var go) && go != null && !go.IsDestroyed ? go : null;
     }
 
     /// <summary>
@@ -41,35 +45,49 @@ namespace RipNRage.Game.Content.Level
             }
 
             if (!preview) GameSaveSystem.CurrentLevel = level;
-            for (int index = 0; index < doc.entities.Count; index++)
+            Loading = level;
+            try
             {
-                var e = doc.entities[index];
-                if (e.classname.Equals("info_player_start", StringComparison.OrdinalIgnoreCase))
-                {
-                    level.playerStart = e.origin + Vector3.up * 1.0f; // capsule centre above the floor
-                    level.playerRotation = Quaternion.Euler(0, e.angle, 0);
-                    if (!preview) continue;
-                }
-                var def = EntityRegistry.Get(e.classname);
-                if (def == null) { Debug.LogWarning("level: unknown entity class " + e.classname); continue; }
-                try
-                {
-                    var go = preview ? (def.preview ?? def.spawn)?.Invoke(e) : def.spawn?.Invoke(e);
-                    if (go != null)
+                // two passes: everything that stands on its own, then the deferred classes (joints connecting entities by targetname)
+                for (int pass = 0; pass < 2; pass++)
+                    for (int index = 0; index < doc.entities.Count; index++)
                     {
-                        go.transform.SetParent(level.root.transform, true);
-                        level.entityObjects.Add(go);
-                        if (!preview)
+                        var e = doc.entities[index];
+                        if (e.classname.Equals("info_player_start", StringComparison.OrdinalIgnoreCase))
                         {
-                            var r = go.AddComponent<LevelEntityRef>(); r.index = index; r.classname = e.classname;
-                            var sp = go.GetComponent<MonsterSpawner>(); if (sp != null) sp.levelIndex = index;
+                            if (pass == 1) continue;
+                            level.playerStart = e.origin + Vector3.up * 1.0f; // capsule centre above the floor
+                            level.playerRotation = Quaternion.Euler(0, e.angle, 0);
+                            if (!preview) continue;
                         }
+                        var def = EntityRegistry.Get(e.classname);
+                        if (def == null) { if (pass == 0) Debug.LogWarning("level: unknown entity class " + e.classname); continue; }
+                        if (def.deferred != (pass == 1)) continue;
+                        try
+                        {
+                            var go = preview ? (def.preview ?? def.spawn)?.Invoke(e) : def.spawn?.Invoke(e);
+                            if (go != null)
+                            {
+                                go.transform.SetParent(level.root.transform, true);
+                                level.entityObjects.Add(go);
+                                string targetname = e.Get("targetname");
+                                if (!string.IsNullOrEmpty(targetname)) level.named[targetname] = go;
+                                if (!preview)
+                                {
+                                    var r = go.AddComponent<LevelEntityRef>(); r.index = index; r.classname = e.classname;
+                                    var sp = go.GetComponent<MonsterSpawner>(); if (sp != null) sp.levelIndex = index;
+                                }
+                            }
+                        }
+                        catch (Exception ex) { Debug.LogError($"level: failed to spawn {e.classname}: {ex.Message}"); }
                     }
-                }
-                catch (Exception ex) { Debug.LogError($"level: failed to spawn {e.classname}: {ex.Message}"); }
             }
+            finally { Loading = null; }
             return level;
         }
+
+        /// <summary>The level being built right now (entity spawners resolve targetnames through it).</summary>
+        public static LoadedLevel Loading { get; private set; }
 
         /// <summary>Kill height: explicit worldspawn "kill_y", else the water surface minus one metre, else five metres under the lowest brush.</summary>
         private static float ComputeKillY(MapDocument doc)
@@ -128,6 +146,7 @@ namespace RipNRage.Game.Content.Level
                     {
                         var col = go.AddComponent<BoxCollider>();
                         col.size = b.boundsMax - b.boundsMin;
+                        col.isStatic = true; // level geometry: cached in the broadphase grid
                     }
                     else
                     {

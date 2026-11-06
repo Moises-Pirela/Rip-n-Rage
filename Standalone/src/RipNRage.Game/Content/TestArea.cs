@@ -78,7 +78,7 @@ namespace RipNRage.Game.Content
             mr.texture = ProceduralTextures.WoodPlanks(); // Dock.blend's materials were not exported; generated planks instead
             mr.uvScale = new Vector2(2f, 2f);             // one 64-unit brush face = 2 texture tiles (16 planks)
             mr.color = Color.white;
-            BuildDockCollision(objPath, dock);
+            BuildDockCollision(dock, mr.mesh);
 
             // SkyRotator
             new GameObject("SkyRotator").AddComponent<SkyboxRotator>();
@@ -114,88 +114,17 @@ namespace RipNRage.Game.Content
             var sandCol = sand.AddComponent<BoxCollider>();
             sandCol.size = new Vector3(1732.1f, 2f, 1000f);
             sandCol.center = new Vector3(0, -1f, 0);
+            sandCol.isStatic = true;
         }
 
         /// <summary>
-        /// One AABB collider per brush of the TrenchBroom export. Rotated brushes (e.g. the slanted pier)
-        /// are approximated by a grid of small boxes covering their convex footprint.
+        /// The dock collides as a triangle mesh (the rendered <c>dock.obj</c> itself), so the slanted pier and every
+        /// rotated brush are exact — the old grid of small boxes that approximated them is gone.
         /// </summary>
-        private static void BuildDockCollision(string objPath, GameObject dock)
+        private static void BuildDockCollision(GameObject dock, Mesh mesh)
         {
-            var verts = new List<Vector3>();
-            var groups = new List<(string name, HashSet<int> idx)>();
-            (string name, HashSet<int> idx) cur = (null, null);
-            foreach (var raw in File.ReadLines(objPath))
-            {
-                var p = raw.Split(' ', System.StringSplitOptions.RemoveEmptyEntries);
-                if (p.Length == 0) continue;
-                if (p[0] == "v")
-                    verts.Add(new Vector3(-float.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture) * MapScale,
-                        float.Parse(p[2], System.Globalization.CultureInfo.InvariantCulture) * MapScale,
-                        float.Parse(p[3], System.Globalization.CultureInfo.InvariantCulture) * MapScale));
-                else if (p[0] == "o") { cur = (p[1], new HashSet<int>()); groups.Add(cur); }
-                else if (p[0] == "f" && cur.idx != null)
-                    for (int i = 1; i < p.Length; i++) cur.idx.Add(int.Parse(p[i].Split('/')[0]) - 1);
-            }
-
-            foreach (var (name, idx) in groups)
-            {
-                var vs = new List<Vector3>();
-                foreach (var i in idx) vs.Add(verts[i]);
-                Vector3 min = vs[0], max = vs[0];
-                var xs = new HashSet<float>(); var zs = new HashSet<float>();
-                foreach (var v in vs) { min = Vector3.Min(min, v); max = Vector3.Max(max, v); xs.Add(Mathf.Round(v.x * 100f)); zs.Add(Mathf.Round(v.z * 100f)); }
-                bool axisAligned = xs.Count <= 2 && zs.Count <= 2;
-                if (axisAligned)
-                {
-                    AddBox(dock, name, (min + max) * 0.5f, max - min);
-                    continue;
-                }
-                // Convex footprint (XZ) → grid of boxes whose centre lies inside the hull.
-                var hull = ConvexHullXZ(vs);
-                float cell = 64f * MapScale * 0.5f; // 8 units
-                for (float x = min.x; x < max.x; x += cell)
-                    for (float z = min.z; z < max.z; z += cell)
-                    {
-                        float cx = x + cell * 0.5f, cz = z + cell * 0.5f;
-                        if (!InsideHull(hull, cx, cz)) continue;
-                        AddBox(dock, name + "_cell", new Vector3(cx, (min.y + max.y) * 0.5f, cz), new Vector3(cell, max.y - min.y, cell));
-                    }
-            }
-        }
-
-        private static void AddBox(GameObject parent, string name, Vector3 center, Vector3 size)
-        {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent.transform, false);
-            go.transform.localPosition = center;
-            go.layer = Layers.Walkable;
-            var col = go.AddComponent<BoxCollider>();
-            col.size = size;
-        }
-
-        private static List<Vector2> ConvexHullXZ(List<Vector3> pts)
-        {
-            var p = new List<Vector2>();
-            foreach (var v in pts) p.Add(new Vector2(v.x, v.z));
-            p.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
-            var hull = new List<Vector2>();
-            float Cross(Vector2 o, Vector2 a, Vector2 b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-            foreach (var pt in p) { while (hull.Count >= 2 && Cross(hull[hull.Count - 2], hull[hull.Count - 1], pt) <= 0) hull.RemoveAt(hull.Count - 1); hull.Add(pt); }
-            int lower = hull.Count + 1;
-            for (int i = p.Count - 2; i >= 0; i--) { while (hull.Count >= lower && Cross(hull[hull.Count - 2], hull[hull.Count - 1], p[i]) <= 0) hull.RemoveAt(hull.Count - 1); hull.Add(p[i]); }
-            hull.RemoveAt(hull.Count - 1);
-            return hull;
-        }
-
-        private static bool InsideHull(List<Vector2> hull, float x, float z)
-        {
-            for (int i = 0; i < hull.Count; i++)
-            {
-                Vector2 a = hull[i], b = hull[(i + 1) % hull.Count];
-                if ((b.x - a.x) * (z - a.y) - (b.y - a.y) * (x - a.x) < 0f) return false;
-            }
-            return true;
+            var col = dock.AddComponent<MeshCollider>();
+            col.mesh = mesh;
         }
 
         // ------------------------------------------------------------------ props & lights
@@ -216,6 +145,58 @@ namespace RipNRage.Game.Content
             Crate(props, new Vector3(-9f, floor, -52f), 2.6f, GameAssets.GreenProto);
             Crate(props, new Vector3(-5f, floor, -80f), 2f, GameAssets.PurpleProto);
             Crate(props, new Vector3(10f, floor, -100f), 2.4f, GameAssets.RedProto);
+
+            // rigid bodies: a stack of loose crates and a couple of barrels near the start — push them, shoot them, rocket them
+            var loose = GameAssets.OrangeProto;
+            PhysicsCrate(props, new Vector3(-3f, floor + 0.5f, -6f), 1f, 12f, loose);
+            PhysicsCrate(props, new Vector3(-3f, floor + 1.55f, -6f), 1f, 12f, loose);
+            PhysicsCrate(props, new Vector3(-3f, floor + 2.6f, -6f), 1f, 12f, loose);
+            PhysicsCrate(props, new Vector3(-1.6f, floor + 0.4f, -7.2f), 0.8f, 6f, GameAssets.GreenProto);
+            PhysicsCrate(props, new Vector3(3.5f, floor + 0.6f, -9f), 1.2f, 25f, GameAssets.PurpleProto);
+            PhysicsBall(props, new Vector3(1f, floor + 1.2f, -12f), 0.45f, 8f, GameAssets.RedProto);
+            PhysicsBall(props, new Vector3(-6f, floor + 1.2f, -16f), 0.35f, 4f, GameAssets.RedProto);
+
+            // joints: door, pendulum, bungee crate, seesaw, windmill, patrolling piston, chain, breakable shelf
+            PhysicsPlayground.Build(props, floor);
+        }
+
+        /// <summary>A crate that is a rigid body: box collider + RigidBody, wood surface for the impact effects.</summary>
+        public static GameObject PhysicsCrate(GameObject parent, Vector3 center, float size, float mass, Texture2D tex)
+        {
+            var go = new GameObject("PhysicsCrate");
+            if (parent != null) go.transform.SetParent(parent.transform, false);
+            go.transform.position = center;
+            go.layer = Layers.Default;
+            go.AddComponent<SurfaceMaterial>().surface = Surfaces.Wood;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * size, 1f / size);
+            mr.texture = tex;
+            mr.material = Materials.Crate;
+            var col = go.AddComponent<BoxCollider>();
+            col.size = Vector3.one * size;
+            var rb = go.AddComponent<RigidBody>();
+            rb.mass = mass; rb.friction = 0.55f; rb.restitution = 0.05f;
+            rb.collisionDetection = CollisionDetectionMode.Continuous; // a rocket can throw it fast enough to cross a wall in one step
+            return go;
+        }
+
+        /// <summary>A ball that is a rigid body (sphere collider), rendered as a small box mesh.</summary>
+        public static GameObject PhysicsBall(GameObject parent, Vector3 center, float radius, float mass, Texture2D tex)
+        {
+            var go = new GameObject("PhysicsBall");
+            if (parent != null) go.transform.SetParent(parent.transform, false);
+            go.transform.position = center;
+            go.layer = Layers.Default;
+            go.AddComponent<SurfaceMaterial>().surface = Surfaces.Metal;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * (radius * 1.6f), 1f / radius);
+            mr.texture = tex;
+            var col = go.AddComponent<SphereCollider>();
+            col.radius = radius;
+            var rb = go.AddComponent<RigidBody>();
+            rb.mass = mass; rb.friction = 0.4f; rb.restitution = 0.45f; rb.angularDamping = 0.3f;
+            rb.collisionDetection = CollisionDetectionMode.ContinuousDynamic; // small and fast: swept against the world and the crates
+            return go;
         }
 
         private static void LampPost(GameObject parent, Vector3 basePos)
@@ -231,6 +212,7 @@ namespace RipNRage.Game.Content
             pole.color = new Color(0.35f, 0.35f, 0.38f, 1f);
             var poleCol = post.AddComponent<BoxCollider>();
             poleCol.center = new Vector3(0, 2.6f, 0); poleCol.size = new Vector3(0.4f, 5.2f, 0.4f);
+            poleCol.isStatic = true;
 
             var head = new GameObject("LampHead");
             head.transform.SetParent(post.transform, false);
@@ -262,6 +244,7 @@ namespace RipNRage.Game.Content
             mr.material = Materials.Crate;
             var col = go.AddComponent<BoxCollider>();
             col.size = Vector3.one * size;
+            col.isStatic = true;
         }
 
         // ------------------------------------------------------------------ managers

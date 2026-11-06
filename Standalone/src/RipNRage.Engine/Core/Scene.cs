@@ -14,10 +14,15 @@ namespace RipNRage.Engine
 
         private readonly List<GameObject> _gameObjects = new List<GameObject>();
         private readonly List<Behaviour> _behaviours = new List<Behaviour>();
+        // only the behaviours that override the callback are visited each pass (a RigidBody or a MeshRenderer has no Update)
+        private readonly List<Behaviour> _fixedUpdaters = new List<Behaviour>(), _updaters = new List<Behaviour>(), _lateUpdaters = new List<Behaviour>();
+        private bool _compact; // something was destroyed: drop it from the lists at the end of the frame (removal is O(1), the sweep O(n) once)
         private readonly List<Behaviour> _pendingStart = new List<Behaviour>();
         private readonly List<Coroutine> _coroutines = new List<Coroutine>();
         private readonly List<(EngineObject obj, float time)> _destroyQueue = new List<(EngineObject, float)>();
         private float _fixedAccumulator;
+        /// <summary>Most fixed steps one frame may run before the simulation is allowed to fall behind real time.</summary>
+        public static int MaxFixedSteps = 8;
 
         public IReadOnlyList<GameObject> GameObjects => _gameObjects;
 
@@ -30,6 +35,7 @@ namespace RipNRage.Engine
         internal void ClearAll()
         {
             _coroutines.Clear(); _destroyQueue.Clear(); _pendingStart.Clear(); _behaviours.Clear(); _gameObjects.Clear();
+            _fixedUpdaters.Clear(); _updaters.Clear(); _lateUpdaters.Clear(); _compact = false;
         }
 
         public static void MakeCurrent(Scene scene) => Current = scene;
@@ -44,6 +50,39 @@ namespace RipNRage.Engine
         {
             _behaviours.Add(b);
             _pendingStart.Add(b);
+            byte f = Behaviour.UpdateFlagsOf(b.GetType());
+            if ((f & Behaviour.HasFixedUpdate) != 0) _fixedUpdaters.Add(b);
+            if ((f & Behaviour.HasUpdate) != 0) _updaters.Add(b);
+            if ((f & Behaviour.HasLateUpdate) != 0) _lateUpdaters.Add(b);
+        }
+
+        /// <summary>Drops destroyed objects from every list (once per frame, only after a destruction).</summary>
+        private void Compact()
+        {
+            if (!_compact) return;
+            _compact = false;
+            _behaviours.RemoveAll(b => b.destroyed);
+            _fixedUpdaters.RemoveAll(b => b.destroyed);
+            _updaters.RemoveAll(b => b.destroyed);
+            _lateUpdaters.RemoveAll(b => b.destroyed);
+            _pendingStart.RemoveAll(b => b.destroyed);
+            _gameObjects.RemoveAll(g => g.destroyed);
+        }
+
+        /// <summary>Calls one callback on every live behaviour of a list, tolerating additions (seen next pass) and destructions (skipped) while it runs.</summary>
+        private static void RunPass(List<Behaviour> list, int which, string what)
+        {
+            int n = list.Count;
+            for (int i = 0; i < n; i++)
+            {
+                var b = list[i];
+                if (!CanRun(b)) continue;
+                try
+                {
+                    switch (which) { case 0: b.CallFixedUpdate(); break; case 1: b.CallUpdate(); break; default: b.CallLateUpdate(); break; }
+                }
+                catch (Exception e) { Debug.LogError($"{what}() of {b.GetType().Name} on '{b.name}' threw: {e}"); }
+            }
         }
 
         public GameObject Find(string name)
@@ -84,27 +123,31 @@ namespace RipNRage.Engine
             _fixedAccumulator += Time.deltaTime;
             int steps = 0;
             float savedDt = Time.deltaTime;
-            while (_fixedAccumulator >= Time.fixedDeltaTime && steps < 8)
+            int maxSteps = Math.Max(1, MaxFixedSteps);
+            while (_fixedAccumulator >= Time.fixedDeltaTime && steps < maxSteps)
             {
                 _fixedAccumulator -= Time.fixedDeltaTime;
                 Time.fixedTime += Time.fixedDeltaTime;
                 Time.inFixedTimeStep = true;
                 Time.deltaTime = Time.fixedDeltaTime;
                 RunStarts();
-                foreach (var b in SnapshotBehaviours())
-                    if (CanRun(b)) SafeCall(b, b.CallFixedUpdate, "FixedUpdate");
+                RunPass(_fixedUpdaters, 0, "FixedUpdate");
+                // fixed-step kinematic bodies move after the FixedUpdate callbacks that set their velocities (Unity order)
+                Profiler.Begin("fixed physics");
+                try { Physics.FixedStep(Time.fixedDeltaTime); }
+                catch (Exception e) { Debug.LogError($"Physics.FixedStep threw: {e}"); }
+                Profiler.End();
                 steps++;
             }
             Time.inFixedTimeStep = false;
             Time.deltaTime = savedDt;
-            if (steps >= 8) _fixedAccumulator = 0f;
+            if (steps >= maxSteps) _fixedAccumulator = 0f;
             FixedStepsLastFrame = steps;
             Profiler.End();
 
             Profiler.Begin("update");
             RunStarts();
-            foreach (var b in SnapshotBehaviours())
-                if (CanRun(b)) SafeCall(b, b.CallUpdate, "Update");
+            RunPass(_updaters, 1, "Update");
             Profiler.End();
 
             Profiler.Begin("coroutines");
@@ -112,19 +155,19 @@ namespace RipNRage.Engine
             Profiler.End();
 
             Profiler.Begin("late update");
-            foreach (var b in SnapshotBehaviours())
-                if (CanRun(b)) SafeCall(b, b.CallLateUpdate, "LateUpdate");
+            RunPass(_lateUpdaters, 2, "LateUpdate");
             Profiler.End();
 
             ProcessDestroyQueue();
+            Compact();
         }
 
         /// <summary>FixedUpdate steps run in the last Tick (8 = the clamp hit: the simulation is falling behind real time).</summary>
         public int FixedStepsLastFrame { get; private set; }
+        /// <summary>How far the frame is between the last fixed step and the next one (0..1): the interpolation factor for fixed-step motion.</summary>
+        public float FixedAlpha => Time.fixedDeltaTime > 0f ? Mathf.Clamp01(_fixedAccumulator / Time.fixedDeltaTime) : 1f;
         public int BehaviourCount => _behaviours.Count;
         public int CoroutineCount => _coroutines.Count;
-
-        private Behaviour[] SnapshotBehaviours() => _behaviours.ToArray();
 
         private static bool CanRun(Behaviour b) => !b.destroyed && b.started && b.isActiveAndEnabled;
 
@@ -150,12 +193,6 @@ namespace RipNRage.Engine
                 try { b.InternalStart(); }
                 catch (Exception e) { Debug.LogError($"Start() of {b.GetType().Name} on '{b.name}' threw: {e}"); }
             }
-        }
-
-        private static void SafeCall(Behaviour b, Action a, string what)
-        {
-            try { a(); }
-            catch (Exception e) { Debug.LogError($"{what}() of {b.GetType().Name} on '{b.name}' threw: {e}"); }
         }
 
         // ------------------------------------------------------------------ coroutines
@@ -244,7 +281,7 @@ namespace RipNRage.Engine
                     b.enabled = false;
                     b.InvokeOnDestroy();
                     StopAllCoroutines(b);
-                    _behaviours.Remove(b);
+                    _compact = true;
                     b.gameObject.RemoveComponent(b);
                     break;
                 case Component c:
@@ -272,13 +309,11 @@ namespace RipNRage.Engine
                     if (b.isEnabledAndActiveCached) { b.isEnabledAndActiveCached = false; b.InvokeOnDestroy(); }
                     else b.InvokeOnDestroy();
                     StopAllCoroutines(b);
-                    _behaviours.Remove(b);
-                    _pendingStart.Remove(b);
                 }
                 else c.destroyed = true;
             }
             go.transform.SetParent(null, false);
-            _gameObjects.Remove(go);
+            _compact = true;
         }
     }
 }

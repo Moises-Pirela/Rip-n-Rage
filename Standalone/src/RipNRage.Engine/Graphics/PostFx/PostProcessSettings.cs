@@ -137,6 +137,10 @@ namespace RipNRage.Engine.Graphics.PostFx
         public PostProcessSettings Settings { get; } = new PostProcessSettings();
         public Lighting.LightingSettings Lighting { get; } = new Lighting.LightingSettings();
         public CameraSettings Camera { get; } = new CameraSettings();
+        /// <summary>The physics tunables ([physics], [collision], [solver], [movers], [character], [enemy_character]); applied to the engine on every (re)load.</summary>
+        public PhysicsSettings Physics { get; } = new PhysicsSettings();
+        /// <summary>Every section of the file as last parsed (for settings that live outside the engine).</summary>
+        public Dictionary<string, Dictionary<string, string>> LastSections { get; private set; } = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
         public event Action<PostProcessSettings> Reloaded;
         private DateTime _lastWrite;
         private double _nextPoll;
@@ -181,6 +185,11 @@ namespace RipNRage.Engine.Graphics.PostFx
                 freshCamera.Apply(sections);
                 foreach (var f in typeof(CameraSettings).GetFields()) f.SetValue(Camera, f.GetValue(freshCamera));
                 MaterialLibrary.ApplyConfig(sections);
+                var freshPhysics = new PhysicsSettings();
+                freshPhysics.Apply(sections);
+                Physics.CopyFrom(freshPhysics);
+                Physics.ApplyToWorld();
+                LastSections = sections;
                 _lastWrite = File.GetLastWriteTimeUtc(Path);
                 if (!initial) Debug.LogWarning("tunables.cfg reloaded");
                 Reloaded?.Invoke(Settings);
@@ -203,6 +212,60 @@ namespace RipNRage.Engine.Graphics.PostFx
                 if (File.Exists(Path) && File.GetLastWriteTimeUtc(Path) != _lastWrite) Reload();
             }
             catch (IOException) { }
+        }
+
+        /// <summary>
+        /// Writes values back into the file: existing keys keep their place and trailing comment, missing keys are
+        /// appended to their section, missing sections are appended at the end. Other sections are untouched.
+        /// </summary>
+        public void Update(IEnumerable<(string section, string key, string value, string comment)> entries)
+        {
+            if (Path == null) throw new InvalidOperationException("no tunables.cfg path");
+            var lines = File.Exists(Path) ? new List<string>(File.ReadAllText(Path).Replace("\r\n", "\n").Split('\n')) : new List<string>();
+            foreach (var (section, key, value, comment) in entries)
+            {
+                int start = -1, end = lines.Count;
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    string t = lines[i].Trim();
+                    if (t.Length > 1 && t[0] == '[' && t[t.Length - 1] == ']')
+                    {
+                        if (start >= 0) { end = i; break; }
+                        if (string.Equals(t.Substring(1, t.Length - 2).Trim(), section, StringComparison.OrdinalIgnoreCase)) start = i;
+                    }
+                }
+                string padded = (key + " = " + value).PadRight(28);
+                if (start < 0)
+                {
+                    if (lines.Count > 0 && lines[lines.Count - 1].Trim().Length > 0) lines.Add("");
+                    lines.Add("[" + section + "]");
+                    lines.Add(comment != null ? padded + "# " + comment : key + " = " + value);
+                    continue;
+                }
+                bool found = false;
+                for (int i = start + 1; i < end; i++)
+                {
+                    string raw = lines[i];
+                    string code = raw; int c = code.IndexOfAny(new[] { '#', ';' });
+                    string tail = c >= 0 ? raw.Substring(c) : null;
+                    if (c >= 0) code = code.Substring(0, c);
+                    int eq = code.IndexOf('=');
+                    if (eq < 0) continue;
+                    if (!string.Equals(code.Substring(0, eq).Trim(), key, StringComparison.OrdinalIgnoreCase)) continue;
+                    lines[i] = tail != null ? padded + tail : key + " = " + value;
+                    found = true;
+                    break;
+                }
+                if (!found)
+                {
+                    // insert before the blank lines that end the section
+                    int at = end;
+                    while (at > start + 1 && lines[at - 1].Trim().Length == 0) at--;
+                    lines.Insert(at, comment != null ? padded + "# " + comment : key + " = " + value);
+                }
+            }
+            File.WriteAllText(Path, string.Join("\n", lines));
+            _lastWrite = File.GetLastWriteTimeUtc(Path);
         }
 
         private static void CopyInto(PostProcessSettings from, PostProcessSettings to)

@@ -26,6 +26,8 @@ namespace RipNRage.Engine.Graphics
         {
             public Shader shader;
             public string name;
+            public string baseName;                   // variants: the shader whose source is transformed
+            public string variant;                    // null, "instanced" or "spritebatch"
             public string path;                       // null = embedded only
             public readonly List<(string file, DateTime stamp)> deps = new List<(string, DateTime)>();
         }
@@ -93,6 +95,28 @@ namespace RipNRage.Engine.Graphics
         public static bool Exists(string name) =>
             Entries.ContainsKey(name) || Embedded.ContainsKey(name) || (Directory != null && File.Exists(Path.Combine(Directory, name + ".glsl")));
 
+        /// <summary>
+        /// A mechanically derived variant of a shader: <c>"instanced"</c> replaces the <c>uModel</c> uniform of the
+        /// vertex stage by four per-instance vec4 attributes (locations 4–7); <c>"spritebatch"</c> replaces
+        /// <c>uModel</c> / <c>uTint</c> / <c>uSpriteNormal</c> by per-vertex colour and normal attributes (locations 2–3)
+        /// so many sprites can share one draw. Null when the base shader does not have the expected uniforms. The variant
+        /// follows the base file's hot reloads.
+        /// </summary>
+        public static Shader GetVariant(string baseName, string variant)
+        {
+            string key = baseName + "@" + variant;
+            if (Entries.TryGetValue(key, out var e)) return e.shader;
+            e = new Entry { name = key, baseName = baseName, variant = variant };
+            if (!TryCompile(e, out string error))
+            {
+                Debug.LogWarning($"Shader variant '{key}' unavailable: {error}");
+                Entries[key] = e; // remembered as failed (null shader) so it is not retried every frame
+                return null;
+            }
+            Entries[key] = e;
+            return e.shader;
+        }
+
         /// <summary>Creates a shader from inline source and registers it under a name (no file backing).</summary>
         public static Shader Register(string name, string vertex, string fragment)
         {
@@ -140,7 +164,8 @@ namespace RipNRage.Engine.Graphics
             error = null;
             e.deps.Clear();
             string vs, fs;
-            string file = Directory != null ? Path.Combine(Directory, e.name + ".glsl") : null;
+            string sourceName = e.baseName ?? e.name;
+            string file = Directory != null ? Path.Combine(Directory, sourceName + ".glsl") : null;
             try
             {
                 if (file != null && File.Exists(file))
@@ -149,12 +174,13 @@ namespace RipNRage.Engine.Graphics
                     e.deps.Add((file, File.GetLastWriteTimeUtc(file)));
                     ParseFile(File.ReadAllText(file), e, out vs, out fs);
                 }
-                else if (Embedded.TryGetValue(e.name, out var src))
+                else if (Embedded.TryGetValue(sourceName, out var src))
                 {
                     e.path = null;
                     vs = ResolveIncludes(src.vs, e); fs = ResolveIncludes(src.fs, e);
                 }
-                else { error = "no file " + (file ?? e.name + ".glsl") + " and no embedded source"; return false; }
+                else { error = "no file " + (file ?? sourceName + ".glsl") + " and no embedded source"; return false; }
+                if (e.variant != null && !ApplyVariant(e.variant, ref vs, ref fs, out error)) return false;
 
                 if (e.shader == null) e.shader = new Shader(vs, fs, e.name);
                 else e.shader.Recompile(vs, fs);
@@ -164,6 +190,34 @@ namespace RipNRage.Engine.Graphics
             {
                 error = ex.Message;
                 return false;
+            }
+        }
+
+        private static readonly Regex MainRx = new Regex(@"void\s+main\s*\(\s*\)\s*\{");
+
+        /// <summary>Source transforms for <see cref="GetVariant"/>.</summary>
+        private static bool ApplyVariant(string variant, ref string vs, ref string fs, out string error)
+        {
+            error = null;
+            var mm = MainRx.Match(vs);
+            if (!vs.Contains("uniform mat4 uModel;") || !mm.Success) { error = "vertex stage has no 'uniform mat4 uModel;' / main()"; return false; }
+            switch (variant)
+            {
+                case "instanced":
+                    vs = vs.Replace("uniform mat4 uModel;",
+                        "layout(location = 4) in vec4 aModel0;\nlayout(location = 5) in vec4 aModel1;\nlayout(location = 6) in vec4 aModel2;\nlayout(location = 7) in vec4 aModel3;");
+                    vs = MainRx.Replace(vs, "void main() {\n    mat4 uModel = mat4(aModel0, aModel1, aModel2, aModel3);", 1);
+                    return true;
+                case "spritebatch":
+                    if (!fs.Contains("uniform vec4 uTint;") || !fs.Contains("uniform vec3 uSpriteNormal;")) { error = "fragment stage has no uTint / uSpriteNormal uniforms"; return false; }
+                    vs = vs.Replace("uniform mat4 uModel;",
+                        "layout(location = 2) in vec4 aColor;\nlayout(location = 3) in vec3 aNormal;\nout vec4 vColor;\nout vec3 vNormal;");
+                    vs = MainRx.Replace(vs, "void main() {\n    mat4 uModel = mat4(1.0);\n    vColor = aColor;\n    vNormal = aNormal;", 1);
+                    fs = fs.Replace("uniform vec4 uTint;", "in vec4 vColor;\n#define uTint vColor");
+                    fs = fs.Replace("uniform vec3 uSpriteNormal;", "in vec3 vNormal;\n#define uSpriteNormal vNormal");
+                    return true;
+                default:
+                    error = "unknown variant " + variant; return false;
             }
         }
 

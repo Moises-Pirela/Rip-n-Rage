@@ -45,6 +45,17 @@ namespace RipNRage.Engine.Graphics
         private readonly List<SpriteRenderer> _visibleSprites = new List<SpriteRenderer>();
         private readonly List<IUiDrawer> _uiDrawers = new List<IUiDrawer>();
         private readonly List<SpriteRenderer> _casters = new List<SpriteRenderer>();
+        // batching: many sprites with the same texture / material in one draw; many copies of one mesh in one instanced draw
+        private readonly SpriteBatch _spriteBatch;
+        private Shader _spriteBatchShader;
+        private bool _spriteBatchShaderLooked;
+        /// <summary>Batch world sprites that share texture and material into single draws (off: one draw per sprite, the legacy path).</summary>
+        public bool SpriteBatching = true;
+        /// <summary>Draw identical opaque meshes (same mesh, material, texture, colour) with GL instancing.</summary>
+        public bool MeshInstancing = true;
+        /// <summary>Sprites drawn in batches / meshes drawn instanced in the last frame.</summary>
+        public int BatchedSprites { get; private set; }
+        public int InstancedMeshes { get; private set; }
 
         public UiBatch Ui { get; }
         public int DrawCalls { get; private set; }
@@ -100,6 +111,8 @@ namespace RipNRage.Engine.Graphics
             Occlusion = new OcclusionBuffer();
             GpuOcclusion = GpuOcclusion.Available ? new GpuOcclusion() : null;
             Particles = new ParticleRenderer();
+            _spriteBatch = new SpriteBatch();
+            _instanceVbo = GL.GenBuffer();
 
             _quadVao = GL.GenVertexArray();
             _quadVbo = GL.GenBuffer();
@@ -159,7 +172,7 @@ namespace RipNRage.Engine.Graphics
                 Profiler.Begin("shadow map", gpu: true);
                 _casters.Clear();
                 foreach (var sr in _worldSprites) if (sr.lit) _casters.Add(sr);
-                Shadows.Render(Lighting, _sunDir, cam, _meshes, _casters);
+                Shadows.Render(Lighting, _sunDir, cam, _meshes, _casters, SpriteBatching ? _spriteBatch : null);
                 DrawCalls++;
                 Profiler.End();
             }
@@ -297,9 +310,15 @@ namespace RipNRage.Engine.Graphics
                 int q = a.sharedMaterial.renderQueue.CompareTo(b.sharedMaterial.renderQueue);
                 return q != 0 ? q : _meshDepthCache[a].CompareTo(_meshDepthCache[b]);
             });
+            // identical opaque meshes go into instanced groups (drawn first: the big batches fill the depth buffer early)
+            InstancedMeshes = 0;
+            bool instancing = MeshInstancing && GL.HasInstancing;
+            if (instancing) GroupInstances(_visibleMeshes);
+            if (instancing) DrawInstanceGroups();
             foreach (var mr in _visibleMeshes)
             {
                 if (mr.sharedMaterial.IsTransparent) continue;
+                if (instancing && mr.instanceGroup != null) continue;
                 DrawMesh(mr);
             }
             if (_gpuOcclusionThisFrame)
@@ -317,7 +336,7 @@ namespace RipNRage.Engine.Graphics
             GL.DepthMask(true);
 
             SortByDepth(_visibleSprites, view);
-            foreach (var sr in _visibleSprites) DrawSprite(sr, cam, true);
+            DrawSprites(_visibleSprites, cam);
 
             // data-driven particle effects: batched, depth tested, no depth writes
             Profiler.Begin("particles draw");
@@ -623,6 +642,144 @@ namespace RipNRage.Engine.Graphics
             list.Sort((a, b) => _depthCache[b].CompareTo(_depthCache[a]));
         }
 
+        /// <summary>World sprites in depth order: batchable runs go through the <see cref="SpriteBatch"/>, the rest one by one in place.</summary>
+        private void DrawSprites(List<SpriteRenderer> list, Camera cam)
+        {
+            BatchedSprites = 0;
+            if (!_spriteBatchShaderLooked) { _spriteBatchShaderLooked = true; _spriteBatchShader = ShaderLibrary.GetVariant("sprite", "spritebatch"); }
+            var bsh = _spriteBatchShader;
+            if (!SpriteBatching || bsh == null) { foreach (var sr in list) DrawSprite(sr, cam, true); return; }
+            // batches only need a bounded extent when there are more point lights than a draw can take (per-draw light subset)
+            _spriteBatch.MaxExtent = _lightCount > Lighting.lightsPerDraw ? SpriteBatchExtent : float.PositiveInfinity;
+            _spriteBatch.Begin();
+            foreach (var sr in list)
+            {
+                if (!SpriteBatch.Batchable(sr)) { FlushSpriteBatch(bsh); DrawSprite(sr, cam, true); continue; }
+                bool lit = !sr.fullBright && sr.lit;
+                Vector3 n = cam.transform.position - sr.transform.position; n.y = 0f;
+                _spriteBatch.Add(sr, cam, lit, n.sqrMagnitude > 1E-06f ? n.normalized : Vector3.back);
+            }
+            FlushSpriteBatch(bsh);
+        }
+
+        private void FlushSpriteBatch(Shader bsh)
+        {
+            _spriteBatch.End();
+            if (_spriteBatch.SpriteCount > 0)
+            {
+                PrepareShader(bsh);
+                _spriteBatch.Bind();
+                var batches = _spriteBatch.Batches;
+                for (int i = 0; i < batches.Count; i++)
+                {
+                    var b = batches[i];
+                    b.material.ApplyState();
+                    bsh.SetInt("uLit", b.lit ? 1 : 0);
+                    if (b.lit && _lightCount > 0 && Lighting.lightsPerDraw > 0) SetDrawLights(bsh, b.min, b.max);
+                    bsh.SetFloat("uAlphaCutoff", b.material.alphaCutoff);
+                    b.texture.Bind(0);
+                    bsh.SetInt("uTex", 0);
+                    _spriteBatch.Draw(in b);
+                    DrawCalls++;
+                }
+                BatchedSprites += _spriteBatch.SpriteCount;
+                GL.BindVertexArray(0);
+            }
+            _spriteBatch.Begin();
+        }
+
+        // ---- mesh instancing ----
+
+        private uint _instanceVbo;
+        private float[] _instanceData = new float[16 * 256];
+        private readonly Dictionary<MeshRenderer.InstanceKey, MeshRenderer.InstanceGroup> _groups = new Dictionary<MeshRenderer.InstanceKey, MeshRenderer.InstanceGroup>();
+        private readonly List<MeshRenderer.InstanceGroup> _groupList = new List<MeshRenderer.InstanceGroup>();
+        private readonly Stack<MeshRenderer.InstanceGroup> _groupPool = new Stack<MeshRenderer.InstanceGroup>();
+        private readonly Dictionary<Shader, Shader> _instancedVariants = new Dictionary<Shader, Shader>();
+        /// <summary>Largest edge (m) of an instance group's / sprite batch's bounds when the scene has more point lights than a draw can take (keeps the per-draw light subset local).</summary>
+        public float InstanceGroupExtent = 48f;
+        public float SpriteBatchExtent = 40f;
+
+        private Shader InstancedVariantOf(Shader sh)
+        {
+            if (_instancedVariants.TryGetValue(sh, out var v)) return v;
+            v = ShaderLibrary.GetVariant(sh.Name, "instanced");
+            _instancedVariants[sh] = v;
+            return v;
+        }
+
+        /// <summary>Groups the opaque meshes that can share a draw (same mesh, material, texture, colour, uv scale, emissive; no per-object properties).</summary>
+        private void GroupInstances(List<MeshRenderer> meshes)
+        {
+            foreach (var g in _groupList) { g.items.Clear(); _groupPool.Push(g); }
+            _groupList.Clear(); _groups.Clear();
+            foreach (var mr in meshes)
+            {
+                mr.instanceGroup = null;
+                var mat = mr.sharedMaterial;
+                if (mat.IsTransparent || mr.mesh == null || (mr.propertyBlock != null && !mr.propertyBlock.IsEmpty)) continue;
+                if (InstancedVariantOf(mat.shader) == null) continue;
+                var key = new MeshRenderer.InstanceKey(mr.mesh, mat, mr.texture, mr.color, mr.uvScale, mr.emissive);
+                if (!_groups.TryGetValue(key, out var g))
+                {
+                    g = _groupPool.Count > 0 ? _groupPool.Pop() : new MeshRenderer.InstanceGroup();
+                    g.key = key; _groups[key] = g; _groupList.Add(g);
+                }
+                g.items.Add(mr);
+            }
+            // singles are cheaper as plain draws
+            for (int i = _groupList.Count - 1; i >= 0; i--)
+            {
+                var g = _groupList[i];
+                if (g.items.Count < 2) { g.items.Clear(); _groupPool.Push(g); _groupList.RemoveAt(i); continue; }
+                foreach (var mr in g.items) mr.instanceGroup = g;
+            }
+        }
+
+        private unsafe void DrawInstanceGroups()
+        {
+            foreach (var g in _groupList)
+            {
+                var mat = g.key.material;
+                var ish = InstancedVariantOf(mat.shader);
+                if (ish == null) { foreach (var mr in g.items) { mr.instanceGroup = null; } continue; }
+                // sub-batches limited in extent so the per-draw light subset stays meaningful
+                int start = 0;
+                while (start < g.items.Count)
+                {
+                    Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue), max = -min;
+                    int n = 0;
+                    while (start + n < g.items.Count)
+                    {
+                        var mr = g.items[start + n];
+                        RendererBounds.GetWorldAABB(mr, out var bmin, out var bmax);
+                        Vector3 nmin = Vector3.Min(min, bmin), nmax = Vector3.Max(max, bmax);
+                        Vector3 size = nmax - nmin;
+                        if (n > 0 && _lightCount > Lighting.lightsPerDraw && MathF.Max(size.x, MathF.Max(size.y, size.z)) > InstanceGroupExtent) break;
+                        min = nmin; max = nmax;
+                        if ((n + 1) * 16 > _instanceData.Length) Array.Resize(ref _instanceData, _instanceData.Length * 2);
+                        fixed (float* dst = _instanceData) mr.transform.localToWorldMatrix.CopyTo(dst + n * 16);
+                        n++;
+                    }
+                    PrepareShader(ish);
+                    mat.ApplyState();
+                    if (_lightCount > 0 && Lighting.lightsPerDraw > 0) SetDrawLights(ish, min, max);
+                    ish.SetColor("uTint", g.key.color);
+                    ish.SetVector("uUVScale", g.key.uvScale);
+                    ish.SetFloat("uEmissive", g.key.emissive);
+                    mat.Upload(ish, 4); // the material's own properties, into the instanced program
+                    (g.key.texture ?? mat.mainTexture ?? Texture2D.White).Bind(0);
+                    ish.SetInt("uTex", 0);
+                    GL.BindBuffer(GL.ARRAY_BUFFER, _instanceVbo);
+                    fixed (float* p = _instanceData) GL.BufferData(GL.ARRAY_BUFFER, n * 16 * sizeof(float), p, GL.STREAM_DRAW);
+                    g.key.mesh.DrawInstanced(_instanceVbo, n);
+                    DrawCalls++;
+                    InstancedMeshes += n;
+                    start += n;
+                }
+            }
+        }
+
         private void DrawSprite(SpriteRenderer sr, Camera cam, bool applyLighting)
         {
             Sprite sp = sr.sprite;
@@ -638,6 +795,7 @@ namespace RipNRage.Engine.Graphics
                 Vector3 toCam = cam.transform.position - sr.transform.position;
                 toCam.y = 0f;
                 Quaternion rot = toCam.sqrMagnitude > 1E-06f ? Quaternion.LookRotation(-toCam.normalized) : Quaternion.identity;
+                if (sr.billboardRoll != 0f) rot = rot * Quaternion.AngleAxis(sr.billboardRoll, Vector3.forward);
                 model = Matrix4x4.TRS(sr.transform.position, rot, sr.transform.lossyScale);
             }
             else model = sr.transform.localToWorldMatrix;
@@ -694,8 +852,11 @@ namespace RipNRage.Engine.Graphics
                 }
                 int icount = Mathf.Min(sp.triangles.Length, _quadIndices.Length);
                 for (int i = 0; i < icount; i++) _quadIndices[i] = (uint)sp.triangles[i];
+                // orphan before the update: the previous sprite's draw may still be reading this buffer (no driver stall)
+                GL.BufferData(GL.ARRAY_BUFFER, _quadData.Length * sizeof(float), null, GL.DYNAMIC_DRAW);
                 fixed (float* p = _quadData) GL.BufferSubData(GL.ARRAY_BUFFER, 0, n * 5 * sizeof(float), p);
                 GL.BindBuffer(GL.ELEMENT_ARRAY_BUFFER, _quadEbo);
+                GL.BufferData(GL.ELEMENT_ARRAY_BUFFER, _quadIndices.Length * sizeof(uint), null, GL.DYNAMIC_DRAW);
                 fixed (uint* p = _quadIndices) GL.BufferSubData(GL.ELEMENT_ARRAY_BUFFER, 0, icount * sizeof(uint), p);
                 GL.DrawElements(GL.TRIANGLES, icount, GL.UNSIGNED_INT, 0);
             }
@@ -706,6 +867,7 @@ namespace RipNRage.Engine.Graphics
                 Set(1, max.x, min.y, u1, v0);
                 Set(2, min.x, max.y, u0, v1);
                 Set(3, max.x, max.y, u1, v1);
+                GL.BufferData(GL.ARRAY_BUFFER, _quadData.Length * sizeof(float), null, GL.DYNAMIC_DRAW);
                 fixed (float* p = _quadData) GL.BufferSubData(GL.ARRAY_BUFFER, 0, 4 * 5 * sizeof(float), p);
                 GL.DrawArrays(GL.TRIANGLE_STRIP, 0, 4);
             }

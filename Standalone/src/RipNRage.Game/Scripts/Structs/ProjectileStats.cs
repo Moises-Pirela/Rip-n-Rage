@@ -11,4 +11,7 @@ public struct ProjectileStats
     public string explosionEffect;
     /// <summary>Standalone addition: key into vfx/bindings.json "bullets" (calibre) for impact / blood scale; default "enemy".</summary>
     public string bulletKey;
+    /// <summary>Standalone addition: impulse (N·s) the explosion gives rigid bodies at its centre, falling off to zero at <see cref="explosionRadius"/> (0 = none).</summary>
+    public float explosionImpulse;
+    public float explosionRadius;
 }

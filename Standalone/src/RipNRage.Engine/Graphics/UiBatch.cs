@@ -225,6 +225,22 @@ namespace RipNRage.Engine.Graphics
 
         public Vector2 MeasureText(string text, float scale) => Font.Measure(text, scale);
 
+        /// <summary>Solid line segment of the given thickness (pixels).</summary>
+        public void DrawLine(Vector2 a, Vector2 b, float thickness, Color color)
+        {
+            Vector2 d = b - a;
+            float len = d.magnitude;
+            if (len < 1E-04f) return;
+            Vector2 n = new Vector2(-d.y / len, d.x / len) * (thickness * 0.5f);
+            EnsureCapacity(4, 6, Texture2D.White);
+            uint i0 = PushVertex(a + n, Vector2.zero, color);
+            uint i1 = PushVertex(b + n, Vector2.zero, color);
+            uint i2 = PushVertex(b - n, Vector2.zero, color);
+            uint i3 = PushVertex(a - n, Vector2.zero, color);
+            PushTriangle(i0, i1, i2);
+            PushTriangle(i0, i2, i3);
+        }
+
         public void DrawRaw(Texture2D tex, Rect dest, float u0, float v0, float u1, float v1, Color color)
         {
             EnsureCapacity(4, 6, tex);

@@ -139,6 +139,9 @@ namespace RipNRage.Engine.Platform
         private static delegate* unmanaged<uint, void> _enableVertexAttribArray;
         private static delegate* unmanaged<uint, int, uint, byte, int, void*, void> _vertexAttribPointer;
         private static delegate* unmanaged<uint, int, int, void> _drawArrays;
+        private static delegate* unmanaged<uint, int, uint, void*, int, void> _drawElementsInstanced;
+        private static delegate* unmanaged<uint, uint, void> _vertexAttribDivisor;
+        private static delegate* unmanaged<uint, void> _disableVertexAttribArray;
         private static delegate* unmanaged<uint, int, uint, void*, void> _drawElements;
         private static delegate* unmanaged<uint, uint> _createShader;
         private static delegate* unmanaged<uint, int, byte**, int*, void> _shaderSource;
@@ -238,6 +241,9 @@ namespace RipNRage.Engine.Platform
             _vertexAttribPointer = (delegate* unmanaged<uint, int, uint, byte, int, void*, void>)getProc("glVertexAttribPointer");
             _drawArrays = (delegate* unmanaged<uint, int, int, void>)getProc("glDrawArrays");
             _drawElements = (delegate* unmanaged<uint, int, uint, void*, void>)getProc("glDrawElements");
+            _drawElementsInstanced = (delegate* unmanaged<uint, int, uint, void*, int, void>)getProc("glDrawElementsInstanced");
+            _vertexAttribDivisor = (delegate* unmanaged<uint, uint, void>)getProc("glVertexAttribDivisor");
+            _disableVertexAttribArray = (delegate* unmanaged<uint, void>)getProc("glDisableVertexAttribArray");
             _createShader = (delegate* unmanaged<uint, uint>)getProc("glCreateShader");
             _shaderSource = (delegate* unmanaged<uint, int, byte**, int*, void>)getProc("glShaderSource");
             _compileShader = (delegate* unmanaged<uint, void>)getProc("glCompileShader");
@@ -328,6 +334,11 @@ namespace RipNRage.Engine.Platform
             _vertexAttribPointer(index, size, type, normalized ? (byte)1 : (byte)0, stride, (void*)offset);
         public static void DrawArrays(uint mode, int first, int count) => _drawArrays(mode, first, count);
         public static void DrawElements(uint mode, int count, uint type, int offset) => _drawElements(mode, count, type, (void*)offset);
+        /// <summary>GL 3.3 instancing: one draw for <paramref name="instances"/> copies (per-instance attributes via <see cref="VertexAttribDivisor"/>).</summary>
+        public static void DrawElementsInstanced(uint mode, int count, uint type, int offset, int instances) => _drawElementsInstanced(mode, count, type, (void*)offset, instances);
+        public static bool HasInstancing => _drawElementsInstanced != null && _vertexAttribDivisor != null;
+        public static void VertexAttribDivisor(uint index, uint divisor) => _vertexAttribDivisor(index, divisor);
+        public static void DisableVertexAttribArray(uint index) => _disableVertexAttribArray(index);
         public static uint CreateShader(uint type) => _createShader(type);
 
         public static void ShaderSource(uint shader, string source)
