@@ -25,6 +25,8 @@ fight, and a custom C# engine built from scratch. Unity is no longer required.
 - **Visual effects**: data-driven particle effects (JSON, hot-reloaded) — blood that splats where it lands,
   impacts per material (concrete, wood, metal, glass, sand, water), explosions with light, debris and scorch marks,
   tracers per calibre and rocket trails — with a live editor.
+- **UI**: the menus and the HUD are laid out with [Clay](https://github.com/nicbarker/clay), a C layout library
+  bound from C# and drawn through the engine's own sprite batcher.
 - **Custom engine**: OpenGL 3.3 rendering, a hot-reloadable post-processing stack (bloom, volumetric fog,
   motion blur, chromatic aberration), OpenAL audio, a dependency-free physics engine (sphere / capsule / box /
   brush / mesh colliders, GJK + conservative-advancement sweeps so nothing tunnels, move-and-slide movers,
@@ -36,6 +38,7 @@ fight, and a custom C# engine built from scratch. Unity is no longer required.
 - **Tools**: a Quake-style level editor (`.map` levels), a sprite animation editor, a particle effect editor, a
   sprite destruction skeleton editor (trace the parts, set pivots and parents, preview the ragdoll live) and a
   physics benchmark (1000+ colliding crates, 500+ ragdolls, 1000+ projectiles, fast runners on rough terrain).
+  The editors use Dear ImGui (via ImGui.NET) with dockable panels; each remembers its own layout.
 
 ## Repository layout
 

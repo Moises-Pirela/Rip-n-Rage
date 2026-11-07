@@ -3,6 +3,10 @@ using System.Collections.Generic;
 using RipNRage.Engine;
 using RipNRage.Engine.Graphics;
 using RipNRage.Game.Content;
+using RipNRage.ImGuiIntegration;
+using ImGuiNET;
+using Vec2 = System.Numerics.Vector2;
+using Vec4 = System.Numerics.Vector4;
 
 namespace RipNRage.Editor
 {
@@ -16,10 +20,10 @@ namespace RipNRage.Editor
     public sealed class PhysicsPanel
     {
         public bool Open;
-        private readonly ImUi _ui = new ImUi();
         private readonly PhysicsSettings _phys = new PhysicsSettings();
         private readonly MovementSettings _move = new MovementSettings();
-        private float _scroll;
+        private static readonly Vec4 Accent = new Vec4(1f, 0.78f, 0.25f, 1f);
+        private static readonly Vec4 Dim = new Vec4(0.55f, 0.58f, 0.63f, 1f);
         private int _tab; // 0 physics, 1 characters, 2 player movement
         private bool _dirty;
         private string _status = ""; private float _statusUntil;
@@ -80,88 +84,92 @@ namespace RipNRage.Editor
 
         // ------------------------------------------------------------------ drawing
 
-        public void Draw(UiBatch ui)
+        /// <summary>
+        /// The settings form, as a Dear ImGui window. The rows below are the same list of knobs as before; only the
+        /// widgets changed, so a value still applies to this editor's world the moment it is dragged.
+        /// </summary>
+        public void Draw(ImGuiController imgui)
         {
             if (!Open) return;
-            _ui.BeginFrame(ui);
-            _ui.BeginWidgets();
-            _ui.FontScale = MathF.Max(1.5f, ui.Scale * 2.1f);
-            float s = MathF.Max(1f, ui.Height / 720f);
-            float pw = MathF.Min(ui.Width - 40f, 900f * s), ph = ui.Height - 80f * s;
-            var r = new Rect((ui.Width - pw) * 0.5f, 40f * s, pw, ph);
-            _ui.Panel(r, "PHYSICS SETTINGS (F9)   TAB = NEXT PAGE   CTRL+S = SAVE   ESC = CLOSE");
-            float rowH = _ui.LineHeight;
-            float x = r.x + 10f, w = r.width - 20f;
-            float y = r.yMax - rowH - 10f;
+            var centre = ImGui.GetMainViewport().GetCenter();
+            ImGui.SetNextWindowPos(centre, ImGuiCond.Appearing, new Vec2(0.5f, 0.5f));
+            ImGui.SetNextWindowSize(new Vec2(900f, 720f), ImGuiCond.Appearing);
+            bool open = Open;
+            if (!ImGui.Begin("Physics settings (F9)", ref open)) { Open = open; ImGui.End(); return; }
+            Open = open;
 
-            // tabs + buttons
-            float tw = w / 3f - 4f;
-            if (_ui.Button(new Rect(x, y - rowH + 2f, tw, rowH - 4f), "STEP / COLLISION / SOLVER", _tab == 0)) _tab = 0;
-            if (_ui.Button(new Rect(x + tw + 6f, y - rowH + 2f, tw, rowH - 4f), "CHARACTERS / MOVERS", _tab == 1)) _tab = 1;
-            if (_ui.Button(new Rect(x + 2f * (tw + 6f), y - rowH + 2f, tw, rowH - 4f), "PLAYER MOVEMENT", _tab == 2)) _tab = 2;
-            y -= rowH + 4f;
-            float bw = w / 4f - 4f;
-            if (_ui.Button(new Rect(x, y - rowH + 2f, bw, rowH - 4f), _dirty ? "SAVE TO tunables.cfg *" : "SAVE TO tunables.cfg", _dirty)) Save();
-            if (_ui.Button(new Rect(x + bw + 6f, y - rowH + 2f, bw, rowH - 4f), "REVERT TO FILE")) { Revert(); Apply(); Status("REVERTED"); }
-            if (_ui.Button(new Rect(x + 2f * (bw + 6f), y - rowH + 2f, bw, rowH - 4f), "ENGINE DEFAULTS")) Defaults();
-            string tick = $"STEP {1000f / MathF.Max(_phys.tickRate, 1f):0.0} MS  SUBSTEP {1000f / MathF.Max(_phys.tickRate * _phys.substeps, 1f):0.00} MS";
-            _ui.Label(tick, new Vector2(x + 3f * (bw + 6f), y - 4f), ImUi.TextDim);
-            y -= rowH + 8f;
+            if (ImGui.Button(_dirty ? "Save to tunables.cfg *" : "Save to tunables.cfg")) Save();
+            ImGui.SameLine();
+            if (ImGui.Button("Revert to file")) { Revert(); Apply(); Status("Reverted"); }
+            ImGui.SameLine();
+            if (ImGui.Button("Engine defaults")) Defaults();
+            ImGui.SameLine();
+            ImGui.TextColored(Dim, $"step {1000f / MathF.Max(_phys.tickRate, 1f):0.0} ms   substep {1000f / MathF.Max(_phys.tickRate * _phys.substeps, 1f):0.00} ms");
 
-            var list = new Rect(r.x + 4f, r.y + rowH + 8f, r.width - 8f, y - r.y - rowH - 8f);
-            float content = (_tab == 0 ? 40 : _tab == 1 ? 30 : 40) * rowH;
-            _scroll = _ui.ScrollArea(list, _scroll, content);
-            ui.PushClip(list);
-            float yy = list.yMax + _scroll;
-            float half = (w - 8f) * 0.5f;
+            ImGui.TextColored(Time.unscaledTime < _statusUntil ? Accent : Dim,
+                Time.unscaledTime < _statusUntil ? _status
+                : "Drag a value to change it; right-click resets it to the default. Changes apply here at once; Save writes tunables.cfg for the game.");
+
             bool changed = false;
+            int col = 0;          // the form is two columns wide
+            float half = 0f;
 
-            // two-column layout helpers
-            int col = 0;
             void Header(string text)
             {
-                if (col == 1) { yy -= rowH; col = 0; }
-                yy -= 6f;
-                _ui.Label(text, new Vector2(x, yy), ImUi.Accent); yy -= rowH;
+                col = 0;
+                ImGui.SeparatorText(text);
+            }
+            void NextCell()
+            {
+                half = (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
+                if (col == 1) ImGui.SameLine();
+                ImGui.SetNextItemWidth(half * 0.45f);
+                col = (col + 1) % 2;
             }
             float Value(string label, float v, float step, float min, float max, float reset, string fmt = "0.00")
             {
-                float cx = col == 0 ? x : x + half + 8f;
-                float nv = _ui.DragValue(new Rect(cx, yy - rowH + 2f, half, rowH - 4f), label, v, step, min, max, reset, fmt);
-                if (nv != v) changed = true;
-                if (++col == 2) { col = 0; yy -= rowH; }
-                return nv;
+                NextCell();
+                float nv = v;
+                string f = fmt == "0" ? "%.0f" : fmt == "0.0" ? "%.1f" : fmt == "0.000" ? "%.3f" : "%.2f";
+                if (ImGui.DragFloat(label, ref nv, step, min, max, f)) changed = true;
+                if (ImGui.IsItemHovered() && ImGui.IsMouseClicked(ImGuiMouseButton.Right)) { nv = reset; changed = true; }
+                return Mathf.Clamp(nv, min, max);
             }
             int IntValue(string label, int v, int min, int max, int reset)
             {
-                int nv = Mathf.RoundToInt(Value(label, v, 1f, min, max, reset, "0"));
+                NextCell();
+                int nv = v;
+                if (ImGui.DragInt(label, ref nv, 0.2f, min, max)) changed = true;
+                if (ImGui.IsItemHovered() && ImGui.IsMouseClicked(ImGuiMouseButton.Right)) { nv = reset; changed = true; }
                 return Mathf.Clamp(nv, min, max);
             }
             bool Flag(string label, bool v)
             {
-                float cx = col == 0 ? x : x + half + 8f;
-                bool nv = _ui.Toggle(new Rect(cx, yy - rowH + 2f, half, rowH - 4f), label, v);
-                if (nv != v) changed = true;
-                if (++col == 2) { col = 0; yy -= rowH; }
+                NextCell();
+                bool nv = v;
+                if (ImGui.Checkbox(label, ref nv)) changed = true;
                 return nv;
             }
-            // an enum cell: click cycles to the next value, right click resets
             TEnum Choice<TEnum>(string label, TEnum v, TEnum reset) where TEnum : struct, Enum
             {
-                float cx = col == 0 ? x : x + half + 8f;
-                var cell = new Rect(cx, yy - rowH + 2f, half, rowH - 4f);
+                NextCell();
+                var values = (TEnum[])Enum.GetValues(typeof(TEnum));
+                var names = Enum.GetNames(typeof(TEnum));
+                int i = Math.Max(0, Array.IndexOf(values, v));
                 TEnum nv = v;
-                if (_ui.Button(cell, $"{label}: {v.ToString().ToUpperInvariant()}"))
-                {
-                    var values = (TEnum[])Enum.GetValues(typeof(TEnum));
-                    int i = Array.IndexOf(values, v);
-                    nv = values[(i + 1) % values.Length];
-                }
-                else if (_ui.RightDown && _ui.Hover(cell)) nv = reset;
-                if (!nv.Equals(v)) changed = true;
-                if (++col == 2) { col = 0; yy -= rowH; }
+                if (ImGui.Combo(label, ref i, names, names.Length)) { nv = values[i]; changed = true; }
+                if (ImGui.IsItemHovered() && ImGui.IsMouseClicked(ImGuiMouseButton.Right)) { nv = reset; changed = true; }
                 return nv;
             }
+
+            if (ImGui.BeginTabBar("##phystabs"))
+            {
+                if (ImGui.BeginTabItem("Step / collision / solver")) { _tab = 0; ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Characters / movers")) { _tab = 1; ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Player movement")) { _tab = 2; ImGui.EndTabItem(); }
+                ImGui.EndTabBar();
+            }
+            ImGui.BeginChild("##settings", new Vec2(-1f, -1f));
 
             if (_tab == 0)
             {
@@ -271,12 +279,10 @@ namespace RipNRage.Editor
                 m.dashCooldown = Value("COOLDOWN (S)", m.dashCooldown, 0.05f, 0f, 10f, 0.7f);
                 m.airDashes = IntValue("AIR DASHES", m.airDashes, 0, 10, 1);
             }
-            ui.PopClip();
-            _ui.ScrollBar(list, _scroll, content);
+            ImGui.EndChild();
+            ImGui.End();
 
             if (changed) { _dirty = true; Apply(); }
-            string foot = Time.unscaledTime < _statusUntil ? _status : "DRAG A CELL TO CHANGE (SHIFT x10, CTRL /10, WHEEL), RIGHT CLICK RESETS TO THE DEFAULT. CHANGES APPLY HERE AT ONCE; SAVE WRITES tunables.cfg FOR THE GAME.";
-            _ui.Label(_ui.Fit(foot, r.width - 20f), new Vector2(r.x + 10f, r.y + rowH - 2f), Time.unscaledTime < _statusUntil ? ImUi.Accent : ImUi.TextDim);
         }
 
         private static void DrawProfile(CharacterProfile p, bool player, Func<string, float, float, float, float, float, string, float> value)

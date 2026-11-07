@@ -46,6 +46,18 @@ namespace RipNRage.ImGuiIntegration
         {
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vec2.Zero);
             Visible = ImGui.Begin(_title, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse | extraFlags);
+            DeclareInline(imgui, Visible);
+            ImGui.End();
+            ImGui.PopStyleVar();
+        }
+
+        /// <summary>
+        /// The canvas alone, filling the rest of the ImGui window the caller has already begun. Use this when the
+        /// panel needs widgets of its own above the canvas (the animation editor's transport row).
+        /// </summary>
+        public void DeclareInline(ImGuiController imgui, bool windowVisible = true)
+        {
+            Visible = windowVisible;
             if (Visible)
             {
                 Vec2 origin = ImGui.GetCursorScreenPos();
@@ -73,8 +85,6 @@ namespace RipNRage.ImGuiIntegration
             {
                 Hovered = false;
             }
-            ImGui.End();
-            ImGui.PopStyleVar();
         }
 
         /// <summary>

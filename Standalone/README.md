@@ -31,6 +31,7 @@ Standalone/
 │   ├── Content/                prefabs, ScriptableObject data, animator graphs and the TestArea level
 │   │                           rebuilt in code from the values in the .prefab/.asset/.anim/.controller files
 │   └── Program.cs              entry point, CLI options, debug overlay, automation scripts
+├── src/RipNRage.ImGui/         Dear ImGui integration used by the editors (renderer, input, docking)
 ├── src/RipNRage.Editor/        Quake-style level editor executable (RipNRageEditor)
 ├── src/RipNRage.AnimEditor/    sprite animation editor executable (RipNRageAnimEditor)
 ├── src/RipNRage.VfxEditor/     particle effect editor executable (RipNRageVfxEditor)
@@ -52,8 +53,10 @@ Project references: `Engine` ← `Level` ← `Game` ← `Editor`, and `Engine` +
 
 * **.NET 10 SDK.** Any install works: Microsoft's installer, a distro package, or
   `tools/setup-dotnet.sh`, which installs a private copy into `.dotnet/` without root.
-  No NuGet packages are used. A plain build works offline. `nuget.config` limits package sources to
-  nuget.org, which is only contacted for the runtime packs a self-contained publish (`build.sh`) needs.
+  The engine, the game and the level library use no NuGet packages and build offline. Only the editors have a
+  dependency: `RipNRage.ImGui` wraps [ImGui.NET](https://github.com/ImGuiNET/ImGui.NET) (Dear ImGui 1.91.6,
+  docking branch) for their panels, so nothing ships with the game. `nuget.config` limits package sources to
+  nuget.org, which is otherwise only contacted for the runtime packs a self-contained publish (`build.sh`) needs.
 * An OpenGL 3.3 capable driver.
 * GLFW 3 and (optionally) OpenAL Soft shared libraries. These are **bundled** in `native/<rid>/` and
   copied next to the executable on build (see `native/NOTICE.md` for versions, sources and licences):

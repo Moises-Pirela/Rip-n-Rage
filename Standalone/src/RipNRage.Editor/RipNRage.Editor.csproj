@@ -10,6 +10,7 @@
     <ProjectReference Include="..\RipNRage.Engine\RipNRage.Engine.csproj" />
     <ProjectReference Include="..\RipNRage.Level\RipNRage.Level.csproj" />
     <ProjectReference Include="..\RipNRage.Game\RipNRage.Game.csproj" />
+    <ProjectReference Include="..\RipNRage.ImGui\RipNRage.ImGui.csproj" />
   </ItemGroup>
 
 </Project>

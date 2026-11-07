@@ -4,6 +4,8 @@ using System.Linq;
 using RipNRage.Engine;
 using RipNRage.Engine.Animation;
 using RipNRage.Engine.Graphics;
+using RipNRage.ImGuiIntegration;
+using ImGuiNET;
 
 namespace RipNRage.AnimEditor
 {
@@ -55,9 +57,14 @@ namespace RipNRage.AnimEditor
         private int _atlasIndex;
         private int _leftTab;                   // 0 = clips, 1 = controller
         private int _selState = -1, _selTransition = -1; // controller panel selection (state index, transition index; -1 = any-state list)
-        private readonly ImUi _ui = new ImUi();
-        private readonly TextPrompt _prompt = new TextPrompt();
+        private ImGuiController _imgui;
+        private ImGuiViewportPanel _timeline;      // the tracks are engine-drawn into this panel
+        private bool _layoutBuilt;
+        private string _promptTitle, _promptText;
+        private Action<string> _promptAccept;
+        private bool _promptOpen, _promptFocus;
         private bool _showHelp;
+        private bool _openControllerTab;   // the Controller tab is selected once when one is chosen
         /// <summary>Raises the viewmodel rig so the weapon sits in the middle of the viewport instead of under the timeline (G toggles the true game framing).</summary>
         private bool _fitView = true;
         private Vector3 _armsHome;
@@ -84,6 +91,9 @@ namespace RipNRage.AnimEditor
         protected override void Start()
         {
             _armsHome = arms.localPosition;
+            _imgui = new ImGuiController(layoutName: "anim-editor");
+            _timeline = new ImGuiViewportPanel("Timeline");
+            Application.Current.Renderer.AfterUi += OnAfterUi;
             RefreshLists();
             BuildPreviewObject();
             if (_clipNames.Count > 0) SelectClip(_clipNames[0]);
@@ -95,6 +105,22 @@ namespace RipNRage.AnimEditor
         {
             AnimationLibrary.Reloaded -= RefreshLists;
             AnimationLibrary.SuppressPolling = false;
+            if (Application.Current?.Renderer != null) Application.Current.Renderer.AfterUi -= OnAfterUi;
+            _timeline?.Dispose();
+            _timeline = null;
+            _imgui?.Dispose();
+            _imgui = null;
+        }
+
+        /// <summary>
+        /// After the engine's UI pass: the timeline tracks are rendered into their panel, then Dear ImGui draws the
+        /// panels on top of the 3D preview (see RenderPipeline.AfterUi).
+        /// </summary>
+        private void OnAfterUi(int width, int height)
+        {
+            var app = Application.Current;
+            _timeline.Render(app.Renderer, DrawTimelineTracks, new Color(0.08f, 0.09f, 0.11f, 1f), app.Window);
+            _imgui?.Render(app.Window);
         }
 
         private void RefreshLists()
@@ -169,7 +195,9 @@ namespace RipNRage.AnimEditor
                 }
             if (n > 0) cy /= n;
             float centreY = _armsHome.y + rig.position.y + cy * rig.scale.y;
-            float viewportMid = (_viewport.height > 0f ? (_viewport.y + _viewport.height * 0.5f) / MathF.Max(1f, _ui.Batch?.Height ?? 720f) : 0.5f) * 2f - 1f;
+            // the preview sits in the empty centre of the dock space; aim slightly above the middle so the timeline
+            // panel along the bottom does not cover it
+            float viewportMid = 0.12f;
             float fov = Application.Current?.Renderer.CameraConfig?.viewmodelFov ?? cam.fieldOfView;
             float targetY = viewportMid * z * MathF.Tan(fov * 0.5f * Mathf.Deg2Rad);
             return targetY - centreY;
@@ -198,6 +226,7 @@ namespace RipNRage.AnimEditor
 
         public void SelectController(string name)
         {
+            _openControllerTab = true;
             var c = AnimationLibrary.GetController(name);
             if (c == null) return;
             _controller = c;
@@ -236,10 +265,11 @@ namespace RipNRage.AnimEditor
 
         protected override void Update()
         {
-            bool wasPrompt = _prompt.Active;
-            _prompt.Update();
-            _ui.Modal = _prompt.Active;
-            if (_prompt.Active || wasPrompt) return; // the key that closed the prompt must not reach the shortcuts
+            // one ImGui frame per rendered frame: the panels are declared here, the timeline tracks are drawn into
+            // their panel after the UI pass and ImGui is rendered last
+            _imgui.NewFrame(Application.Current.Window);
+            BuildUi();
+            if (_promptOpen || _imgui.WantsKeyboard) return; // a focused field keeps the shortcuts quiet
             HandleKeys();
             if (_controllerMode) UpdateControllerPreview();
             else UpdateClipPlayback();
@@ -500,7 +530,7 @@ namespace RipNRage.AnimEditor
         {
             if (_clip == null) return;
             int frame = CurrentFrame;
-            _prompt.Open($"EVENT FUNCTION AT FRAME {frame}", "OnFire", name =>
+            Prompt($"EVENT FUNCTION AT FRAME {frame}", "OnFire", name =>
             {
                 if (string.IsNullOrEmpty(name)) return;
                 PushUndoClip();
@@ -516,7 +546,7 @@ namespace RipNRage.AnimEditor
             if (_selKind != KeyKind.Event || _selIndex < 0 || _selIndex >= _clip.events.Count) return;
             var (t, fn) = _clip.events[_selIndex];
             int idx = _selIndex;
-            _prompt.Open("RENAME EVENT", fn, name =>
+            Prompt("RENAME EVENT", fn, name =>
             {
                 if (string.IsNullOrEmpty(name)) return;
                 PushUndoClip();
@@ -615,7 +645,7 @@ namespace RipNRage.AnimEditor
 
         private void PromptNewClip()
         {
-            _prompt.Open("NEW CLIP NAME", "NewClip", name =>
+            Prompt("NEW CLIP NAME", "NewClip", name =>
             {
                 if (!ClipNameFree(name)) { Status("NAME IN USE OR EMPTY"); return; }
                 var c = new SpriteAnimationClip(name, 10f / 60f) { frameRate = 60f };
@@ -630,7 +660,7 @@ namespace RipNRage.AnimEditor
         {
             if (_clip == null) return;
             var src = _clip;
-            _prompt.Open("DUPLICATE CLIP AS", src.name + "_copy", name =>
+            Prompt("DUPLICATE CLIP AS", src.name + "_copy", name =>
             {
                 if (!ClipNameFree(name)) { Status("NAME IN USE OR EMPTY"); return; }
                 var c = new SpriteAnimationClip(name, src.length, src.loop);
@@ -646,7 +676,7 @@ namespace RipNRage.AnimEditor
         {
             if (_clip == null) return;
             var c = _clip;
-            _prompt.Open("RENAME CLIP", c.name, name =>
+            Prompt("RENAME CLIP", c.name, name =>
             {
                 if (name == c.name) return;
                 if (!ClipNameFree(name)) { Status("NAME IN USE OR EMPTY"); return; }
@@ -666,7 +696,7 @@ namespace RipNRage.AnimEditor
             var c = _clip;
             var users = AnimationLibrary.ControllersUsing(c).Select(x => x.name).ToList();
             string warn = users.Count > 0 ? $" (USED BY {string.Join(", ", users)})" : "";
-            _prompt.Open($"DELETE CLIP {c.name}{warn}? TYPE YES", "", answer =>
+            Prompt($"DELETE CLIP {c.name}{warn}? TYPE YES", "", answer =>
             {
                 if (!answer.Equals("yes", StringComparison.OrdinalIgnoreCase)) return;
                 foreach (var ctrl in AnimationLibrary.Controllers.Values)
@@ -715,7 +745,7 @@ namespace RipNRage.AnimEditor
         private void PromptNewState()
         {
             if (_controller == null) return;
-            _prompt.Open("NEW STATE NAME (CLIP SLOT = NAME)", "NewState", name =>
+            Prompt("NEW STATE NAME (CLIP SLOT = NAME)", "NewState", name =>
             {
                 if (string.IsNullOrEmpty(name) || Graph.FindState(name) != null) { Status("NAME IN USE OR EMPTY"); return; }
                 PushUndoController();
@@ -729,7 +759,7 @@ namespace RipNRage.AnimEditor
         private void PromptNewParameter()
         {
             if (_controller == null) return;
-            _prompt.Open("NEW PARAMETER (NAME OR NAME:BOOL|TRIGGER|FLOAT|INT)", "Param:Bool", text =>
+            Prompt("NEW PARAMETER (NAME OR NAME:BOOL|TRIGGER|FLOAT|INT)", "Param:Bool", text =>
             {
                 if (string.IsNullOrEmpty(text)) return;
                 string n = text, ty = "Bool";

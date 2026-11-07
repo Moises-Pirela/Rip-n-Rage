@@ -16,7 +16,7 @@ namespace RipNRage.Editor
     /// rotate, duplicate, texturing, entity placement, undo/redo, save and "play".
     /// Visuals come from the game's own LevelLoader in preview mode (WYSIWYG).
     /// </summary>
-    public class EditorController : Behaviour, IUiDrawer
+    public partial class EditorController : Behaviour
     {
         public MapDocument doc = new MapDocument();
         public EditorCamera cam;
@@ -80,6 +80,7 @@ namespace RipNRage.Editor
 
         protected override void Start()
         {
+            InitUi();
             _texNames = new List<string>(LevelTextures.Names);
             _texIndex = Math.Max(0, _texNames.IndexOf("planks"));
             Rebuild();
@@ -164,29 +165,38 @@ namespace RipNRage.Editor
             if (Input.GetKeyDown(KeyCode.DownArrow)) _snapshotIndex = Math.Min(Math.Max(0, _snapshotList.Count - 1), _snapshotIndex + 1);
             if (Input.GetKeyDown(KeyCode.F7)) { TakeSnapshot(); _snapshotList = snapshots.List(doc.path); }
             if (_snapshotList.Count == 0) return;
-            var sel = _snapshotList[_snapshotIndex];
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
-            {
-                try
-                {
-                    PushUndo();
-                    var restored = snapshots.Restore(sel);
-                    string path = doc.path;
-                    doc = restored; doc.path = path;
-                    ClearSelection(); Rebuild();
-                    _snapshotPanel = false;
-                    Status("Restored snapshot " + sel.name + " (Ctrl+Z undoes)");
-                }
-                catch (Exception e) { Status("Restore failed: " + e.Message); }
-            }
-            if (Input.GetKeyDown(KeyCode.Delete) || Input.GetKeyDown(KeyCode.X))
-            {
-                snapshots.Delete(sel);
-                _snapshotList = snapshots.List(doc.path);
-                _snapshotIndex = Math.Min(_snapshotIndex, Math.Max(0, _snapshotList.Count - 1));
-                Status("Snapshot deleted");
-            }
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) RestoreSelectedSnapshot();
+            if (Input.GetKeyDown(KeyCode.Delete) || Input.GetKeyDown(KeyCode.X)) DeleteSelectedSnapshot();
         }
+
+        private void RestoreSelectedSnapshot()
+        {
+            if (_snapshotIndex < 0 || _snapshotIndex >= _snapshotList.Count) return;
+            var sel = _snapshotList[_snapshotIndex];
+            try
+            {
+                PushUndo();
+                var restored = snapshots.Restore(sel);
+                string path = doc.path;
+                doc = restored; doc.path = path;
+                ClearSelection(); Rebuild();
+                _snapshotPanel = false;
+                Status("Restored snapshot " + sel.name + " (Ctrl+Z undoes)");
+            }
+            catch (Exception e) { Status("Restore failed: " + e.Message); }
+        }
+
+        private void DeleteSelectedSnapshot()
+        {
+            if (_snapshotIndex < 0 || _snapshotIndex >= _snapshotList.Count) return;
+            snapshots.Delete(_snapshotList[_snapshotIndex]);
+            _snapshotList = snapshots.List(doc.path);
+            _snapshotIndex = Math.Min(_snapshotIndex, Math.Max(0, _snapshotList.Count - 1));
+            Status("Snapshot deleted");
+        }
+
+        /// <summary>Applies the palette's current texture to the selected face / brushes.</summary>
+        private void ApplyTextureToSelection() => ApplyTexture(_texNames[_texIndex], true);
 
         private void Play()
         {
@@ -213,6 +223,9 @@ namespace RipNRage.Editor
 
         protected override void Update()
         {
+            // one ImGui frame per rendered frame; ImGui is drawn after the engine's UI pass
+            _imgui.NewFrame(Application.Current.Window);
+            BuildUi();
             if (_statusTimer > 0f) _statusTimer -= Time.unscaledDeltaTime;
             var app = Application.Current;
             int w = app.Window.Width, h = app.Window.Height;
@@ -221,8 +234,10 @@ namespace RipNRage.Editor
             bool alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
 
             // ---- the physics settings panel and the snapshot browser capture the keyboard while open
-            if (cam != null) cam.enabled = !_physicsPanel.Open; // no fly-look while dragging values
+            // no fly-look while a panel has the pointer or a settings value is being dragged
+            if (cam != null) cam.enabled = !_physicsPanel.Open && !UiHasInput;
             if (_physicsPanel.Open) { _physicsPanel.HandleKeys(); DrawGizmos(); return; }
+            if (UiHasInput) { DrawGizmos(); return; }
             if (_snapshotPanel) { SnapshotPanelInput(); DrawGizmos(); return; }
             if (Input.GetKeyDown(KeyCode.F7)) TakeSnapshot();
             if (Input.GetKeyDown(KeyCode.F8)) OpenSnapshotPanel();
@@ -869,118 +884,6 @@ namespace RipNRage.Editor
 
         private readonly PhysicsPanel _physicsPanel = new PhysicsPanel();
 
-        public void DrawUi(UiBatch ui)
-        {
-            float s = Mathf.Max(1f, ui.Scale * 2f);
-            var white = new Color(1, 1, 1, 0.9f);
-            string file = (doc.path ?? "untitled") + (_dirty ? "*" : "");
-            string sel = mode == EditMode.Brush
-                ? (_selBrushes.Count > 0 ? $"{_selBrushes.Count} brush(es){(_selFace != null ? " face " + _selFace.texture + " scale " + _selFace.scale.x : "")}" : "none")
-                : (_selEntities.Count > 0 ? $"{_selEntities[0].classname} {_selEntities[0].Get("origin")} angle {_selEntities[0].angle}" + (_selEntities.Count > 1 ? $" (+{_selEntities.Count - 1})" : "") : "none");
-            string line1 = $"RIP-N-RAGE LEVEL EDITOR   {file}   brushes {doc.Brushes.Count}  entities {doc.entities.Count}   FPS {Application.Current.Fps:0}";
-            string modeInfo = mode == EditMode.Brush ? $"TEXTURE {_texNames[_texIndex]} (, .)"
-                : mode == EditMode.Entity ? $"ENTITY {EntityRegistry.All[_entIndex].classname} (1-0 , .)"
-                : $"PAINT RADIUS {paintRadius:0.00} ([ ])  STRENGTH {paintStrength:0.0} (+ -)  CELL {paintCell} (, .)";
-            string line2 = $"MODE {mode.ToString().ToUpperInvariant()} (TAB)   GRID {grid}   WORK PLANE Y {workHeight} (H)   {modeInfo}   SELECTED: {sel}";
-            ui.FillRect(new Rect(0, ui.Height - 30 * s, ui.Width, 30 * s), new Color(0, 0, 0, 0.55f));
-            ui.DrawText(line1, new Vector2(8, ui.Height - 4), s, white);
-            ui.DrawText(line2, new Vector2(8, ui.Height - 16 * s), s, new Color(0.8f, 0.9f, 1f, 0.9f));
-
-            if (_statusTimer > 0f) ui.DrawText(_status, new Vector2(8, ui.Height - 34 * s), s, new Color(1f, 0.9f, 0.4f, 1f));
-
-            // palette strip
-            if (mode == EditMode.Paint)
-            {
-                float sw = 40 * s, x = 8, y = 8;
-                ui.FillRect(new Rect(0, 0, ui.Width, sw + 16 * s), new Color(0, 0, 0, 0.55f));
-                for (int i = 0; i < PaintPresets.Length; i++)
-                {
-                    ui.FillRect(new Rect(x, y, sw, sw), PaintPresets[i]);
-                    ui.DrawText(i == 9 ? "0" : (i + 1).ToString(), new Vector2(x + 2, y + sw + 8 * s), s * 0.8f, white);
-                    x += sw + 6 * s;
-                }
-                x += 10 * s;
-                ui.FillRect(new Rect(x - 2, y - 2, sw * 2 + 4, sw + 4), Color.white);
-                ui.FillRect(new Rect(x, y, sw * 2, sw), paintColor);
-                ui.DrawText("CURRENT  ARROWS HUE/VALUE  PGUP/PGDN SAT", new Vector2(x, y + sw + 8 * s), s * 0.8f, white);
-            }
-            else if (mode == EditMode.Brush)
-            {
-                float thumb = 48 * s, x = 8, y = 8;
-                ui.FillRect(new Rect(0, 0, ui.Width, thumb + 16 * s), new Color(0, 0, 0, 0.55f));
-                for (int i = 0; i < _texNames.Count; i++)
-                {
-                    var lt = LevelTextures.Get(_texNames[i]);
-                    if (!_texThumbs.TryGetValue(lt.name, out var sp)) { sp = Sprite.FromTexture(lt.Texture ?? Texture2D.White); _texThumbs[lt.name] = sp; }
-                    var r = new Rect(x, y, thumb, thumb);
-                    ui.Draw(sp, r, lt.visible ? lt.tint : new Color(1f, 0.5f, 1f, 1f));
-                    if (i == _texIndex) { ui.FillRect(new Rect(x - 2, y - 2, thumb + 4, 2), Color.yellow); ui.FillRect(new Rect(x - 2, y + thumb, thumb + 4, 2), Color.yellow); ui.FillRect(new Rect(x - 2, y, 2, thumb), Color.yellow); ui.FillRect(new Rect(x + thumb, y, 2, thumb), Color.yellow); }
-                    ui.DrawText(lt.name, new Vector2(x, y + thumb + 8 * s), s * 0.8f, white);
-                    x += thumb + 10 * s;
-                }
-            }
-            else
-            {
-                var defs = EntityRegistry.All;
-                float lineH = 9 * s, y = 8 + lineH * defs.Count;
-                ui.FillRect(new Rect(0, 0, 420 * s, y + 6), new Color(0, 0, 0, 0.55f));
-                for (int i = 0; i < defs.Count; i++)
-                {
-                    string key = i < 9 ? (i + 1).ToString() : i == 9 ? "0" : " ";
-                    ui.DrawText($"{key} {defs[i].classname,-22} {defs[i].description}", new Vector2(8, y - i * lineH), s * 0.8f, i == _entIndex ? Color.yellow : white);
-                }
-            }
-
-            if (_snapshotPanel)
-            {
-                float lineH = 10 * s;
-                int shown = Math.Min(_snapshotList.Count, 18);
-                float ph = (shown + 3) * lineH + 12, pw = 620 * s;
-                float px = (ui.Width - pw) * 0.5f, py = (ui.Height - ph) * 0.5f;
-                ui.FillRect(new Rect(px, py, pw, ph), new Color(0.05f, 0.05f, 0.08f, 0.92f));
-                ui.DrawText($"SNAPSHOTS OF {Path.GetFileName(doc.path ?? "untitled")}   ({_snapshotList.Count})   UP/DOWN SELECT  ENTER RESTORE  DEL DELETE  F7 NEW  ESC CLOSE", new Vector2(px + 8, py + ph - 6), s * 0.85f, Color.yellow);
-                if (_snapshotList.Count == 0) ui.DrawText("NO SNAPSHOTS YET - PRESS F7 (OR SAVE WITH AUTO-SNAPSHOT ON)", new Vector2(px + 8, py + ph - 6 - lineH * 1.5f), s * 0.85f, white);
-                int first = Math.Max(0, Math.Min(_snapshotIndex - shown / 2, _snapshotList.Count - shown));
-                for (int i = 0; i < shown; i++)
-                {
-                    var sn = _snapshotList[first + i];
-                    bool isSel = first + i == _snapshotIndex;
-                    string line = $"{(isSel ? ">" : " ")} {sn.time:yyyy-MM-dd HH:mm:ss}  {sn.name,-28} {(sn.auto ? "AUTO  " : "MANUAL")}  ~{sn.brushes} BRUSHES {sn.entities} ENTITIES  {sn.size / 1024f:0.0} KB";
-                    ui.DrawText(line, new Vector2(px + 8, py + ph - 6 - lineH * (i + 2)), s * 0.85f, isSel ? Color.yellow : white);
-                }
-            }
-
-            if (showHelp && !_snapshotPanel)
-            {
-                string[] help = mode == EditMode.Brush ? new[]
-                {
-                    "RMB+MOUSE LOOK  WASD/QE FLY  SHIFT FAST  WHEEL SPEED  F FOCUS",
-                    "LMB DRAG ON GROUND/FACE: NEW BRUSH   LMB CLICK: SELECT (SHIFT ADD)",
-                    "DRAG SELECTED: MOVE (SHIFT VERTICAL)   ALT+DRAG FACE: PUSH/PULL",
-                    "+/- PUSH/PULL FACE BY GRID   ARROWS/PGUP/PGDN NUDGE   R ROTATE 90",
-                    "CTRL+D DUPLICATE   DEL DELETE   , . FACE TEXTURE (SHIFT: SCALE)   T TEXTURE BRUSH",
-                    "[ ] GRID   H WORK PLANE FROM HOVER   G WIREFRAMES   TAB ENTITY MODE   V PAINT MODE   P/M/N QUICK-PLACE SPAWNS",
-                    "CTRL+S SAVE (+AUTO SNAPSHOT)   F7 SNAPSHOT   F8 SNAPSHOT BROWSER   F9 PHYSICS SETTINGS   CTRL+Z/Y UNDO/REDO   F5 SAVE+PLAY   F1 HIDE HELP",
-                } : mode == EditMode.Paint ? new[]
-                {
-                    "VERTEX PAINT   LMB HOLD: PAINT FACE   SHIFT+LMB: ERASE (WHITE)   CTRL+LMB: PICK COLOUR",
-                    "[ ] RADIUS   + - STRENGTH   , . CELL SIZE FOR NEWLY PAINTED FACES   DEL CLEAR HOVERED FACE",
-                    "1-0 COLOUR PRESETS   LEFT/RIGHT HUE   UP/DOWN VALUE   PGUP/PGDN SATURATION",
-                    "P / M / N: PLACE PLAYER START / MONSTER / SPAWNER AT CURSOR (ANY MODE)",
-                    "V OR TAB BACK TO BRUSH MODE   CTRL+S SAVE   CTRL+Z/Y UNDO/REDO   F5 SAVE+PLAY",
-                } : new[]
-                {
-                    "RMB+MOUSE LOOK  WASD/QE FLY   1-0 , . PICK ENTITY CLASS   P/M/N QUICK-PLACE PLAYER START/MONSTER/SPAWNER",
-                    "LMB ON SURFACE: PLACE   LMB ON ENTITY: SELECT/DRAG (SHIFT VERTICAL)",
-                    "ARROWS/PGUP/PGDN NUDGE   R ROTATE 45   +/- PROPERTY (SHIFT: 2ND)   CTRL+D DUPLICATE   DEL DELETE",
-                    "TAB BRUSH MODE   CTRL+S SAVE   CTRL+Z/Y UNDO/REDO   F5 SAVE+PLAY   F1 HIDE HELP",
-                };
-                float y = ui.Height - 44 * s;
-                ui.FillRect(new Rect(0, y - help.Length * 9 * s - 6, 640 * s, help.Length * 9 * s + 8), new Color(0, 0, 0, 0.45f));
-                foreach (var l in help) { ui.DrawText(l, new Vector2(8, y), s * 0.85f, white); y -= 9 * s; }
-            }
-
-            _physicsPanel.Draw(ui);
-        }
+        protected override void OnDestroy() => ShutdownUi();
     }
 }

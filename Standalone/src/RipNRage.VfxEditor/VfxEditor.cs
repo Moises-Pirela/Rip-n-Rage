@@ -4,6 +4,8 @@ using System.Linq;
 using RipNRage.Engine;
 using RipNRage.Engine.Graphics;
 using RipNRage.Engine.Graphics.Particles;
+using RipNRage.ImGuiIntegration;
+using ImGuiNET;
 
 namespace RipNRage.VfxEditor
 {
@@ -48,10 +50,12 @@ namespace RipNRage.VfxEditor
         private Vector2 _lastMouse;
 
         // ---- ui ----
-        private readonly ImUi _ui = new ImUi();
-        private readonly TextPrompt _prompt = new TextPrompt();
+        private ImGuiController _imgui;
         private bool _showHelp;
-        private float _listScroll, _emitterScroll, _gridScroll, _paletteScroll;
+        private bool _layoutBuilt;
+        private string _promptTitle, _promptText;
+        private Action<string> _promptAccept;
+        private bool _promptOpen, _promptFocus;
         private string _status = "";
         private float _statusUntil;
         private Rect _viewport;
@@ -63,7 +67,6 @@ namespace RipNRage.VfxEditor
         // palette (sprite picker)
         private bool _paletteOpen;
         private Action<string> _paletteAccept;
-        private int _paletteAtlas;
 
         // ---- undo ----
         private readonly Stack<string> _undo = new Stack<string>();
@@ -74,6 +77,8 @@ namespace RipNRage.VfxEditor
         protected override void Start()
         {
             VfxLibrary.SuppressPolling = true; // the editor is the writer
+            _imgui = new ImGuiController(layoutName: "vfx-editor");
+            Application.Current.Renderer.AfterUi += OnAfterUi;
             VfxLibrary.Reloaded += RefreshNames;
             RefreshNames();
             UpdateAnchor();
@@ -86,7 +91,13 @@ namespace RipNRage.VfxEditor
         {
             VfxLibrary.Reloaded -= RefreshNames;
             VfxLibrary.SuppressPolling = false;
+            if (Application.Current?.Renderer != null) Application.Current.Renderer.AfterUi -= OnAfterUi;
+            _imgui?.Dispose();
+            _imgui = null;
         }
+
+        /// <summary>Dear ImGui draws after the engine's UI pass, on top of the 3D preview (see RenderPipeline.AfterUi).</summary>
+        private void OnAfterUi(int width, int height) => _imgui?.Render(Application.Current.Window);
 
         private void RefreshNames()
         {
@@ -103,7 +114,6 @@ namespace RipNRage.VfxEditor
             _selEmitter = fx.emitters.Count > 0 ? 0 : -1;
             _undo.Clear(); _redo.Clear();
             _frameStartJson = null; _changedThisFrame = false; _changedLastFrame = false;
-            _gridScroll = 0f;
             Respawn();
         }
 
@@ -251,7 +261,7 @@ namespace RipNRage.VfxEditor
         public void DeleteEffect()
         {
             if (_effect == null) return;
-            _prompt.Open($"DELETE {_effect.name.ToUpperInvariant()}? TYPE YES", "", answer => { if (string.Equals(answer, "yes", StringComparison.OrdinalIgnoreCase)) DeleteEffectNow(); });
+            Prompt($"Delete {_effect.name}? Type YES", "", answer => { if (string.Equals(answer, "yes", StringComparison.OrdinalIgnoreCase)) DeleteEffectNow(); });
         }
 
         private void DeleteEffectNow()
@@ -332,6 +342,10 @@ namespace RipNRage.VfxEditor
 
         protected override void Update()
         {
+            // one ImGui frame per rendered frame; the panels are declared below, ImGui is drawn after the UI pass
+            _imgui.NewFrame(Application.Current.Window);
+            BuildUi();
+
             // undo snapshot at the start of an edit streak: edits happen during the UI pass (after Update), so the
             // state captured at the previous Update is the one before the first change
             if (_changedThisFrame && !_changedLastFrame) PushUndo(_frameStartJson);
@@ -339,7 +353,7 @@ namespace RipNRage.VfxEditor
             _changedThisFrame = false;
             _frameStartJson = _effect != null ? VfxLibrary.ToJson(_effect) : null;
 
-            if (_prompt.Active) { _prompt.Update(); return; }
+            if (_promptOpen || _imgui.WantsKeyboard) { HandleViewportInput(); return; }
 
             bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl) || Input.GetKey(KeyCode.LeftCommand) || Input.GetKey(KeyCode.RightCommand);
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
@@ -357,7 +371,7 @@ namespace RipNRage.VfxEditor
             if (ctrl && Input.GetKeyDown(KeyCode.D)) DuplicateEffect();
             if (ctrl && Input.GetKeyDown(KeyCode.Z)) Undo();
             if (ctrl && Input.GetKeyDown(KeyCode.Y)) Redo();
-            if (Input.GetKeyDown(KeyCode.F2) && _effect != null) _prompt.Open("RENAME EFFECT", _effect.name, RenameEffect);
+            if (Input.GetKeyDown(KeyCode.F2) && _effect != null) Prompt("Rename effect", _effect.name, RenameEffect);
             if (Input.GetKeyDown(KeyCode.Delete) && !ctrl) { if (shift) DeleteEffect(); else RemoveEmitter(); }
             if (Input.GetKeyDown(KeyCode.Insert) || (ctrl && Input.GetKeyDown(KeyCode.E))) AddEmitter();
             if (Input.GetKeyDown(KeyCode.Space)) Respawn();
@@ -375,6 +389,7 @@ namespace RipNRage.VfxEditor
 
             Time.timeScale = _paused ? 0f : _timeScale;
             UpdateCamera();
+            HandleViewportInput();
 
             // automatic replay for one-shot effects when looping is off
             if (_instance != null && !_instance.IsAlive) _instance = null;
@@ -383,7 +398,7 @@ namespace RipNRage.VfxEditor
                 _replayTimer += Time.unscaledDeltaTime;
                 if (_replayTimer > 0.6f) Respawn();
             }
-            if (_respawn && !_ui.Dragging) { _respawn = false; Respawn(); }
+            if (_respawn && !ImGui.IsAnyItemActive()) { _respawn = false; Respawn(); }
             if (_instance != null && _instance.follow == null && !IsTrail(_effect) && !IsTracer(_effect))
             {
                 // keep a running instance glued to the anchor (it may have been moved by a click while dragging)
@@ -394,12 +409,13 @@ namespace RipNRage.VfxEditor
         /// <summary>Viewport mouse handling; runs at the end of the UI pass so panel widgets get first pick of the click.</summary>
         private void HandleViewportInput()
         {
-            if (_ui.Modal) { _orbiting = false; return; }
+            // ImGui owns the pointer whenever it is over a panel or a popup is up
+            if (_imgui.WantsMouse || _promptOpen || _paletteOpen || _showHelp) { _orbiting = false; return; }
             Vector2 mouse = Input.mousePosition;
             bool over = _viewport.Contains(mouse);
 
             // camera orbit (RMB drag) and zoom (wheel over the viewport)
-            if (Input.GetMouseButtonDown(1) && over && !_ui.ClickConsumed) { _orbiting = true; _lastMouse = mouse; }
+            if (Input.GetMouseButtonDown(1) && over) { _orbiting = true; _lastMouse = mouse; }
             if (!Input.GetMouseButton(1)) _orbiting = false;
             if (_orbiting)
             {
@@ -410,7 +426,7 @@ namespace RipNRage.VfxEditor
                 _distance = Mathf.Clamp(_distance * (Input.mouseScrollDelta.y > 0f ? 0.88f : 1.14f), 0.5f, 30f);
 
             // LMB in the viewport: place the effect on whatever surface is under the cursor
-            if (Input.GetMouseButtonDown(0) && over && !_ui.ClickConsumed)
+            if (Input.GetMouseButtonDown(0) && over)
             {
                 var win = Application.Current.Window;
                 var ray = rig.camera.ScreenPointToRay(mouse, win.Width, win.Height);
