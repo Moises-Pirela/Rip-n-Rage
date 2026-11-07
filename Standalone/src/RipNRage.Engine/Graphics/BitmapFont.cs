@@ -14,6 +14,9 @@ namespace RipNRage.Engine.Graphics
         private readonly Dictionary<char, Rect> _glyphs = new Dictionary<char, Rect>();
 
         public Texture2D Texture => _texture;
+        /// <summary>UV of a solid white texel inside <see cref="Texture"/> (for untextured quads that batch with text).</summary>
+        public float WhiteU { get; private set; }
+        public float WhiteV { get; private set; }
 
         private static readonly Dictionary<char, string[]> Glyphs = new Dictionary<char, string[]>
         {
@@ -82,7 +85,7 @@ namespace RipNRage.Engine.Graphics
             var font = new BitmapFont();
             int count = Glyphs.Count;
             int cols = 16;
-            int rows = (count + cols - 1) / cols;
+            int rows = (count + 1 + cols - 1) / cols; // +1 cell: a solid white block for untextured UI quads
             var img = new Image(cols * Cell, rows * Cell);
             int i = 0;
             foreach (var kv in Glyphs)
@@ -98,6 +101,20 @@ namespace RipNRage.Engine.Graphics
                 // rect with bottom-left origin for the Sprite convention
                 font._glyphs[kv.Key] = new Rect(cx, img.Height - cy - GlyphH, GlyphW, GlyphH);
                 i++;
+            }
+            // solid white cell after the glyphs: rectangles, borders and lines sample it, so they share the font's
+            // texture and text + panels batch into one draw call instead of alternating with Texture2D.White
+            {
+                int wx = (i % cols) * Cell, wy = (i / cols) * Cell;
+                for (int y = 0; y < Cell; y++)
+                    for (int x = 0; x < Cell; x++)
+                    {
+                        int o = ((wy + y) * img.Width + wx + x) * 4;
+                        img.Pixels[o] = img.Pixels[o + 1] = img.Pixels[o + 2] = img.Pixels[o + 3] = 255;
+                    }
+                // centre of the cell in GL texture space (rows are flipped on upload); point sampling = exact white
+                font.WhiteU = (wx + Cell * 0.5f) / img.Width;
+                font.WhiteV = (img.Height - wy - Cell * 0.5f) / img.Height;
             }
             font._texture = Texture2D.Create(img, FilterMode.Point, TextureWrapMode.Clamp, false, "BuiltinFont");
             return font;

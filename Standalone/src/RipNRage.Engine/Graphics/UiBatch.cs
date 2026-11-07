@@ -38,11 +38,25 @@ namespace RipNRage.Engine.Graphics
     /// </summary>
     public sealed unsafe class UiBatch : IDisposable
     {
-        private const int MaxVerts = 16384;
-        private const int MaxIndices = MaxVerts * 3;
-        private readonly float[] _verts = new float[MaxVerts * 8];
-        private readonly uint[] _indices = new uint[MaxIndices];
+        // The whole pass is recorded on the CPU and submitted with ONE buffer upload in Flush(). Uploading per draw
+        // call made the driver wait for the GPU to finish reading the previous contents of the buffer (~0.4 ms per
+        // draw call on macOS, 19 ms a frame with the profiler overlay); one upload into fresh storage never waits.
+        private float[] _verts = new float[16384 * 8];
+        private uint[] _indices = new uint[16384 * 6];
         private int _vertCount, _indexCount;
+
+        /// <summary>A recorded draw (a run of indices sharing a texture) or a scissor change.</summary>
+        private struct Command
+        {
+            public Texture2D texture;   // null = scissor command
+            public int indexStart, indexCount;
+            public bool clip;            // scissor commands: enable + rect, or disable
+            public int sx, sy, sw, sh;
+        }
+        private Command[] _commands = new Command[64];
+        private int _commandCount;
+        private int _runStart;           // first index of the draw being accumulated
+        private bool _stateBound;
         private Texture2D _currentTexture;
         private uint _vao, _vbo, _ebo;
         private readonly Shader _shader;
@@ -57,6 +71,10 @@ namespace RipNRage.Engine.Graphics
 
         public BitmapFont Font => _font ??= BitmapFont.CreateBuiltin();
 
+        // ---- statistics (read by the profiler summary): draw calls and geometry submitted per frame
+        public static long TotalFlushes, TotalQuads, TotalBytes, TotalFrames;
+        public int FlushesThisFrame { get; private set; }
+
         public UiBatch(Shader shader)
         {
             _shader = shader;
@@ -65,9 +83,7 @@ namespace RipNRage.Engine.Graphics
             _ebo = GL.GenBuffer();
             GL.BindVertexArray(_vao);
             GL.BindBuffer(GL.ARRAY_BUFFER, _vbo);
-            GL.BufferData(GL.ARRAY_BUFFER, _verts.Length * sizeof(float), null, GL.DYNAMIC_DRAW);
             GL.BindBuffer(GL.ELEMENT_ARRAY_BUFFER, _ebo);
-            GL.BufferData(GL.ELEMENT_ARRAY_BUFFER, _indices.Length * sizeof(uint), null, GL.DYNAMIC_DRAW);
             int stride = 8 * sizeof(float);
             GL.EnableVertexAttribArray(0); GL.VertexAttribPointer(0, 2, GL.FLOAT, false, stride, 0);
             GL.EnableVertexAttribArray(1); GL.VertexAttribPointer(1, 2, GL.FLOAT, false, stride, 2 * sizeof(float));
@@ -82,8 +98,9 @@ namespace RipNRage.Engine.Graphics
         public void Begin(int width, int height)
         {
             Width = width; Height = height;
-            _vertCount = 0; _indexCount = 0;
+            _vertCount = 0; _indexCount = 0; _commandCount = 0; _runStart = 0;
             _currentTexture = null;
+            _stateBound = false;
             _clips.Clear();
             GL.Disable(GL.SCISSOR_TEST);
         }
@@ -154,7 +171,12 @@ namespace RipNRage.Engine.Graphics
             }
         }
 
-        public void FillRect(Rect dest, Color color) => DrawRaw(Texture2D.White, dest, 0, 0, 1, 1, color);
+        /// <summary>Solid rectangle. Samples the white texel in the font atlas, so it batches with text.</summary>
+        public void FillRect(Rect dest, Color color)
+        {
+            var f = Font;
+            DrawRaw(f.Texture, dest, f.WhiteU, f.WhiteV, f.WhiteU, f.WhiteV, color);
+        }
 
         /// <summary>Multiplies the framebuffer by <paramref name="color"/> (post-processing colour filter).</summary>
         public void FillRectMultiply(Rect dest, Color color)
@@ -204,24 +226,28 @@ namespace RipNRage.Engine.Graphics
                 float x1 = MathF.Min(r.xMax, c.xMax), y1 = MathF.Min(r.yMax, c.yMax);
                 r = new Rect(x0, y0, MathF.Max(0f, x1 - x0), MathF.Max(0f, y1 - y0));
             }
-            Flush();
             _clips.Push(r);
-            ApplyClip();
+            RecordClip();
         }
 
         public void PopClip()
         {
-            Flush();
             if (_clips.Count > 0) _clips.Pop();
-            ApplyClip();
+            RecordClip();
         }
 
-        private void ApplyClip()
+        /// <summary>Ends the current draw and records the scissor state now on top of the clip stack.</summary>
+        private void RecordClip()
         {
-            if (_clips.Count == 0) { GL.Disable(GL.SCISSOR_TEST); return; }
-            var r = _clips.Peek();
-            GL.Enable(GL.SCISSOR_TEST);
-            GL.Scissor((int)MathF.Floor(r.x), (int)MathF.Floor(r.y), (int)MathF.Ceiling(r.width), (int)MathF.Ceiling(r.height));
+            CloseRun();
+            var c = new Command { clip = _clips.Count > 0 };
+            if (c.clip)
+            {
+                var r = _clips.Peek();
+                c.sx = (int)MathF.Floor(r.x); c.sy = (int)MathF.Floor(r.y);
+                c.sw = (int)MathF.Ceiling(r.width); c.sh = (int)MathF.Ceiling(r.height);
+            }
+            AddCommand(c);
         }
 
         /// <summary>True when the point is inside the current clip rectangle (or no clip is active).</summary>
@@ -236,11 +262,13 @@ namespace RipNRage.Engine.Graphics
             float len = d.magnitude;
             if (len < 1E-04f) return;
             Vector2 n = new Vector2(-d.y / len, d.x / len) * (thickness * 0.5f);
-            EnsureCapacity(4, 6, Texture2D.White);
-            uint i0 = PushVertex(a + n, Vector2.zero, color);
-            uint i1 = PushVertex(b + n, Vector2.zero, color);
-            uint i2 = PushVertex(b - n, Vector2.zero, color);
-            uint i3 = PushVertex(a - n, Vector2.zero, color);
+            var f = Font;
+            var white = new Vector2(f.WhiteU, f.WhiteV);
+            EnsureCapacity(4, 6, f.Texture);
+            uint i0 = PushVertex(a + n, white, color);
+            uint i1 = PushVertex(b + n, white, color);
+            uint i2 = PushVertex(b - n, white, color);
+            uint i3 = PushVertex(a - n, white, color);
             PushTriangle(i0, i1, i2);
             PushTriangle(i0, i2, i3);
         }
@@ -258,11 +286,24 @@ namespace RipNRage.Engine.Graphics
 
         private void EnsureCapacity(int verts, int indices, Texture2D tex)
         {
-            if (tex != _currentTexture || _vertCount + verts > MaxVerts || _indexCount + indices > MaxIndices)
-            {
-                Flush();
-                _currentTexture = tex;
-            }
+            if (tex != _currentTexture) { CloseRun(); _currentTexture = tex; }
+            if (_vertCount + verts > _verts.Length / 8) Array.Resize(ref _verts, Math.Max(_verts.Length * 2, (_vertCount + verts) * 8));
+            if (_indexCount + indices > _indices.Length) Array.Resize(ref _indices, Math.Max(_indices.Length * 2, _indexCount + indices));
+        }
+
+        /// <summary>Records the indices accumulated since the last texture / scissor change as one draw.</summary>
+        private void CloseRun()
+        {
+            int count = _indexCount - _runStart;
+            if (count > 0 && _currentTexture != null)
+                AddCommand(new Command { texture = _currentTexture, indexStart = _runStart, indexCount = count });
+            _runStart = _indexCount;
+        }
+
+        private void AddCommand(in Command c)
+        {
+            if (_commandCount == _commands.Length) Array.Resize(ref _commands, _commands.Length * 2);
+            _commands[_commandCount++] = c;
         }
 
         private uint PushVertex(Vector2 p, Vector2 uv, Color color)
@@ -278,22 +319,51 @@ namespace RipNRage.Engine.Graphics
             _indices[_indexCount++] = a; _indices[_indexCount++] = b; _indices[_indexCount++] = c;
         }
 
-        /// <summary>Submits everything batched so far. Public for the same reason as <see cref="Begin"/>.</summary>
+        /// <summary>
+        /// Submits everything recorded since <see cref="Begin"/> (or the last Flush): one upload of the whole pass's
+        /// vertices and indices into fresh buffer storage, then the recorded draws and scissor changes in order.
+        /// </summary>
         public void Flush()
         {
-            if (_indexCount == 0 || _currentTexture == null) { _vertCount = 0; _indexCount = 0; return; }
-            _shader.Use();
-            _shader.SetMatrix("uProj", Matrix4x4.Ortho(0, Width, 0, Height, -1, 1));
-            _shader.SetInt("uTex", 0);
-            _currentTexture.Bind(0);
-            GL.BindVertexArray(_vao);
-            GL.BindBuffer(GL.ARRAY_BUFFER, _vbo);
-            fixed (float* p = _verts) GL.BufferSubData(GL.ARRAY_BUFFER, 0, _vertCount * 8 * sizeof(float), p);
-            GL.BindBuffer(GL.ELEMENT_ARRAY_BUFFER, _ebo);
-            fixed (uint* p = _indices) GL.BufferSubData(GL.ELEMENT_ARRAY_BUFFER, 0, _indexCount * sizeof(uint), p);
-            GL.DrawElements(GL.TRIANGLES, _indexCount, GL.UNSIGNED_INT, 0);
+            CloseRun();
+            if (_commandCount == 0) { _vertCount = 0; _indexCount = 0; _runStart = 0; return; }
+
+            GL.BindVertexArray(_vao); // the VAO holds the element buffer binding
+            if (_indexCount > 0)
+            {
+                // BufferData with data = orphan + upload in one call: the driver hands back new storage, so this never
+                // waits for draws from the previous frame that still read the old contents
+                GL.BindBuffer(GL.ARRAY_BUFFER, _vbo);
+                fixed (float* p = _verts) GL.BufferData(GL.ARRAY_BUFFER, (nint)_vertCount * 8 * sizeof(float), p, GL.STREAM_DRAW);
+                fixed (uint* p = _indices) GL.BufferData(GL.ELEMENT_ARRAY_BUFFER, (nint)_indexCount * sizeof(uint), p, GL.STREAM_DRAW);
+                TotalBytes += _vertCount * 8 * sizeof(float) + _indexCount * sizeof(uint);
+            }
+            _shader.Use(); // cheap; the program may have changed since the last pass
+            if (!_stateBound)
+            {
+                _shader.SetMatrix("uProj", Matrix4x4.Ortho(0, Width, 0, Height, -1, 1));
+                _shader.SetInt("uTex", 0);
+                _stateBound = true;
+            }
+
+            Texture2D bound = null;
+            for (int i = 0; i < _commandCount; i++)
+            {
+                ref Command c = ref _commands[i];
+                if (c.texture == null)
+                {
+                    if (c.clip) { GL.Enable(GL.SCISSOR_TEST); GL.Scissor(c.sx, c.sy, Math.Max(0, c.sw), Math.Max(0, c.sh)); }
+                    else GL.Disable(GL.SCISSOR_TEST);
+                    continue;
+                }
+                if (c.texture != bound) { c.texture.Bind(0); bound = c.texture; }
+                GL.DrawElements(GL.TRIANGLES, c.indexCount, GL.UNSIGNED_INT, c.indexStart * sizeof(uint));
+                FlushesThisFrame++; TotalFlushes++; TotalQuads += c.indexCount / 6;
+            }
             GL.BindVertexArray(0);
-            _vertCount = 0; _indexCount = 0;
+
+            _vertCount = 0; _indexCount = 0; _runStart = 0; _commandCount = 0;
+            _currentTexture = null;
         }
 
         public void Dispose()

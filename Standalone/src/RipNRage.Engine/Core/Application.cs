@@ -303,6 +303,8 @@ namespace RipNRage.Engine
                 double avg = (sw.Elapsed.TotalSeconds - benchStart) / benchFrames;
                 Debug.LogWarning($"Average frame time after warm-up: {avg * 1000:0.0} ms ({1 / avg:0.0} fps) over {benchFrames} frames (wall clock{(Options.FixedFrameDelta > 0f ? $"; the simulation ran at a fixed {Options.FixedFrameDelta * 1000f:0.0} ms per frame" : "")})");
                 Debug.LogWarning("[perf] " + Profiler.Summary());
+                if (UiBatch.TotalFrames > 0)
+                    Debug.LogWarning($"[ui] per frame: {(double)UiBatch.TotalFlushes / UiBatch.TotalFrames:0.0} draw calls, {(double)UiBatch.TotalQuads / UiBatch.TotalFrames:0} quads, {(double)UiBatch.TotalBytes / UiBatch.TotalFrames / 1024.0:0.0} KB uploaded");
                 string rep = Renderer.PostFx.ProfileReport();
                 if (rep.Length > 0) Debug.LogWarning(rep);
             }

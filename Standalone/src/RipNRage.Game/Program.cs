@@ -13,6 +13,7 @@ namespace RipNRage.Game
     ///   --assets &lt;dir&gt;        the assets folder, or a folder containing it (auto-detected otherwise)
     ///   --width W --height H   window size (default 1280x720)
     ///   --no-vsync             disable vertical sync
+    ///   --overlay 0|1|2        debug overlay mode for this run (off / frame stats / full profiler)
     ///   --windowed / --borderless / --fullscreen   display mode (default: the one saved in graphics.json, else windowed)
     ///   --monitor N            monitor index for borderless / fullscreen (0 = first; default: primary)
     ///   --resolution WxH[@Hz]  exclusive fullscreen video mode (default: the monitor's desktop mode)
@@ -62,6 +63,7 @@ namespace RipNRage.Game
                     case "--width": options.Width = int.Parse(Next()); break;
                     case "--height": options.Height = int.Parse(Next()); break;
                     case "--no-vsync": options.VSync = false; break;
+                    case "--overlay": DebugOverlay.ForcedMode = int.Parse(Next()); break;
                     case "--windowed": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Windowed; displayFromCli = true; break;
                     case "--borderless": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Borderless; displayFromCli = true; break;
                     case "--fullscreen": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Fullscreen; displayFromCli = true; break;
@@ -170,13 +172,15 @@ namespace RipNRage.Game
         public int UiLayer => UiLayers.Debug;
         /// <summary>0 = hidden, 1 = compact, 2 = full profiler.</summary>
         public int mode = 2;
+        /// <summary>--overlay N: start in this mode regardless of graphics.json (profiling runs).</summary>
+        public static int? ForcedMode;
         public bool visible { get => mode > 0; set => mode = value ? 2 : 0; }
         private static string _message = ""; private static float _messageTimer;
 
         protected override void Start()
         {
             RipNRage.Game.Content.Level.GameSaveSystem.OnMessage = m => { _message = m; _messageTimer = 3f; };
-            mode = RipNRage.Game.Content.GraphicsSettings.Current.overlayMode ?? mode;
+            mode = ForcedMode ?? RipNRage.Game.Content.GraphicsSettings.Current.overlayMode ?? mode;
         }
 
         protected override void Update()

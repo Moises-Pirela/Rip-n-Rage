@@ -231,6 +231,13 @@ namespace RipNRage.Engine.Graphics
             }
 
             // ---- pass 4: UI
+            // Hand the queued 3D / post-processing work to the GPU before the UI. Without this the driver submits it
+            // lazily inside the next draw call, so the first UI draw absorbed ~1.1 ms of scene submission (macOS) and
+            // the profiler charged it to the UI. Here it gets its own stage, and the GPU starts on the scene while
+            // the CPU builds the UI.
+            Profiler.Begin("gpu submit (scene)");
+            GL.Flush();
+            Profiler.End();
             Profiler.Begin("ui", gpu: true);
             DrawUiPass(width, height, cfg);
             Profiler.End();
@@ -244,6 +251,9 @@ namespace RipNRage.Engine.Graphics
         /// </summary>
         public event Action<int, int> AfterUi;
 
+        /// <summary>One profiler stage per UI drawer (RIPNRAGE_PROFILE_UI=1): shows which screen the UI time belongs to.</summary>
+        public static bool ProfileUiDrawers = Environment.GetEnvironmentVariable("RIPNRAGE_PROFILE_UI") == "1";
+
         /// <summary>Screen-space UI: every <see cref="IUiDrawer"/> in <see cref="IUiLayer"/> order (stable), then the debug views.</summary>
         private void DrawUiPass(int width, int height, CameraSettings cfg)
         {
@@ -253,11 +263,14 @@ namespace RipNRage.Engine.Graphics
             GL.Enable(GL.BLEND);
             GL.BlendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA);
             Ui.Begin(width, height);
+            UiBatch.TotalFrames++;
             SortUiDrawers();
             foreach (var d in _uiDrawers)
             {
+                if (ProfileUiDrawers) Profiler.Begin("ui: " + d.GetType().Name);
                 try { d.DrawUi(Ui); }
                 catch (Exception e) { Debug.LogError($"DrawUi threw: {e}"); }
+                if (ProfileUiDrawers) Profiler.End();
             }
             if (cfg != null && cfg.occlusionDebugView && cfg.occlusionMode == OcclusionMode.Cpu) DrawOcclusionDebug(cfg);
             Ui.Flush();
