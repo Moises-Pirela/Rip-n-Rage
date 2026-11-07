@@ -75,7 +75,7 @@ cd Standalone
 ./anim.sh         # animation editor
 ./vfx.sh          # particle effect editor
 ./skeleton.sh     # sprite destruction skeleton editor
-./build.sh        # build + self-contained Linux x64 publish into dist/linux-x64
+./build.sh [rid]  # self-contained publish for this machine (or linux-x64 / osx-arm64 / osx-x64 / win-x64) into dist/<rid>; macOS also gets Rip-n-Rage.app
 ```
 
 On Windows: `run.cmd`, or the manual commands below.

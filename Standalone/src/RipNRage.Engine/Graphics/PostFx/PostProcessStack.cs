@@ -24,7 +24,16 @@ namespace RipNRage.Engine.Graphics.PostFx
         public bool Enabled = true;
 
         /// <summary>The chain runs only when enabled and something would actually change the image.</summary>
-        public bool IsActive => Enabled && ((Settings.enabled && (Settings.AnyEffect || Override.vignetteIntensity > 0f || Override.chromaticIntensity > 0f || Override.bloomIntensity > 0f || !IsWhite(Override.colorFilter))) || VolumetricActive);
+        /// <summary>
+        /// Extra 3D resolution factor on top of <see cref="PostProcessSettings.renderScale"/>, for HiDPI displays: 0.5 on
+        /// a Retina screen renders the world at the window's point size and upsamples, while the UI stays at native
+        /// pixels. 1 = native framebuffer pixels.
+        /// </summary>
+        public float PixelScale = 1f;
+        /// <summary>renderScale × PixelScale, clamped to the supported range.</summary>
+        public float EffectiveRenderScale => Math.Clamp(Settings.renderScale * PixelScale, 0.2f, 1f);
+
+        public bool IsActive => Enabled && (PixelScale < 0.999f || (Settings.enabled && (Settings.AnyEffect || Override.vignetteIntensity > 0f || Override.chromaticIntensity > 0f || Override.bloomIntensity > 0f || !IsWhite(Override.colorFilter))) || VolumetricActive);
 
         private bool VolumetricActive => _lighting != null && _lighting.volumetricEnabled && _lighting.volDensity > 0f;
 
@@ -106,11 +115,12 @@ namespace RipNRage.Engine.Graphics.PostFx
         public void BeginScene(int width, int height)
         {
             // the 3D scene and the 1:1 passes run at render_scale; the final pass upsamples to the window
-            width = Math.Max(1, (int)(width * Settings.renderScale));
-            height = Math.Max(1, (int)(height * Settings.renderScale));
+            float scale = EffectiveRenderScale;
+            width = Math.Max(1, (int)(width * scale));
+            height = Math.Max(1, (int)(height * scale));
             int bw = Math.Max(1, (int)(width * Settings.bloomScale)), bh = Math.Max(1, (int)(height * Settings.bloomScale));
             bool hdr = Settings.hdr;
-            bool upsampling = Settings.renderScale < 0.999f;
+            bool upsampling = scale < 0.999f;
             if (_scene != null && (_hdrTargets != hdr || _linearTargets != upsampling)) ReleaseTargets();
             if (_scene == null)
             {

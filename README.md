@@ -58,6 +58,18 @@ Rip-n-Rage/
     └── tunables.cfg              post-processing settings, hot-reloaded while the game runs
 ```
 
+## macOS / Retina and display settings
+
+- Any .NET 10 SDK is picked up (`~/.dotnet`, Homebrew, `/usr/local/share/dotnet`); an older SDK on `PATH` is skipped.
+- The framebuffer is native Retina resolution, so the HUD and menus are sharp. **Graphics → HiDPI 3D resolution**
+  chooses whether the 3D scene renders at every physical pixel (Native) or at the point size and is upscaled
+  (Standard, the macOS default: a quarter of the pixels). Mouse clicks map correctly on any pixel density.
+- **Graphics → Display mode / Monitor / Resolution**: windowed, borderless (desktop resolution, hides the menu bar and
+  Dock, instant Cmd-Tab) or exclusive fullscreen at a chosen video mode. Toggle with Cmd+Ctrl+F on macOS, Alt+Enter / F11
+  elsewhere. Saved in `graphics.json`; command line: `--windowed | --borderless | --fullscreen`, `--monitor N`,
+  `--resolution 1920x1080@120`.
+- Moving the window between a Retina and a standard display is handled live, and Cmd-Tab no longer leaves keys stuck.
+
 ## Getting started
 
 Requirements:
@@ -77,7 +89,7 @@ cd Standalone
 ./anim.sh         # animation editor
 ./vfx.sh          # particle effect editor
 ./skeleton.sh     # sprite destruction skeleton editor
-./build.sh        # build a self-contained Linux release into dist/
+./build.sh        # self-contained release for this OS into dist/<rid>/ (on macOS also dist/osx-*/Rip-n-Rage.app)
 ```
 
 On Windows, run `Standalone/run.cmd`, or:

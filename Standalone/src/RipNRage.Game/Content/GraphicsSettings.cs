@@ -15,6 +15,13 @@ namespace RipNRage.Game.Content
     /// </summary>
     public sealed class GraphicsSettings
     {
+        // display (window mode, monitor, fullscreen resolution, HiDPI)
+        public string displayMode;        // "windowed" | "borderless" | "fullscreen"
+        public int? monitor;              // monitor index for borderless / fullscreen
+        public int? fullscreenWidth;      // exclusive fullscreen mode (null = desktop mode)
+        public int? fullscreenHeight;
+        public int? refreshRate;
+        public bool? hiDpi;               // 3D at native HiDPI pixels (true) or at the logical window size (false)
         // master / frame
         public bool? postProcessing;      // whole post-fx stack (lens + world effects)
         public float? renderScale;        // 3D resolution relative to the window
@@ -53,6 +60,57 @@ namespace RipNRage.Game.Content
         /// <summary>Gameplay-side flag read by RagePostprocess.</summary>
         public static bool RageEffectsEnabled => Current.rageEffects ?? true;
 
+        /// <summary>Default for <see cref="hiDpi"/>: Retina Macs render the 3D at point resolution (4x fewer pixels; the UI stays sharp).</summary>
+        public static bool DefaultHiDpi => !RipNRage.Engine.Platform.Window.IsMacOS;
+        public static bool HiDpiEnabled => Current.hiDpi ?? DefaultHiDpi;
+
+        public static RipNRage.Engine.Platform.DisplayMode ParseMode(string s) => s switch
+        {
+            "borderless" => RipNRage.Engine.Platform.DisplayMode.Borderless,
+            "fullscreen" => RipNRage.Engine.Platform.DisplayMode.Fullscreen,
+            _ => RipNRage.Engine.Platform.DisplayMode.Windowed,
+        };
+        public static string ModeName(RipNRage.Engine.Platform.DisplayMode m) => m.ToString().ToLowerInvariant();
+
+        /// <summary>Copies the saved display mode into the start-up options, so the window opens straight in it.</summary>
+        public static void ApplyStartupDisplay(ApplicationOptions options)
+        {
+            Load();
+            var g = Current;
+            if (string.IsNullOrEmpty(g.displayMode)) return;
+            options.DisplayMode = ParseMode(g.displayMode);
+            if (g.monitor.HasValue && options.Monitor < 0) options.Monitor = g.monitor.Value;
+            if (options.FullscreenWidth == 0 && g.fullscreenWidth.HasValue && g.fullscreenHeight.HasValue)
+            {
+                options.FullscreenWidth = g.fullscreenWidth.Value; options.FullscreenHeight = g.fullscreenHeight.Value;
+                options.RefreshRate = g.refreshRate ?? 0;
+            }
+        }
+
+        /// <summary>Switches the window to the saved display mode / monitor / resolution (menu changes).</summary>
+        public static void ApplyDisplay()
+        {
+            var w = Application.Current?.Window;
+            if (w == null) return;
+            var g = Current;
+            var mode = string.IsNullOrEmpty(g.displayMode) ? w.Mode : ParseMode(g.displayMode);
+            int mon = g.monitor ?? -1;
+            int fw = 0, fh = 0, hz = 0;
+            if (mode == RipNRage.Engine.Platform.DisplayMode.Fullscreen && g.fullscreenWidth.HasValue && g.fullscreenHeight.HasValue)
+            { fw = g.fullscreenWidth.Value; fh = g.fullscreenHeight.Value; hz = g.refreshRate ?? 0; }
+            w.SetDisplayMode(mode, mon, fw, fh, hz);
+            ApplyPixelScale();
+        }
+
+        /// <summary>HiDPI off: the 3D renders at window units (1/2 the pixels per axis on Retina) and is upsampled.</summary>
+        public static void ApplyPixelScale()
+        {
+            var app = Application.Current;
+            if (app == null) return;
+            float cs = app.Window.PixelRatio > 1.01f ? app.Window.PixelRatio : app.Window.ContentScale;
+            app.Renderer.PostFx.PixelScale = HiDpiEnabled || cs <= 1.01f ? 1f : 1f / cs;
+        }
+
         private static bool _installed;
 
         /// <summary>Loads the file and keeps the overrides applied (also after every tunables.cfg reload). Call once after the Application exists.</summary>
@@ -64,6 +122,14 @@ namespace RipNRage.Game.Content
             Apply();
             var t = Application.Current?.Tunables;
             if (t != null) t.Reloaded += _ => Apply();
+            var win = Application.Current?.Window;
+            if (win != null)
+            {
+                win.ContentScaleChanged += _ => ApplyPixelScale();
+                win.Resized += (_, _) => ApplyPixelScale();
+                // Alt+Enter / F11 / Cmd+Ctrl+F: remember the result like a menu change
+                win.DisplayModeChanged += m => { if (Current.displayMode != ModeName(m)) { Current.displayMode = ModeName(m); Save(); } };
+            }
         }
 
         public static void Load()
@@ -89,10 +155,16 @@ namespace RipNRage.Game.Content
             catch (Exception e) { Debug.LogWarning("graphics.json: could not save: " + e.Message); }
         }
 
-        /// <summary>Forgets every override: the config file's values apply again.</summary>
+        /// <summary>Forgets every effect override (display mode / resolution are kept): the config file's values apply again.</summary>
         public static void ResetToConfig()
         {
-            Current = new GraphicsSettings();
+            var old = Current;
+            // display choices aren't tunables.cfg values: keep them
+            Current = new GraphicsSettings
+            {
+                displayMode = old.displayMode, monitor = old.monitor, fullscreenWidth = old.fullscreenWidth,
+                fullscreenHeight = old.fullscreenHeight, refreshRate = old.refreshRate, hiDpi = old.hiDpi,
+            };
             Save();
             Application.Current?.Tunables?.Reload();
             Apply();
@@ -110,6 +182,7 @@ namespace RipNRage.Game.Content
 
             if (g.postProcessing.HasValue) app.Renderer.PostFx.Enabled = g.postProcessing.Value;
             if (g.renderScale.HasValue) pp.renderScale = Mathf.Clamp(g.renderScale.Value, 0.25f, 1f);
+            ApplyPixelScale();
             if (g.vsync.HasValue && app.Window.VSync != g.vsync.Value) app.Window.SetVSync(g.vsync.Value);
             if (g.hdr.HasValue) pp.hdr = g.hdr.Value;
             if (g.bloom.HasValue) pp.bloomEnabled = g.bloom.Value;

@@ -17,6 +17,12 @@ namespace RipNRage.Engine
         public int Width = 1280;
         public int Height = 720;
         public bool VSync = true;
+        /// <summary>Windowed / borderless / exclusive fullscreen at start-up.</summary>
+        public Platform.DisplayMode DisplayMode = Platform.DisplayMode.Windowed;
+        /// <summary>Monitor for borderless / fullscreen (-1 = primary).</summary>
+        public int Monitor = -1;
+        /// <summary>Exclusive fullscreen resolution and refresh rate (0 = desktop mode).</summary>
+        public int FullscreenWidth, FullscreenHeight, RefreshRate;
         /// <summary>Run this many frames then exit (automation / screenshots). 0 = run until the window closes.</summary>
         public int MaxFrames = 0;
         /// <summary>When set, a PNG screenshot is written to this path every <see cref="ScreenshotInterval"/> frames (and on exit).</summary>
@@ -85,10 +91,16 @@ namespace RipNRage.Engine
             Debug.LogWarning("Asset root: " + dataPath);
 
             GpuInfo.ApplyPreference(options.Gpu); // must precede GLFW / libGL initialisation
-            Window = new Window(options.Title, options.Width, options.Height, options.VSync);
+            Window = new Window(new WindowConfig
+            {
+                Title = options.Title, Width = options.Width, Height = options.Height, VSync = options.VSync,
+                Mode = options.DisplayMode, Monitor = options.Monitor,
+                FullscreenWidth = options.FullscreenWidth, FullscreenHeight = options.FullscreenHeight, RefreshRate = options.RefreshRate,
+            });
             GpuInfo.Query();
             Debug.LogWarning($"OpenGL {Window.GlVersion} — {Window.GlRenderer} (GLFW {Glfw.GetVersionString()})");
             Debug.LogWarning("GPU: " + GpuInfo.Summary);
+            Debug.LogWarning($"Display: {Window.Mode}, framebuffer {Window.Width}x{Window.Height} px, window {Window.WindowWidth}x{Window.WindowHeight}, content scale {Window.ContentScale:0.##}");
             if (GpuInfo.IsSoftware && options.Gpu != GpuPreference.AllowSoftware)
             {
                 Debug.LogError("!!! SOFTWARE RENDERER: every frame is rasterised on the CPU — expect single-digit fps with the full pipeline. !!!");
@@ -254,7 +266,7 @@ namespace RipNRage.Engine
                 Profiler.End();
 
                 Profiler.Begin("render");
-                if (!Options.NoRender) Renderer.Render(Scene, Window.Width, Window.Height);
+                if (!Options.NoRender && Window.Width > 0 && Window.Height > 0) Renderer.Render(Scene, Window.Width, Window.Height);
                 Profiler.End();
                 Profiler.Begin("present", gpu: false);
                 Window.SwapBuffers();

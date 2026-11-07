@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace RipNRage.Engine.Platform
 {
-    /// <summary>Minimal GLFW 3.3 binding (only what the engine needs).</summary>
+    /// <summary>Minimal GLFW 3.3/3.4 binding (only what the engine needs).</summary>
     public static class Glfw
     {
         private const string Lib = NativeLoader.GlfwLib;
@@ -19,6 +19,22 @@ namespace RipNRage.Engine.Platform
         public const int DOUBLEBUFFER = 0x00021010;
         public const int SRGB_CAPABLE = 0x0002100E;
         public const int DEPTH_BITS = 0x00021005;
+        public const int REFRESH_RATE = 0x0002100F;
+        public const int FOCUSED = 0x00020001;
+        public const int ICONIFIED = 0x00020002;
+        public const int DECORATED = 0x00020005;
+        public const int AUTO_ICONIFY = 0x00020006;
+        public const int FLOATING = 0x00020007;
+        public const int MAXIMIZED = 0x00020008;
+        public const int FOCUS_ON_SHOW = 0x0002000C;
+        public const int SCALE_TO_MONITOR = 0x0002200C;            // Windows / X11: window size is in logical units
+        public const int COCOA_RETINA_FRAMEBUFFER = 0x00023001;    // macOS: full-resolution framebuffer on Retina
+        public const int COCOA_FRAME_NAME = 0x00023002;            // macOS: autosave name for the window frame
+        public const int COCOA_GRAPHICS_SWITCHING = 0x00023003;    // macOS: allow the integrated GPU on dual-GPU Macs
+        public const int DONT_CARE = -1;
+        // init hints (glfwInitHint, before glfwInit)
+        public const int COCOA_CHDIR_RESOURCES = 0x00051001;
+        public const int COCOA_MENUBAR = 0x00051002;
 
         public const int CURSOR = 0x00033001;
         public const int CURSOR_NORMAL = 0x00034001;
@@ -48,6 +64,21 @@ namespace RipNRage.Engine.Platform
         public delegate void ScrollCallback(IntPtr window, double xoffset, double yoffset);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void CharCallback(IntPtr window, uint codepoint);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void WindowContentScaleCallback(IntPtr window, float xscale, float yscale);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void WindowSizeCallback(IntPtr window, int width, int height);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void WindowFocusCallback(IntPtr window, int focused);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void MonitorCallback(IntPtr monitor, int evt);
+
+        /// <summary>GLFWvidmode.</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        public struct VideoMode
+        {
+            public int width, height, redBits, greenBits, blueBits, refreshRate;
+        }
 
         [DllImport(Lib, EntryPoint = "glfwInit", CallingConvention = CallingConvention.Cdecl)] public static extern int Init();
         [DllImport(Lib, EntryPoint = "glfwTerminate", CallingConvention = CallingConvention.Cdecl)] public static extern void Terminate();
@@ -81,6 +112,44 @@ namespace RipNRage.Engine.Platform
         [DllImport(Lib, EntryPoint = "glfwRawMouseMotionSupported", CallingConvention = CallingConvention.Cdecl)] public static extern int RawMouseMotionSupported();
         [DllImport(Lib, EntryPoint = "glfwGetTime", CallingConvention = CallingConvention.Cdecl)] public static extern double GetTime();
         [DllImport(Lib, EntryPoint = "glfwSetWindowTitle", CallingConvention = CallingConvention.Cdecl)] public static extern void SetWindowTitle(IntPtr window, [MarshalAs(UnmanagedType.LPUTF8Str)] string title);
+        [DllImport(Lib, EntryPoint = "glfwInitHint", CallingConvention = CallingConvention.Cdecl)] public static extern void InitHint(int hint, int value);
+        [DllImport(Lib, EntryPoint = "glfwWindowHintString", CallingConvention = CallingConvention.Cdecl)] public static extern void WindowHintString(int hint, [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
+        [DllImport(Lib, EntryPoint = "glfwGetWindowContentScale", CallingConvention = CallingConvention.Cdecl)] public static extern void GetWindowContentScale(IntPtr window, out float xscale, out float yscale);
+        [DllImport(Lib, EntryPoint = "glfwSetWindowContentScaleCallback", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SetWindowContentScaleCallback(IntPtr window, WindowContentScaleCallback cb);
+        [DllImport(Lib, EntryPoint = "glfwSetWindowSizeCallback", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SetWindowSizeCallback(IntPtr window, WindowSizeCallback cb);
+        [DllImport(Lib, EntryPoint = "glfwSetWindowFocusCallback", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SetWindowFocusCallback(IntPtr window, WindowFocusCallback cb);
+        [DllImport(Lib, EntryPoint = "glfwSetMonitorCallback", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SetMonitorCallback(MonitorCallback cb);
+        [DllImport(Lib, EntryPoint = "glfwGetWindowPos", CallingConvention = CallingConvention.Cdecl)] public static extern void GetWindowPos(IntPtr window, out int x, out int y);
+        [DllImport(Lib, EntryPoint = "glfwSetWindowPos", CallingConvention = CallingConvention.Cdecl)] public static extern void SetWindowPos(IntPtr window, int x, int y);
+        [DllImport(Lib, EntryPoint = "glfwSetWindowSize", CallingConvention = CallingConvention.Cdecl)] public static extern void SetWindowSize(IntPtr window, int width, int height);
+        [DllImport(Lib, EntryPoint = "glfwSetWindowSizeLimits", CallingConvention = CallingConvention.Cdecl)] public static extern void SetWindowSizeLimits(IntPtr window, int minw, int minh, int maxw, int maxh);
+        [DllImport(Lib, EntryPoint = "glfwSetWindowAttrib", CallingConvention = CallingConvention.Cdecl)] public static extern void SetWindowAttrib(IntPtr window, int attrib, int value);
+        [DllImport(Lib, EntryPoint = "glfwShowWindow", CallingConvention = CallingConvention.Cdecl)] public static extern void ShowWindow(IntPtr window);
+        [DllImport(Lib, EntryPoint = "glfwGetWindowMonitor", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr GetWindowMonitor(IntPtr window);
+        [DllImport(Lib, EntryPoint = "glfwSetWindowMonitor", CallingConvention = CallingConvention.Cdecl)] public static extern void SetWindowMonitor(IntPtr window, IntPtr monitor, int x, int y, int width, int height, int refreshRate);
+        [DllImport(Lib, EntryPoint = "glfwGetMonitors", CallingConvention = CallingConvention.Cdecl)] private static extern unsafe IntPtr* GetMonitorsPtr(out int count);
+        public static unsafe IntPtr[] GetMonitors()
+        {
+            IntPtr* p = GetMonitorsPtr(out int n);
+            var r = new IntPtr[p == null ? 0 : n];
+            for (int i = 0; i < r.Length; i++) r[i] = p[i];
+            return r;
+        }
+        [DllImport(Lib, EntryPoint = "glfwGetVideoMode", CallingConvention = CallingConvention.Cdecl)] private static extern unsafe VideoMode* GetVideoModePtr(IntPtr monitor);
+        public static unsafe VideoMode GetVideoMode(IntPtr monitor) { var p = GetVideoModePtr(monitor); return p == null ? default : *p; }
+        [DllImport(Lib, EntryPoint = "glfwGetVideoModes", CallingConvention = CallingConvention.Cdecl)] private static extern unsafe VideoMode* GetVideoModesPtr(IntPtr monitor, out int count);
+        public static unsafe VideoMode[] GetVideoModes(IntPtr monitor)
+        {
+            VideoMode* p = GetVideoModesPtr(monitor, out int n);
+            var r = new VideoMode[p == null ? 0 : n];
+            for (int i = 0; i < r.Length; i++) r[i] = p[i];
+            return r;
+        }
+        [DllImport(Lib, EntryPoint = "glfwGetMonitorName", CallingConvention = CallingConvention.Cdecl)] private static extern IntPtr GetMonitorNamePtr(IntPtr monitor);
+        public static string GetMonitorName(IntPtr monitor) { var p = GetMonitorNamePtr(monitor); return p == IntPtr.Zero ? "" : Marshal.PtrToStringUTF8(p); }
+        [DllImport(Lib, EntryPoint = "glfwGetMonitorPos", CallingConvention = CallingConvention.Cdecl)] public static extern void GetMonitorPos(IntPtr monitor, out int x, out int y);
+        [DllImport(Lib, EntryPoint = "glfwGetMonitorWorkarea", CallingConvention = CallingConvention.Cdecl)] public static extern void GetMonitorWorkarea(IntPtr monitor, out int x, out int y, out int width, out int height);
+        [DllImport(Lib, EntryPoint = "glfwGetMonitorContentScale", CallingConvention = CallingConvention.Cdecl)] public static extern void GetMonitorContentScale(IntPtr monitor, out float xscale, out float yscale);
         [DllImport(Lib, EntryPoint = "glfwGetPrimaryMonitor", CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr GetPrimaryMonitor();
         [DllImport(Lib, EntryPoint = "glfwFocusWindow", CallingConvention = CallingConvention.Cdecl)] public static extern void FocusWindow(IntPtr window);
         [DllImport(Lib, EntryPoint = "glfwGetWindowAttrib", CallingConvention = CallingConvention.Cdecl)] public static extern int GetWindowAttrib(IntPtr window, int attrib);

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Builds (if needed) and runs the standalone game using the private .NET toolchain in ./.dotnet.
-# No root, no internet needed once .dotnet exists; run tools/setup-dotnet.sh otherwise (Ubuntu archive only).
+# Uses any .NET 10 SDK it finds (see tools/env.sh); installs a private one into ./.dotnet if there is none.
 set -e
 cd "$(dirname "$0")"
-[ -x .dotnet/dotnet ] || command -v dotnet >/dev/null || tools/setup-dotnet.sh
 source tools/env.sh
 dotnet build -c Release --nologo -v q src/RipNRage.Game/RipNRage.Game.csproj
 exec dotnet src/RipNRage.Game/bin/Release/net10.0/RipNRage.dll "$@"
