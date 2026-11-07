@@ -1,3 +1,6 @@
+using RipNRage.Engine.UI;
+using RipNRage.Engine.UI.Clay;
+
 namespace RipNRage.Engine.Graphics
 {
     public enum TextAnchor { UpperLeft, UpperCenter, UpperRight, MiddleLeft, MiddleCenter, MiddleRight, LowerLeft, LowerCenter, LowerRight }
@@ -23,6 +26,29 @@ namespace RipNRage.Engine.Graphics
             float y = ay + anchoredPosition.y * scale - pivot.y * h;
             return new Rect(x, y, w, h);
         }
+
+        /// <summary>
+        /// The same placement as a Clay floating element on the screen root: pivot → element attach point, anchor →
+        /// root attach point, anchoredPosition → offset. Anchors / pivots must be 0, 0.5 or 1 on each axis (9-point).
+        /// </summary>
+        public El ToClay(short zIndex, string id = null) => new El
+        {
+            id = id,
+            width = Size.Fixed(sizeDelta.x), height = Size.Fixed(sizeDelta.y),
+            floating = new Float
+            {
+                enabled = true, attachTo = Clay_FloatingAttachToElement.Root, zIndex = zIndex, passthrough = true,
+                element = Point(pivot), parent = Point(anchor),
+                offset = new Vector2(anchoredPosition.x, -anchoredPosition.y), // Clay's +y is down
+            },
+        };
+
+        private static Clay_FloatingAttachPointType Point(Vector2 p)
+        {
+            int col = p.x < 0.25f ? 0 : p.x > 0.75f ? 2 : 1;   // left / center / right
+            int row = p.y > 0.75f ? 0 : p.y < 0.25f ? 2 : 1;   // top / center / bottom (Clay is top-down)
+            return (Clay_FloatingAttachPointType)(col * 3 + row);
+        }
     }
 
     public enum FillMethod { Horizontal, Vertical, Radial360 }
@@ -41,6 +67,23 @@ namespace RipNRage.Engine.Graphics
         public string name;
 
         public UiImage(string name = "Image") { this.name = name; }
+
+        private System.Action<UiBatch, Rect, float> _drawFill;
+
+        /// <summary>Declares the image as a floating Clay element (filled images draw through a custom element).</summary>
+        public void Build(ClayUi c, short zIndex)
+        {
+            if (!enabled || sprite == null) return;
+            var e = rectTransform.ToClay(zIndex);
+            if (!filled) { e.image = sprite; e.background = color; }
+            else e.custom = _drawFill ??= (ui, r, a) =>
+            {
+                var col = new Color(color.r, color.g, color.b, color.a * a);
+                if (fillMethod == FillMethod.Radial360) ui.DrawRadialFilled(sprite, r, fillAmount, fillClockwise, col);
+                else ui.DrawFilled(sprite, r, fillAmount, col, fillMethod == FillMethod.Vertical);
+            };
+            c.Leaf(e);
+        }
 
         public void Draw(UiBatch ui)
         {
@@ -61,6 +104,17 @@ namespace RipNRage.Engine.Graphics
         public Color color = Color.white;
         public TextAnchor alignment = TextAnchor.MiddleCenter;
         public bool enabled = true;
+
+        /// <summary>Declares the text as a floating Clay box aligned like <see cref="alignment"/>.</summary>
+        public void Build(ClayUi c, short zIndex)
+        {
+            if (!enabled || string.IsNullOrEmpty(text)) return;
+            var e = rectTransform.ToClay(zIndex);
+            int a = (int)alignment;
+            e.alignX = (a % 3) switch { 0 => Clay_LayoutAlignmentX.Left, 1 => Clay_LayoutAlignmentX.Center, _ => Clay_LayoutAlignmentX.Right };
+            e.alignY = (a / 3) switch { 0 => Clay_LayoutAlignmentY.Top, 1 => Clay_LayoutAlignmentY.Center, _ => Clay_LayoutAlignmentY.Bottom };
+            using (c.Box(e)) c.Text(text, new TextStyle(fontSize / BitmapFont.GlyphH, color, wrap: Clay_TextWrapMode.None));
+        }
 
         public void Draw(UiBatch ui)
         {

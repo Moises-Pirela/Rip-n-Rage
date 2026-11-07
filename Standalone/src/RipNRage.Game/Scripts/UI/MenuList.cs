@@ -1,3 +1,5 @@
+using RipNRage.Engine.UI;
+using RipNRage.Engine.UI.Clay;
 using System;
 using System.Collections.Generic;
 
@@ -22,11 +24,11 @@ public sealed class MenuItem
 }
 
 /// <summary>
-/// Immediate-mode vertical menu drawn with the engine's bitmap font through <see cref="UiBatch"/>.
+/// Immediate-mode vertical menu laid out with Clay (<see cref="ClayUi"/>) and drawn with the engine's bitmap font.
 /// Shared by the death screen, the pause menu and the main menu. Keyboard (arrows / W S, Enter / Space)
 /// and mouse (hover selects, left click activates) both work; sizes are in reference pixels of the
 /// 1080p canvas and scale with <see cref="UiBatch.Scale"/>. Nothing here touches gameplay state: the
-/// caller reacts to the <see cref="MenuItem"/> returned by <see cref="HandleKeyboard"/> / <see cref="Draw"/>.
+/// caller reacts to the <see cref="MenuItem"/> returned by <see cref="HandleKeyboard"/> / <see cref="Build"/>.
 /// </summary>
 public sealed class MenuList
 {
@@ -88,13 +90,6 @@ public sealed class MenuList
 
     public MenuItem Selected => items.Count > 0 ? items[Mathf.Clamp(selected, 0, items.Count - 1)] : null;
 
-    /// <summary>Total height in screen pixels for the current canvas scale.</summary>
-    public float Height(UiBatch ui)
-    {
-        int n = visibleRows > 0 ? Mathf.Min(visibleRows, items.Count) : items.Count;
-        return (n * itemHeight + Mathf.Max(0, n - 1) * itemGap) * ui.Scale;
-    }
-
     /// <summary>
     /// Forget the mouse position seen so far: hovering only counts after the mouse has moved again.
     /// Call when the menu opens, so a cursor that was locked (or parked over a button) cannot select or
@@ -147,15 +142,13 @@ public sealed class MenuList
     }
 
     /// <summary>
-    /// Draws the list horizontally centred on <paramref name="centerX"/> with its top edge at <paramref name="topY"/>
-    /// (pixels, origin bottom-left) and handles mouse hover / click. <paramref name="alpha"/> fades the whole list.
-    /// Returns the item clicked this frame, or null.
+    /// Declares the list inside the current Clay layout (a centred column of fixed-width rows) and handles mouse hover
+    /// / click. <paramref name="alpha"/> fades the colours (the whole layout is also faded by <see cref="ClayUi.End"/>,
+    /// so callers normally pass 1). Returns the item clicked this frame, or null.
     /// </summary>
-    public MenuItem Draw(UiBatch ui, float centerX, float topY, float alpha = 1f)
+    public MenuItem Build(ClayUi c, float alpha = 1f)
     {
         if (items.Count == 0 || alpha <= 0.001f) return null;
-        float s = ui.Scale;
-        float w = itemWidth * s, h = itemHeight * s, gap = itemGap * s;
 
         Vector2 mouse = Input.mousePosition;
         if ((mouse - _lastMouse).sqrMagnitude > 1f) { _mouseActive = true; _lastMouse = mouse; }
@@ -163,82 +156,76 @@ public sealed class MenuList
 
         // scrolling window of rows
         int first = 0, last = items.Count;
-        if (visibleRows > 0 && items.Count > visibleRows)
+        bool scrolling = visibleRows > 0 && items.Count > visibleRows;
+        if (scrolling)
         {
             if (selected < _scroll) _scroll = selected;
             if (selected >= _scroll + visibleRows) _scroll = selected - visibleRows + 1;
             _scroll = Mathf.Clamp(_scroll, 0, items.Count - visibleRows);
             first = _scroll; last = _scroll + visibleRows;
-            var dim = new Color(normalText.r, normalText.g, normalText.b, 0.6f * alpha);
-            if (first > 0) DrawCentered(ui, "^ MORE ^", centerX, topY + 14f * s, hintScale * s, dim);
-            if (last < items.Count) DrawCentered(ui, "v MORE v", centerX, topY - visibleRows * (h + gap) + 2f * s, hintScale * s, dim);
         }
+        var dim = new TextStyle(hintScale, new Color(normalText.r, normalText.g, normalText.b, 0.6f * alpha));
 
         MenuItem clicked = null;
-        for (int i = first; i < last; i++)
+        using (c.Box(new El { id = "menu", vertical = true, gap = itemGap, alignX = Clay_LayoutAlignmentX.Center, width = Size.Fit(), height = Size.Fit() }))
         {
-            var item = items[i];
-            var r = new Rect(centerX - w * 0.5f, topY - h - (i - first) * (h + gap), w, h);
-            bool hover = mouseUsable && item.enabled && r.Contains(mouse);
-            if (hover && selected != i) { selected = i; onSelectionChanged?.Invoke(i); }
-            bool sel = i == selected && item.enabled;
-
-            Color box = sel ? boxHighlight : boxColor; box.a *= alpha;
-            ui.FillRect(r, box);
-            Color border = sel ? highlightText : borderColor; border.a *= alpha;
-            DrawBorder(ui, r, border, Mathf.Max(1f, 2f * s));
-
-            Color c = !item.enabled ? disabledText : sel ? highlightText : normalText;
-            c.a *= alpha;
-            float ls = labelScale * s;
-            Vector2 size = ui.MeasureText(item.label, ls);
-            if (item.IsSetting)
+            if (scrolling) MoreMarker(c, first > 0 ? "^ MORE ^" : null, dim);
+            for (int i = first; i < last; i++)
             {
-                // label left, "< VALUE >" right
-                float top = r.y + (r.height + size.y) * 0.5f;
-                ui.DrawText(item.label, new Vector2(r.x + 18f * s, top), ls, c);
-                string v = item.valueText != null ? item.valueText() : "";
-                string shown = sel ? "< " + v + " >" : v;
-                Vector2 vs = ui.MeasureText(shown, ls);
-                var vc = new Color(1f, 1f, 1f, c.a);
-                ui.DrawText(shown, new Vector2(r.xMax - 18f * s - vs.x, top), ls, sel ? c : vc);
-                if (!string.IsNullOrEmpty(item.hint) && sel)
+                var item = items[i];
+                // hover from the previous layout (the row's box doesn't move between frames)
+                bool hover = mouseUsable && item.enabled && c.PointerOver("menu-row", i);
+                if (hover && selected != i) { selected = i; onSelectionChanged?.Invoke(i); }
+                bool sel = i == selected && item.enabled;
+
+                Color box = sel ? boxHighlight : boxColor; box.a *= alpha;
+                Color border = sel ? highlightText : borderColor; border.a *= alpha;
+                Color col = !item.enabled ? disabledText : sel ? highlightText : normalText; col.a *= alpha;
+                var label = new TextStyle(labelScale, col, wrap: Clay_TextWrapMode.None);
+                var hint = new TextStyle(hintScale, new Color(col.r, col.g, col.b, col.a * 0.7f), wrap: Clay_TextWrapMode.None);
+
+                using (c.Box(new El
                 {
-                    float hs = hintScale * s;
-                    Vector2 hsize = ui.MeasureText(item.hint, hs);
-                    ui.DrawText(item.hint, new Vector2(centerX - hsize.x * 0.5f, r.y - 2f * s), hs, new Color(c.r, c.g, c.b, c.a * 0.7f));
+                    id = "menu-row", idIndex = i, width = Size.Fixed(itemWidth), height = Size.Fixed(itemHeight),
+                    padding = new Pad(16f, 0f), alignY = Clay_LayoutAlignmentY.Center, background = box, borderColor = border, border = 2f,
+                }))
+                {
+                    if (item.IsSetting)
+                    {
+                        // label left, "< VALUE >" right, hint floating under the selected row
+                        using (c.Box(new El { width = Size.Grow(), padding = new Pad(2f, 0f) })) c.Text(item.label, label);
+                        string v = item.valueText != null ? item.valueText() : "";
+                        c.Text(sel ? "< " + v + " >" : v, sel ? label : new TextStyle(labelScale, new Color(1f, 1f, 1f, col.a), wrap: Clay_TextWrapMode.None));
+                        if (sel && !string.IsNullOrEmpty(item.hint))
+                            using (c.Box(new El { floating = Float.ToParent(Clay_FloatingAttachPointType.CenterTop, Clay_FloatingAttachPointType.CenterBottom, new Vector2(0f, 2f), 5) }))
+                                c.Text(item.hint, hint);
+                        if (hover && Input.GetMouseButtonDown(0) && c.TryGetBounds("menu-row", out Rect r, i)) Adjust(mouse.x > r.center.x ? 1 : -1);
+                        else if (hover && Input.GetMouseButtonDown(1)) Adjust(-1);
+                        continue;
+                    }
+
+                    // small diamonds on both sides mark the highlighted entry
+                    Color mark = sel && interactable ? col : default;
+                    c.Leaf(new El { width = Size.Fixed(7f), height = Size.Fixed(7f), background = mark });
+                    using (c.Box(new El { width = Size.Grow(), vertical = true, gap = 4f, alignX = Clay_LayoutAlignmentX.Center }))
+                    {
+                        c.Text(item.label, label);
+                        if (!string.IsNullOrEmpty(item.hint)) c.Text(item.hint, hint);
+                    }
+                    c.Leaf(new El { width = Size.Fixed(7f), height = Size.Fixed(7f), background = mark });
                 }
-                if (hover && Input.GetMouseButtonDown(0)) { bool right = mouse.x > r.center.x; Adjust(right ? 1 : -1); }
-                else if (hover && Input.GetMouseButtonDown(1)) Adjust(-1);
-                continue;
+                if (hover && Input.GetMouseButtonDown(0)) clicked = item;
             }
-            if (!string.IsNullOrEmpty(item.hint))
-            {
-                float hs = hintScale * s;
-                Vector2 hsize = ui.MeasureText(item.hint, hs);
-                float total = size.y + hsize.y + 4f * s;
-                float top = r.y + (r.height + total) * 0.5f;
-                ui.DrawText(item.label, new Vector2(centerX - size.x * 0.5f, top), ls, c);
-                var hc = new Color(c.r, c.g, c.b, c.a * 0.7f);
-                ui.DrawText(item.hint, new Vector2(centerX - hsize.x * 0.5f, top - size.y - 4f * s), hs, hc);
-            }
-            else
-            {
-                float top = r.y + (r.height + size.y) * 0.5f;
-                ui.DrawText(item.label, new Vector2(centerX - size.x * 0.5f, top), ls, c);
-            }
-
-            if (sel && interactable)
-            {
-                // small diamonds on both sides mark the highlighted entry
-                float m = 7f * s;
-                ui.FillRect(new Rect(r.x + 16f * s, r.center.y - m * 0.5f, m, m), c);
-                ui.FillRect(new Rect(r.xMax - 16f * s - m, r.center.y - m * 0.5f, m, m), c);
-            }
-
-            if (hover && Input.GetMouseButtonDown(0)) clicked = item;
+            if (scrolling) MoreMarker(c, last < items.Count ? "v MORE v" : null, dim);
         }
         return clicked;
+    }
+
+    /// <summary>Fixed-height slot above / below a scrolling list (keeps the rows from jumping when it appears).</summary>
+    private void MoreMarker(ClayUi c, string text, TextStyle style)
+    {
+        using (c.Box(new El { height = Size.Fixed(hintScale * 8f), alignX = Clay_LayoutAlignmentX.Center }))
+            if (text != null) c.Text(text, style);
     }
 
     public static void DrawBorder(UiBatch ui, Rect r, Color c, float t)
@@ -262,4 +249,39 @@ public sealed class MenuList
         ui.DrawText(text, new Vector2(x, topY), scale, color);
         return size.y;
     }
+}
+
+/// <summary>
+/// Small Clay layout helpers shared by the menu screens. Lengths are reference pixels of the 1080-high canvas, so a
+/// screen position given as a fraction of the height is simply <c>fraction * 1080</c>.
+/// </summary>
+public static class ClayScreen
+{
+    public const float RefHeight = 1080f;
+
+    /// <summary>Full-screen centred column whose content starts <paramref name="topRef"/> below the top edge.</summary>
+    public static El Column(float topRef, float gap = 0f) => new El
+    {
+        id = "screen", width = Size.Grow(), height = Size.Grow(), vertical = true, gap = gap,
+        alignX = Clay_LayoutAlignmentX.Center, padding = new Pad(0f, 0f, topRef, 0f),
+    };
+
+    /// <summary>A centred column placed absolutely with its top edge <paramref name="topRef"/> below the screen top.</summary>
+    public static El FloatingColumn(float topRef, string id = null, float gap = 0f) => new El
+    {
+        id = id, vertical = true, gap = gap, alignX = Clay_LayoutAlignmentX.Center,
+        floating = Float.ToRoot(Clay_FloatingAttachPointType.CenterTop, new Vector2(0f, topRef)),
+    };
+
+    public static void Gap(ClayUi c, float px) => c.Leaf(new El { height = Size.Fixed(px) });
+
+    /// <summary>One line of text centred at the bottom; <paramref name="topFromBottomRef"/> is where its top edge sits (old DrawCentered convention).</summary>
+    public static void Footer(ClayUi c, string text, float topFromBottomRef, TextStyle style)
+    {
+        float bottom = topFromBottomRef - style.size * BitmapFont.Cell;
+        using (c.Box(new El { floating = Float.ToRoot(Clay_FloatingAttachPointType.CenterBottom, new Vector2(0f, -bottom)) }))
+            c.Text(text, style);
+    }
+
+    public static TextStyle Line(float size, Color color, bool shadow = false) => new TextStyle(size, color, shadow, wrap: Clay_TextWrapMode.None);
 }

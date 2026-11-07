@@ -1,3 +1,5 @@
+using RipNRage.Engine.UI;
+using RipNRage.Engine.UI.Clay;
 using System;
 using RipNRage.Game.Content;
 
@@ -11,6 +13,9 @@ namespace RipNRage.Game
     ///   --assets &lt;dir&gt;        the assets folder, or a folder containing it (auto-detected otherwise)
     ///   --width W --height H   window size (default 1280x720)
     ///   --no-vsync             disable vertical sync
+    ///   --windowed / --borderless / --fullscreen   display mode (default: the one saved in graphics.json, else windowed)
+    ///   --monitor N            monitor index for borderless / fullscreen (0 = first; default: primary)
+    ///   --resolution WxH[@Hz]  exclusive fullscreen video mode (default: the monitor's desktop mode)
     ///   --mute                 disable audio
     ///   --verbose              print Debug.Log output
     ///   --frames N             run N frames then exit (automation)
@@ -46,6 +51,7 @@ namespace RipNRage.Game
             string loadSlot = null;
             bool? startInMenu = null;
             bool gpuInfoOnly = false;
+            bool displayFromCli = false;
             for (int i = 0; i < args.Length; i++)
             {
                 string a = args[i];
@@ -56,6 +62,20 @@ namespace RipNRage.Game
                     case "--width": options.Width = int.Parse(Next()); break;
                     case "--height": options.Height = int.Parse(Next()); break;
                     case "--no-vsync": options.VSync = false; break;
+                    case "--windowed": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Windowed; displayFromCli = true; break;
+                    case "--borderless": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Borderless; displayFromCli = true; break;
+                    case "--fullscreen": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Fullscreen; displayFromCli = true; break;
+                    case "--monitor": options.Monitor = int.Parse(Next()); break;
+                    case "--resolution":
+                    {
+                        string r = Next();
+                        string[] hz = r.Split('@');
+                        string[] wh = hz[0].ToLowerInvariant().Split('x');
+                        if (wh.Length != 2) throw new ArgumentException("--resolution expects WxH or WxH@Hz");
+                        options.FullscreenWidth = int.Parse(wh[0]); options.FullscreenHeight = int.Parse(wh[1]);
+                        if (hz.Length > 1) options.RefreshRate = int.Parse(hz[1]);
+                        break;
+                    }
                     case "--mute": options.Mute = true; break;
                     case "--verbose": options.Verbose = true; break;
                     case "--frames": options.MaxFrames = int.Parse(Next()); break;
@@ -99,6 +119,9 @@ namespace RipNRage.Game
 
             try
             {
+                // saved display choices (graphics.json) — not for automation runs, which must stay windowed and sized
+                bool automation = script != null || options.MaxFrames > 0 || gpuInfoOnly || exportDock != null || exportAnims != null;
+                if (!automation && !displayFromCli) RipNRage.Game.Content.GraphicsSettings.ApplyStartupDisplay(options);
                 using var app = new Application(options);
                 if (gpuInfoOnly)
                 {
@@ -170,37 +193,66 @@ namespace RipNRage.Game
             if (Input.GetKeyDown(KeyCode.F11)) { Profiler.SyncGpu = !Profiler.SyncGpu; _message = Profiler.SyncGpu ? "Profiler: GPU sync on (CPU times include GPU work)" : "Profiler: GPU sync off"; _messageTimer = 3f; }
         }
 
+        private readonly RipNRage.Engine.UI.ClayUi _clay = new RipNRage.Engine.UI.ClayUi(8192);
+        protected override void OnDestroy() => _clay.Dispose();
+
+        // the overlay keeps its pixel-exact text size (2 px per glyph pixel at 1080p, never below 1): Clay lengths are
+        // reference pixels, so screen sizes are divided by the canvas scale
+        private float R(float screenPx) => screenPx / _clay.Scale;
+
         public void DrawUi(UiBatch ui)
         {
-            if (_messageTimer > 0f)
-            {
-                float ms = Mathf.Max(1f, ui.Scale * 2f);
-                ui.DrawText(_message.ToUpperInvariant(), new Vector2(ui.Width * 0.5f - _message.Length * 3.5f * ms, ui.Height * 0.62f), ms * 1.5f, new Color(1f, 0.9f, 0.4f, 1f));
-            }
+            var renderer = Application.Current.Renderer;
+            bool software = RipNRage.Engine.Platform.GpuInfo.IsSoftware;
+            if (_messageTimer <= 0f && !software && mode == 0) return;
+
+            var c = _clay;
+            c.PointerEnabled = false;
+            c.Begin(ui);
             float s = Mathf.Max(1f, ui.Scale * 2f);
             float lineH = (BitmapFont.GlyphH + 1) * s;
-            var renderer = Application.Current.Renderer;
-            if (RipNRage.Engine.Platform.GpuInfo.IsSoftware)
+            var line = new TextStyle(R(s), Color.white, wrap: Clay_TextWrapMode.Newlines);
+
+            if (_messageTimer > 0f)
+            {
+                using (c.Box(ClayScreen.FloatingColumn(0.38f * ClayScreen.RefHeight)))
+                    c.Text(_message.ToUpperInvariant(), ClayScreen.Line(R(Mathf.Max(1f, ui.Scale * 2f) * 1.5f), new Color(1f, 0.9f, 0.4f, 1f)));
+            }
+            if (software)
             {
                 // always shown: the single most important performance fact about this machine
                 string warn = $"SOFTWARE RENDERER ({RipNRage.Engine.Platform.GpuInfo.Renderer.ToUpperInvariant()}): THE GPU IS NOT IN USE, EVERY PIXEL IS COMPUTED ON THE CPU. SEE THE CONSOLE FOR FIXES.";
-                float ww = ui.MeasureText(warn, s).x + 16f;
-                ui.FillRect(new Rect(ui.Width * 0.5f - ww * 0.5f, ui.Height - lineH * 2.6f - 6f, ww, lineH + 8f), new Color(0.6f, 0.05f, 0.05f, 0.9f));
-                ui.DrawText(warn, new Vector2(ui.Width * 0.5f - ww * 0.5f + 8f, ui.Height - lineH * 1.6f - 2f), s, Color.white);
+                var box = ClayScreen.FloatingColumn(R(lineH * 1.6f + 2f));
+                box.padding = new RipNRage.Engine.UI.Pad(R(8f), R(4f));
+                box.background = new Color(0.6f, 0.05f, 0.05f, 0.9f);
+                using (c.Box(box)) c.Text(warn, ClayScreen.Line(R(s), Color.white));
             }
-            if (mode == 0) return;
+            if (mode == 0) { c.End(); return; }
 
-            // ---- frame line: the real numbers (wall clock), never the simulated delta
-            string frame = $"FPS {Profiler.Fps:0.0}  1% LOW {Profiler.FpsLow1:0.0}   FRAME {Profiler.FrameMsAvg:0.0} MS AVG  {Profiler.FrameMsP99:0.0} P99  {Profiler.FrameMsMax:0.0} MAX";
-            if (Profiler.GpuTimersAvailable) frame += $"   GPU {Profiler.GpuFrameMsAvg:0.0} MS";
-            frame += $"   PRESENT {Profiler.PresentMsAvg:0.0} MS";
-            if (Profiler.SimulationDeltaFixed) frame += $"   SIM DT FIXED {Profiler.SimulationDelta * 1000f:0.0} MS (NOT REAL TIME)";
-            else if (Time.timeScale != 1f) frame += $"   TIMESCALE {Time.timeScale:0.00}";
-            Color frameColor = Profiler.FrameMsAvg > 33.4 ? new Color(1f, 0.45f, 0.35f, 1f) : Profiler.FrameMsAvg > 16.8 ? new Color(1f, 0.85f, 0.4f, 1f) : new Color(0.6f, 1f, 0.6f, 1f);
-            ui.DrawText(frame, new Vector2(12, ui.Height - 12), s, frameColor);
-            if (mode == 1) return;
+            // ---- top-left column: frame line, then (full mode) the stats block
+            using (c.Box(new El { vertical = true, gap = R(lineH * 0.2f), padding = new RipNRage.Engine.UI.Pad(R(12f), 0f, R(12f) - R(BitmapFont.GlyphH * s), 0f),
+                floating = Float.ToRoot(Clay_FloatingAttachPointType.LeftTop, default, 1) }))
+            {
+                // the real numbers (wall clock), never the simulated delta
+                string frame = $"FPS {Profiler.Fps:0.0}  1% LOW {Profiler.FpsLow1:0.0}   FRAME {Profiler.FrameMsAvg:0.0} MS AVG  {Profiler.FrameMsP99:0.0} P99  {Profiler.FrameMsMax:0.0} MAX";
+                if (Profiler.GpuTimersAvailable) frame += $"   GPU {Profiler.GpuFrameMsAvg:0.0} MS";
+                frame += $"   PRESENT {Profiler.PresentMsAvg:0.0} MS";
+                if (Profiler.SimulationDeltaFixed) frame += $"   SIM DT FIXED {Profiler.SimulationDelta * 1000f:0.0} MS (NOT REAL TIME)";
+                else if (Time.timeScale != 1f) frame += $"   TIMESCALE {Time.timeScale:0.00}";
+                Color frameColor = Profiler.FrameMsAvg > 33.4 ? new Color(1f, 0.45f, 0.35f, 1f) : Profiler.FrameMsAvg > 16.8 ? new Color(1f, 0.85f, 0.4f, 1f) : new Color(0.6f, 1f, 0.6f, 1f);
+                c.Text(frame, new TextStyle(R(s), frameColor, wrap: Clay_TextWrapMode.None));
+                if (mode == 2) c.Text(BuildStats(renderer), new TextStyle(R(s), new Color(1, 1, 1, 0.85f), wrap: Clay_TextWrapMode.Newlines));
+            }
+            if (mode == 2)
+            {
+                BuildStageTable(c, ui, s, lineH);
+                BuildFrameGraph(c, ui, s, lineH);
+            }
+            c.End();
+        }
 
-            float y = ui.Height - 12 - lineH * 1.2f;
+        private string BuildStats(RenderPipeline renderer)
+        {
             string text = "";
             var ps = PlayerState.Current;
             var cam = Camera.main;
@@ -240,56 +292,66 @@ namespace RipNRage.Game
             }
             text += "WASD MOVE  MOUSE LOOK  LMB FIRE  RMB JAB  1-4/WHEEL WEAPONS  SPACE JUMP  F3 OVERLAY  F11 GPU SYNC  ESC PAUSE\n";
             text += "F6 QUICK SAVE  F9 QUICK LOAD  F7 LOAD CHECKPOINT  F8 RESTART LEVEL";
-            ui.DrawText(text, new Vector2(12, y), s, new Color(1, 1, 1, 0.85f));
-
-            DrawStageTable(ui, s, lineH);
-            DrawFrameGraph(ui, s, lineH);
+            return text;
         }
 
-        /// <summary>Per-stage CPU / GPU milliseconds (window average, worst) with proportional bars, sorted by cost.</summary>
-        private void DrawStageTable(UiBatch ui, float s, float lineH)
+        private void BuildStageTable(RipNRage.Engine.UI.ClayUi c, UiBatch ui, float s, float lineH)
         {
             var stages = new System.Collections.Generic.List<Profiler.Stage>(Profiler.Stages);
             stages.RemoveAll(st => st.cpuAvg < 0.02 && st.gpuAvg < 0.02);
             stages.Sort((a, b) => Mathf.Max((float)b.cpuAvg, (float)b.gpuAvg).CompareTo(Mathf.Max((float)a.cpuAvg, (float)a.gpuAvg)));
-            float x = 12f, w = Mathf.Min(ui.Width * 0.42f, 560f * s / 2f);
-            float rows = stages.Count + 2;
-            float h = rows * lineH + 10f * s;
-            float y0 = 12f * s + 60f * s; // above the HUD's bottom strip
-            var box = new Rect(x - 4f, y0, w + 8f, h);
-            ui.FillRect(box, new Color(0f, 0f, 0f, 0.55f));
-            float y = box.yMax - 4f;
-            string header = Profiler.GpuTimersAvailable ? "STAGE                    CPU MS   MAX     GPU MS" : "STAGE                    CPU MS   MAX";
-            if (Profiler.SyncGpu) header += "   [SYNC]";
-            ui.DrawText(header, new Vector2(x, y), s, new Color(1f, 0.85f, 0.4f, 1f));
-            y -= lineH;
-            double total = Mathf.Max((float)Profiler.FrameMsAvg, 0.001f);
-            foreach (var st in stages)
+            float w = Mathf.Min(ui.Width * 0.42f, 560f * s / 2f);
+            var text = new TextStyle(R(s), Color.white, wrap: Clay_TextWrapMode.None);
+            // bottom-left box above the HUD's bottom strip
+            using (c.Box(new El { vertical = true, padding = new RipNRage.Engine.UI.Pad(R(4f)), background = new Color(0f, 0f, 0f, 0.55f),
+                floating = Float.ToRoot(Clay_FloatingAttachPointType.LeftBottom, new Vector2(R(8f), -R(72f * s)), 1) }))
             {
-                string name = st.name.ToUpperInvariant();
-                if (name.Length > 22) name = name.Substring(0, 22);
-                string line = $"{Pad(new string(' ', st.depth) + name, 24)} {st.cpuAvg,6:0.00} {st.cpuMax,6:0.0}";
-                if (st.hasGpu) line += $" {st.gpuAvg,8:0.00}";
-                // bar: fraction of the frame
-                float frac = (float)(Mathf.Max((float)st.cpuAvg, st.hasGpu ? (float)st.gpuAvg : 0f) / total);
-                ui.FillRect(new Rect(x, y - lineH + 2f * s, w * Mathf.Clamp01(frac), lineH - 3f * s), new Color(0.9f, 0.5f, 0.2f, 0.25f));
-                ui.DrawText(line, new Vector2(x, y), s, st.depth > 0 ? new Color(0.8f, 0.8f, 0.85f, 0.9f) : new Color(1f, 1f, 1f, 0.95f));
-                y -= lineH;
+                string header = Profiler.GpuTimersAvailable ? "STAGE                    CPU MS   MAX     GPU MS" : "STAGE                    CPU MS   MAX";
+                if (Profiler.SyncGpu) header += "   [SYNC]";
+                text.color = new Color(1f, 0.85f, 0.4f, 1f);
+                c.Text(header, text);
+                double total = Mathf.Max((float)Profiler.FrameMsAvg, 0.001f);
+                foreach (var st in stages)
+                {
+                    string name = st.name.ToUpperInvariant();
+                    if (name.Length > 22) name = name.Substring(0, 22);
+                    string row = $"{PadText(new string(' ', st.depth) + name, 24)} {st.cpuAvg,6:0.00} {st.cpuMax,6:0.0}";
+                    if (st.hasGpu) row += $" {st.gpuAvg,8:0.00}";
+                    // bar behind the row: fraction of the frame (custom element: drawn before the row's text)
+                    float frac = Mathf.Clamp01((float)(Mathf.Max((float)st.cpuAvg, st.hasGpu ? (float)st.gpuAvg : 0f) / total));
+                    using (c.Box(new El { width = Size.Fixed(R(w)), height = Size.Fixed(R(lineH)), alignY = Clay_LayoutAlignmentY.Center,
+                        custom = (b, r, a) => b.FillRect(new Rect(r.x, r.y + 1f, r.width * frac, r.height - 3f * s), new Color(0.9f, 0.5f, 0.2f, 0.25f * a)) }))
+                    {
+                        text.color = st.depth > 0 ? new Color(0.8f, 0.8f, 0.85f, 0.9f) : new Color(1f, 1f, 1f, 0.95f);
+                        c.Text(row, text);
+                    }
+                }
+                string note = Profiler.GpuTimersAvailable
+                    ? "GPU = TIMER QUERY (3 FRAMES OLD).  PRESENT = SWAPBUFFERS WAIT (VSYNC / GPU BEHIND).  F11 = GLFINISH PER STAGE"
+                    : "NO GPU TIMER QUERIES: F11 (GLFINISH PER STAGE) MAKES CPU TIMES INCLUDE THE GPU WORK";
+                c.Text(note, new TextStyle(R(s * 0.75f), new Color(0.7f, 0.7f, 0.75f, 0.9f), wrap: Clay_TextWrapMode.None));
             }
-            string note = Profiler.GpuTimersAvailable
-                ? "GPU = TIMER QUERY (3 FRAMES OLD).  PRESENT = SWAPBUFFERS WAIT (VSYNC / GPU BEHIND).  F11 = GLFINISH PER STAGE"
-                : "NO GPU TIMER QUERIES: F11 (GLFINISH PER STAGE) MAKES CPU TIMES INCLUDE THE GPU WORK";
-            ui.DrawText(note, new Vector2(x, y), s * 0.75f, new Color(0.7f, 0.7f, 0.75f, 0.9f));
         }
 
-        private static string Pad(string t, int n) => t.Length >= n ? t : t + new string(' ', n - t.Length);
+        private System.Action<UiBatch, Rect, float> _drawGraph;
+        private float _graphLineH, _graphS;
 
-        /// <summary>Frame-time history (last 240 frames) as bars with 16.7 / 33.3 ms guide lines, top right.</summary>
-        private void DrawFrameGraph(UiBatch ui, float s, float lineH)
+        private void BuildFrameGraph(RipNRage.Engine.UI.ClayUi c, UiBatch ui, float s, float lineH)
         {
             float gw = Mathf.Min(ui.Width * 0.3f, 480f * s / 2f), gh = 70f * s / 2f * 1.4f;
-            var box = new Rect(ui.Width - gw - 12f, ui.Height - 12f - lineH * 1.3f - gh, gw, gh);
-            ui.FillRect(box, new Color(0f, 0f, 0f, 0.55f));
+            _graphLineH = lineH; _graphS = s;
+            c.Leaf(new El
+            {
+                width = Size.Fixed(R(gw)), height = Size.Fixed(R(gh)), background = new Color(0f, 0f, 0f, 0.55f),
+                floating = Float.ToRoot(Clay_FloatingAttachPointType.RightTop, new Vector2(-R(12f), R(12f + lineH * 1.3f)), 1),
+                custom = _drawGraph ??= DrawFrameGraph,
+            });
+        }
+
+        /// <summary>Custom Clay element: bars of the frame-time history inside the box Clay laid out.</summary>
+        private void DrawFrameGraph(UiBatch ui, Rect box, float alpha)
+        {
+            float s = _graphS, lineH = _graphLineH, gw = box.width, gh = box.height;
             float maxMs = 50f;
             foreach (var v in Profiler.History) if (v > maxMs) maxMs = Mathf.Min(v, 250f);
             float barW = gw / Profiler.HistoryLength;
@@ -299,18 +361,20 @@ namespace RipNRage.Game
                 float v = Profiler.History[(idx + i) % Profiler.HistoryLength];
                 if (v <= 0f) continue;
                 float hgt = Mathf.Clamp01(v / maxMs) * gh;
-                Color c = v > 33.4f ? new Color(1f, 0.35f, 0.3f, 0.9f) : v > 16.8f ? new Color(1f, 0.8f, 0.3f, 0.9f) : new Color(0.5f, 0.95f, 0.5f, 0.9f);
-                ui.FillRect(new Rect(box.x + i * barW, box.y, Mathf.Max(1f, barW - 0.5f), hgt), c);
+                Color col = v > 33.4f ? new Color(1f, 0.35f, 0.3f, 0.9f) : v > 16.8f ? new Color(1f, 0.8f, 0.3f, 0.9f) : new Color(0.5f, 0.95f, 0.5f, 0.9f);
+                ui.FillRect(new Rect(box.x + i * barW, box.y, Mathf.Max(1f, barW - 0.5f), hgt), col);
             }
-            foreach (var guide in new[] { 16.7f, 33.3f })
+            foreach (var guide in _guides)
             {
                 if (guide > maxMs) continue;
                 float gy = box.y + guide / maxMs * gh;
                 ui.FillRect(new Rect(box.x, gy, gw, 1f), new Color(1f, 1f, 1f, 0.35f));
-                ui.DrawText($"{guide:0}", new Vector2(box.x + 2f, gy + lineH * 0.5f), s * 0.7f, new Color(1f, 1f, 1f, 0.6f));
+                ui.DrawText(guide < 20f ? "17" : "33", new Vector2(box.x + 2f, gy + lineH * 0.5f), s * 0.7f, new Color(1f, 1f, 1f, 0.6f));
             }
             ui.DrawText($"FRAME MS (LAST {Profiler.HistoryLength}, SCALE {maxMs:0} MS)", new Vector2(box.x + 2f, box.yMax - 2f), s * 0.7f, new Color(1f, 1f, 1f, 0.7f));
         }
+        private static string PadText(string t, int n) => t.Length >= n ? t : t + new string(' ', n - t.Length);
+        private static readonly float[] _guides = { 16.7f, 33.3f };
     }
 
     /// <summary>Scripted input for automated screenshots/tests (feeds PlayerInputActions' override hooks).</summary>
@@ -329,6 +393,12 @@ namespace RipNRage.Game
             input.overrideFiring = null; input.overrideMove = null; input.overrideLook = null;
             switch (scriptName)
             {
+                case "graphicsmenu":
+                    // UI capture: opens the graphics screen and walks the selection down into the scrolling rows
+                    if (_frame == 10) GraphicsMenu.Open(null);
+                    if (_frame > 20 && _frame < 60 && _frame % 4 == 0) Input.SimulateKey(KeyCode.DownArrow, true);
+                    else Input.SimulateKey(KeyCode.DownArrow, false);
+                    break;
                 case "look":
                     input.overrideLook = new Vector2(2f, 0f);
                     break;

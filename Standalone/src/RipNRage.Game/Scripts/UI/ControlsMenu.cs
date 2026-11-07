@@ -1,3 +1,5 @@
+using RipNRage.Engine.UI;
+using RipNRage.Engine.UI.Clay;
 using System;
 using System.Collections.Generic;
 using RipNRage.Game.Content;
@@ -12,6 +14,7 @@ using RipNRage.Game.Content;
 /// </summary>
 public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 {
+    private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Modal + 10;
 
     public static ControlsMenu Current { get; private set; }
@@ -49,6 +52,7 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     protected override void OnDestroy()
     {
+        _clay.Dispose();
         if (InputSystem.Rebinding) InputSystem.CancelRebind();
         InputSystem.ReleaseUi(this);
         if (Current == this) Current = null;
@@ -130,24 +134,34 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     public void DrawUi(UiBatch ui)
     {
-        float s = ui.Scale;
         float a = _anim;
-        float cx = ui.Width * 0.5f;
         ui.FillRect(new Rect(0, 0, ui.Width, ui.Height), new Color(0f, 0f, 0f, 0.72f * a));
 
-        float top = ui.Height * 0.93f;
-        float th = MenuList.DrawCentered(ui, "CONTROLS", cx, top, 7f * s, new Color(0.95f, 0.85f, 0.55f, a), shadow: true);
-        string pad = Input.GamepadConnected ? "GAMEPAD: " + Input.GamepadName.ToUpperInvariant() : "NO GAMEPAD CONNECTED (PLUG ONE IN ANY TIME)";
-        float ph = MenuList.DrawCentered(ui, pad, cx, top - th - 6f * s, 2.2f * s, new Color(0.75f, 0.85f, 1f, 0.85f * a));
-        MenuList.DrawCentered(ui, "ACTION                                   KEYBOARD / MOUSE   |   GAMEPAD", cx, top - th - ph - 8f * s, 2f * s, new Color(0.7f, 0.7f, 0.72f, 0.7f * a));
-
-        float menuTop = top - th - ph - 30f * s;
-        var clicked = _menu.Draw(ui, cx, menuTop, a);
-        if (clicked != null && !_closed && !clicked.IsSetting) { Play(ProceduralSounds.MenuSelect); clicked.onActivate?.Invoke(); }
-
+        var c = _clay;
+        c.Begin(ui);
+        MenuItem clicked;
+        using (c.Box(ClayScreen.Column(0.07f * ClayScreen.RefHeight)))
+        {
+            c.Text("CONTROLS", ClayScreen.Line(7f, new Color(0.95f, 0.85f, 0.55f, 1f), shadow: true));
+            ClayScreen.Gap(c, 6f);
+            string pad = Input.GamepadConnected ? "GAMEPAD: " + Input.GamepadName.ToUpperInvariant() : "NO GAMEPAD CONNECTED (PLUG ONE IN ANY TIME)";
+            c.Text(pad, ClayScreen.Line(2.2f, new Color(0.75f, 0.85f, 1f, 0.85f)));
+            ClayScreen.Gap(c, 2f);
+            // column headings over the rows' label / value halves
+            using (c.Box(new El { width = Size.Fixed(_menu.itemWidth), padding = new Pad(18f, 0f) }))
+            {
+                var head = ClayScreen.Line(2f, new Color(0.7f, 0.7f, 0.72f, 0.7f));
+                using (c.Box(new El { width = Size.Grow() })) c.Text("ACTION", head);
+                c.Text("KEYBOARD / MOUSE   |   GAMEPAD", head);
+            }
+            ClayScreen.Gap(c, 4f);
+            clicked = _menu.Build(c);
+        }
         string footer = InputSystem.Rebinding
             ? "PRESS A KEY, MOUSE BUTTON, WHEEL, GAMEPAD BUTTON, TRIGGER OR STICK DIRECTION   -   ESC / B CANCEL   BACKSPACE CLEARS"
             : "ENTER / A / CLICK REBIND   LEFT/RIGHT CHANGE VALUES   UP/DOWN SELECT   ESC / B BACK   SAVED AUTOMATICALLY";
-        MenuList.DrawCentered(ui, footer, cx, 60f * s, 2f * s, new Color(0.7f, 0.7f, 0.72f, 0.7f * a));
+        ClayScreen.Footer(c, footer, 60f, ClayScreen.Line(2f, new Color(0.7f, 0.7f, 0.72f, 0.7f)));
+        c.End(a);
+        if (clicked != null && !_closed && !clicked.IsSetting) { Play(ProceduralSounds.MenuSelect); clicked.onActivate?.Invoke(); }
     }
 }

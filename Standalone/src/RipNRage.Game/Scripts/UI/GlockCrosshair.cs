@@ -1,3 +1,4 @@
+using RipNRage.Engine.UI;
 // Ported from Assets/_Game/Scripts/UI/GlockCrosshair.cs.
 // Image -> UiImage; DOTween DOSizeDelta -> engine TweenRunner (same durations/easing).
 public class GlockCrosshair : MonoBehaviour, ICrosshair
@@ -51,20 +52,31 @@ public class GlockCrosshair : MonoBehaviour, ICrosshair
     public float spread;
     public Color spreadColor = new Color(1f, 1f, 1f, 0.85f);
 
-    public void Draw(UiBatch ui)
+    private System.Action<UiBatch, Rect, float> _drawTicks;
+
+    /// <summary>Declares the rings and the spread ticks (a custom element at the screen centre) in the HUD's Clay layout.</summary>
+    public void Build(ClayUi c, short z)
     {
-        CrosshairImage.Draw(ui);
-        innerCrosshairImage.Draw(ui);
-        if (spread > 0f)
+        CrosshairImage.Build(c, z);
+        innerCrosshairImage.Build(c, (short)(z + 1));
+        if (spread <= 0f) return;
+        c.Leaf(new El
         {
-            // 0.05 spread (~2.9°) ≈ 60 reference px from the centre at 77° fov on a 1080p canvas
-            float gap = (8f + spread * 1200f) * ui.Scale;
-            float len = 9f * ui.Scale, thick = Mathf.Max(1f, 2f * ui.Scale);
-            float cx = ui.Width * 0.5f, cy = ui.Height * 0.5f;
-            ui.FillRect(new Rect(cx - gap - len, cy - thick * 0.5f, len, thick), spreadColor);
-            ui.FillRect(new Rect(cx + gap, cy - thick * 0.5f, len, thick), spreadColor);
-            ui.FillRect(new Rect(cx - thick * 0.5f, cy - gap - len, thick, len), spreadColor);
-            ui.FillRect(new Rect(cx - thick * 0.5f, cy + gap, thick, len), spreadColor);
-        }
+            width = Size.Fixed(0f), height = Size.Fixed(0f),
+            floating = new Float { enabled = true, attachTo = RipNRage.Engine.UI.Clay.Clay_FloatingAttachToElement.Root, zIndex = (short)(z + 2), passthrough = true,
+                element = RipNRage.Engine.UI.Clay.Clay_FloatingAttachPointType.CenterCenter, parent = RipNRage.Engine.UI.Clay.Clay_FloatingAttachPointType.CenterCenter },
+            custom = _drawTicks ??= (ui, r, a) =>
+            {
+                // 0.05 spread (~2.9°) ≈ 60 reference px from the centre at 77° fov on a 1080p canvas
+                float gap = (8f + spread * 1200f) * ui.Scale;
+                float len = 9f * ui.Scale, thick = Mathf.Max(1f, 2f * ui.Scale);
+                float cx = r.center.x, cy = r.center.y;
+                var col = new Color(spreadColor.r, spreadColor.g, spreadColor.b, spreadColor.a * a);
+                ui.FillRect(new Rect(cx - gap - len, cy - thick * 0.5f, len, thick), col);
+                ui.FillRect(new Rect(cx + gap, cy - thick * 0.5f, len, thick), col);
+                ui.FillRect(new Rect(cx - thick * 0.5f, cy - gap - len, thick, len), col);
+                ui.FillRect(new Rect(cx - thick * 0.5f, cy + gap, thick, len), col);
+            },
+        });
     }
 }

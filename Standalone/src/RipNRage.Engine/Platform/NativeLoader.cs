@@ -15,6 +15,7 @@ namespace RipNRage.Engine.Platform
     {
         public const string GlfwLib = "glfw";
         public const string OpenAlLib = "openal";
+        public const string ClayLib = "clay";
 
         private static readonly Dictionary<string, string[]> Candidates = new Dictionary<string, string[]>
         {
@@ -23,10 +24,19 @@ namespace RipNRage.Engine.Platform
                 : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
                     ? new[] { "libglfw.3.dylib", "libglfw.dylib", "/opt/homebrew/lib/libglfw.3.dylib", "/usr/local/lib/libglfw.3.dylib" }
                     : new[] { "libglfw.so.3", "libglfw.so", "libglfw.so.3.3", "libglfw.so.3.4" },
+            [ClayLib] = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? new[] { "clay.dll" }
+                : RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new[] { "libclay.dylib" } : new[] { "libclay.so" },
             [OpenAlLib] = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                 ? new[] { "OpenAL32.dll", "soft_oal.dll", "openal32.dll" }
                 : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                    ? new[] { "libopenal.1.dylib", "libopenal.dylib", "/opt/homebrew/lib/libopenal.1.dylib", "/System/Library/Frameworks/OpenAL.framework/OpenAL" }
+                    ? new[]
+                    {
+                        "libopenal.1.dylib", "libopenal.dylib",
+                        // Homebrew's openal-soft is keg-only: it lives under opt/, not lib/
+                        "/opt/homebrew/opt/openal-soft/lib/libopenal.1.dylib", "/usr/local/opt/openal-soft/lib/libopenal.1.dylib",
+                        "/opt/homebrew/lib/libopenal.1.dylib", "/usr/local/lib/libopenal.1.dylib",
+                        "/System/Library/Frameworks/OpenAL.framework/OpenAL",
+                    }
                     : new[] { "libopenal.so.1", "libopenal.so" },
         };
 
@@ -63,6 +73,9 @@ namespace RipNRage.Engine.Platform
             yield return Path.Combine(baseDir, "native", Rid);
             yield return Path.Combine(baseDir, "runtimes", Rid, "native");
             yield return baseDir;
+            // macOS .app bundle: Contents/MacOS/<exe> with the libraries in Contents/Frameworks
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                yield return Path.GetFullPath(Path.Combine(baseDir, "..", "Frameworks"));
         }
 
         private static IntPtr Resolve(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)

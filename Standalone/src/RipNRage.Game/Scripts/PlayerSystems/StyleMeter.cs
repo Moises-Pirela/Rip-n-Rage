@@ -1,3 +1,5 @@
+using RipNRage.Engine.UI;
+using RipNRage.Engine.UI.Clay;
 using System;
 using RipNRage.Game.Content;
 
@@ -53,7 +55,7 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
     private string _lastEvent = "";
 
     protected override void Awake() { Current = this; }
-    protected override void OnDestroy() { if (Current == this) Current = null; }
+    protected override void OnDestroy() { if (Current == this) Current = null; _clay.Dispose(); }
 
     protected override void Start()
     {
@@ -148,45 +150,58 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
         new Color(0.35f, 0.65f, 1f, 1f), new Color(1f, 0.55f, 0.2f, 1f), new Color(1f, 0.85f, 0.25f, 1f),
     };
 
+    private readonly ClayUi _clay = new ClayUi(256);
+
     public void DrawUi(UiBatch ui)
     {
         if (_visibility <= 0.01f) return;
-        float s = ui.Scale, a = _visibility;
+        float a = _visibility;
         int ri = (int)CurrentRank;
-        Color c = RankColors[ri];
-        float slide = (1f - a) * 120f * s;                        // slides in from the right
-        float x = ui.Width - 190f * s + slide, top = ui.Height * 0.62f;
+        Color col = RankColors[ri];
 
-        // rank letter with a pop on rank-up
-        float pop = 1f + _rankPop * 0.35f;
-        string letter = CurrentRank.ToString();
-        float letterScale = 16f * s * pop;
-        Vector2 ls = ui.MeasureText(letter, letterScale);
-        if (CurrentRank == Rank.S)
+        var c = _clay;
+        c.PointerEnabled = false;
+        c.Begin(ui);
+        // column pinned 190 px from the right edge, top at 62% of the height; slides in from the right
+        float slide = (1f - a) * 120f;
+        using (c.Box(new El
         {
-            // gold pulse behind the S
-            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 5f);
-            ui.FillRect(new Rect(x - 12f * s, top - ls.y - 10f * s, ls.x + 24f * s, ls.y + 20f * s), new Color(c.r, c.g, c.b, (0.12f + 0.12f * pulse) * a));
+            vertical = true, gap = 6f,
+            floating = new Float { enabled = true, attachTo = Clay_FloatingAttachToElement.Root, passthrough = true,
+                element = Clay_FloatingAttachPointType.LeftTop, parent = Clay_FloatingAttachPointType.RightTop,
+                offset = new Vector2(-190f + slide, 0.38f * ClayScreen.RefHeight) },
+        }))
+        {
+            // rank letter with a pop on rank-up, gold pulse behind the S
+            float pop = 1f + _rankPop * 0.35f;
+            Color pulseBg = default;
+            if (CurrentRank == Rank.S)
+            {
+                float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 5f);
+                pulseBg = new Color(col.r, col.g, col.b, 0.12f + 0.12f * pulse);
+            }
+            using (c.Box(new El { padding = new Pad(12f, 10f), background = pulseBg }))
+                c.Text(CurrentRank.ToString(), ClayScreen.Line(16f * pop, col, shadow: true));
+
+            // rank name + multiplier
+            using (c.Box(new El { alignY = Clay_LayoutAlignmentY.Center }))
+            {
+                using (c.Box(new El { width = Size.Fixed(120f) })) c.Text(RankNames[ri], ClayScreen.Line(2.6f, new Color(col.r, col.g, col.b, 0.9f)));
+                if (Multiplier > 1) c.Text($"X{Multiplier}", ClayScreen.Line(3.2f, Color.white));
+            }
+
+            // progress bar within the rank
+            float lo = Thresholds[ri], hi = ri + 1 < Thresholds.Length ? Thresholds[ri + 1] : maxPoints;
+            float t = Mathf.Clamp01((Points - lo) / Mathf.Max(1f, hi - lo));
+            ClayScreen.Gap(c, 14f);
+            using (c.Box(new El { width = Size.Fixed(170f), height = Size.Fixed(8f), background = new Color(0f, 0f, 0f, 0.55f), borderColor = new Color(1f, 1f, 1f, 0.25f), border = 1f }))
+                c.Leaf(new El { width = Size.Fixed(170f * t), height = Size.Grow(), background = col });
+
+            // last event flash
+            if (_flash > 0f && !string.IsNullOrEmpty(_lastEvent))
+                c.Text(_lastEvent, ClayScreen.Line(2.2f, new Color(1f, 1f, 1f, _flash)));
         }
-        ui.DrawText(letter, new Vector2(x + 4f * s, top - 4f * s), letterScale, new Color(0f, 0f, 0f, 0.7f * a));
-        ui.DrawText(letter, new Vector2(x, top), letterScale, new Color(c.r, c.g, c.b, a));
-
-        // rank name + multiplier
-        float ny = top - ls.y - 6f * s;
-        ui.DrawText(RankNames[ri], new Vector2(x, ny), 2.6f * s, new Color(c.r, c.g, c.b, 0.9f * a));
-        if (Multiplier > 1) ui.DrawText($"X{Multiplier}", new Vector2(x + 120f * s, ny), 3.2f * s, new Color(1f, 1f, 1f, a));
-
-        // progress bar within the rank
-        float lo = Thresholds[ri], hi = ri + 1 < Thresholds.Length ? Thresholds[ri + 1] : maxPoints;
-        float t = Mathf.Clamp01((Points - lo) / Mathf.Max(1f, hi - lo));
-        float bw = 170f * s, bh = 8f * s, by = ny - 30f * s;
-        ui.FillRect(new Rect(x, by, bw, bh), new Color(0f, 0f, 0f, 0.55f * a));
-        ui.FillRect(new Rect(x, by, bw * t, bh), new Color(c.r, c.g, c.b, a));
-        MenuList.DrawBorder(ui, new Rect(x, by, bw, bh), new Color(1f, 1f, 1f, 0.25f * a), Mathf.Max(1f, s));
-
-        // last event flash
-        if (_flash > 0f && !string.IsNullOrEmpty(_lastEvent))
-            ui.DrawText(_lastEvent, new Vector2(x, by - 8f * s), 2.2f * s, new Color(1f, 1f, 1f, _flash * a));
+        c.End(a);
 
         // S rank: warm gold vignette through the post stack (or drawn directly when the stack is off)
         if (CurrentRank == Rank.S)

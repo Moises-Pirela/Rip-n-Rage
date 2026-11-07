@@ -1,3 +1,5 @@
+using RipNRage.Engine.UI;
+using RipNRage.Engine.UI.Clay;
 using System;
 using RipNRage.Game.Content;
 using RipNRage.Game.Content.Level;
@@ -9,6 +11,7 @@ using RipNRage.Game.Content.Level;
 /// </summary>
 public class MainMenuScreen : MonoBehaviour, IUiDrawer, IUiLayer
 {
+    private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Menu;
 
     public string title = "RIP-N-RAGE";
@@ -45,6 +48,7 @@ public class MainMenuScreen : MonoBehaviour, IUiDrawer, IUiLayer
 
     protected override void OnDestroy()
     {
+        _clay.Dispose();
         InputSystem.ReleaseUi(this);
     }
 
@@ -109,38 +113,37 @@ public class MainMenuScreen : MonoBehaviour, IUiDrawer, IUiLayer
 
     public void DrawUi(UiBatch ui)
     {
-        float s = ui.Scale;
         float fade = Mathf.Clamp01(_t / fadeInDuration);
-        float cx = ui.Width * 0.5f;
 
-        // darken the backdrop so the text reads, plus a heavy vignette
+        // darken the backdrop so the text reads, plus a heavy vignette (full-screen effects, outside the layout)
         ui.FillRect(new Rect(0, 0, ui.Width, ui.Height), new Color(0f, 0f, 0f, 0.42f * fade));
         ui.DrawVignette(new Color(0.05f, 0f, 0f, 1f), 0.9f * fade);
 
-        // title block
-        float titleScale = 13f * s;
-        float titleTop = ui.Height * 0.86f;
         float pulse = 0.92f + 0.08f * Mathf.Sin(_t * 2.2f);
-        var titleColor = new Color(0.92f * pulse, 0.12f * pulse, 0.08f * pulse, fade);
-        float th = MenuList.DrawCentered(ui, title, cx, titleTop, titleScale, titleColor, shadow: true);
-        MenuList.DrawCentered(ui, subtitle, cx, titleTop - th - 10f * s, 2.6f * s, new Color(0.85f, 0.85f, 0.88f, 0.8f * fade));
+        var titleColor = new Color(0.92f * pulse, 0.12f * pulse, 0.08f * pulse, 1f);
+        var dim = new Color(0.7f, 0.7f, 0.72f, 0.75f);
 
-        // separator
-        float lineW = 520f * s;
-        ui.FillRect(new Rect(cx - lineW * 0.5f, titleTop - th - 40f * s, lineW, Mathf.Max(1f, 2f * s)), new Color(0.8f, 0.15f, 0.1f, 0.7f * fade));
-
-        // menu (hidden while the graphics screen is up)
+        var c = _clay;
+        c.Begin(ui);
+        // title block: top at 86% of the height, subtitle, red separator
+        using (c.Box(ClayScreen.Column(0.14f * ClayScreen.RefHeight)))
+        {
+            c.Text(title, ClayScreen.Line(13f, titleColor, shadow: true));
+            ClayScreen.Gap(c, 10f);
+            c.Text(subtitle, ClayScreen.Line(2.6f, new Color(0.85f, 0.85f, 0.88f, 0.8f)));
+            ClayScreen.Gap(c, 9f);
+            c.Leaf(new El { width = Size.Fixed(520f), height = Size.Fixed(2f), background = new Color(0.8f, 0.15f, 0.1f, 0.7f) });
+        }
+        // menu (hidden while the graphics screen is up), top at 56% of the height
         if (!SubmenuOpen)
         {
-            float menuTop = ui.Height * 0.56f;
-            var clicked = _menu.Draw(ui, cx, menuTop, fade);
+            MenuItem clicked;
+            using (c.Box(ClayScreen.FloatingColumn(0.44f * ClayScreen.RefHeight))) clicked = _menu.Build(c);
             if (clicked != null && !_done && _t >= fadeInDuration * 0.5f) Activate(clicked);
         }
-
-        // footer
-        var dim = new Color(0.7f, 0.7f, 0.72f, 0.75f * fade);
-        MenuList.DrawCentered(ui, "UP/DOWN OR MOUSE TO SELECT   ENTER / CLICK TO CONFIRM", cx, 84f * s, 2f * s, dim);
-        MenuList.DrawCentered(ui, "WASD MOVE   MOUSE LOOK   LMB FIRE   RMB JAB   1-4 WEAPONS   SPACE JUMP   ESC PAUSE", cx, 54f * s, 2f * s, dim);
+        ClayScreen.Footer(c, "UP/DOWN OR MOUSE TO SELECT   ENTER / CLICK TO CONFIRM", 84f, ClayScreen.Line(2f, dim));
+        ClayScreen.Footer(c, "WASD MOVE   MOUSE LOOK   LMB FIRE   RMB JAB   1-4 WEAPONS   SPACE JUMP   ESC PAUSE", 54f, ClayScreen.Line(2f, dim));
+        c.End(fade);
 
         // black fade-in
         if (fade < 1f) ui.FillRect(new Rect(0, 0, ui.Width, ui.Height), new Color(0f, 0f, 0f, 1f - fade));

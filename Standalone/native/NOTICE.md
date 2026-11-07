@@ -9,11 +9,14 @@ compatible build. If a bundled library fails to load, NativeLoader falls back to
 | `linux-x64/` | `libopenal.so.1` | OpenAL Soft 1.24.2 | Debian 13 package `libopenal1_1.24.2-1_amd64.deb` (needs glibc 2.38+) |
 | `osx-arm64/` | `libglfw.3.dylib` | GLFW 3.4 | official release `glfw-3.4.bin.MACOS.zip` (`lib-arm64`) |
 | `osx-x64/` | `libglfw.3.dylib` | GLFW 3.4 | official release `glfw-3.4.bin.MACOS.zip` (`lib-x86_64`) |
+| `osx-arm64/`, `osx-x64/` | `libclay.dylib` | Clay v0.14 | built from `src/clay` (vendored `clay.h`, github.com/nicbarker/clay) with `tools/build-clay.sh` |
+| `linux-x64/`, `win-x64/` | `libclay.so`, `clay.dll` | Clay v0.14 | not committed yet: built by `tools/build-clay.sh` / `tools/build-clay.cmd` or the CI `clay-native` job |
 
 macOS has no bundled OpenAL: the loader uses Homebrew's `openal-soft` if installed, otherwise the system
 `OpenAL.framework`.
 
 Licences:
 
+* Clay: zlib/libpng licence, see `licenses/Clay-LICENSE.md`
 * GLFW: zlib/libpng licence, see `licenses/GLFW-LICENSE.md` (https://www.glfw.org/license.html)
 * OpenAL Soft: LGPL-2.0, see `licenses/OpenAL-Soft-COPYING.txt`. Source code: https://github.com/kcat/openal-soft

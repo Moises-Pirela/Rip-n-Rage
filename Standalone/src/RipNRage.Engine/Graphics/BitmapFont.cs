@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace RipNRage.Engine.Graphics
@@ -102,7 +103,9 @@ namespace RipNRage.Engine.Graphics
             return font;
         }
 
-        public Vector2 Measure(string text, float scale)
+        public Vector2 Measure(string text, float scale) => Measure(text.AsSpan(), scale);
+
+        public Vector2 Measure(ReadOnlySpan<char> text, float scale)
         {
             float w = 0, maxW = 0; int lines = 1;
             foreach (char c in text)
@@ -114,7 +117,10 @@ namespace RipNRage.Engine.Graphics
         }
 
         /// <summary>Draws text with its top-left corner at <paramref name="pos"/> (pixels, origin bottom-left).</summary>
-        public void Draw(UiBatch batch, string text, Vector2 pos, float scale, Color color)
+        public void Draw(UiBatch batch, string text, Vector2 pos, float scale, Color color) => Draw(batch, text.AsSpan(), pos, scale, color);
+
+        /// <summary>Span overload (no allocation; used by the Clay renderer).</summary>
+        public void Draw(UiBatch batch, ReadOnlySpan<char> text, Vector2 pos, float scale, Color color)
         {
             float x = pos.x, y = pos.y - GlyphH * scale;
             foreach (char raw in text)

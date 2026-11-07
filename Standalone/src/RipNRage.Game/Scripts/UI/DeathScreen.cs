@@ -1,3 +1,5 @@
+using RipNRage.Engine.UI;
+using RipNRage.Engine.UI.Clay;
 using System;
 using RipNRage.Game.Content;
 using RipNRage.Game.Content.Level;
@@ -11,6 +13,7 @@ using RipNRage.Game.Content.Level;
 /// </summary>
 public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
 {
+    private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Modal;
 
     [Header("Timing (seconds, real time)")]
@@ -58,6 +61,7 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
 
     protected override void OnDestroy()
     {
+        _clay.Dispose();
         InputSystem.ReleaseUi(this);
         if (Current == this) Current = null;
     }
@@ -96,10 +100,7 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
 
     public void DrawUi(UiBatch ui)
     {
-        float s = ui.Scale;
-        float cx = ui.Width * 0.5f;
-
-        // 1. the world drains to blood red, then to near black
+        // 1. the world drains to blood red, then to near black (full-screen effects, outside the layout)
         float fade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((_t - fadeDelay) / fadeDuration));
         if (fade > 0f)
         {
@@ -108,25 +109,31 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
             ui.DrawVignette(new Color(0.5f, 0f, 0f, 1f), fade);
         }
 
-        // 2. the title settles in (slight shrink + fade)
+        var c = _clay;
+        c.Begin(ui);
+        // 2. the title settles in (slight shrink + fade), centred on 34% from the top
         float tt = Mathf.Clamp01((_t - titleDelay) / titleDuration);
         if (tt > 0f)
         {
             float ease = 1f - (1f - tt) * (1f - tt);
-            float scale = (11f + 3f * (1f - ease)) * s;
-            float top = ui.Height * 0.66f + ui.MeasureText(titleText, scale).y * 0.5f;
-            MenuList.DrawCentered(ui, titleText, cx, top, scale, new Color(0.82f, 0.07f, 0.05f, ease), shadow: true);
-            if (!string.IsNullOrEmpty(causeText))
-                MenuList.DrawCentered(ui, causeText, cx, top - ui.MeasureText(titleText, scale).y - 10f * s, 2.6f * s, new Color(0.85f, 0.6f, 0.55f, 0.85f * ease));
+            float scale = 11f + 3f * (1f - ease);
+            using (c.Box(ClayScreen.FloatingColumn(0.34f * ClayScreen.RefHeight - scale * BitmapFont.Cell * 0.5f, "death-title", 10f)))
+            {
+                c.Text(titleText, ClayScreen.Line(scale, new Color(0.82f, 0.07f, 0.05f, ease), shadow: true));
+                if (!string.IsNullOrEmpty(causeText))
+                    c.Text(causeText, ClayScreen.Line(2.6f, new Color(0.85f, 0.6f, 0.55f, 0.85f * ease)));
+            }
         }
 
-        // 3. the choices
+        // 3. the choices, top at 46% of the height
+        MenuItem clicked = null;
         if (_menuReady)
         {
             float ma = Mathf.Clamp01((_t - menuDelay) / menuFadeDuration);
-            var clicked = _menu.Draw(ui, cx, ui.Height * 0.46f, ma);
-            if (clicked != null && !_done) Activate(clicked);
-            MenuList.DrawCentered(ui, "UP/DOWN OR MOUSE TO SELECT   ENTER / CLICK TO CONFIRM", cx, 84f * s, 2f * s, new Color(0.7f, 0.7f, 0.72f, 0.7f * ma));
+            using (c.Box(ClayScreen.FloatingColumn(0.54f * ClayScreen.RefHeight))) clicked = _menu.Build(c, ma);
+            ClayScreen.Footer(c, "UP/DOWN OR MOUSE TO SELECT   ENTER / CLICK TO CONFIRM", 84f, ClayScreen.Line(2f, new Color(0.7f, 0.7f, 0.72f, 0.7f * ma)));
         }
+        c.End();
+        if (clicked != null && !_done) Activate(clicked);
     }
 }

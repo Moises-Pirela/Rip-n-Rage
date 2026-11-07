@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using RipNRage.Engine.UI;
 
 // Ported from Assets/_Game/Scripts/PlayerSystems/HudController.cs.
 // UnityEngine.UI.Image / TextMeshProUGUI became UiImage / UiText (engine HUD elements) and the
@@ -140,11 +141,22 @@ public class HudController : MonoBehaviour, IUiDrawer
     }
 
     /// <summary>Draws the canvas: rage tint, then all images and texts in order.</summary>
+    private readonly ClayUi _clay = new ClayUi(512);
+
+    protected override void OnDestroy() => _clay.Dispose();
+
     public void DrawUi(UiBatch ui)
     {
-        ragePostprocess?.Draw(ui);
-        foreach (var img in images) img.Draw(ui);
-        foreach (var t in texts) t.Draw(ui);
+        ragePostprocess?.Draw(ui); // full-screen tint, not layout
+
+        // every HUD element is a floating Clay element pinned to the screen (anchors / pivots from HudLayout);
+        // the z index keeps the prefab's draw order (frames first)
+        var c = _clay;
+        c.PointerEnabled = false; // the HUD never takes the mouse
+        c.Begin(ui);
+        short z = 1;
+        foreach (var img in images) img.Build(c, z++);
+        foreach (var t in texts) t.Build(c, z++);
         // no crosshair on a corpse (the death screen takes over the centre of the screen)
         if (playerState == null || !playerState.IsDead)
         {
@@ -152,8 +164,9 @@ public class HudController : MonoBehaviour, IUiDrawer
             if (cross != null)
             {
                 cross.spread = _combatController?.inventory?.equippedWeapon != null ? _combatController.inventory.equippedWeapon.CurrentSpread : 0f;
-                cross.Draw(ui);
+                cross.Build(c, z);
             }
         }
+        c.End();
     }
 }

@@ -1,3 +1,5 @@
+using RipNRage.Engine.UI;
+using RipNRage.Engine.UI.Clay;
 using System;
 using RipNRage.Game.Content;
 using RipNRage.Game.Content.Level;
@@ -10,6 +12,7 @@ using RipNRage.Game.Content.Level;
 /// </summary>
 public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
 {
+    private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Menu;
 
     public static bool IsPaused { get; private set; }
@@ -40,6 +43,7 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     protected override void OnDestroy()
     {
+        _clay.Dispose();
         InputSystem.ReleaseUi(this);
         if (_open) { IsPaused = false; Time.timeScale = _savedTimeScale; }
     }
@@ -154,27 +158,27 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
     {
         if (_anim <= 0.001f) return;
         if (SubmenuOpen) return; // the settings screens draw their own backdrop
-        float s = ui.Scale;
-        float cx = ui.Width * 0.5f;
         float a = _anim;
 
         ui.FillRect(new Rect(0, 0, ui.Width, ui.Height), new Color(0f, 0f, 0f, 0.62f * a));
         ui.DrawVignette(new Color(0f, 0f, 0f, 1f), 0.8f * a);
 
-        float titleScale = 9f * s;
-        float titleTop = ui.Height * 0.78f;
-        float th = MenuList.DrawCentered(ui, "PAUSED", cx, titleTop, titleScale, new Color(0.95f, 0.85f, 0.55f, a), shadow: true);
-
-        var ps = PlayerState.Current;
-        if (ps != null)
+        var c = _clay;
+        c.Begin(ui);
+        using (c.Box(ClayScreen.Column(0.22f * ClayScreen.RefHeight)))
         {
-            string status = $"HEALTH {ps.Health:0}   ARMOR {ps.Armor:0}   RAGE {ps.Rage * 100f:0}%";
-            MenuList.DrawCentered(ui, status, cx, titleTop - th - 8f * s, 2.4f * s, new Color(0.8f, 0.8f, 0.82f, 0.85f * a));
+            c.Text("PAUSED", ClayScreen.Line(9f, new Color(0.95f, 0.85f, 0.55f, 1f), shadow: true));
+            var ps = PlayerState.Current;
+            if (ps != null)
+            {
+                ClayScreen.Gap(c, 8f);
+                c.Text($"HEALTH {ps.Health:0}   ARMOR {ps.Armor:0}   RAGE {ps.Rage * 100f:0}%", ClayScreen.Line(2.4f, new Color(0.8f, 0.8f, 0.82f, 0.85f)));
+            }
         }
-
-        var clicked = _menu.Draw(ui, cx, ui.Height * 0.6f, a);
+        MenuItem clicked;
+        using (c.Box(ClayScreen.FloatingColumn(0.4f * ClayScreen.RefHeight))) clicked = _menu.Build(c);
+        ClayScreen.Footer(c, "ESC RESUME   UP/DOWN SELECT   ENTER CONFIRM", 84f, ClayScreen.Line(2f, new Color(0.7f, 0.7f, 0.72f, 0.7f)));
+        c.End(a);
         if (clicked != null && _open && !_done) Activate(clicked);
-
-        MenuList.DrawCentered(ui, "ESC RESUME   UP/DOWN SELECT   ENTER CONFIRM", cx, 84f * s, 2f * s, new Color(0.7f, 0.7f, 0.72f, 0.7f * a));
     }
 }

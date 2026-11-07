@@ -1,3 +1,5 @@
+using RipNRage.Engine.UI;
+using RipNRage.Engine.UI.Clay;
 using System;
 using RipNRage.Game;
 using RipNRage.Game.Content;
@@ -11,6 +13,7 @@ using RipNRage.Engine.Graphics.Particles;
 /// </summary>
 public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 {
+    private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Modal + 10;
 
     public static GraphicsMenu Current { get; private set; }
@@ -48,6 +51,7 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     protected override void OnDestroy()
     {
+        _clay.Dispose();
         InputSystem.ReleaseUi(this);
         if (Current == this) Current = null;
     }
@@ -59,6 +63,59 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
         var lt = r.Lighting;
         var cam = r.CameraConfig;
 
+        // ---- display
+        var win = Application.Current.Window;
+        ChoiceStr("DISPLAY MODE", new[] { "windowed", "borderless", "fullscreen" }, () => GraphicsSettings.ModeName(win.Mode),
+            v => { GraphicsSettings.Current.displayMode = v; GraphicsSettings.ApplyDisplay(); },
+            RipNRage.Engine.Platform.Window.IsMacOS
+                ? "BORDERLESS = DESKTOP RESOLUTION, INSTANT CMD-TAB.  CMD+CTRL+F TOGGLES"
+                : "BORDERLESS = DESKTOP RESOLUTION, INSTANT ALT-TAB.  ALT+ENTER / F11 TOGGLES");
+        _menu.AddSetting("MONITOR", () =>
+        {
+            var mons = RipNRage.Engine.Platform.Window.GetMonitors();
+            int i = win.MonitorIndex;
+            return i >= 0 && i < mons.Length ? $"{i + 1}: {mons[i].Name.ToUpperInvariant()}" : "-";
+        }, dir =>
+        {
+            int n = RipNRage.Engine.Platform.Window.GetMonitors().Length;
+            if (n <= 1) return;
+            int i = ((win.MonitorIndex + dir) % n + n) % n;
+            GraphicsSettings.Current.monitor = i;
+            if (win.Mode == RipNRage.Engine.Platform.DisplayMode.Windowed)
+                GraphicsSettings.Current.displayMode = "borderless"; // a monitor choice only means something fullscreen
+            // the resolution list belongs to the old monitor
+            GraphicsSettings.Current.fullscreenWidth = GraphicsSettings.Current.fullscreenHeight = GraphicsSettings.Current.refreshRate = null;
+            GraphicsSettings.ApplyDisplay();
+        }, "WHICH SCREEN BORDERLESS / FULLSCREEN USES");
+        _menu.AddSetting("RESOLUTION", () =>
+        {
+            if (win.Mode != RipNRage.Engine.Platform.DisplayMode.Fullscreen) return $"{win.Width}x{win.Height}";
+            var g = GraphicsSettings.Current;
+            return g.fullscreenWidth.HasValue ? $"{g.fullscreenWidth}x{g.fullscreenHeight}" + (g.refreshRate is int hz && hz > 0 ? $" @{hz}HZ" : "") : "DESKTOP";
+        }, dir =>
+        {
+            if (win.Mode != RipNRage.Engine.Platform.DisplayMode.Fullscreen) return;
+            var mons = RipNRage.Engine.Platform.Window.GetMonitors();
+            int mi = win.MonitorIndex;
+            if (mi < 0 || mi >= mons.Length) return;
+            var modes = mons[mi].Modes; // index -1 = desktop
+            var g = GraphicsSettings.Current;
+            int cur = -1;
+            for (int k = 0; k < modes.Length; k++)
+                if (g.fullscreenWidth == modes[k].width && g.fullscreenHeight == modes[k].height && (g.refreshRate ?? 0) == modes[k].refreshRate) { cur = k; break; }
+            int next = Math.Clamp(cur + dir, -1, modes.Length - 1);
+            if (next == cur) return;
+            if (next < 0) g.fullscreenWidth = g.fullscreenHeight = g.refreshRate = null;
+            else { g.fullscreenWidth = modes[next].width; g.fullscreenHeight = modes[next].height; g.refreshRate = modes[next].refreshRate; }
+            GraphicsSettings.ApplyDisplay();
+        }, "EXCLUSIVE FULLSCREEN VIDEO MODE (OTHER MODES SHOW THE CURRENT PIXEL SIZE)");
+        _menu.AddSetting("HIDPI 3D RESOLUTION", () =>
+        {
+            float ratio = Math.Max(win.PixelRatio, win.ContentScale);
+            if (ratio <= 1.01f) return "N/A (1X DISPLAY)";
+            return GraphicsSettings.HiDpiEnabled ? $"NATIVE ({ratio:0.##}X)" : "STANDARD (1X)";
+        }, _ => { GraphicsSettings.Current.hiDpi = !GraphicsSettings.HiDpiEnabled; GraphicsSettings.ApplyPixelScale(); },
+            "RETINA / HIDPI: NATIVE RENDERS THE 3D AT EVERY PHYSICAL PIXEL (UP TO 4X THE COST). THE HUD IS ALWAYS NATIVE");
         // ---- frame
         Toggle("POST-PROCESSING", () => r.PostFx.Enabled, v => GraphicsSettings.Current.postProcessing = v, "MASTER SWITCH FOR EVERY SCREEN EFFECT BELOW (F4)");
         Choice("RENDER SCALE", new[] { 0.5f, 0.6f, 0.75f, 0.85f, 1f }, () => pp.renderScale, v => GraphicsSettings.Current.renderScale = v, v => $"{v * 100f:0}%", "3D RESOLUTION RELATIVE TO THE WINDOW - THE BIGGEST SINGLE PERFORMANCE LEVER");
@@ -175,24 +232,31 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     public void DrawUi(UiBatch ui)
     {
-        float s = ui.Scale;
         float a = _anim;
-        float cx = ui.Width * 0.5f;
         ui.FillRect(new Rect(0, 0, ui.Width, ui.Height), new Color(0f, 0f, 0f, 0.7f * a));
 
-        float top = ui.Height * 0.93f;
-        float th = MenuList.DrawCentered(ui, "GRAPHICS", cx, top, 7f * s, new Color(0.95f, 0.85f, 0.55f, a), shadow: true);
         // live cost readout: the point of toggling things is seeing what they cost
         string perf = $"FPS {Profiler.Fps:0.0}   FRAME {Profiler.FrameMsAvg:0.0} MS   1% LOW {Profiler.FpsLow1:0.0}" + (Profiler.GpuTimersAvailable ? $"   GPU {Profiler.GpuFrameMsAvg:0.0} MS" : "");
-        Color pc = Profiler.FrameMsAvg > 33.4 ? new Color(1f, 0.45f, 0.35f, a) : Profiler.FrameMsAvg > 16.8 ? new Color(1f, 0.85f, 0.4f, a) : new Color(0.6f, 1f, 0.6f, a);
-        float ph = MenuList.DrawCentered(ui, perf, cx, top - th - 6f * s, 2.4f * s, pc);
-        if (RipNRage.Engine.Platform.GpuInfo.IsSoftware)
-            MenuList.DrawCentered(ui, "SOFTWARE RENDERER: THESE EFFECTS RUN ON THE CPU", cx, top - th - ph - 10f * s, 2f * s, new Color(1f, 0.5f, 0.4f, a));
+        Color pc = Profiler.FrameMsAvg > 33.4 ? new Color(1f, 0.45f, 0.35f, 1f) : Profiler.FrameMsAvg > 16.8 ? new Color(1f, 0.85f, 0.4f, 1f) : new Color(0.6f, 1f, 0.6f, 1f);
 
-        float menuTop = top - th - ph - 30f * s;
-        var clicked = _menu.Draw(ui, cx, menuTop, a);
+        var c = _clay;
+        c.Begin(ui);
+        MenuItem clicked;
+        using (c.Box(ClayScreen.Column(0.07f * ClayScreen.RefHeight)))
+        {
+            c.Text("GRAPHICS", ClayScreen.Line(7f, new Color(0.95f, 0.85f, 0.55f, 1f), shadow: true));
+            ClayScreen.Gap(c, 6f);
+            c.Text(perf, ClayScreen.Line(2.4f, pc));
+            if (RipNRage.Engine.Platform.GpuInfo.IsSoftware)
+            {
+                ClayScreen.Gap(c, 4f);
+                c.Text("SOFTWARE RENDERER: THESE EFFECTS RUN ON THE CPU", ClayScreen.Line(2f, new Color(1f, 0.5f, 0.4f, 1f)));
+            }
+            ClayScreen.Gap(c, 12f);
+            clicked = _menu.Build(c);
+        }
+        ClayScreen.Footer(c, "LEFT/RIGHT OR CLICK CHANGE   UP/DOWN SELECT   ESC BACK   CHANGES APPLY IMMEDIATELY AND ARE SAVED", 60f, ClayScreen.Line(2f, new Color(0.7f, 0.7f, 0.72f, 0.7f)));
+        c.End(a);
         if (clicked != null && !_closed && !clicked.IsSetting) { Play(ProceduralSounds.MenuSelect); clicked.onActivate?.Invoke(); }
-
-        MenuList.DrawCentered(ui, "LEFT/RIGHT OR CLICK CHANGE   UP/DOWN SELECT   ESC BACK   CHANGES APPLY IMMEDIATELY AND ARE SAVED", cx, 60f * s, 2f * s, new Color(0.7f, 0.7f, 0.72f, 0.7f * a));
     }
 }
