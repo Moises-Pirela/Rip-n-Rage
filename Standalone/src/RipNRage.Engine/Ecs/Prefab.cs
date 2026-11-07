@@ -41,6 +41,7 @@ namespace RipNRage.Engine.Ecs
         private static readonly JsonSerializerOptions Options = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true, IncludeFields = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }, // "Point" as well as 1
         };
 
         public IEnumerable<string> Names => _raw.Keys;

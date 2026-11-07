@@ -57,7 +57,7 @@ namespace RipNRage.Engine.Graphics
         }
 
         /// <summary>A sprite that can go into a batch: default material (the built-in sprite shader), no per-object properties, no mesh larger than the scratch.</summary>
-        public static bool Batchable(SpriteRenderer sr)
+        public static bool Batchable(SpriteDraw sr)
         {
             var mat = sr.sharedMaterial;
             if (mat != SpriteRenderer.DefaultSpriteMaterial && (mat == null || mat.shader != SpriteRenderer.DefaultSpriteMaterial.shader || !mat.IsEmpty)) return false;
@@ -70,20 +70,20 @@ namespace RipNRage.Engine.Graphics
         }
 
         /// <summary>Appends a sprite (world-space geometry, billboarded towards <paramref name="cam"/>); starts a new batch when the state differs.</summary>
-        public void Add(SpriteRenderer sr, Camera cam, bool lit, Vector3 normal)
+        public void Add(SpriteDraw sr, CameraView cam, bool lit, Vector3 normal)
         {
             Sprite sp = sr.sprite;
             var mat = sr.sharedMaterial;
-            Vector3 pos = sr.transform.position;
+            Vector3 pos = sr.Pose.Position;
             Matrix4x4 model;
             if (sr.billboard)
             {
-                Vector3 toCam = cam.transform.position - pos; toCam.y = 0f;
+                Vector3 toCam = cam.Position - pos; toCam.y = 0f;
                 Quaternion rot = toCam.sqrMagnitude > 1E-06f ? Quaternion.LookRotation(-toCam.normalized) : Quaternion.identity;
                 if (sr.billboardRoll != 0f) rot = rot * Quaternion.AngleAxis(sr.billboardRoll, Vector3.forward);
-                model = Matrix4x4.TRS(pos, rot, sr.transform.lossyScale);
+                model = Matrix4x4.TRS(pos, rot, sr.Pose.Scale);
             }
-            else model = sr.transform.localToWorldMatrix;
+            else model = sr.Pose.LocalToWorld;
 
             int n = sp.HasMesh && !sr.flipX && !sr.flipY ? sp.vertices.Length : 4;
             int ni = sp.HasMesh && !sr.flipX && !sr.flipY ? sp.triangles.Length : 6;

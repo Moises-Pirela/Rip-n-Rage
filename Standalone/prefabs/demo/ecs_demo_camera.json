@@ -1,0 +1,6 @@
+// ECS demo: a camera entity. Higher priority than any other ECS camera; an ECS camera wins over the legacy one.
+{ "name": "ecs_demo_camera",
+  "components": {
+    "LocalTransform": { "position": [0, 3.0, -2.0], "rotation": [12, 0, 0] },
+    "CameraLens": { "fov": 70, "priority": 10, "background": [0.19, 0.3, 0.47, 1] }
+  } }

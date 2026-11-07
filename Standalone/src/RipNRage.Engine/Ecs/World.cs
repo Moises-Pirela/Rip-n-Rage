@@ -119,6 +119,15 @@ namespace RipNRage.Engine.Ecs
             EntityCount--;
         }
 
+        /// <summary>Destroys every entity (level restart). OnEntityDestroyed fires for each.</summary>
+        public void DestroyAllEntities()
+        {
+            AssertNotIterating();
+            for (int i = 0; i < _recordCount; i++)
+                if (_records[i].Alive) QueueDestroyed(new Entity(i, _records[i].Generation));
+            Sync();
+        }
+
         // ------------------------------------------------------------------ components
 
         public bool Has<T>(Entity e) where T : struct, IComponent => IsAlive(e) && _records[e.Index].Signature.Has(ComponentType<T>.Id);

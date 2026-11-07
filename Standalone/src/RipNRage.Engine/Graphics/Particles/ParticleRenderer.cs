@@ -58,7 +58,7 @@ namespace RipNRage.Engine.Graphics.Particles
         }
 
         /// <summary>Builds and draws all particle batches. <paramref name="prepare"/> uploads the per-frame uniforms (view-projection, lighting) for a shader.</summary>
-        public void Render(Camera cam, in Matrix4x4 view, in Matrix4x4 viewProj, bool frustumCull, Action<Shader> prepare)
+        public void Render(CameraView cam, in Matrix4x4 view, in Matrix4x4 viewProj, bool frustumCull, Action<Shader> prepare)
         {
             DrawCalls = 0; QuadsDrawn = 0;
             var instances = ParticleWorld.Instances;
@@ -93,8 +93,8 @@ namespace RipNRage.Engine.Graphics.Particles
             GL.Disable(GL.CULL_FACE);
             GL.Enable(GL.BLEND);
 
-            Vector3 camPos = cam.transform.position;
-            Vector3 camRight = cam.transform.right, camUp = cam.transform.up, camFwd = cam.transform.forward;
+            Vector3 camPos = cam.Position;
+            Vector3 camRight = cam.Right, camUp = cam.Up, camFwd = cam.Forward;
 
             Texture2D batchTex = null; ParticleBlend batchBlend = ParticleBlend.Alpha; bool batchLit = false;
             _quadCount = 0;

@@ -63,6 +63,8 @@ namespace RipNRage.Engine
         public Window Window { get; private set; }
         public RenderPipeline Renderer { get; private set; }
         public Scene Scene { get; private set; }
+        /// <summary>The ECS world. Engine systems (transforms, hierarchy) are registered; games add theirs with AddSystemsFromAssemblies.</summary>
+        public Ecs.World World { get; private set; }
         public ApplicationOptions Options { get; }
         /// <summary>Hot-reloaded post-processing tunables (null when no tunables.cfg was found).</summary>
         public TunablesFile Tunables { get; private set; }
@@ -119,6 +121,11 @@ namespace RipNRage.Engine
                 catch (Exception e) { Debug.LogWarning("material texture: " + e.Message); return null; }
             };
             Renderer = new RenderPipeline();
+            World = new Ecs.World();
+            World.AddSystemsFromAssemblies(typeof(Ecs.World).Assembly); // engine systems
+            Renderer.Producers.Add(new Ecs.Rendering.EcsRenderProducer(World)); // first: an ECS camera wins over a legacy one
+            // ECS migration: the GameObject scene still feeds the renderer until gameplay is ported (see LegacySceneProducer)
+            Renderer.Producers.Add(new Graphics.LegacySceneProducer(() => Scene));
             if (!options.Mute) AudioEngine.Initialize();
             Scene = new Scene();
 
@@ -210,6 +217,7 @@ namespace RipNRage.Engine
             Renderer.GpuOcclusion?.Reset();
             InputSystem.ClearUiOwners();
             Tweening.TweenRunner.Update(0f);
+            World.DestroyAllEntities();
             Scene = new Scene();
             Time.timeScale = 1f;
         }
@@ -258,6 +266,10 @@ namespace RipNRage.Engine
                 Profiler.Begin("physics");
                 Physics.Step();
                 Profiler.End();
+                Profiler.Begin("ecs");
+                World.FixedDeltaTime = Time.fixedDeltaTime;
+                World.Update(Time.deltaTime);
+                Profiler.End();
                 Profiler.Begin("tweens");
                 TweenRunner.Update(Time.deltaTime);
                 Profiler.End();
@@ -266,7 +278,7 @@ namespace RipNRage.Engine
                 Profiler.End();
 
                 Profiler.Begin("render");
-                if (!Options.NoRender && Window.Width > 0 && Window.Height > 0) Renderer.Render(Scene, Window.Width, Window.Height);
+                if (!Options.NoRender && Window.Width > 0 && Window.Height > 0) Renderer.Render(Window.Width, Window.Height);
                 Profiler.End();
                 Profiler.Begin("present", gpu: false);
                 Window.SwapBuffers();
@@ -333,6 +345,8 @@ namespace RipNRage.Engine
         public void Dispose()
         {
             AudioEngine.Shutdown();
+            World?.EndSim();
+            World?.Dispose();
             Renderer?.Dispose();
             Window?.Dispose();
             Current = null;

@@ -46,6 +46,7 @@ internal static class Program
             Equal(-20f, Mathf.DeltaAngle(10f, 350f), "DeltaAngle wraps backward");
             True(Mathf.Approximately(1f, 1f + 0.0000001f), "Approximately small delta");
             EcsChecks.Run(True);
+            TransformChecks.Run(True);
             Console.WriteLine($"PASS: {_assertions} bounded engine math assertions");
             return 0;
         }

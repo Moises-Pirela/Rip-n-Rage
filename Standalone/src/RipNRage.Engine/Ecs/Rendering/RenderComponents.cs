@@ -1,0 +1,135 @@
+using System;
+using System.Collections.Generic;
+using RipNRage.Engine.Graphics;
+using RipNRage.Engine.Graphics.Lighting;
+
+namespace RipNRage.Engine.Ecs.Rendering
+{
+    /// <summary>Makes the entity a camera; the highest <see cref="Priority"/> one renders the frame.</summary>
+    public struct CameraLens : IComponent
+    {
+        public float FieldOfView, Near, Far;
+        public Color Background;
+        public int Priority;
+    }
+
+    /// <summary>A sprite quad in the entity's XY plane (same semantics as the legacy SpriteRenderer).</summary>
+    public struct SpriteRender : IComponent
+    {
+        public Sprite Sprite;
+        public Color Color;
+        public bool FlipX, FlipY, Billboard, Lit, CastsShadow, FullBright;
+        public float BillboardRoll;
+        public int SortingOrder;
+        public RenderLayer Layer;
+        public Material Material;
+        public MaterialPropertyBlock Properties;
+    }
+
+    /// <summary>A textured mesh (same semantics as the legacy MeshRenderer).</summary>
+    public struct MeshRender : IComponent
+    {
+        public Mesh Mesh;
+        public Texture2D Texture;
+        public Vector2 UvScale;
+        public float Emissive;
+        public bool CastsShadow, Transparent, Occluder;
+        public Color Color;
+        public RenderLayer Layer;
+        public Material Material;
+        public MaterialPropertyBlock Properties;
+    }
+
+    public struct LightSource : IComponent
+    {
+        public LightType Type;
+        public Color Color;
+        public float Intensity, Range;
+    }
+
+    /// <summary>Tag: skip this entity when rendering (cheap to toggle: sparse).</summary>
+    [SparseComponent] public struct Hidden : IComponent { }
+
+    // ---------------------------------------------------------------- configs (JSON prefabs)
+
+    public sealed class CameraLensConfig : ComponentConfig<CameraLens>
+    {
+        public float fov = 72f, near = 0.05f, far = 2000f;
+        public float[] background = { 0.19f, 0.3f, 0.47f, 1f };
+        public int priority;
+        public override CameraLens Bake() => new CameraLens { FieldOfView = fov, Near = near, Far = far, Background = ConfigUtil.Color(background), Priority = priority };
+    }
+
+    public sealed class SpriteRenderConfig : ComponentConfig<SpriteRender>
+    {
+        /// <summary>Sprite reference as SpriteLibrary resolves it ("Atlas/name" or a loose sprite path).</summary>
+        public string sprite;
+        public float[] color = { 1, 1, 1, 1 };
+        public bool flipX, flipY, billboard, lit, castsShadow = true, fullBright;
+        public float billboardRoll;
+        public int sortingOrder;
+        public RenderLayer layer;
+        public override SpriteRender Bake() => new SpriteRender
+        {
+            Sprite = string.IsNullOrEmpty(sprite) ? null : SpriteLibrary.Resolve(sprite),
+            Color = ConfigUtil.Color(color), FlipX = flipX, FlipY = flipY, Billboard = billboard, Lit = lit,
+            CastsShadow = castsShadow, FullBright = fullBright, BillboardRoll = billboardRoll, SortingOrder = sortingOrder, Layer = layer,
+            Properties = new MaterialPropertyBlock(),
+        };
+    }
+
+    public sealed class MeshRenderConfig : ComponentConfig<MeshRender>
+    {
+        /// <summary>A <see cref="MeshLibrary"/> name ("box", "plane", or a registered / .obj mesh).</summary>
+        public string mesh = "box";
+        /// <summary>Texture path under assets (null = white).</summary>
+        public string texture;
+        public float[] color = { 1, 1, 1, 1 };
+        public float[] uvScale = { 1, 1 };
+        public float emissive;
+        public bool castsShadow = true, transparent, occluder;
+        public RenderLayer layer;
+        public override MeshRender Bake() => new MeshRender
+        {
+            Mesh = MeshLibrary.Get(mesh),
+            Texture = string.IsNullOrEmpty(texture) ? Texture2D.White : Texture2D.Load(Application.AssetPath(texture), FilterMode.Trilinear, TextureWrapMode.Repeat),
+            Color = ConfigUtil.Color(color), UvScale = new Vector2(uvScale[0], uvScale[1]), Emissive = emissive,
+            CastsShadow = castsShadow, Transparent = transparent, Occluder = occluder, Layer = layer,
+            Properties = new MaterialPropertyBlock(),
+        };
+    }
+
+    public sealed class LightSourceConfig : ComponentConfig<LightSource>
+    {
+        public LightType type = LightType.Point;
+        public float[] color = { 1, 1, 1, 1 };
+        public float intensity = 1f, range = 10f;
+        public override LightSource Bake() => new LightSource { Type = type, Color = ConfigUtil.Color(color), Intensity = intensity, Range = range };
+    }
+
+    public sealed class HiddenConfig : ComponentConfig<Hidden> { public override Hidden Bake() => default; }
+
+    internal static class ConfigUtil
+    {
+        public static Color Color(float[] c) => c == null || c.Length < 3 ? RipNRage.Engine.Color.white : new Color(c[0], c[1], c[2], c.Length > 3 ? c[3] : 1f);
+    }
+
+    /// <summary>Named meshes for configs: unit "box" and "plane" built in; register others (or give an .obj path under assets).</summary>
+    public static class MeshLibrary
+    {
+        private static readonly Dictionary<string, Mesh> _meshes = new Dictionary<string, Mesh>(StringComparer.OrdinalIgnoreCase);
+        public static void Register(string name, Mesh mesh) => _meshes[name] = mesh;
+        public static Mesh Get(string name)
+        {
+            if (_meshes.TryGetValue(name, out var m)) return m;
+            m = name.ToLowerInvariant() switch
+            {
+                "box" => Mesh.CreateBox(Vector3.zero, Vector3.one),
+                "plane" => Mesh.CreatePlane(Vector3.zero, 1f, 1f),
+                _ when name.EndsWith(".obj", StringComparison.OrdinalIgnoreCase) => Mesh.LoadObj(Application.AssetPath(name)),
+                _ => throw new KeyNotFoundException($"mesh '{name}' is not registered"),
+            };
+            return _meshes[name] = m;
+        }
+    }
+}

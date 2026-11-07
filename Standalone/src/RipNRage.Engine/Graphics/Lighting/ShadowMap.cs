@@ -69,7 +69,7 @@ namespace RipNRage.Engine.Graphics.Lighting
         public void Invalidate() { _staticDirty = true; _hasCenter = false; }
 
         /// <summary>Renders (or refreshes) the shadow map for this frame.</summary>
-        public unsafe void Render(LightingSettings cfg, Vector3 sunDir, Camera cam, List<MeshRenderer> meshes, List<SpriteRenderer> sprites, SpriteBatch batch = null)
+        public unsafe void Render(LightingSettings cfg, Vector3 sunDir, CameraView cam, List<MeshDraw> meshes, List<SpriteDraw> sprites, SpriteBatch batch = null)
         {
             if (_target == null || _target.Width != cfg.shadowResolution)
             {
@@ -87,7 +87,7 @@ namespace RipNRage.Engine.Graphics.Lighting
             Matrix4x4 lightView = lightWorld.inverse;
             float texel = 2f * r / cfg.shadowResolution;
             // centred on the camera position only (not ahead of it): turning around must not move the box
-            Vector3 wanted = lightView.MultiplyPoint3x4(cam.transform.position);
+            Vector3 wanted = lightView.MultiplyPoint3x4(cam.Position);
             bool lightChanged = !_hasCenter || (sunDir - _lastSunDir).sqrMagnitude > 1E-08f || MathF.Abs(_lastDistance - r) > 1E-04f;
             float recenter = r * Mathf.Clamp(cfg.shadowRecenterFraction, 0.02f, 0.9f);
             if (lightChanged || MathF.Abs(wanted.x - _centerLight.x) > recenter || MathF.Abs(wanted.y - _centerLight.y) > recenter || MathF.Abs(wanted.z - _centerLight.z) > r)
@@ -140,7 +140,7 @@ namespace RipNRage.Engine.Graphics.Lighting
                 {
                     if (sr.sprite == null || !sr.castsShadow) continue;
                     // cheap reject: sprite centre outside the light box
-                    Vector3 lp = lightView.MultiplyPoint3x4(sr.transform.position);
+                    Vector3 lp = lightView.MultiplyPoint3x4(sr.Pose.Position);
                     if (MathF.Abs(lp.x - c.x) > r2 || MathF.Abs(lp.y - c.y) > r2) continue;
                     if (batch != null && SpriteBatch.Batchable(sr)) batch.Add(sr, cam, false, Vector3.up);
                     else DrawSpriteQuad(sr, cam);
@@ -172,7 +172,7 @@ namespace RipNRage.Engine.Graphics.Lighting
         }
 
         /// <summary>Depth render of every shadow-casting mesh whose bounds touch the light box.</summary>
-        private void RenderStatic(in Matrix4x4 lightViewForBox, List<MeshRenderer> meshes, float r)
+        private void RenderStatic(in Matrix4x4 lightViewForBox, List<MeshDraw> meshes, float r)
         {
             _static.Bind();
             GL.Enable(GL.DEPTH_TEST);
@@ -195,7 +195,7 @@ namespace RipNRage.Engine.Graphics.Lighting
             {
                 if (mr.mesh == null || !mr.castsShadow) continue;
                 if (!IntersectsLightBox(mr, boxView, r)) { StaticCulled++; continue; }
-                _meshDepth.SetMatrix("uModel", mr.transform.localToWorldMatrix);
+                _meshDepth.SetMatrix("uModel", mr.Pose.LocalToWorld);
                 mr.mesh.Draw();
                 StaticCasters++;
             }
@@ -203,7 +203,7 @@ namespace RipNRage.Engine.Graphics.Lighting
         }
 
         /// <summary>World AABB of the renderer, transformed into the light's view space, tested against the ortho box.</summary>
-        private static bool IntersectsLightBox(MeshRenderer mr, in Matrix4x4 lightView, float r)
+        private static bool IntersectsLightBox(MeshDraw mr, in Matrix4x4 lightView, float r)
         {
             if (!Culling.RendererBounds.GetWorldAABB(mr, out var min, out var max)) return true;
             float lx0 = float.MaxValue, lx1 = float.MinValue, ly0 = float.MaxValue, ly1 = float.MinValue;
@@ -218,15 +218,15 @@ namespace RipNRage.Engine.Graphics.Lighting
         }
 
         /// <summary>Order-independent fingerprint of the caster set and their transforms (cheap: a few floats per mesh).</summary>
-        private static ulong StaticHash(List<MeshRenderer> meshes)
+        private static ulong StaticHash(List<MeshDraw> meshes)
         {
             static ulong F(float v) => (uint)BitConverter.SingleToInt32Bits(v);
             ulong h = 1469598103934665603UL;
             foreach (var mr in meshes)
             {
                 if (mr.mesh == null || !mr.castsShadow) continue;
-                var m = mr.transform.localToWorldMatrix;
-                ulong k = (ulong)(uint)mr.instanceId * 0x9E3779B97F4A7C15UL;
+                var m = mr.Pose.LocalToWorld;
+                ulong k = (ulong)mr.Id * 0x9E3779B97F4A7C15UL;
                 k ^= F(m.m03) | (F(m.m13) << 32);
                 k ^= (F(m.m23) << 7) ^ (F(m.m00) << 17) ^ (F(m.m11 + m.m22 + m.m01 + m.m12) << 29);
                 h += k * 0xBF58476D1CE4E5B9UL; // commutative combine: the list order may change without the scene changing
@@ -234,7 +234,7 @@ namespace RipNRage.Engine.Graphics.Lighting
             return h;
         }
 
-        private unsafe void DrawSpriteQuad(SpriteRenderer sr, Camera cam)
+        private unsafe void DrawSpriteQuad(SpriteDraw sr, CameraView cam)
         {
             Sprite sp = sr.sprite;
             sp.GetLocalCorners(out Vector2 min, out Vector2 max);
@@ -242,12 +242,12 @@ namespace RipNRage.Engine.Graphics.Lighting
             Matrix4x4 model;
             if (sr.billboard)
             {
-                Vector3 toCam = cam.transform.position - sr.transform.position; toCam.y = 0f;
+                Vector3 toCam = cam.Position - sr.Pose.Position; toCam.y = 0f;
                 Quaternion rot = toCam.sqrMagnitude > 1E-06f ? Quaternion.LookRotation(-toCam.normalized) : Quaternion.identity;
                 if (sr.billboardRoll != 0f) rot = rot * Quaternion.AngleAxis(sr.billboardRoll, Vector3.forward);
-                model = Matrix4x4.TRS(sr.transform.position, rot, sr.transform.lossyScale);
+                model = Matrix4x4.TRS(sr.Pose.Position, rot, sr.Pose.Scale);
             }
-            else model = sr.transform.localToWorldMatrix;
+            else model = sr.Pose.LocalToWorld;
             _spriteDepth.SetMatrix("uModel", model);
             GL.BindTexture(GL.TEXTURE_2D, sp.texture.Handle);
             void Set(int i, float x, float y, float u, float v) { _quad[i * 5] = x; _quad[i * 5 + 1] = y; _quad[i * 5 + 2] = 0; _quad[i * 5 + 3] = u; _quad[i * 5 + 4] = v; }

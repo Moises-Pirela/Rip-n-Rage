@@ -13,6 +13,7 @@ namespace RipNRage.Game
     ///   --assets &lt;dir&gt;        the assets folder, or a folder containing it (auto-detected otherwise)
     ///   --width W --height H   window size (default 1280x720)
     ///   --no-vsync             disable vertical sync
+    ///   --ecs-demo             spawn the prefabs/demo ECS scene (camera, parented spinning meshes, sprite, light)
     ///   --overlay 0|1|2        debug overlay mode for this run (off / frame stats / full profiler)
     ///   --windowed / --borderless / --fullscreen   display mode (default: the one saved in graphics.json, else windowed)
     ///   --monitor N            monitor index for borderless / fullscreen (0 = first; default: primary)
@@ -53,6 +54,7 @@ namespace RipNRage.Game
             bool? startInMenu = null;
             bool gpuInfoOnly = false;
             bool displayFromCli = false;
+            bool ecsDemo = false;
             for (int i = 0; i < args.Length; i++)
             {
                 string a = args[i];
@@ -63,6 +65,7 @@ namespace RipNRage.Game
                     case "--width": options.Width = int.Parse(Next()); break;
                     case "--height": options.Height = int.Parse(Next()); break;
                     case "--no-vsync": options.VSync = false; break;
+                    case "--ecs-demo": ecsDemo = true; break;
                     case "--overlay": DebugOverlay.ForcedMode = int.Parse(Next()); break;
                     case "--windowed": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Windowed; displayFromCli = true; break;
                     case "--borderless": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Borderless; displayFromCli = true; break;
@@ -142,6 +145,7 @@ namespace RipNRage.Game
                     tools.AddComponent<DebugOverlay>();
                     if (script != null) tools.AddComponent<DemoScript>().scriptName = script;
                 };
+                app.World.AddSystemsFromAssemblies(typeof(Program).Assembly); // game ECS systems
                 InputSystem.Initialize();          // rebindable gameplay / UI schemes (controls.json)
                 InputSystem.ManageCursor = true;   // locked in gameplay, free while any menu is up
                 RipNRage.Game.Content.GraphicsSettings.Install(); // player's graphics overrides on top of tunables.cfg
@@ -151,6 +155,7 @@ namespace RipNRage.Game
                 if (menu) GameSession.ShowMainMenu(levelPath);
                 else GameSession.StartLevel(levelPath);
                 if (loadSlot != null && !RipNRage.Game.Content.Level.GameSaveSystem.Load(loadSlot)) Console.Error.WriteLine("Could not load slot " + loadSlot);
+                if (ecsDemo) RipNRage.Game.Ecs.EcsDemo.Spawn(app.World, System.IO.Path.Combine(Application.dataPath, "..", "prefabs", "demo"));
                 app.Run();
                 return 0;
             }

@@ -28,8 +28,8 @@ namespace RipNRage.Engine.Graphics.Culling
         /// <summary>A hidden mesh whose query result has not arrived for this many frames is drawn again (deep GPU queues must not leave holes).</summary>
         public int MaxPendingFrames = 3;
 
-        private readonly Dictionary<MeshRenderer, State> _states = new Dictionary<MeshRenderer, State>();
-        private readonly List<MeshRenderer> _stale = new List<MeshRenderer>();
+        private readonly Dictionary<long, State> _states = new Dictionary<long, State>();
+        private readonly List<long> _stale = new List<long>();
         private readonly Shader _shader;
         private uint _vao, _vbo, _ebo;
         private int _lastSweep;
@@ -67,14 +67,14 @@ namespace RipNRage.Engine.Graphics.Culling
             GL.BindVertexArray(0);
         }
 
-        private State Get(MeshRenderer mr)
+        private State Get(MeshDraw mr)
         {
-            if (!_states.TryGetValue(mr, out var st)) { st = new State(); _states[mr] = st; }
+            if (!_states.TryGetValue(mr.Id, out var st)) { st = new State(); _states[mr.Id] = st; }
             return st;
         }
 
         /// <summary>Visibility decision for this frame from the last finished query (unknown = visible).</summary>
-        public bool IsVisible(MeshRenderer mr, int frame)
+        public bool IsVisible(MeshDraw mr, int frame)
         {
             var st = Get(mr);
             // back in the frustum after being away: the stored answer is stale → draw it and test afresh
@@ -88,7 +88,7 @@ namespace RipNRage.Engine.Graphics.Culling
         /// Call with the depth buffer of the opaque pass bound: reads back finished queries, then issues a box query
         /// for every candidate (frustum-visible mesh). Leaves colour / depth writes enabled again.
         /// </summary>
-        public void IssueQueries(List<MeshRenderer> candidates, in Matrix4x4 viewProj, Vector3 camPos, float nearPlane, int frame)
+        public void IssueQueries(List<MeshDraw> candidates, in Matrix4x4 viewProj, Vector3 camPos, float nearPlane, int frame)
         {
             Tested = 0; Hidden = 0; Pending = 0;
             if (candidates.Count == 0) { Sweep(frame); return; }
@@ -146,7 +146,7 @@ namespace RipNRage.Engine.Graphics.Culling
             _lastSweep = frame;
             _stale.Clear();
             foreach (var kv in _states)
-                if (frame - kv.Value.lastSeen > 600 || kv.Key.IsDestroyed) _stale.Add(kv.Key);
+                if (frame - kv.Value.lastSeen > 600) _stale.Add(kv.Key); // ids are stable per source; gone sources just stop being seen
             foreach (var mr in _stale)
             {
                 if (_states[mr].query != 0) GL.DeleteQuery(_states[mr].query);

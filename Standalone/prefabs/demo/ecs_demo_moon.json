@@ -1,0 +1,7 @@
+// Orbits the spinner (parent set when spawned); spins on its own axis too. Inherits the crate look.
+{ "name": "ecs_demo_moon", "base": "ecs_demo_spinner",
+  "components": {
+    "LocalTransform": { "position": [2.2, 0.6, 0], "scale": [0.4, 0.4, 0.4] },
+    "MeshRender": { "texture": "Textures/TEX-Purple_Proto.png" },
+    "Spin": { "degreesPerSecond": [90, 0, 0] }
+  } }

@@ -1,0 +1,7 @@
+// A spinning root crate; its children are separate prefabs parented at spawn time.
+{ "name": "ecs_demo_spinner",
+  "components": {
+    "LocalTransform": { "position": [0, 2.5, 6], "scale": [1.2, 1.2, 1.2] },
+    "MeshRender": { "mesh": "box", "texture": "Textures/TEX-Orange_Proto.png" },
+    "Spin": { "degreesPerSecond": [0, 60, 0] }
+  } }

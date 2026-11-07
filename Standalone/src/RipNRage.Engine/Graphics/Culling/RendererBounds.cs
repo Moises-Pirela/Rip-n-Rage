@@ -6,13 +6,13 @@ namespace RipNRage.Engine.Graphics.Culling
     public static class RendererBounds
     {
         /// <summary>Transforms the mesh's local bounds by the renderer's localToWorld matrix and returns the enclosing AABB.</summary>
-        public static bool GetWorldAABB(MeshRenderer mr, out Vector3 min, out Vector3 max)
+        public static bool GetWorldAABB(MeshDraw mr, out Vector3 min, out Vector3 max)
         {
             min = max = Vector3.zero;
             var mesh = mr.mesh;
             if (mesh == null) return false;
             if (mesh.boundsMin == mesh.boundsMax && mesh.vertices.Length > 0) mesh.RecalculateBounds();
-            TransformAABB(mr.transform.localToWorldMatrix, mesh.boundsMin, mesh.boundsMax, out min, out max);
+            TransformAABB(mr.Pose.LocalToWorld, mesh.boundsMin, mesh.boundsMax, out min, out max);
             return true;
         }
 
@@ -20,7 +20,7 @@ namespace RipNRage.Engine.Graphics.Culling
         /// Bounds of a sprite quad. Billboards rotate around Y so a cylinder-ish box (max of width/height extents) is used;
         /// static sprites use their rotated quad corners.
         /// </summary>
-        public static bool GetWorldAABB(SpriteRenderer sr, out Vector3 min, out Vector3 max)
+        public static bool GetWorldAABB(SpriteDraw sr, out Vector3 min, out Vector3 max)
         {
             min = max = Vector3.zero;
             var sp = sr.sprite;
@@ -28,8 +28,8 @@ namespace RipNRage.Engine.Graphics.Culling
             sp.GetLocalCorners(out Vector2 lmin, out Vector2 lmax);
             if (sr.billboard)
             {
-                Vector3 s = sr.transform.lossyScale;
-                Vector3 p = sr.transform.position;
+                Vector3 s = sr.Pose.Scale;
+                Vector3 p = sr.Pose.Position;
                 float w = MathF.Max(MathF.Abs(lmin.x), MathF.Abs(lmax.x)) * MathF.Abs(s.x);
                 float r = w; // any yaw: the quad sweeps a cylinder of radius = half width
                 float y0 = lmin.y * s.y, y1 = lmax.y * s.y;
@@ -38,7 +38,7 @@ namespace RipNRage.Engine.Graphics.Culling
                 max = new Vector3(p.x + r, p.y + y1, p.z + r);
                 return true;
             }
-            TransformAABB(sr.transform.localToWorldMatrix, new Vector3(lmin.x, lmin.y, 0f), new Vector3(lmax.x, lmax.y, 0f), out min, out max);
+            TransformAABB(sr.Pose.LocalToWorld, new Vector3(lmin.x, lmin.y, 0f), new Vector3(lmax.x, lmax.y, 0f), out min, out max);
             return true;
         }
 

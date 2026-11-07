@@ -37,14 +37,14 @@ namespace RipNRage.Engine.Graphics
         private uint _skyVao, _skyVbo;
         private readonly float[] _quadData = new float[MaxSpriteVerts * 5];
         private readonly uint[] _quadIndices = new uint[MaxSpriteVerts * 3];
-        private readonly List<SpriteRenderer> _worldSprites = new List<SpriteRenderer>();
-        private readonly List<SpriteRenderer> _fpSprites = new List<SpriteRenderer>();
-        private readonly List<MeshRenderer> _meshes = new List<MeshRenderer>();
-        private readonly List<MeshRenderer> _fpMeshes = new List<MeshRenderer>();
-        private readonly List<MeshRenderer> _visibleMeshes = new List<MeshRenderer>();
-        private readonly List<SpriteRenderer> _visibleSprites = new List<SpriteRenderer>();
+        private readonly List<SpriteDraw> _worldSprites = new List<SpriteDraw>();
+        private readonly List<SpriteDraw> _fpSprites = new List<SpriteDraw>();
+        private readonly List<MeshDraw> _meshes = new List<MeshDraw>();
+        private readonly List<MeshDraw> _fpMeshes = new List<MeshDraw>();
+        private readonly List<MeshDraw> _visibleMeshes = new List<MeshDraw>();
+        private readonly List<SpriteDraw> _visibleSprites = new List<SpriteDraw>();
         private readonly List<IUiDrawer> _uiDrawers = new List<IUiDrawer>();
-        private readonly List<SpriteRenderer> _casters = new List<SpriteRenderer>();
+        private readonly List<SpriteDraw> _casters = new List<SpriteDraw>();
         // batching: many sprites with the same texture / material in one draw; many copies of one mesh in one instanced draw
         private readonly SpriteBatch _spriteBatch;
         private Shader _spriteBatchShader;
@@ -73,7 +73,7 @@ namespace RipNRage.Engine.Graphics
         public OcclusionBuffer Occlusion { get; }
         /// <summary>Hardware occlusion queries (default path, <c>[culling] occlusion = gpu</c>).</summary>
         public GpuOcclusion GpuOcclusion { get; }
-        private readonly List<MeshRenderer> _occlusionCandidates = new List<MeshRenderer>();
+        private readonly List<MeshDraw> _occlusionCandidates = new List<MeshDraw>();
         private bool _gpuOcclusionThisFrame;
         /// <summary>Slack added to every renderer AABB before culling (covers shader vertex animation and sprite wobble).</summary>
         public static readonly Vector3 BoundsPadding = new Vector3(0.3f, 0.3f, 0.3f);
@@ -138,25 +138,33 @@ namespace RipNRage.Engine.Graphics
             GL.BindVertexArray(0);
         }
 
-        public void Render(Scene scene, int width, int height)
+        /// <summary>Sources of draw items, run in order every frame (the ECS extraction, the legacy scene collector).</summary>
+        public readonly List<IRenderProducer> Producers = new List<IRenderProducer>();
+        private readonly RenderFrame _frame = new RenderFrame();
+        /// <summary>The frame being drawn (valid during and after <see cref="Render"/>).</summary>
+        public RenderFrame Frame => _frame;
+
+        public void Render(int width, int height)
         {
             DrawCalls = 0;
             LightUploads = 0;
             _dlShader = null; _dlMask = -1;
-            var cam = Camera.main;
+            Profiler.Begin("collect");
+            Collect();
+            Profiler.End();
+            var cam = _frame.Camera;
             if (cam == null || width == 0 || height == 0)
             {
                 RenderTarget.BindDefault(width, height);
                 GL.ClearColor(0, 0, 0, 1); GL.Clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
                 // no camera (pure UI scenes such as a menu): still give the UI drawers their pass
-                if (cam == null && width > 0 && height > 0) { Collect(scene); DrawUiPass(width, height, null); }
+                if (cam == null && width > 0 && height > 0) DrawUiPass(width, height, null);
                 GL.BindVertexArray(0);
                 return;
             }
 
             Profiler.GpuFrameBegin();
-            Profiler.Begin("collect");
-            Collect(scene);
+            Profiler.Begin("lights");
             ApplyLightingSettings();
             GatherLights(cam);
             Profiler.End();
@@ -181,7 +189,7 @@ namespace RipNRage.Engine.Graphics
             Matrix4x4 view = cam.worldToCameraMatrix;
             Matrix4x4 proj = cam.ProjectionMatrix(aspect);
             Matrix4x4 viewProj = proj * view;
-            Vector3 camPos = cam.transform.position;
+            Vector3 camPos = cam.Position;
             _viewProj = viewProj; _camPos = camPos;
             _prepared.Clear();
             _fpPass = false; _overrideViewProj = false;
@@ -300,14 +308,14 @@ namespace RipNRage.Engine.Graphics
             }
         }
 
-        private void RenderSky(Camera cam, in Matrix4x4 proj)
+        private void RenderSky(CameraView cam, in Matrix4x4 proj)
         {
             GL.Disable(GL.DEPTH_TEST);
             GL.Disable(GL.BLEND);
             GL.Disable(GL.CULL_FACE);
             _skyShader.Use();
             // rotation-only view so the sky is independent of camera position
-            Matrix4x4 rotView = Matrix4x4.Rotate(Quaternion.Inverse(cam.transform.rotation) * Quaternion.AngleAxis(RenderSettings.skyboxRotation, Vector3.up));
+            Matrix4x4 rotView = Matrix4x4.Rotate(Quaternion.Inverse(cam.Rotation) * Quaternion.AngleAxis(RenderSettings.skyboxRotation, Vector3.up));
             _skyShader.SetMatrix("uInvViewProj", (proj * rotView).inverse);
             _skyShader.SetVector("uHorizon", new Vector3(RenderSettings.skyHorizon.r, RenderSettings.skyHorizon.g, RenderSettings.skyHorizon.b));
             _skyShader.SetVector("uZenith", new Vector3(RenderSettings.skyZenith.r, RenderSettings.skyZenith.g, RenderSettings.skyZenith.b));
@@ -320,7 +328,7 @@ namespace RipNRage.Engine.Graphics
         }
 
         /// <summary>Opaque meshes by render queue, transparent meshes, world sprites back-to-front, debug lines.</summary>
-        private void RenderWorld(Camera cam, in Matrix4x4 view, in Matrix4x4 viewProj)
+        private void RenderWorld(CameraView cam, in Matrix4x4 view, in Matrix4x4 viewProj)
         {
             GL.DepthFunc(GL.LEQUAL);
             GL.FrontFace(GL.CW); // left-handed world: clockwise-from-the-front triangles face the viewer
@@ -378,7 +386,7 @@ namespace RipNRage.Engine.Graphics
         /// cleared depth buffer after the world post-process stage so motion blur/fog never smear the weapon.
         /// Sprites sort by sortingOrder then depth; FirstPerson meshes are drawn first (depth tested among themselves).
         /// </summary>
-        private void RenderViewmodel(Camera cam, in Matrix4x4 view, float aspect, CameraSettings cfg)
+        private void RenderViewmodel(CameraView cam, in Matrix4x4 view, float aspect, CameraSettings cfg)
         {
             if (_fpSprites.Count == 0 && _fpMeshes.Count == 0) return;
             GL.Clear(GL.DEPTH_BUFFER_BIT);
@@ -388,7 +396,7 @@ namespace RipNRage.Engine.Graphics
             _overrideViewProj = true;
             _fpPass = true;
             // lit viewmodel: light it as a surface facing the camera (flattened so the sun/lights read like on a billboard)
-            Vector3 n = -cam.transform.forward; n.y *= 0.35f;
+            Vector3 n = -cam.Forward; n.y *= 0.35f;
             _viewmodelNormal = n.sqrMagnitude > 1E-06f ? n.normalized : Vector3.back;
 
             GL.DepthFunc(GL.LEQUAL);
@@ -405,7 +413,7 @@ namespace RipNRage.Engine.Graphics
         }
 
         /// <summary>Frustum + occlusion tests for world meshes, sprites and point lights (shadow casters are never culled).</summary>
-        private void CullWorld(Camera cam, in Matrix4x4 view, in Matrix4x4 proj, in Matrix4x4 viewProj, CameraSettings cfg)
+        private void CullWorld(CameraView cam, in Matrix4x4 view, in Matrix4x4 proj, in Matrix4x4 viewProj, CameraSettings cfg)
         {
             var st = Culling;
             st.Reset();
@@ -424,7 +432,7 @@ namespace RipNRage.Engine.Graphics
                 {
                     if (!mr.occluder || mr.mesh == null || mr.sharedMaterial.IsTransparent) continue;
                     if (frustumOn && RendererBounds.GetWorldAABB(mr, out var omin, out var omax) && !frustum.IntersectsAABB(omin, omax)) continue;
-                    Occlusion.AddOccluder(mr.mesh, mr.transform.localToWorldMatrix);
+                    Occlusion.AddOccluder(mr.mesh, mr.Pose.LocalToWorld);
                 }
                 st.occluderTriangles = Occlusion.TrianglesRasterised;
             }
@@ -503,28 +511,29 @@ namespace RipNRage.Engine.Graphics
             _sunColor = new Vector3(Lighting.sunColor.r, Lighting.sunColor.g, Lighting.sunColor.b) * Lighting.sunIntensity;
         }
 
+        private readonly List<LightDraw> _points = new List<LightDraw>();
+
         /// <summary>Directional Light components override the sun; the nearest point lights fill the light arrays.</summary>
-        private void GatherLights(Camera cam)
+        private void GatherLights(CameraView cam)
         {
             _lightCount = 0;
-            Vector3 camPos = cam.transform.position;
-            var points = new List<Light>();
-            foreach (var l in Light.Lights)
+            Vector3 camPos = cam.Position;
+            _points.Clear();
+            foreach (var l in _frame.Lights)
             {
-                if (l.destroyed || !l.isActiveAndEnabled) continue;
                 if (l.type == LightType.Directional)
                 {
-                    _sunDir = l.transform.forward.normalized;
+                    _sunDir = l.Forward.normalized;
                     _sunColor = new Vector3(l.color.r, l.color.g, l.color.b) * l.intensity;
                 }
-                else if (l.intensity > 0f && l.range > 0f) points.Add(l);
+                else if (l.intensity > 0f && l.range > 0f) _points.Add(l);
             }
-            points.Sort((a, b) => (a.transform.position - camPos).sqrMagnitude.CompareTo((b.transform.position - camPos).sqrMagnitude));
+            _points.Sort((a, b) => (a.Position - camPos).sqrMagnitude.CompareTo((b.Position - camPos).sqrMagnitude));
             int max = Mathf.Min(Lighting.maxPointLights, 16);
-            foreach (var l in points)
+            foreach (var l in _points)
             {
                 if (_lightCount >= max) break;
-                _lightPos[_lightCount] = l.transform.position;
+                _lightPos[_lightCount] = l.Position;
                 _lightColor[_lightCount] = new Vector3(l.color.r, l.color.g, l.color.b) * l.intensity;
                 _lightRange[_lightCount] = l.range;
                 _lightCount++;
@@ -581,13 +590,13 @@ namespace RipNRage.Engine.Graphics
         /// <summary>RIPNRAGE_DEBUG_SHADOW=2: meshes show their shadow factor only.</summary>
         public static readonly bool DebugShadowView = Environment.GetEnvironmentVariable("RIPNRAGE_DEBUG_SHADOW") == "2";
 
-        private void DrawMesh(MeshRenderer mr)
+        private void DrawMesh(MeshDraw mr)
         {
             var mat = mr.sharedMaterial;
             PrepareShader(mat.shader);
             mat.ApplyState();
             var sh = mat.shader;
-            sh.SetMatrix("uModel", mr.transform.localToWorldMatrix);
+            sh.SetMatrix("uModel", mr.Pose.LocalToWorld);
             if (_lightCount > 0 && Lighting.lightsPerDraw > 0 && RendererBounds.GetWorldAABB(mr, out var lmin, out var lmax)) SetDrawLights(sh, lmin, lmax);
             // legacy per-renderer fields act as defaults; material and property block override them
             sh.SetColor("uTint", mr.color);
@@ -633,43 +642,35 @@ namespace RipNRage.Engine.Graphics
             LightUploads++;
         }
 
-        private void Collect(Scene scene)
+        /// <summary>Runs the producers, then sorts the frame's items into the pass lists.</summary>
+        private void Collect()
         {
+            _frame.Reset();
+            foreach (var p in Producers) p.Produce(_frame);
             _worldSprites.Clear(); _fpSprites.Clear(); _meshes.Clear(); _fpMeshes.Clear(); _uiDrawers.Clear();
-            foreach (var go in scene.GameObjects)
+            foreach (var sr in _frame.Sprites)
             {
-                if (go.destroyed || !go.activeInHierarchy) continue;
-                foreach (var c in go.Components)
-                {
-                    if (c.destroyed) continue;
-                    if (c is Behaviour b && !b.enabled) continue;
-                    switch (c)
-                    {
-                        case SpriteRenderer sr when sr.sprite != null:
-                            if (sr.renderLayer == RenderLayer.FirstPerson) _fpSprites.Add(sr); else _worldSprites.Add(sr);
-                            break;
-                        case MeshRenderer mr:
-                            if (mr.renderLayer == RenderLayer.FirstPerson) _fpMeshes.Add(mr); else _meshes.Add(mr);
-                            break;
-                    }
-                    if (c is IUiDrawer ui) _uiDrawers.Add(ui);
-                }
+                if (sr.sprite == null) continue;
+                if (sr.renderLayer == RenderLayer.FirstPerson) _fpSprites.Add(sr); else _worldSprites.Add(sr);
             }
+            foreach (var mr in _frame.Meshes)
+                if (mr.renderLayer == RenderLayer.FirstPerson) _fpMeshes.Add(mr); else _meshes.Add(mr);
+            _uiDrawers.AddRange(_frame.UiDrawers);
         }
 
-        private readonly Dictionary<SpriteRenderer, float> _depthCache = new Dictionary<SpriteRenderer, float>();
-        private readonly Dictionary<MeshRenderer, float> _meshDepthCache = new Dictionary<MeshRenderer, float>();
+        private readonly Dictionary<SpriteDraw, float> _depthCache = new Dictionary<SpriteDraw, float>();
+        private readonly Dictionary<MeshDraw, float> _meshDepthCache = new Dictionary<MeshDraw, float>();
 
-        private void SortByDepth(List<SpriteRenderer> list, Matrix4x4 view)
+        private void SortByDepth(List<SpriteDraw> list, Matrix4x4 view)
         {
             _depthCache.Clear();
-            foreach (var s in list) _depthCache[s] = view.MultiplyPoint3x4(s.transform.position).z;
+            foreach (var s in list) _depthCache[s] = view.MultiplyPoint3x4(s.Pose.Position).z;
             // stable sort: far first
             list.Sort((a, b) => _depthCache[b].CompareTo(_depthCache[a]));
         }
 
         /// <summary>World sprites in depth order: batchable runs go through the <see cref="SpriteBatch"/>, the rest one by one in place.</summary>
-        private void DrawSprites(List<SpriteRenderer> list, Camera cam)
+        private void DrawSprites(List<SpriteDraw> list, CameraView cam)
         {
             BatchedSprites = 0;
             if (!_spriteBatchShaderLooked) { _spriteBatchShaderLooked = true; _spriteBatchShader = ShaderLibrary.GetVariant("sprite", "spritebatch"); }
@@ -682,7 +683,7 @@ namespace RipNRage.Engine.Graphics
             {
                 if (!SpriteBatch.Batchable(sr)) { FlushSpriteBatch(bsh); DrawSprite(sr, cam, true); continue; }
                 bool lit = !sr.fullBright && sr.lit;
-                Vector3 n = cam.transform.position - sr.transform.position; n.y = 0f;
+                Vector3 n = cam.Position - sr.Pose.Position; n.y = 0f;
                 _spriteBatch.Add(sr, cam, lit, n.sqrMagnitude > 1E-06f ? n.normalized : Vector3.back);
             }
             FlushSpriteBatch(bsh);
@@ -718,9 +719,9 @@ namespace RipNRage.Engine.Graphics
 
         private uint _instanceVbo;
         private float[] _instanceData = new float[16 * 256];
-        private readonly Dictionary<MeshRenderer.InstanceKey, MeshRenderer.InstanceGroup> _groups = new Dictionary<MeshRenderer.InstanceKey, MeshRenderer.InstanceGroup>();
-        private readonly List<MeshRenderer.InstanceGroup> _groupList = new List<MeshRenderer.InstanceGroup>();
-        private readonly Stack<MeshRenderer.InstanceGroup> _groupPool = new Stack<MeshRenderer.InstanceGroup>();
+        private readonly Dictionary<MeshDraw.InstanceKey, MeshDraw.InstanceGroup> _groups = new Dictionary<MeshDraw.InstanceKey, MeshDraw.InstanceGroup>();
+        private readonly List<MeshDraw.InstanceGroup> _groupList = new List<MeshDraw.InstanceGroup>();
+        private readonly Stack<MeshDraw.InstanceGroup> _groupPool = new Stack<MeshDraw.InstanceGroup>();
         private readonly Dictionary<Shader, Shader> _instancedVariants = new Dictionary<Shader, Shader>();
         /// <summary>Largest edge (m) of an instance group's / sprite batch's bounds when the scene has more point lights than a draw can take (keeps the per-draw light subset local).</summary>
         public float InstanceGroupExtent = 48f;
@@ -735,7 +736,7 @@ namespace RipNRage.Engine.Graphics
         }
 
         /// <summary>Groups the opaque meshes that can share a draw (same mesh, material, texture, colour, uv scale, emissive; no per-object properties).</summary>
-        private void GroupInstances(List<MeshRenderer> meshes)
+        private void GroupInstances(List<MeshDraw> meshes)
         {
             foreach (var g in _groupList) { g.items.Clear(); _groupPool.Push(g); }
             _groupList.Clear(); _groups.Clear();
@@ -745,10 +746,10 @@ namespace RipNRage.Engine.Graphics
                 var mat = mr.sharedMaterial;
                 if (mat.IsTransparent || mr.mesh == null || (mr.propertyBlock != null && !mr.propertyBlock.IsEmpty)) continue;
                 if (InstancedVariantOf(mat.shader) == null) continue;
-                var key = new MeshRenderer.InstanceKey(mr.mesh, mat, mr.texture, mr.color, mr.uvScale, mr.emissive);
+                var key = new MeshDraw.InstanceKey(mr.mesh, mat, mr.texture, mr.color, mr.uvScale, mr.emissive);
                 if (!_groups.TryGetValue(key, out var g))
                 {
-                    g = _groupPool.Count > 0 ? _groupPool.Pop() : new MeshRenderer.InstanceGroup();
+                    g = _groupPool.Count > 0 ? _groupPool.Pop() : new MeshDraw.InstanceGroup();
                     g.key = key; _groups[key] = g; _groupList.Add(g);
                 }
                 g.items.Add(mr);
@@ -784,7 +785,7 @@ namespace RipNRage.Engine.Graphics
                         if (n > 0 && _lightCount > Lighting.lightsPerDraw && MathF.Max(size.x, MathF.Max(size.y, size.z)) > InstanceGroupExtent) break;
                         min = nmin; max = nmax;
                         if ((n + 1) * 16 > _instanceData.Length) Array.Resize(ref _instanceData, _instanceData.Length * 2);
-                        fixed (float* dst = _instanceData) mr.transform.localToWorldMatrix.CopyTo(dst + n * 16);
+                        fixed (float* dst = _instanceData) mr.Pose.LocalToWorld.CopyTo(dst + n * 16);
                         n++;
                     }
                     PrepareShader(ish);
@@ -806,7 +807,7 @@ namespace RipNRage.Engine.Graphics
             }
         }
 
-        private void DrawSprite(SpriteRenderer sr, Camera cam, bool applyLighting)
+        private void DrawSprite(SpriteDraw sr, CameraView cam, bool applyLighting)
         {
             Sprite sp = sr.sprite;
             sp.GetLocalCorners(out Vector2 min, out Vector2 max);
@@ -818,13 +819,13 @@ namespace RipNRage.Engine.Graphics
             if (sr.billboard)
             {
                 // Face the camera around the Y axis only (classic 2.5D sprite).
-                Vector3 toCam = cam.transform.position - sr.transform.position;
+                Vector3 toCam = cam.Position - sr.Pose.Position;
                 toCam.y = 0f;
                 Quaternion rot = toCam.sqrMagnitude > 1E-06f ? Quaternion.LookRotation(-toCam.normalized) : Quaternion.identity;
                 if (sr.billboardRoll != 0f) rot = rot * Quaternion.AngleAxis(sr.billboardRoll, Vector3.forward);
-                model = Matrix4x4.TRS(sr.transform.position, rot, sr.transform.lossyScale);
+                model = Matrix4x4.TRS(sr.Pose.Position, rot, sr.Pose.Scale);
             }
-            else model = sr.transform.localToWorldMatrix;
+            else model = sr.Pose.LocalToWorld;
 
             var mat = sr.sharedMaterial;
             var sh = mat.shader;
@@ -835,7 +836,7 @@ namespace RipNRage.Engine.Graphics
             sh.SetInt("uLit", lit ? 1 : 0);
             if (lit && _lightCount > 0 && Lighting.lightsPerDraw > 0)
             {
-                if (_fpPass) SetDrawLights(sh, cam.transform.position - Vector3.one * 2f, cam.transform.position + Vector3.one * 2f);
+                if (_fpPass) SetDrawLights(sh, cam.Position - Vector3.one * 2f, cam.Position + Vector3.one * 2f);
                 else if (RendererBounds.GetWorldAABB(sr, out var lmin, out var lmax)) SetDrawLights(sh, lmin, lmax);
             }
             Color tint = sr.color;
@@ -852,7 +853,7 @@ namespace RipNRage.Engine.Graphics
                 else
                 {
                     // billboards face the camera: light them with the flattened view direction as their normal
-                    Vector3 n = cam.transform.position - sr.transform.position; n.y = 0f;
+                    Vector3 n = cam.Position - sr.Pose.Position; n.y = 0f;
                     sh.SetVector("uSpriteNormal", n.sqrMagnitude > 1E-06f ? n.normalized : Vector3.back);
                     sh.SetFloat("uWrap", Lighting.spriteWrap);
                 }
