@@ -73,6 +73,8 @@ namespace RipNRage.Engine.Graphics
         }
 
         public void SetMatrix(string n, Matrix4x4 m) => GL.UniformMatrix4(Loc(n), m);
+        /// <summary>Sets a mat4 from 16 floats already in OpenGL column-major order.</summary>
+        public void SetMatrixRaw(string n, float[] m) => GL.UniformMatrix4Raw(Loc(n), m);
         public void SetInt(string n, int v) => GL.Uniform1i(Loc(n), v);
         public void SetFloat(string n, float v) => GL.Uniform1f(Loc(n), v);
         public void SetVector(string n, Vector2 v) => GL.Uniform2f(Loc(n), v.x, v.y);

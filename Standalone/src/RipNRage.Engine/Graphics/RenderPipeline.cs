@@ -238,6 +238,12 @@ namespace RipNRage.Engine.Graphics
             GL.BindVertexArray(0);
         }
 
+        /// <summary>
+        /// Drawn last, after the UI batch has been flushed, with the framebuffer size. For overlays that issue their
+        /// own GL calls and manage their own state — the editors render Dear ImGui here.
+        /// </summary>
+        public event Action<int, int> AfterUi;
+
         /// <summary>Screen-space UI: every <see cref="IUiDrawer"/> in <see cref="IUiLayer"/> order (stable), then the debug views.</summary>
         private void DrawUiPass(int width, int height, CameraSettings cfg)
         {
@@ -257,6 +263,13 @@ namespace RipNRage.Engine.Graphics
             Ui.Flush();
             GL.Disable(GL.SCISSOR_TEST); // in case a drawer left a clip rect pushed
             DrawCalls++;
+            // Overlays that own their GL state (the editors' Dear ImGui pass) run after the batch has been flushed,
+            // so their draw calls cannot land in the middle of a UiBatch run.
+            if (AfterUi != null)
+            {
+                try { AfterUi(width, height); }
+                catch (Exception e) { Debug.LogError($"AfterUi threw: {e}"); }
+            }
         }
 
         private static int UiLayerOf(IUiDrawer d) => d is IUiLayer l ? l.UiLayer : UiLayers.Default;

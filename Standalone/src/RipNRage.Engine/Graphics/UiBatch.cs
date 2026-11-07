@@ -75,7 +75,11 @@ namespace RipNRage.Engine.Graphics
             GL.BindVertexArray(0);
         }
 
-        internal void Begin(int width, int height)
+        /// <summary>
+        /// Retargets the batch at a framebuffer of this size (pixels). Public so an editor can run a second UI pass
+        /// into an offscreen <see cref="PostFx.RenderTarget"/> — an ImGui viewport panel does this.
+        /// </summary>
+        public void Begin(int width, int height)
         {
             Width = width; Height = height;
             _vertCount = 0; _indexCount = 0;
@@ -274,7 +278,8 @@ namespace RipNRage.Engine.Graphics
             _indices[_indexCount++] = a; _indices[_indexCount++] = b; _indices[_indexCount++] = c;
         }
 
-        internal void Flush()
+        /// <summary>Submits everything batched so far. Public for the same reason as <see cref="Begin"/>.</summary>
+        public void Flush()
         {
             if (_indexCount == 0 || _currentTexture == null) { _vertCount = 0; _indexCount = 0; return; }
             _shader.Use();

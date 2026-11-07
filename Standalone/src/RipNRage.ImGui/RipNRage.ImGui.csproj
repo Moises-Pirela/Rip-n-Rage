@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Dear ImGui integration for the editors, kept out of RipNRage.Engine so the game keeps its
+    zero-package build: only the editor executables reference this project.
+  -->
+  <PropertyGroup>
+    <AssemblyName>RipNRage.ImGui</AssemblyName>
+    <RootNamespace>RipNRage.ImGuiIntegration</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RipNRage.Engine\RipNRage.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ships cimgui (Dear ImGui 1.91.6, docking branch) for win-x64/x86/arm64, linux-x64 and a universal macOS dylib -->
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+  </ItemGroup>
+
+</Project>

@@ -5,6 +5,10 @@ using System.Text.Json;
 using RipNRage.Engine;
 using RipNRage.Engine.Destruction;
 using RipNRage.Engine.Graphics;
+using RipNRage.Engine.Platform;
+using RipNRage.ImGuiIntegration;
+using ImGuiNET;
+using Vec2 = System.Numerics.Vector2;
 
 namespace RipNRage.SkeletonEditor
 {
@@ -16,7 +20,7 @@ namespace RipNRage.SkeletonEditor
     /// with the real <see cref="SpriteRagdoll"/> (Space = ragdoll, Ctrl+Space = gib, click a piece to tear it off).
     /// Files are <c>skeletons/*.json</c> (<see cref="SkeletonLibrary"/>); the game reloads saved changes live.
     /// </summary>
-    public sealed class SkeletonEditor : Behaviour, IUiDrawer
+    public sealed class SkeletonEditor : Behaviour
     {
         public Camera cam;
         public Transform anchor;
@@ -52,9 +56,18 @@ namespace RipNRage.SkeletonEditor
         private float _leftScroll, _rightScroll;
         private bool _showHelp;
         private string _status = ""; private float _statusUntil;
-        private readonly ImUi _ui = new ImUi();
-        private readonly TextPrompt _prompt = new TextPrompt();
-        private Rect _topBar, _left, _right, _center, _bottom;
+        private ImGuiController _imgui;
+        private ImGuiViewportPanel _panel;       // the canvas is rendered into this dockable panel
+        private Rect _center;                    // canvas rectangle, in the panel's own pixels (origin bottom-left)
+        private bool _viewportHovered;
+        private UiBatch _batch;                  // the batch rendering into the panel this frame
+
+        // modal text prompt (new / rename), driven by an ImGui popup
+        private string _promptTitle, _promptText;
+        private Action<string> _promptAccept;
+        private bool _promptOpen, _promptFocus;
+        private bool _layoutBuilt;
+        private bool _userMovedView;   // the view was zoomed or panned by hand: stop auto-fitting on resize
 
         // ---- preview ----
         private GameObject _previewGo;
@@ -63,7 +76,8 @@ namespace RipNRage.SkeletonEditor
         private float _yaw = 180f, _pitch = 12f, _distance = 5.5f;
         private float _previewScale = 0.44f;
 
-        private float S => MathF.Max(1f, _ui.Batch != null ? _ui.Batch.Height / 720f : 1f);
+        /// <summary>Canvas scale: handles and line widths are in pixels, so they track the framebuffer size.</summary>
+        private float S => MathF.Max(1f, _imgui != null ? _imgui.PixelRatio : 1f);
         private static bool Ctrl => Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
         private static bool Shift => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
@@ -75,6 +89,9 @@ namespace RipNRage.SkeletonEditor
         protected override void Start()
         {
             SkeletonLibrary.SuppressPolling = true;
+            _imgui = new ImGuiController(layoutName: "skeleton-editor");
+            _panel = new ImGuiViewportPanel("Viewport");
+            Application.Current.Renderer.AfterUi += OnAfterUi;
             RefreshNames();
             ScanSheets();
             BuildPreviewObject();
@@ -82,7 +99,27 @@ namespace RipNRage.SkeletonEditor
             else if (_names.Count > 0) Select(_names[0]);
         }
 
-        protected override void OnDestroy() { SkeletonLibrary.SuppressPolling = false; }
+        protected override void OnDestroy()
+        {
+            SkeletonLibrary.SuppressPolling = false;
+            if (Application.Current?.Renderer != null) Application.Current.Renderer.AfterUi -= OnAfterUi;
+            _panel?.Dispose();
+            _panel = null;
+            _imgui?.Dispose();
+            _imgui = null;
+        }
+
+        /// <summary>
+        /// After the engine's UI pass: the canvas is rendered into the viewport panel's own framebuffer, then Dear
+        /// ImGui draws the panels on top (see RenderPipeline.AfterUi).
+        /// </summary>
+        private void OnAfterUi(int width, int height)
+        {
+            var app = Application.Current;
+            if (_mode == Mode.Edit)
+                _panel.Render(app.Renderer, DrawCanvas, new Color(0.16f, 0.17f, 0.2f, 1f), app.Window);
+            _imgui?.Render(app.Window);
+        }
 
         private void RefreshNames()
         {
@@ -184,7 +221,7 @@ namespace RipNRage.SkeletonEditor
         {
             if (_sources.Count == 0) { Status("NO SHEETS UNDER assets/Sprites"); return; }
             var src = _sources[Mathf.Clamp(_sourceIndex, 0, _sources.Count - 1)];
-            _prompt.Open("NEW SKELETON FROM " + src.label + " — NAME", src.label.ToLowerInvariant().Replace("_idle", "").Replace("_", ""), name =>
+            Prompt("NEW SKELETON FROM " + src.label + " — NAME", src.label.ToLowerInvariant().Replace("_idle", "").Replace("_", ""), name =>
             {
                 if (string.IsNullOrEmpty(name)) return;
                 var s = new SpriteSkeleton { name = name, texture = src.rel, frames = src.frames, sides = src.sides };
@@ -200,7 +237,7 @@ namespace RipNRage.SkeletonEditor
         private void PromptRename()
         {
             if (_skel == null) return;
-            _prompt.Open("RENAME SKELETON", _skel.name, name =>
+            Prompt("RENAME SKELETON", _skel.name, name =>
             {
                 if (string.IsNullOrEmpty(name) || name == _skel.name) return;
                 SkeletonLibrary.Delete(_skel.name);
@@ -213,7 +250,7 @@ namespace RipNRage.SkeletonEditor
         private void PromptNewPart()
         {
             if (_view == null) return;
-            _prompt.Open("NEW PART — NAME", "part" + (_view.parts.Count + 1), name =>
+            Prompt("NEW PART — NAME", "part" + (_view.parts.Count + 1), name =>
             {
                 if (string.IsNullOrEmpty(name)) return;
                 Snapshot();
@@ -228,7 +265,7 @@ namespace RipNRage.SkeletonEditor
         private void PromptRenamePart()
         {
             if (_part == null) return;
-            _prompt.Open("RENAME PART", _part.name, name =>
+            Prompt("RENAME PART", _part.name, name =>
             {
                 if (string.IsNullOrEmpty(name) || name == _part.name) return;
                 Snapshot();
@@ -283,12 +320,52 @@ namespace RipNRage.SkeletonEditor
 
         protected override void Update()
         {
-            bool wasPrompt = _prompt.Active;
-            _prompt.Update();
-            _ui.Modal = _prompt.Active;
-            if (_prompt.Active || wasPrompt) return;
-            HandleKeys();
-            if (_mode == Mode.Preview) UpdatePreview();
+            // one ImGui frame per rendered frame: the panels are declared here, the canvas is drawn later in DrawUi
+            // and ImGui itself is rendered after the UI pass.
+            _imgui.NewFrame(Application.Current.Window);
+            BuildUi();
+
+            if (_promptOpen) return;                 // the modal owns the keyboard
+            if (!_imgui.WantsKeyboard) HandleKeys(); // a focused text field keeps the shortcuts quiet
+            if (_mode == Mode.Preview && !_imgui.WantsMouse) UpdatePreview();
+        }
+
+        // ------------------------------------------------------------------ modal prompt
+
+        private void Prompt(string title, string initial, Action<string> accept)
+        {
+            _promptTitle = title; _promptText = initial ?? ""; _promptAccept = accept;
+            _promptOpen = true; _promptFocus = true;
+        }
+
+        private void DrawPrompt()
+        {
+            if (_promptOpen && !ImGui.IsPopupOpen("##prompt")) ImGui.OpenPopup("##prompt");
+            var center = ImGui.GetMainViewport().GetCenter();
+            ImGui.SetNextWindowPos(center, ImGuiCond.Appearing, new Vec2(0.5f, 0.5f));
+            if (!ImGui.BeginPopupModal("##prompt", ref _promptOpen, ImGuiWindowFlags.AlwaysAutoResize)) return;
+
+            ImGui.TextColored(Accent, _promptTitle ?? "");
+            ImGui.Spacing();
+            if (_promptFocus) { ImGui.SetKeyboardFocusHere(); _promptFocus = false; }
+            ImGui.SetNextItemWidth(320f);
+            bool entered = ImGui.InputText("##text", ref _promptText, 128, ImGuiInputTextFlags.EnterReturnsTrue);
+            ImGui.Spacing();
+            bool ok = ImGui.Button("OK", new Vec2(90f, 0f)) || entered;
+            ImGui.SameLine();
+            bool cancel = ImGui.Button("Cancel", new Vec2(90f, 0f)) || ImGui.IsKeyPressed(ImGuiKey.Escape);
+            if (ok)
+            {
+                var accept = _promptAccept; _promptAccept = null; _promptOpen = false;
+                ImGui.CloseCurrentPopup();
+                accept?.Invoke(_promptText.Trim());
+            }
+            else if (cancel)
+            {
+                _promptAccept = null; _promptOpen = false;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
         }
 
         private void HandleKeys()
@@ -419,7 +496,7 @@ namespace RipNRage.SkeletonEditor
         {
             // orbit with the right mouse button, zoom with the wheel, tear pieces off with the left button
             Vector2 mouse = Input.mousePosition;
-            bool over = _center.Contains(mouse) && !_ui.ClickConsumed;
+            bool over = _viewportHovered && _center.Contains(mouse);
             if (Input.GetMouseButton(1) && over)
             {
                 Vector2 d = mouse - _lastMouse;
@@ -449,200 +526,292 @@ namespace RipNRage.SkeletonEditor
             }
         }
 
-        // ------------------------------------------------------------------ ui
+        // ------------------------------------------------------------------ ui (Dear ImGui)
 
-        public void DrawUi(UiBatch ui)
+        private static readonly System.Numerics.Vector4 Accent = new System.Numerics.Vector4(1f, 0.78f, 0.25f, 1f);
+        private static readonly System.Numerics.Vector4 Dim = new System.Numerics.Vector4(0.55f, 0.58f, 0.63f, 1f);
+        private static readonly System.Numerics.Vector4 DangerCol = new System.Numerics.Vector4(0.8f, 0.25f, 0.2f, 1f);
+
+        /// <summary>
+        /// Declares the whole editor UI for this frame: a menu bar, the dockable side panels and the viewport panel
+        /// whose content rectangle the canvas is drawn into. Called from Update, between NewFrame and Render.
+        /// </summary>
+        private void BuildUi()
         {
-            _ui.BeginFrame(ui);
-            _ui.BeginWidgets();
-            _ui.FontScale = MathF.Max(1.5f, ui.Scale * 2.25f);
-            float s = S;
-            float topH = 30f * s, bottomH = 26f * s, leftW = 280f * s, rightW = 330f * s;
-            _topBar = new Rect(0, ui.Height - topH, ui.Width, topH);
-            _bottom = new Rect(0, 0, ui.Width, bottomH);
-            _left = new Rect(0, bottomH, leftW, ui.Height - bottomH - topH);
-            _right = new Rect(ui.Width - rightW, bottomH, rightW, ui.Height - bottomH - topH);
-            _center = new Rect(leftW, bottomH, ui.Width - leftW - rightW, ui.Height - bottomH - topH);
-
-            if (_mode == Mode.Edit) DrawCellEditor();
-            DrawTopBar();
+            var window = Application.Current.Window;
+            DrawMenuBar();
+            float statusH = ImGui.GetFrameHeight();
+            uint dockspace = _imgui.BeginDockHost("##editor", statusH);
+            if (!_layoutBuilt)
+            {
+                _layoutBuilt = true;
+                // only the first time this editor runs: the saved layout wins afterwards
+                if (!_imgui.HasSavedLayout)
+                    ImGuiDock.BuildDefaultLayout(dockspace, ImGui.GetWindowSize(), "Skeletons", "Skeleton");
+            }
+            _imgui.EndDockHost();
             DrawLeftPanel();
             DrawRightPanel();
-            DrawBottomBar();
+            if (_mode == Mode.Edit) DrawViewportPanel(window);
+            else
+            {
+                // the physics preview is the engine's own 3D render in the main framebuffer: leave the central dock
+                // node empty so it shows through (the dock space is set up with a pass-through central node)
+                var w = Application.Current.Window;
+                _center = new Rect(0f, 0f, w.Width, w.Height);
+                _viewportHovered = !_imgui.WantsMouse;
+            }
+            DrawStatusBar(statusH);
             if (_showHelp) DrawHelp();
-            _prompt.Draw(_ui, new Rect(_center.x + 20f * s, _center.yMax - 90f * s, _center.width - 40f * s, 70f * s));
-            if (!Input.GetMouseButton(0)) { _dragVertex = -1; _dragPivot = false; }
-            if (!Input.GetMouseButton(1) && !Input.GetMouseButton(2)) _panning = false;
+            DrawPrompt();
         }
 
-        private void DrawTopBar()
+        private void DrawMenuBar()
         {
-            var r = _topBar;
-            _ui.Batch.FillRect(r, ImUi.PanelBg);
-            _ui.Batch.FillRect(new Rect(r.x, r.y, r.width, 1), ImUi.PanelBorder);
-            float y = r.yMax - 8f * S;
-            string title = "RIP-N-RAGE SKELETON EDITOR";
-            _ui.Label(title, new Vector2(8f, y), ImUi.Accent);
-            float x = 8f + _ui.TextWidth(title) + 24f;
-            string doc = _skel != null ? $"{_skel.name}{(_dirty ? "*" : "")}  VIEW {_view?.name ?? "-"} (SIDE {_view?.side ?? 0}, FRAME {_view?.frame ?? 0})  {(_mode == Mode.Edit ? "EDIT" : "PHYSICS PREVIEW")}  TOOL {_tool.ToString().ToUpperInvariant()}" : "NO SKELETON — CTRL+N";
-            _ui.Label(doc, new Vector2(x, y), ImUi.Text);
-            string right = $"{(SkeletonLibrary.Directory != null ? Path.GetFileName(SkeletonLibrary.Directory) + "/" : "NO FOLDER")}  TAB PREVIEW  F1 HELP  CTRL+S SAVE";
-            _ui.Label(right, new Vector2(r.xMax - _ui.TextWidth(right) - 8f, y), ImUi.TextDim);
+            if (!ImGui.BeginMainMenuBar()) return;
+            if (ImGui.BeginMenu("File"))
+            {
+                if (ImGui.MenuItem("New skeleton...", "Ctrl+N")) PromptNew();
+                if (ImGui.MenuItem("Save", "Ctrl+S", false, _skel != null)) Save();
+                if (ImGui.MenuItem("Rename skeleton...", "Shift+F2", false, _skel != null)) PromptRename();
+                ImGui.EndMenu();
+            }
+            if (ImGui.BeginMenu("Edit"))
+            {
+                if (ImGui.MenuItem("Undo", "Ctrl+Z", false, _undo.Count > 0)) Undo();
+                if (ImGui.MenuItem("Redo", "Ctrl+Y", false, _redo.Count > 0)) Redo();
+                ImGui.Separator();
+                if (ImGui.MenuItem("New part...", "N", false, _view != null)) PromptNewPart();
+                if (ImGui.MenuItem("Delete part", "Del", false, _part != null)) DeletePart();
+                ImGui.EndMenu();
+            }
+            if (ImGui.BeginMenu("View"))
+            {
+                bool preview = _mode == Mode.Preview;
+                if (ImGui.MenuItem("Physics preview", "Tab", preview)) SetMode(preview ? Mode.Edit : Mode.Preview);
+                if (ImGui.MenuItem("Fit to window", "F", false, _mode == Mode.Edit)) _fit = true;
+                if (ImGui.MenuItem("Help", "F1", _showHelp)) _showHelp = !_showHelp;
+                ImGui.EndMenu();
+            }
+
+            // document summary, right of the menus
+            ImGui.Spacing();
+            string doc = _skel != null
+                ? $"{_skel.name}{(_dirty ? "*" : "")}   view {_view?.name ?? "-"} (side {_view?.side ?? 0}, frame {_view?.frame ?? 0})   {(_mode == Mode.Edit ? "edit" : "physics preview")}   tool {_tool.ToString().ToLowerInvariant()}"
+                : "no skeleton - Ctrl+N";
+            ImGui.TextColored(_dirty ? Accent : Dim, doc);
+            ImGui.EndMainMenuBar();
         }
 
-        private void DrawBottomBar()
+        private void DrawStatusBar(float height)
         {
-            var r = _bottom;
-            _ui.Batch.FillRect(r, ImUi.PanelBg);
-            _ui.Batch.FillRect(new Rect(r.x, r.yMax - 1, r.width, 1), ImUi.PanelBorder);
-            string text = Time.unscaledTime < _statusUntil ? _status :
-                _mode == Mode.Preview ? "SPACE RAGDOLL  CTRL+SPACE GIB  CLICK A PIECE = TEAR OFF  K BREAK ALL  UP BLAST  R RESET  RMB ORBIT  WHEEL ZOOM" :
-                _tool == Tool.Draw ? "DRAWING: CLICK = VERTEX  ENTER / FIRST VERTEX = CLOSE  BACKSPACE = UNDO VERTEX  ESC = STOP" :
-                "N NEW PART  CLICK = SELECT / DRAG VERTEX OR PIVOT  J PIVOT  P PARENT  I INSERT VERTEX  DEL DELETE  L LOOSE  [ ] FRAME  , . SIDE  WHEEL ZOOM  MMB PAN  F FIT";
-            _ui.Label(_ui.Fit(text, r.width - 16f), new Vector2(8f, r.yMax - 6f * S), Time.unscaledTime < _statusUntil ? ImUi.Accent : ImUi.TextDim);
+            if (_imgui.BeginStatusBar("##status", height))
+            {
+                bool recent = Time.unscaledTime < _statusUntil;
+                string text = recent ? _status :
+                    _mode == Mode.Preview ? "Space ragdoll   Ctrl+Space gib   click a piece = tear off   K break all   Up blast   R reset   RMB orbit   wheel zoom" :
+                    _tool == Tool.Draw ? "Drawing: click = vertex   Enter / first vertex = close   Backspace = undo vertex   Esc = stop" :
+                    "N new part   click = select / drag vertex or pivot   J pivot   P parent   I insert vertex   Del delete   L loose   [ ] frame   , . side   wheel zoom   MMB pan   F fit";
+                ImGui.TextColored(recent ? Accent : Dim, text);
+            }
+            ImGui.End();
+        }
+
+        /// <summary>
+        /// The canvas panel. Its contents are rendered by the engine into an offscreen target (see
+        /// <see cref="ImGuiViewportPanel"/>) and shown here, so it docks and clips like any other panel.
+        /// </summary>
+        private void DrawViewportPanel(Window window)
+        {
+            _panel.Declare(_imgui, window);
+            // the panel's size is only final once the dock layout has settled, and it changes when the window is
+            // resized: refit until the user zooms or pans by hand
+            if (!_userMovedView && (MathF.Abs(_panel.Width - _center.width) > 1f || MathF.Abs(_panel.Height - _center.height) > 1f)) _fit = true;
+            _center = _panel.Rect;
+            _viewportHovered = _panel.Hovered && !_promptOpen;
         }
 
         // ---- left: skeletons + sheets ----
 
         private void DrawLeftPanel()
         {
-            var r = _left;
-            _ui.Panel(r, "SKELETONS");
-            float rowH = _ui.LineHeight;
-            float y = r.yMax - rowH - 8f * S;
-            float x = r.x + 6f, w = r.width - 12f;
-            if (_ui.Button(new Rect(x, y - rowH + 4f, w * 0.48f, rowH - 2f), "+ NEW (CTRL+N)")) PromptNew();
-            if (_ui.Button(new Rect(x + w * 0.52f, y - rowH + 4f, w * 0.48f, rowH - 2f), _dirty ? "SAVE*" : "SAVE", _dirty)) Save();
-            y -= rowH + 6f;
-            int shown = Math.Min(_names.Count, 8);
-            for (int i = 0; i < shown; i++)
-            {
-                string n = _names[i];
-                int click = _ui.Row(new Rect(x, y - rowH, w, rowH), n, _skel != null && _skel.name == n);
-                if (click == 1) Select(n);
-                y -= rowH;
-            }
-            if (_names.Count > shown) { _ui.Label($"... {_names.Count - shown} MORE", new Vector2(x + 4f, y), ImUi.TextDim); y -= rowH; }
+            ImGui.SetNextWindowSize(new Vec2(280f, 600f), ImGuiCond.FirstUseEver);
+            if (!ImGui.Begin("Skeletons")) { ImGui.End(); return; }
 
-            y -= 8f;
-            _ui.Label("SHEETS (NEW SKELETON SOURCE)", new Vector2(x, y), ImUi.Accent); y -= rowH;
-            _ui.Label("CLICK = PICK, FRAMES / SIDES: CLICK +, RMB -", new Vector2(x, y), ImUi.TextDim); y -= rowH;
-            var list = new Rect(r.x, r.y + 4f, r.width, y - r.y - 4f);
-            float content = _sources.Count * rowH;
-            _leftScroll = _ui.ScrollArea(list, _leftScroll, content);
-            _ui.Batch.PushClip(list);
-            float yy = list.yMax + _leftScroll;
-            for (int i = 0; i < _sources.Count; i++)
+            if (ImGui.Button("+ New", new Vec2(-1f, 0f))) PromptNew();
+            if (ImGui.Button(_dirty ? "Save *" : "Save", new Vec2(-1f, 0f))) Save();
+            ImGui.Separator();
+
+            if (ImGui.BeginListBox("##skeletons", new Vec2(-1f, 8f * ImGui.GetTextLineHeightWithSpacing())))
             {
-                var src = _sources[i];
-                var row = new Rect(x, yy - rowH, w - 110f * S, rowH);
-                if (row.yMax >= list.y && row.y <= list.yMax)
-                {
-                    int click = _ui.Row(row, src.label, i == _sourceIndex);
-                    if (click == 1) _sourceIndex = i;
-                    int c1 = _ui.Cell(new Rect(row.xMax + 4f, yy - rowH + 2f, 50f * S, rowH - 4f), "F" + src.frames);
-                    if (c1 != 0) src.frames = Mathf.Clamp(src.frames + c1, 1, 32);
-                    int c2 = _ui.Cell(new Rect(row.xMax + 58f * S, yy - rowH + 2f, 50f * S, rowH - 4f), "S" + src.sides);
-                    if (c2 != 0) src.sides = Mathf.Clamp(src.sides + c2, 1, 16);
-                }
-                yy -= rowH;
+                foreach (var n in _names)
+                    if (ImGui.Selectable(n, _skel != null && _skel.name == n)) Select(n);
+                ImGui.EndListBox();
             }
-            _ui.Batch.PopClip();
-            _ui.ScrollBar(list, _leftScroll, content);
+
+            ImGui.Spacing();
+            ImGui.TextColored(Accent, "Sheets (new skeleton source)");
+            ImGui.TextColored(Dim, "Pick a sheet, then set its grid");
+            if (ImGui.BeginTable("##sheets", 3, ImGuiTableFlags.ScrollY | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp, new Vec2(-1f, -1f)))
+            {
+                ImGui.TableSetupColumn("sheet", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("frames", ImGuiTableColumnFlags.WidthFixed, 64f);
+                ImGui.TableSetupColumn("sides", ImGuiTableColumnFlags.WidthFixed, 64f);
+                for (int i = 0; i < _sources.Count; i++)
+                {
+                    var src = _sources[i];
+                    ImGui.TableNextRow();
+                    ImGui.TableSetColumnIndex(0);
+                    if (ImGui.Selectable(src.label + "##src" + i, i == _sourceIndex)) _sourceIndex = i;
+                    if (ImGui.IsItemHovered()) ImGui.SetTooltip(src.rel);
+                    ImGui.TableSetColumnIndex(1);
+                    ImGui.SetNextItemWidth(-1f);
+                    int frames = src.frames;
+                    if (ImGui.DragInt("##f" + i, ref frames, 0.1f, 1, 32, "F%d")) src.frames = Mathf.Clamp(frames, 1, 32);
+                    ImGui.TableSetColumnIndex(2);
+                    ImGui.SetNextItemWidth(-1f);
+                    int sides = src.sides;
+                    if (ImGui.DragInt("##s" + i, ref sides, 0.1f, 1, 16, "S%d")) src.sides = Mathf.Clamp(sides, 1, 16);
+                }
+                ImGui.EndTable();
+            }
+            ImGui.End();
         }
 
         // ---- right: skeleton / views / parts ----
 
         private void DrawRightPanel()
         {
-            var r = _right;
-            _ui.Panel(r, "SKELETON");
-            if (_skel == null) return;
-            float rowH = _ui.LineHeight;
-            float x = r.x + 6f, w = r.width - 12f;
-            float y = r.yMax - rowH - 8f * S;
-            float half = w * 0.5f - 2f;
-
-            _ui.Label(_ui.Fit("SHEET " + _skel.texture, w), new Vector2(x, y), ImUi.TextDim); y -= rowH;
-            int c;
-            c = _ui.Cell(new Rect(x, y - rowH + 2f, half, rowH - 4f), "FRAMES " + _skel.frames); if (c != 0) { Snapshot(); _skel.frames = Mathf.Clamp(_skel.frames + c, 1, 32); LoadCell(); }
-            c = _ui.Cell(new Rect(x + half + 4f, y - rowH + 2f, half, rowH - 4f), "SIDES " + _skel.sides); if (c != 0) { Snapshot(); _skel.sides = Mathf.Clamp(_skel.sides + c, 1, 16); LoadCell(); }
-            y -= rowH;
-            float v;
-            v = _ui.DragValue(new Rect(x, y - rowH + 2f, half, rowH - 4f), "PPU", _skel.pixelsPerUnit, 1f, 1f, 1000f, 100f, "0"); if (v != _skel.pixelsPerUnit) { _skel.pixelsPerUnit = v; _dirty = true; LoadCell(); }
-            v = _ui.DragValue(new Rect(x + half + 4f, y - rowH + 2f, half, rowH - 4f), "DEPTH", _skel.depth, 0.01f, 0.02f, 2f, 0.15f, "0.00"); if (v != _skel.depth) { _skel.depth = v; _dirty = true; }
-            y -= rowH;
-            v = _ui.DragValue(new Rect(x, y - rowH + 2f, half, rowH - 4f), "LIFE", _skel.lifetime, 1f, 0f, 600f, 20f, "0"); if (v != _skel.lifetime) { _skel.lifetime = v; _dirty = true; }
-            if (_ui.Button(new Rect(x + half + 4f, y - rowH + 2f, half, rowH - 4f), "RENAME (SHIFT+F2)")) PromptRename();
-            y -= rowH + 6f;
-
-            // views
-            _ui.Label("VIEWS (SIDE / REF FRAME)", new Vector2(x, y), ImUi.Accent);
-            if (_ui.Button(new Rect(r.xMax - 6f - 120f * S, y - rowH + 6f, 56f * S, rowH - 4f), "+ VIEW")) AddView();
-            if (_ui.Button(new Rect(r.xMax - 6f - 60f * S, y - rowH + 6f, 54f * S, rowH - 4f), "- VIEW", false, null, _skel.views.Count > 1)) DeleteView();
-            y -= rowH;
-            foreach (var view in _skel.views)
+            ImGui.SetNextWindowSize(new Vec2(340f, 600f), ImGuiCond.FirstUseEver);
+            if (!ImGui.Begin("Skeleton")) { ImGui.End(); return; }
+            if (_skel == null)
             {
-                var row = new Rect(x, y - rowH, w - 120f * S, rowH);
-                int click = _ui.Row(row, view.name, view == _view, null, $"{view.parts.Count} PARTS");
-                if (click == 1) { _view = view; _part = null; _tool = Tool.Select; LoadCell(); }
-                if (click == 2) { _prompt.Open("RENAME VIEW", view.name, n => { if (!string.IsNullOrEmpty(n)) { Snapshot(); view.name = n; } }); }
-                c = _ui.Cell(new Rect(row.xMax + 4f, y - rowH + 2f, 56f * S, rowH - 4f), "SIDE " + view.side);
-                if (c != 0) { Snapshot(); view.side = ((view.side + c) % Math.Max(1, _skel.sides) + Math.Max(1, _skel.sides)) % Math.Max(1, _skel.sides); if (view == _view) LoadCell(); }
-                c = _ui.Cell(new Rect(row.xMax + 64f * S, y - rowH + 2f, 52f * S, rowH - 4f), "FR " + view.frame);
-                if (c != 0) { Snapshot(); view.frame = Mathf.Clamp(view.frame + c, 0, Math.Max(0, _skel.frames - 1)); if (view == _view) LoadCell(); }
-                y -= rowH;
-                if (y < r.y + 260f * S) break;
+                ImGui.TextColored(Dim, "No skeleton. Pick a sheet and press Ctrl+N.");
+                ImGui.End();
+                return;
             }
-            if (_view != null && _skel.views.Count > 1 && _ui.Button(new Rect(x, y - rowH + 4f, w, rowH - 4f), "COPY PARTS FROM THE NEXT VIEW INTO THIS ONE"))
+
+            ImGui.TextWrapped(_skel.texture ?? "");
+            int frames = _skel.frames, sides = _skel.sides;
+            // labels sit to the right of the field, so the fields stop short of the panel edge
+            ImGui.PushItemWidth(-110f);
+            if (ImGui.DragInt("Frames", ref frames, 0.1f, 1, 32)) { Snapshot(); _skel.frames = Mathf.Clamp(frames, 1, 32); LoadCell(); }
+            if (ImGui.DragInt("Sides", ref sides, 0.1f, 1, 16)) { Snapshot(); _skel.sides = Mathf.Clamp(sides, 1, 16); LoadCell(); }
+
+            float ppu = _skel.pixelsPerUnit, depth = _skel.depth, life = _skel.lifetime;
+            if (ImGui.DragFloat("Pixels / unit", ref ppu, 1f, 1f, 1000f, "%.0f")) { _skel.pixelsPerUnit = ppu; _dirty = true; LoadCell(); }
+            if (ImGui.DragFloat("Depth", ref depth, 0.01f, 0.02f, 2f, "%.2f")) { _skel.depth = depth; _dirty = true; }
+            if (ImGui.DragFloat("Lifetime", ref life, 1f, 0f, 600f, "%.0f s")) { _skel.lifetime = life; _dirty = true; }
+            ImGui.PopItemWidth();
+
+            // ---- views
+            ImGui.SeparatorText("Views (side / reference frame)");
+            if (ImGui.Button("+ View")) AddView();
+            ImGui.SameLine();
+            ImGui.BeginDisabled(_skel.views.Count <= 1);
+            if (ImGui.Button("- View")) DeleteView();
+            ImGui.EndDisabled();
+
+            if (ImGui.BeginTable("##views", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+            {
+                ImGui.TableSetupColumn("view", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("parts", ImGuiTableColumnFlags.WidthFixed, 56f);
+                ImGui.TableSetupColumn("side", ImGuiTableColumnFlags.WidthFixed, 70f);
+                ImGui.TableSetupColumn("frame", ImGuiTableColumnFlags.WidthFixed, 70f);
+                for (int i = 0; i < _skel.views.Count; i++)
+                {
+                    var view = _skel.views[i];
+                    ImGui.TableNextRow();
+                    ImGui.TableSetColumnIndex(0);
+                    if (ImGui.Selectable(view.name + "##view" + i, view == _view)) { _view = view; _part = null; _tool = Tool.Select; LoadCell(); }
+                    if (ImGui.BeginPopupContextItem("##viewctx" + i))
+                    {
+                        if (ImGui.MenuItem("Rename...")) Prompt("Rename view", view.name, n => { if (!string.IsNullOrEmpty(n)) { Snapshot(); view.name = n; } });
+                        ImGui.EndPopup();
+                    }
+                    ImGui.TableSetColumnIndex(1);
+                    ImGui.TextColored(Dim, view.parts.Count.ToString());
+                    ImGui.TableSetColumnIndex(2);
+                    ImGui.SetNextItemWidth(-1f);
+                    int side = view.side;
+                    if (ImGui.DragInt("##vs" + i, ref side, 0.1f, 0, Math.Max(0, _skel.sides - 1), "side %d"))
+                    { Snapshot(); view.side = Mathf.Clamp(side, 0, Math.Max(0, _skel.sides - 1)); if (view == _view) LoadCell(); }
+                    ImGui.TableSetColumnIndex(3);
+                    ImGui.SetNextItemWidth(-1f);
+                    int frame = view.frame;
+                    if (ImGui.DragInt("##vf" + i, ref frame, 0.1f, 0, Math.Max(0, _skel.frames - 1), "frame %d"))
+                    { Snapshot(); view.frame = Mathf.Clamp(frame, 0, Math.Max(0, _skel.frames - 1)); if (view == _view) LoadCell(); }
+                }
+                ImGui.EndTable();
+            }
+            if (_view != null && _skel.views.Count > 1 && ImGui.Button("Copy parts from the next view", new Vec2(-1f, 0f)))
             {
                 int i = _skel.views.IndexOf(_view);
                 var from = _skel.views[(i + 1) % _skel.views.Count];
                 Snapshot(); CopyParts(from, _view); _part = null;
             }
-            y -= rowH + 6f;
 
-            // parts
-            _ui.Label("PARTS (CLICK = SELECT, RMB = RENAME)", new Vector2(x, y), ImUi.Accent);
-            if (_ui.Button(new Rect(r.xMax - 6f - 70f * S, y - rowH + 6f, 64f * S, rowH - 4f), "+ PART (N)")) PromptNewPart();
-            y -= rowH;
-            if (_view != null)
+            // ---- parts
+            ImGui.SeparatorText("Parts");
+            ImGui.BeginDisabled(_view == null);
+            if (ImGui.Button("+ Part")) PromptNewPart();
+            ImGui.EndDisabled();
+            if (_view != null && ImGui.BeginListBox("##parts", new Vec2(-1f, 8f * ImGui.GetTextLineHeightWithSpacing())))
             {
-                var list = new Rect(r.x, r.y + 150f * S, r.width, Math.Max(0f, y - r.y - 150f * S));
-                float content = _view.parts.Count * rowH;
-                _rightScroll = _ui.ScrollArea(list, _rightScroll, content);
-                _ui.Batch.PushClip(list);
-                float yy = list.yMax + _rightScroll;
-                foreach (var p in _view.parts)
+                for (int i = 0; i < _view.parts.Count; i++)
                 {
-                    string label = (string.IsNullOrEmpty(p.parent) ? "" : "  ") + p.name + (p.loose ? " (LOOSE)" : "");
-                    int click = _ui.Row(new Rect(x, yy - rowH, w, rowH), label, p == _part, p.polygon.Count < 3 ? ImUi.Danger : null,
-                        string.IsNullOrEmpty(p.parent) ? "ROOT" : "< " + p.parent);
-                    if (click == 1) { _part = p; if (_tool == Tool.Draw) _tool = Tool.Select; }
-                    if (click == 2) { _part = p; PromptRenamePart(); }
-                    yy -= rowH;
+                    var p = _view.parts[i];
+                    string label = (string.IsNullOrEmpty(p.parent) ? "" : "   ") + p.name + (p.loose ? "  (loose)" : "")
+                                 + (string.IsNullOrEmpty(p.parent) ? "   root" : "   < " + p.parent);
+                    bool incomplete = p.polygon.Count < 3;
+                    if (incomplete) ImGui.PushStyleColor(ImGuiCol.Text, DangerCol);
+                    if (ImGui.Selectable(label + "##part" + i, p == _part)) { _part = p; if (_tool == Tool.Draw) _tool = Tool.Select; }
+                    if (incomplete) ImGui.PopStyleColor();
+                    if (ImGui.BeginPopupContextItem("##partctx" + i))
+                    {
+                        _part = p;
+                        if (ImGui.MenuItem("Rename...")) PromptRenamePart();
+                        if (ImGui.MenuItem("Delete")) DeletePart();
+                        ImGui.EndPopup();
+                    }
                 }
-                _ui.Batch.PopClip();
-                _ui.ScrollBar(list, _rightScroll, content);
-                y = list.y - 4f;
+                ImGui.EndListBox();
             }
 
-            // selected part
+            // ---- selected part
             if (_part != null)
             {
-                _ui.Label(_ui.Fit("PART " + _part.name + $"  ({_part.polygon.Count} VERTICES)", w), new Vector2(x, y), ImUi.Accent); y -= rowH;
-                c = _ui.Cell(new Rect(x, y - rowH + 2f, w, rowH - 4f), "PARENT: " + (string.IsNullOrEmpty(_part.parent) ? "NONE (ROOT)" : _part.parent) + "  (CLICK CYCLES, P = PICK)");
-                if (c != 0) { Snapshot(); CycleParent(c); }
-                y -= rowH;
-                v = _ui.DragValue(new Rect(x, y - rowH + 2f, half, rowH - 4f), "MASS", _part.mass, 0.1f, 0.05f, 500f, 2f, "0.0"); if (v != _part.mass) { _part.mass = v; _dirty = true; }
-                v = _ui.DragValue(new Rect(x + half + 4f, y - rowH + 2f, half, rowH - 4f), "BREAK", _part.breakImpulse, 1f, 0f, 1000f, 0f, "0"); if (v != _part.breakImpulse) { _part.breakImpulse = v; _dirty = true; }
-                y -= rowH;
-                if (_ui.Button(new Rect(x, y - rowH + 2f, half, rowH - 4f), "SHAPE: " + _part.shape.ToString().ToUpperInvariant())) { Snapshot(); _part.shape = _part.shape == PartShape.Box ? PartShape.Capsule : PartShape.Box; }
-                bool loose = _ui.Toggle(new Rect(x + half + 4f, y - rowH + 2f, half, rowH - 4f), "LOOSE (L)", _part.loose); if (loose != _part.loose) { Snapshot(); _part.loose = loose; }
-                y -= rowH;
-                _ui.Label($"PIVOT {_part.pivot.x:0.000}, {_part.pivot.y:0.000}  (J = PLACE)", new Vector2(x, y), ImUi.TextDim); y -= rowH;
-                if (_ui.Button(new Rect(x, y - rowH + 2f, w, rowH - 4f), "DELETE PART (DEL)", false, ImUi.Danger)) DeletePart();
+                ImGui.SeparatorText($"{_part.name}  ({_part.polygon.Count} vertices)");
+                string parentLabel = string.IsNullOrEmpty(_part.parent) ? "none (root)" : _part.parent;
+                ImGui.SetNextItemWidth(-110f);
+                if (ImGui.BeginCombo("Parent", parentLabel))
+                {
+                    if (ImGui.Selectable("none (root)", string.IsNullOrEmpty(_part.parent))) { Snapshot(); _part.parent = ""; }
+                    foreach (var other in _view.parts)
+                    {
+                        if (other == _part || IsDescendant(other, _part)) continue;
+                        if (ImGui.Selectable(other.name, _part.parent == other.name)) { Snapshot(); _part.parent = other.name; }
+                    }
+                    ImGui.EndCombo();
+                }
+
+                float mass = _part.mass, brk = _part.breakImpulse;
+                ImGui.PushItemWidth(-110f);
+                if (ImGui.DragFloat("Mass", ref mass, 0.1f, 0.05f, 500f, "%.1f")) { _part.mass = mass; _dirty = true; }
+                if (ImGui.DragFloat("Break", ref brk, 1f, 0f, 1000f, brk <= 0f ? "never" : "%.0f")) { _part.breakImpulse = brk; _dirty = true; }
+
+                int shape = _part.shape == PartShape.Box ? 0 : 1;
+                if (ImGui.Combo("Shape", ref shape, "Box\0Capsule\0")) { Snapshot(); _part.shape = shape == 0 ? PartShape.Box : PartShape.Capsule; }
+                ImGui.PopItemWidth();
+                bool loose = _part.loose;
+                if (ImGui.Checkbox("Loose (L)", ref loose)) { Snapshot(); _part.loose = loose; }
+
+                ImGui.TextColored(Dim, $"Pivot {_part.pivot.x:0.000}, {_part.pivot.y:0.000}   (J places it)");
+                ImGui.PushStyleColor(ImGuiCol.Button, DangerCol);
+                if (ImGui.Button("Delete part (Del)", new Vec2(-1f, 0f))) DeletePart();
+                ImGui.PopStyleColor();
             }
+            ImGui.End();
         }
 
         private void CycleParent(int dir)
@@ -680,18 +849,32 @@ namespace RipNRage.SkeletonEditor
             new Color(1f, 0.9f, 0.3f, 1f), new Color(0.6f, 0.5f, 1f, 1f), new Color(0.4f, 1f, 0.9f, 1f), new Color(1f, 0.7f, 0.6f, 1f),
         };
 
-        private void DrawCellEditor()
+        /// <summary>
+        /// The reference cell with the part outlines over it, drawn into the viewport panel's framebuffer. The
+        /// rectangle starts at the origin, so panning / zooming are independent of where the panel is docked.
+        /// </summary>
+        private void DrawCanvas(UiBatch batch, Rect rect)
+        {
+            _batch = batch;
+            _center = rect;
+            DrawCellEditor(batch);
+            if (!Input.GetMouseButton(0)) { _dragVertex = -1; _dragPivot = false; }
+            if (!Input.GetMouseButton(1) && !Input.GetMouseButton(2)) _panning = false;
+        }
+
+        private void DrawCellEditor(UiBatch batch)
         {
             var r = _center;
             // checkerboard backdrop
-            _ui.Batch.FillRect(r, new Color(0.16f, 0.17f, 0.2f, 1f));
+            batch.FillRect(r, new Color(0.16f, 0.17f, 0.2f, 1f));
             if (_cell == null || _tex == null)
             {
-                _ui.Label(_skel == null ? "CTRL+N: NEW SKELETON FROM A SHEET" : "NO TEXTURE: " + (_skel.texture ?? ""), new Vector2(r.x + 20f, r.center.y), ImUi.TextDim);
+                string msg = _skel == null ? "CTRL+N: NEW SKELETON FROM A SHEET" : "NO TEXTURE: " + (_skel.texture ?? "");
+                batch.DrawText(msg, new Vector2(r.x + 20f, r.center.y), 2f * S, new Color(0.55f, 0.58f, 0.63f, 1f));
                 return;
             }
-            Vector2 mouse = Input.mousePosition;
-            bool over = r.Contains(mouse) && !_ui.Modal;
+            Vector2 mouse = _panel.Mouse;
+            bool over = _viewportHovered && r.Contains(mouse);
 
             // zoom / pan
             float cellW = _cell.rect.width, cellH = _cell.rect.height;
@@ -701,26 +884,28 @@ namespace RipNRage.SkeletonEditor
                 _zoom = MathF.Max(0.05f, fitZoom);
                 _pan = Vector2.zero;
                 _fit = false;
+                _userMovedView = false;
             }
-            if (over && Input.mouseScrollDelta.y != 0f && !_ui.ClickConsumed)
+            if (over && Input.mouseScrollDelta.y != 0f)
             {
                 float factor = Input.mouseScrollDelta.y > 0f ? 1.15f : 1f / 1.15f;
                 Vector2 before = ScreenToCell(mouse);
                 _zoom = Mathf.Clamp(_zoom * factor, 0.05f, 40f);
+                _userMovedView = true;
                 ComputeCellRect(r, cellW, cellH);
                 Vector2 after = ScreenToCell(mouse);
                 _pan += new Vector2((after.x - before.x) * _cellRect.width, (after.y - before.y) * _cellRect.height);
             }
             if (over && (Input.GetMouseButtonDown(2) || (Input.GetMouseButtonDown(1) && _tool == Tool.Select))) { _panning = true; _lastMouse = mouse; }
-            if (_panning) { _pan += mouse - _lastMouse; _lastMouse = mouse; }
+            if (_panning) { _pan += mouse - _lastMouse; _lastMouse = mouse; _userMovedView = true; }
             ComputeCellRect(r, cellW, cellH);
 
             // the cell
-            _ui.Batch.PushClip(r);
+            batch.PushClip(r);
             _cell.GetUVs(out float u0, out float v0, out float u1, out float v1);
             DrawChecker(_cellRect);
-            _ui.Batch.DrawRaw(_tex, _cellRect, u0, v0, u1, v1, Color.white);
-            _ui.Border(_cellRect, ImUi.PanelBorder);
+            batch.DrawRaw(_tex, _cellRect, u0, v0, u1, v1, Color.white);
+            Border(batch, _cellRect, new Color(0.25f, 0.27f, 0.32f, 1f));
 
             // parts
             if (_view != null)
@@ -738,32 +923,32 @@ namespace RipNRage.SkeletonEditor
                         if (p.polygon.Count >= 2 && (k + 1 < p.polygon.Count || _tool != Tool.Draw || !sel))
                         {
                             Vector2 b = CellToScreen(p.polygon[(k + 1) % p.polygon.Count]);
-                            _ui.Batch.DrawLine(a, b, t, col);
+                            batch.DrawLine(a, b, t, col);
                         }
                         float vs = (sel ? 5f : 3f) * S;
-                        _ui.Batch.FillRect(new Rect(a.x - vs, a.y - vs, vs * 2f, vs * 2f), col);
+                        batch.FillRect(new Rect(a.x - vs, a.y - vs, vs * 2f, vs * 2f), col);
                     }
                     // pivot + link to the parent's pivot
                     Vector2 pv = CellToScreen(p.pivot);
                     float ps = (sel ? 7f : 5f) * S;
-                    _ui.Batch.FillRect(new Rect(pv.x - ps, pv.y - 1f, ps * 2f, 2f), Color.white);
-                    _ui.Batch.FillRect(new Rect(pv.x - 1f, pv.y - ps, 2f, ps * 2f), Color.white);
+                    batch.FillRect(new Rect(pv.x - ps, pv.y - 1f, ps * 2f, 2f), Color.white);
+                    batch.FillRect(new Rect(pv.x - 1f, pv.y - ps, 2f, ps * 2f), Color.white);
                     var parent = string.IsNullOrEmpty(p.parent) ? null : _view.Find(p.parent);
                     if (parent != null)
                     {
                         Vector2 pc = parent.polygon.Count >= 3 ? CellToScreen(Sprite.Centroid(parent.PolygonArray())) : CellToScreen(parent.pivot);
-                        _ui.Batch.DrawLine(pv, pc, 1f, new Color(1f, 1f, 1f, 0.45f));
+                        batch.DrawLine(pv, pc, 1f, new Color(1f, 1f, 1f, 0.45f));
                     }
                     Vector2 labelAt = p.polygon.Count >= 3 ? CellToScreen(Sprite.Centroid(p.PolygonArray())) : pv + new Vector2(8f, 8f);
-                    _ui.Label(p.name, labelAt, sel ? ImUi.Accent : col, _ui.FontScale * 0.8f);
+                    batch.DrawText(p.name, labelAt, 1.6f * S, sel ? new Color(1f, 0.78f, 0.25f, 1f) : col);
                 }
                 // the edge being drawn
                 if (_tool == Tool.Draw && _part != null && _part.polygon.Count > 0 && over)
-                    _ui.Batch.DrawLine(CellToScreen(_part.polygon[_part.polygon.Count - 1]), mouse, 1.5f, new Color(1f, 1f, 1f, 0.6f));
+                    batch.DrawLine(CellToScreen(_part.polygon[_part.polygon.Count - 1]), mouse, 1.5f, new Color(1f, 1f, 1f, 0.6f));
             }
-            _ui.Batch.PopClip();
+            batch.PopClip();
 
-            if (over && !_ui.ClickConsumed) HandleCellMouse(mouse);
+            if (over) HandleCellMouse(mouse);
         }
 
         private void ComputeCellRect(Rect r, float cellW, float cellH)
@@ -782,14 +967,14 @@ namespace RipNRage.SkeletonEditor
                 {
                     float x = rect.x + i * cell, y = rect.y + j * cell;
                     float w = MathF.Min(cell, rect.xMax - x), h = MathF.Min(cell, rect.yMax - y);
-                    _ui.Batch.FillRect(new Rect(x, y, w, h), (i + j) % 2 == 0 ? new Color(0.3f, 0.3f, 0.33f, 1f) : new Color(0.38f, 0.38f, 0.42f, 1f));
+                    _batch.FillRect(new Rect(x, y, w, h), (i + j) % 2 == 0 ? new Color(0.3f, 0.3f, 0.33f, 1f) : new Color(0.38f, 0.38f, 0.42f, 1f));
                 }
         }
 
         private int HoveredVertex(SkeletonPart p)
         {
             if (p == null) return -1;
-            Vector2 mouse = Input.mousePosition;
+            Vector2 mouse = _panel.Mouse;
             float best = 9f * S; int bi = -1;
             for (int i = 0; i < p.polygon.Count; i++)
             {
@@ -879,30 +1064,53 @@ namespace RipNRage.SkeletonEditor
 
         private static Vector2 Clamp01(Vector2 v) => new Vector2(Mathf.Clamp01(v.x), Mathf.Clamp01(v.y));
 
+        /// <summary>What a skeleton is and every shortcut, in a dockable window (F1).</summary>
         private void DrawHelp()
         {
-            float s = S;
-            var r = new Rect(_center.x + 30f * s, _center.y + 30f * s, _center.width - 60f * s, _center.height - 60f * s);
-            _ui.Panel(r, "HELP (F1)");
-            float y = r.yMax - _ui.LineHeight - 10f * s, x = r.x + 12f * s;
-            string[] lines =
+            ImGui.SetNextWindowSize(new Vec2(760f, 420f), ImGuiCond.FirstUseEver);
+            if (!ImGui.Begin("Help", ref _showHelp))
             {
-                "A SKELETON SAYS HOW A SPRITE IS SLICED WHEN IT DIES: PARTS (POLYGONS), THEIR PIVOTS (JOINTS) AND PARENTS.",
-                "IT IS NOT USED FOR ANIMATION. COORDINATES ARE NORMALISED INSIDE A SHEET CELL, ONE VIEW PER SIDE.",
-                "",
-                "CTRL+N NEW SKELETON FROM THE SELECTED SHEET (LEFT)     CTRL+S SAVE     CTRL+Z / CTRL+Y UNDO / REDO",
-                "N NEW PART: TYPE A NAME, THEN CLICK THE OUTLINE; ENTER OR THE FIRST VERTEX CLOSES IT (BACKSPACE UNDOES A VERTEX)",
-                "CLICK A PART TO SELECT, DRAG ITS VERTICES / PIVOT, I INSERTS A VERTEX ON THE NEAREST EDGE, DEL DELETES VERTEX / PART",
-                "J PLACE THE PIVOT (WHERE THE PART HANGS OFF ITS PARENT)    P PICK THE PARENT BY CLICKING IT    L LOOSE (STARTS DETACHED)",
-                "RIGHT PANEL: MASS, BREAK IMPULSE (0 = NEVER TEARS), SHAPE BOX / CAPSULE, PARENT CYCLE; VIEWS PER SHEET SIDE ( , . [ ] )",
-                "WHEEL ZOOM, MIDDLE / RIGHT DRAG PAN, F FIT",
-                "",
-                "TAB: PHYSICS PREVIEW — SPACE SLICES THE SPRITE INTO A RAGDOLL WITH THE REAL SOLVER, CTRL+SPACE GIBS IT,",
-                "CLICK A PIECE TO TEAR IT OFF, K BREAKS EVERY JOINT, UP ARROW SETS OFF A BLAST, R RESETS, RMB ORBITS, WHEEL ZOOMS.",
-                "",
-                "THE GAME RELOADS SAVED SKELETONS LIVE; ENEMYDATA.SKELETON NAMES THE ONE AN ENEMY USES.",
-            };
-            foreach (var l in lines) { _ui.Label(_ui.Fit(l, r.width - 24f * s), new Vector2(x, y), l.Length == 0 ? ImUi.TextDim : ImUi.Text); y -= _ui.LineHeight; }
+                ImGui.End();
+                return;
+            }
+            ImGui.TextWrapped("A skeleton says how a sprite is sliced when it dies: parts (polygons), their pivots (joints) and parents. "
+                            + "It is not used for animation. Coordinates are normalised inside a sheet cell, one view per side.");
+            ImGui.SeparatorText("Editing");
+            Help("Ctrl+N", "New skeleton from the selected sheet");
+            Help("Ctrl+S", "Save");
+            Help("Ctrl+Z / Ctrl+Y", "Undo / redo");
+            Help("N", "New part: type a name, then click the outline; Enter or the first vertex closes it (Backspace undoes a vertex)");
+            Help("Click / drag", "Select a part, drag its vertices or its pivot");
+            Help("I / Del", "Insert a vertex on the nearest edge / delete the vertex or the part");
+            Help("J", "Place the pivot (where the part hangs off its parent)");
+            Help("P", "Pick the parent by clicking it");
+            Help("L", "Loose (the part starts detached)");
+            Help(", .  and  [ ]", "Previous / next side and reference frame");
+            Help("Wheel / MMB / F", "Zoom / pan / fit");
+            ImGui.SeparatorText("Physics preview (Tab)");
+            Help("Space", "Slice the sprite into a ragdoll with the real solver");
+            Help("Ctrl+Space", "Gib it");
+            Help("Click", "Tear a piece off");
+            Help("K / Up / R", "Break every joint / blast / reset");
+            Help("RMB / wheel", "Orbit / zoom");
+            ImGui.Spacing();
+            ImGui.TextColored(Dim, "The game reloads saved skeletons live; EnemyData.skeleton names the one an enemy uses.");
+            ImGui.End();
+        }
+
+        private static void Help(string keys, string what)
+        {
+            ImGui.TextColored(Accent, keys);
+            ImGui.SameLine(190f);
+            ImGui.TextWrapped(what);
+        }
+
+        private static void Border(UiBatch batch, Rect r, Color c, float t = 1f)
+        {
+            batch.FillRect(new Rect(r.x, r.y, r.width, t), c);
+            batch.FillRect(new Rect(r.x, r.yMax - t, r.width, t), c);
+            batch.FillRect(new Rect(r.x, r.y, t, r.height), c);
+            batch.FillRect(new Rect(r.xMax - t, r.y, t, r.height), c);
         }
     }
 }

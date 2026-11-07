@@ -143,6 +143,9 @@ namespace RipNRage.Engine.Platform
         private static delegate* unmanaged<uint, uint, void> _vertexAttribDivisor;
         private static delegate* unmanaged<uint, void> _disableVertexAttribArray;
         private static delegate* unmanaged<uint, int, uint, void*, void> _drawElements;
+        private static delegate* unmanaged<uint, int, uint, void*, int, void> _drawElementsBaseVertex;
+        private static delegate* unmanaged<uint, uint, uint, uint, void> _blendFuncSeparate;
+        private static delegate* unmanaged<uint, void> _blendEquation;
         private static delegate* unmanaged<uint, uint> _createShader;
         private static delegate* unmanaged<uint, int, byte**, int*, void> _shaderSource;
         private static delegate* unmanaged<uint, void> _compileShader;
@@ -241,6 +244,9 @@ namespace RipNRage.Engine.Platform
             _vertexAttribPointer = (delegate* unmanaged<uint, int, uint, byte, int, void*, void>)getProc("glVertexAttribPointer");
             _drawArrays = (delegate* unmanaged<uint, int, int, void>)getProc("glDrawArrays");
             _drawElements = (delegate* unmanaged<uint, int, uint, void*, void>)getProc("glDrawElements");
+            _drawElementsBaseVertex = (delegate* unmanaged<uint, int, uint, void*, int, void>)getProc("glDrawElementsBaseVertex");
+            _blendFuncSeparate = (delegate* unmanaged<uint, uint, uint, uint, void>)getProc("glBlendFuncSeparate");
+            _blendEquation = (delegate* unmanaged<uint, void>)getProc("glBlendEquation");
             _drawElementsInstanced = (delegate* unmanaged<uint, int, uint, void*, int, void>)getProc("glDrawElementsInstanced");
             _vertexAttribDivisor = (delegate* unmanaged<uint, uint, void>)getProc("glVertexAttribDivisor");
             _disableVertexAttribArray = (delegate* unmanaged<uint, void>)getProc("glDisableVertexAttribArray");
@@ -334,6 +340,14 @@ namespace RipNRage.Engine.Platform
             _vertexAttribPointer(index, size, type, normalized ? (byte)1 : (byte)0, stride, (void*)offset);
         public static void DrawArrays(uint mode, int first, int count) => _drawArrays(mode, first, count);
         public static void DrawElements(uint mode, int count, uint type, int offset) => _drawElements(mode, count, type, (void*)offset);
+        /// <summary>Indexed draw with every index shifted by <paramref name="baseVertex"/> (Dear ImGui's per-command vertex offset).</summary>
+        public static void DrawElementsBaseVertex(uint mode, int count, uint type, int offset, int baseVertex)
+        {
+            if (_drawElementsBaseVertex != null) _drawElementsBaseVertex(mode, count, type, (void*)offset, baseVertex);
+            else _drawElements(mode, count, type, (void*)offset); // GL 3.2+ always has it; fall back rather than crash
+        }
+        public static void BlendFuncSeparate(uint srcRgb, uint dstRgb, uint srcA, uint dstA) => _blendFuncSeparate(srcRgb, dstRgb, srcA, dstA);
+        public static void BlendEquation(uint mode) => _blendEquation(mode);
         /// <summary>GL 3.3 instancing: one draw for <paramref name="instances"/> copies (per-instance attributes via <see cref="VertexAttribDivisor"/>).</summary>
         public static void DrawElementsInstanced(uint mode, int count, uint type, int offset, int instances) => _drawElementsInstanced(mode, count, type, (void*)offset, instances);
         public static bool HasInstancing => _drawElementsInstanced != null && _vertexAttribDivisor != null;
@@ -390,6 +404,12 @@ namespace RipNRage.Engine.Platform
             float* buf = stackalloc float[16];
             m.CopyTo(buf);
             _uniformMatrix4fv(loc, 1, 0, buf);
+        }
+        /// <summary>Uploads 16 floats in OpenGL column-major order (a projection built by hand, e.g. the ImGui backend).</summary>
+        public static void UniformMatrix4Raw(int loc, float[] values)
+        {
+            if (values == null || values.Length < 16) return;
+            fixed (float* p = values) _uniformMatrix4fv(loc, 1, 0, p);
         }
         public static void ReadPixels(int x, int y, int w, int h, uint format, uint type, void* data) => _readPixels(x, y, w, h, format, type, data);
         public static void Scissor(int x, int y, int w, int h) => _scissor(x, y, w, h);
