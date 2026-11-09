@@ -92,6 +92,25 @@ Convert, keeping the tuned solver behaviour:
 - Known: `--script strafe` **already fails on macOS** on the original `master` (`00448a2`) — the player walks off the
   dock edge near frame 100; CI runs it on Linux. Investigate as part of this layer (likely float / timing difference),
   but don't treat it as caused by the migration.
+- **Coexistence constraint**: until layers 4–7 port the gameplay, legacy bodies (player, enemies, rockets, level
+  colliders) must collide with ECS bodies. So there is **one simulation**, not two: the solver / broadphase move off
+  `Collider` / `RigidBody` objects onto an internal body/collider table indexed by int; legacy behaviours and ECS
+  entities both register into it (legacy as thin adapters, deleted in layer 9).
+- **Steps** (one commit + review stop each):
+  - [x] 2.0 Baselines recorded (below).
+  - [ ] 2.1 Physics components + configs + tests (data only, nothing simulates them).
+  - [ ] 2.2 Internal body/collider table; broadphase entries keyed by it instead of `Collider` (legacy behaviour unchanged).
+  - [ ] 2.3 `RigidSolver` / contact cache / islands on table indices instead of `RigidBody` / `Collider` objects.
+  - [ ] 2.4 `PhysicsSyncSystem` + `PhysicsStepSystem` in FixedTick: ECS entities enter the table; poses written back
+        to `LocalTransform`; fixed-step lockstep with the legacy `FixedUpdate`.
+  - [ ] 2.5 Joints as components; constraints keyed by table index.
+  - [ ] 2.6 `CharacterBody` / `KinematicBody` components and systems; triggers.
+  - [ ] 2.7 Contact / trigger events as `IPostProcessEvent`s; query API returns `Entity` for ECS hits.
+  - [ ] 2.8 ECS physics demo prefabs, full gate run, strafe investigation, roadmap update.
+- **Baselines (2.0, `37794e8`, Linux/WSL, 16 threads, `--no-render`)** — physics ms/step avg:
+  crates 1.19 (PASS), ragdolls 11.21 (**FAIL at baseline**: 25.4 ms frame, over budget — pre-existing on this
+  machine), projectiles 0.48 (PASS), ground 0.15 (PASS). `--script strafe --frames 620` **also fails at baseline here**
+  (falls off the dock edge at (-18.9, 1.2, 6.7), same symptom as macOS). Gate = no worse than these.
 - Ordering note: the ECS currently updates **after** the legacy scene and `Physics.Step()`. When physics moves into
   `FixedTick`, the ECS fixed step and the legacy `FixedUpdate` must stay in lockstep (same `fixedDeltaTime`, same step
   count per frame) until gameplay is ported.
