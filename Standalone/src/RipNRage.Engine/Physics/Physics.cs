@@ -50,7 +50,9 @@ namespace RipNRage.Engine
         private bool _isStatic;
 
         /// <summary>Broadphase bookkeeping (null while not registered).</summary>
-        internal PhysicsWorld.Entry broadphase;
+        internal ColliderTable.Slot broadphase;
+        /// <summary>This collider's slot in <see cref="PhysicsWorld.Table"/> (none while not registered).</summary>
+        public PhysicsProxy Proxy => ColliderTable.ProxyOf(broadphase);
 
         /// <summary>
         /// Static colliders never move: their bounds are cached in the spatial grid when they register. Brush

@@ -38,27 +38,20 @@ namespace RipNRage.Engine
         /// <summary>How much a dynamic collider's grid box is inflated beyond its bounds (re-bucketed only when it leaves that).</summary>
         public float FatMargin = 0.25f;
 
-        internal sealed class Entry
-        {
-            public Collider collider;
-            public Bounds bounds;       // statics: cached bounds; dynamics: the fat box they are bucketed by
-            public Bounds tight;        // dynamics: bounds at the last refresh
-            public bool isStatic;
-            public bool large;
-            public int stamp;           // last query that visited this entry (grid entries appear in several cells)
-            public int x0, y0, z0, x1, y1, z1; // dynamics: cell range currently occupied
-            public bool bucketed;
-        }
+
+        private readonly ColliderTable _table = new ColliderTable();
+        /// <summary>Every collider's slot (legacy behaviours today, ECS entities from layer 2.4).</summary>
+        public ColliderTable Table => _table;
 
         private float _cellSize = 8f;
         private float _dynCellSize = 2f;
         private readonly List<Collider> _all = new List<Collider>();
-        private readonly List<Entry> _dynamic = new List<Entry>();
-        private readonly List<Entry> _largeStatic = new List<Entry>();
-        private readonly List<Entry> _largeDynamic = new List<Entry>();
-        private readonly Dictionary<long, List<Entry>> _cells = new Dictionary<long, List<Entry>>();
-        private readonly Dictionary<long, List<Entry>> _dynCells = new Dictionary<long, List<Entry>>();
-        private readonly Stack<List<Entry>> _cellPool = new Stack<List<Entry>>();
+        private readonly List<ColliderTable.Slot> _dynamic = new List<ColliderTable.Slot>();
+        private readonly List<ColliderTable.Slot> _largeStatic = new List<ColliderTable.Slot>();
+        private readonly List<ColliderTable.Slot> _largeDynamic = new List<ColliderTable.Slot>();
+        private readonly Dictionary<long, List<int>> _cells = new Dictionary<long, List<int>>();
+        private readonly Dictionary<long, List<int>> _dynCells = new Dictionary<long, List<int>>();
+        private readonly Stack<List<int>> _cellPool = new Stack<List<int>>();
         private Bounds _staticBounds, _dynBounds;
         private bool _hasStatics, _hasDynamics;
         private int _stamp;
@@ -107,7 +100,8 @@ namespace RipNRage.Engine
         public void Add(Collider c)
         {
             if (c == null || c.broadphase != null) return;
-            var e = new Entry { collider = c, isStatic = c.isStatic };
+            var e = _table.Allocate(c, Ecs.Entity.Null);
+            e.isStatic = c.isStatic;
             c.broadphase = e;
             _all.Add(c);
             Insert(e);
@@ -121,6 +115,7 @@ namespace RipNRage.Engine
             {
                 Extract(e);
                 c.broadphase = null;
+                _table.Free(e);
                 _all.Remove(c);
             }
             _movers.Remove(c);
@@ -136,7 +131,7 @@ namespace RipNRage.Engine
             Insert(e);
         }
 
-        private void Insert(Entry e)
+        private void Insert(ColliderTable.Slot e)
         {
             if (!e.isStatic) { _dynamic.Add(e); BucketDynamic(e, e.collider.bounds); return; }
             e.bounds = e.collider.bounds;
@@ -151,12 +146,12 @@ namespace RipNRage.Engine
                     for (int z = z0; z <= z1; z++)
                     {
                         long key = Key(x, y, z);
-                        if (!_cells.TryGetValue(key, out var list)) { list = new List<Entry>(4); _cells[key] = list; }
-                        list.Add(e);
+                        if (!_cells.TryGetValue(key, out var list)) { list = new List<int>(4); _cells[key] = list; }
+                        list.Add(e.index);
                     }
         }
 
-        private void Extract(Entry e)
+        private void Extract(ColliderTable.Slot e)
         {
             if (!e.isStatic) { _dynamic.Remove(e); UnbucketDynamic(e); return; }
             StaticCount--;
@@ -168,14 +163,14 @@ namespace RipNRage.Engine
                     for (int z = z0; z <= z1; z++)
                         if (_cells.TryGetValue(Key(x, y, z), out var list))
                         {
-                            list.Remove(e);
+                            list.Remove(e.index);
                             if (list.Count == 0) _cells.Remove(Key(x, y, z));
                         }
         }
 
         private void Rebuild()
         {
-            var statics = new List<Entry>();
+            var statics = new List<ColliderTable.Slot>();
             foreach (var c in _all) if (c.broadphase != null && c.broadphase.isStatic) statics.Add(c.broadphase);
             _cells.Clear(); _largeStatic.Clear();
             StaticCount = 0; _hasStatics = false;
@@ -200,7 +195,7 @@ namespace RipNRage.Engine
         // ------------------------------------------------------------------ dynamic grid
 
         /// <summary>Puts a dynamic entry into the grid by a fat box around <paramref name="tight"/>.</summary>
-        private void BucketDynamic(Entry e, Bounds tight)
+        private void BucketDynamic(ColliderTable.Slot e, Bounds tight)
         {
             e.tight = tight;
             e.bounds = tight.Expanded(FatMargin);
@@ -215,12 +210,12 @@ namespace RipNRage.Engine
                     for (int z = e.z0; z <= e.z1; z++)
                     {
                         long key = Key(x, y, z);
-                        if (!_dynCells.TryGetValue(key, out var list)) { list = _cellPool.Count > 0 ? _cellPool.Pop() : new List<Entry>(8); _dynCells[key] = list; }
-                        list.Add(e);
+                        if (!_dynCells.TryGetValue(key, out var list)) { list = _cellPool.Count > 0 ? _cellPool.Pop() : new List<int>(8); _dynCells[key] = list; }
+                        list.Add(e.index);
                     }
         }
 
-        private void UnbucketDynamic(Entry e)
+        private void UnbucketDynamic(ColliderTable.Slot e)
         {
             if (!e.bucketed) return;
             e.bucketed = false;
@@ -232,7 +227,7 @@ namespace RipNRage.Engine
                         long key = Key(x, y, z);
                         if (!_dynCells.TryGetValue(key, out var list)) continue;
                         int n = list.Count;
-                        for (int i = 0; i < n; i++) if (list[i] == e) { list[i] = list[n - 1]; list.RemoveAt(n - 1); break; }
+                        for (int i = 0; i < n; i++) if (list[i] == e.index) { list[i] = list[n - 1]; list.RemoveAt(n - 1); break; }
                         if (list.Count == 0) { _dynCells.Remove(key); _cellPool.Push(list); }
                     }
         }
@@ -253,7 +248,7 @@ namespace RipNRage.Engine
             Touch(e, tight);
         }
 
-        private void Touch(Entry e, Bounds tight)
+        private void Touch(ColliderTable.Slot e, Bounds tight)
         {
             if (e.bucketed && e.bounds.Contains(tight.min) && e.bounds.Contains(tight.max)) { e.tight = tight; return; }
             UnbucketDynamic(e);
@@ -320,7 +315,7 @@ namespace RipNRage.Engine
                                 if (!_dynCells.TryGetValue(Key(x, y, z), out var list)) continue;
                                 for (int i = 0; i < list.Count; i++)
                                 {
-                                    var e = list[i];
+                                    var e = _table[list[i]];
                                     if (e.stamp == stamp) continue;
                                     e.stamp = stamp;
                                     if (!e.bounds.Intersects(region)) continue;
@@ -342,8 +337,9 @@ namespace RipNRage.Engine
                     for (int z = z0; z <= z1; z++)
                     {
                         if (!_cells.TryGetValue(Key(x, y, z), out var list)) continue;
-                        foreach (var e in list)
+                        foreach (int id in list)
                         {
+                            var e = _table[id];
                             if (e.stamp == stamp) continue;
                             e.stamp = stamp;
                             if (!e.bounds.Intersects(region)) continue;
@@ -378,7 +374,7 @@ namespace RipNRage.Engine
                                 if (!_dynCells.TryGetValue(Key(x, y, z), out var list)) continue;
                                 for (int i = 0; i < list.Count; i++)
                                 {
-                                    var e = list[i];
+                                    var e = _table[list[i]];
                                     if (!e.bounds.Intersects(region)) continue;
                                     if ((e.x0 != e.x1 || e.y0 != e.y1 || e.z0 != e.z1) && Contains(results, first, e.collider)) continue;
                                     if (filter.Accepts(e.collider)) results.Add(e.collider);
@@ -402,7 +398,7 @@ namespace RipNRage.Engine
                         if (!_cells.TryGetValue(Key(x, y, z), out var list)) continue;
                         for (int i = 0; i < list.Count; i++)
                         {
-                            var e = list[i];
+                            var e = _table[list[i]];
                             if (!e.bounds.Intersects(region)) continue;
                             if (several && Contains(results, first, e.collider)) continue;
                             if (filter.Accepts(e.collider)) results.Add(e.collider);
@@ -445,7 +441,7 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Walks a grid's cells along the ray (Amanatides &amp; Woo) until the best hit is nearer than the next cell.</summary>
-        private bool RaycastGrid(Dictionary<long, List<Entry>> cells, float cellSize, Bounds worldBounds, Ray ray, QueryFilter filter, ref float best, ref RaycastHit hit)
+        private bool RaycastGrid(Dictionary<long, List<int>> cells, float cellSize, Bounds worldBounds, Ray ray, QueryFilter filter, ref float best, ref RaycastHit hit)
         {
             if (!ClipRay(ray, worldBounds, best, out float t0, out float t1)) return false;
             bool found = false;
@@ -466,7 +462,7 @@ namespace RipNRage.Engine
                 {
                     for (int i = 0; i < list.Count; i++)
                     {
-                        var e = list[i];
+                        var e = _table[list[i]];
                         if (e.stamp == stamp) continue;
                         e.stamp = stamp;
                         var c = e.collider;
