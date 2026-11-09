@@ -267,6 +267,22 @@ internal static class EcsChecks
                 foreach (var ch in vq) { var p = ch.Get<Position>(); for (int i = 0; i < ch.Length; i++) p[i].Y += 1; }
             Console.WriteLine($"  ecs: iterate {vq.Count()} Position+Velocity rows: {sw.Elapsed.TotalMilliseconds * 10.0:0.0} us per pass");
         }
+
+        // ---- asset registry: handles are plain data, interning is idempotent, names round-trip
+        {
+            var reg = new AssetRegistry<string>();
+            True(AssetHandle<string>.None.IsNone && reg.Resolve(default) == null, "default handle is None and resolves to null");
+            var h1 = reg.Intern("crate-mesh", "crate");
+            var h2 = reg.Intern("crate-mesh");
+            True(h1.Equals(h2) && !h1.IsNone, "interning the same reference returns the same handle");
+            True(ReferenceEquals(reg.Resolve(h1), "crate-mesh"), "resolve returns the interned asset");
+            True(reg.NameOf(h1) == "crate" && reg.Find("CRATE").Equals(h1), "names round-trip, case-insensitive");
+            int loads = 0;
+            var h3 = reg.GetOrLoad("barrel", _ => { loads++; return "barrel-mesh"; });
+            var h4 = reg.GetOrLoad("barrel", _ => { loads++; return "barrel-mesh-2"; });
+            True(h3.Equals(h4) && loads == 1 && (string)reg.Resolve(h3) == "barrel-mesh", "GetOrLoad loads once and caches by name");
+            True(reg.GetOrLoad(null, _ => "x").IsNone && reg.Intern(null).IsNone, "null name / asset maps to None");
+        }
     }
 }
 internal static class EcsDebug

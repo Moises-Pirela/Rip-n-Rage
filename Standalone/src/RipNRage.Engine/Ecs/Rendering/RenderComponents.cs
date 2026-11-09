@@ -16,28 +16,26 @@ namespace RipNRage.Engine.Ecs.Rendering
     /// <summary>A sprite quad in the entity's XY plane (same semantics as the legacy SpriteRenderer).</summary>
     public struct SpriteRender : IComponent
     {
-        public Sprite Sprite;
+        public AssetHandle<Sprite> Sprite;
         public Color Color;
         public bool FlipX, FlipY, Billboard, Lit, CastsShadow, FullBright;
         public float BillboardRoll;
         public int SortingOrder;
         public RenderLayer Layer;
-        public Material Material;
-        public MaterialPropertyBlock Properties;
+        public AssetHandle<Material> Material;
     }
 
     /// <summary>A textured mesh (same semantics as the legacy MeshRenderer).</summary>
     public struct MeshRender : IComponent
     {
-        public Mesh Mesh;
-        public Texture2D Texture;
+        public AssetHandle<Mesh> Mesh;
+        public AssetHandle<Texture2D> Texture;
         public Vector2 UvScale;
         public float Emissive;
         public bool CastsShadow, Transparent, Occluder;
         public Color Color;
         public RenderLayer Layer;
-        public Material Material;
-        public MaterialPropertyBlock Properties;
+        public AssetHandle<Material> Material;
     }
 
     public struct LightSource : IComponent
@@ -49,6 +47,15 @@ namespace RipNRage.Engine.Ecs.Rendering
 
     /// <summary>Tag: skip this entity when rendering (cheap to toggle: sparse).</summary>
     [SparseComponent] public struct Hidden : IComponent { }
+
+    /// <summary>The registries render handles resolve through. Configs intern under the name they baked from.</summary>
+    public static class RenderAssets
+    {
+        public static readonly AssetRegistry<Sprite> Sprites = new AssetRegistry<Sprite>();
+        public static readonly AssetRegistry<Mesh> Meshes = new AssetRegistry<Mesh>();
+        public static readonly AssetRegistry<Texture2D> Textures = new AssetRegistry<Texture2D>();
+        public static readonly AssetRegistry<Material> Materials = new AssetRegistry<Material>();
+    }
 
     // ---------------------------------------------------------------- configs (JSON prefabs)
 
@@ -71,10 +78,9 @@ namespace RipNRage.Engine.Ecs.Rendering
         public RenderLayer layer;
         public override SpriteRender Bake() => new SpriteRender
         {
-            Sprite = string.IsNullOrEmpty(sprite) ? null : SpriteLibrary.Resolve(sprite),
+            Sprite = RenderAssets.Sprites.GetOrLoad(sprite, SpriteLibrary.Resolve),
             Color = ConfigUtil.Color(color), FlipX = flipX, FlipY = flipY, Billboard = billboard, Lit = lit,
             CastsShadow = castsShadow, FullBright = fullBright, BillboardRoll = billboardRoll, SortingOrder = sortingOrder, Layer = layer,
-            Properties = new MaterialPropertyBlock(),
         };
     }
 
@@ -91,11 +97,12 @@ namespace RipNRage.Engine.Ecs.Rendering
         public RenderLayer layer;
         public override MeshRender Bake() => new MeshRender
         {
-            Mesh = MeshLibrary.Get(mesh),
-            Texture = string.IsNullOrEmpty(texture) ? Texture2D.White : Texture2D.Load(Application.AssetPath(texture), FilterMode.Trilinear, TextureWrapMode.Repeat),
+            Mesh = RenderAssets.Meshes.GetOrLoad(mesh, MeshLibrary.Get),
+            Texture = string.IsNullOrEmpty(texture)
+                ? RenderAssets.Textures.Intern(Texture2D.White, "white")
+                : RenderAssets.Textures.GetOrLoad(texture, t => Texture2D.Load(Application.AssetPath(t), FilterMode.Trilinear, TextureWrapMode.Repeat)),
             Color = ConfigUtil.Color(color), UvScale = new Vector2(uvScale[0], uvScale[1]), Emissive = emissive,
             CastsShadow = castsShadow, Transparent = transparent, Occluder = occluder, Layer = layer,
-            Properties = new MaterialPropertyBlock(),
         };
     }
 

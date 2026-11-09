@@ -49,13 +49,13 @@ namespace RipNRage.Engine.Ecs.Rendering
                 var sr = c.Get<SpriteRender>(); var ltw = c.Get<LocalToWorld>(); var ents = c.Entities;
                 for (int i = 0; i < c.Length; i++)
                 {
-                    if (!c.Includes(i) || sr[i].Sprite == null) continue;
+                    if (!c.Includes(i) || sr[i].Sprite.IsNone) continue;
                     ref readonly var s = ref sr[i]; ref readonly var w = ref ltw[i];
                     var d = frame.AddSprite();
                     d.Id = IdOf(ents[i]); d.Pose = DrawPose.From(w.Value, w.Position, w.Rotation, w.Scale);
-                    d.sprite = s.Sprite; d.color = s.Color; d.flipX = s.FlipX; d.flipY = s.FlipY; d.billboard = s.Billboard;
+                    d.sprite = RenderAssets.Sprites.Resolve(s.Sprite); d.color = s.Color; d.flipX = s.FlipX; d.flipY = s.FlipY; d.billboard = s.Billboard;
                     d.billboardRoll = s.BillboardRoll; d.lit = s.Lit; d.castsShadow = s.CastsShadow; d.fullBright = s.FullBright;
-                    d.sortingOrder = s.SortingOrder; d.renderLayer = s.Layer; d.material = s.Material; d.propertyBlock = s.Properties;
+                    d.sortingOrder = s.SortingOrder; d.renderLayer = s.Layer; d.material = RenderAssets.Materials.Resolve(s.Material); d.propertyBlock = null;
                 }
             }
 
@@ -64,13 +64,13 @@ namespace RipNRage.Engine.Ecs.Rendering
                 var mr = c.Get<MeshRender>(); var ltw = c.Get<LocalToWorld>(); var ents = c.Entities;
                 for (int i = 0; i < c.Length; i++)
                 {
-                    if (!c.Includes(i) || mr[i].Mesh == null) continue;
+                    if (!c.Includes(i) || mr[i].Mesh.IsNone) continue;
                     ref readonly var m = ref mr[i]; ref readonly var w = ref ltw[i];
                     var d = frame.AddMesh();
                     d.Id = IdOf(ents[i]); d.Pose = DrawPose.From(w.Value, w.Position, w.Rotation, w.Scale);
-                    d.mesh = m.Mesh; d.texture = m.Texture; d.uvScale = m.UvScale; d.emissive = m.Emissive;
+                    d.mesh = RenderAssets.Meshes.Resolve(m.Mesh); d.texture = RenderAssets.Textures.Resolve(m.Texture); d.uvScale = m.UvScale; d.emissive = m.Emissive;
                     d.castsShadow = m.CastsShadow; d.transparent = m.Transparent; d.occluder = m.Occluder;
-                    d.color = m.Color; d.renderLayer = m.Layer; d.material = m.Material; d.propertyBlock = m.Properties;
+                    d.color = m.Color; d.renderLayer = m.Layer; d.material = RenderAssets.Materials.Resolve(m.Material); d.propertyBlock = null;
                 }
             }
 

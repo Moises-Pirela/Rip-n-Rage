@@ -22,6 +22,7 @@ then start at the first unchecked layer.
 | Physics | **Convert** to components / systems (not a handle wrapper) |
 | Migration | **Big bang**, but done in **layers, foundational engine systems first, then gameplay**, stopping for review after each layer |
 | Editors | Editor integration of configs comes **later** (after gameplay) |
+| Assets in components | **Handles, not references**: `AssetHandle<T>` into an `AssetRegistry<T>` (`Ecs/Assets.cs`); registries keep the name a config baked from (`NameOf`) so handles serialise back to config data. Render registries: `RenderAssets`. Physics collider shapes reuse the same pattern |
 
 ## Status
 
@@ -39,11 +40,13 @@ then start at the first unchecked layer.
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
 
-### Open question for the next session (asked at the end of layer 1, not answered yet)
+### Resolved: asset handles (answered before layer 2)
 
-Render components hold **object references** (`Sprite`, `Mesh`, `Material`, `Texture2D`). The alternative is integer
-**asset handles** resolved by a registry, which keeps components plain data (and serialisable / blittable). Switching is
-cheap now and expensive after gameplay depends on it. **Ask before starting layer 2.**
+Render components now hold `AssetHandle<T>` values (plain data) instead of `Sprite` / `Mesh` / `Material` /
+`Texture2D` references; `EcsRenderProducer` resolves them through the `RenderAssets` registries when building the
+frame. The per-component `MaterialPropertyBlock` was dropped (nothing used it; per-entity material overrides will
+return as a dedicated component when something needs them). Verified pixel-identical `--ecs-demo` screenshots
+before/after.
 
 ## Where things are
 
