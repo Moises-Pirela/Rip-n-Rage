@@ -151,23 +151,45 @@ Convert, keeping the tuned solver behaviour:
         bucketed a body's slot before `InsertEcs`, which then skipped it, so it never joined the dynamic list.
         Slots now carry an `inserted` flag; a body-vs-body stacking test guards it.
       - **Game (inert until ported)**: level brushes, the dock mesh, sand, water, lamp posts, crates and
-        `prop_physics` are ECS entities (dynamic props render through the ECS). Code that drove deleted types is
-        fenced as `#if LEGACY_PHYSICS` (never defined), kept as the reference for its port: player movement and
-        fall/respawn (`FPSController`, `FallRespawn` → layer 4), enemy steering (`AIAgent`, BT nodes → layer 6),
-        ragdolls (`EnemyDestruction`, skeleton-editor preview → layer 3), weapon move spread (→ layer 5).
-        Inert without a fence: projectiles move by transform and hit nothing (layer 5); trigger callbacks
-        (pickups, water, checkpoints, vision) are uncalled (layers 6–8); hit → `EntityState` lookups resolve to
-        nothing because characters aren't entities yet (layers 4–6); surfaces resolve to Default (layer 7).
-        Jointed level props (`phys_*`, `joint_*`) spawn loose / are skipped with a warning (2.5).
-        `PhysicsPlayground` was deleted (recreate as ECS prefabs in 2.5).
+        `prop_physics` are ECS entities (dynamic props render through the ECS). Gameplay that drove deleted types
+        was **deleted, not fenced** (in 2.5/2.6, by request; git history has the originals): player movement and
+        fall/respawn (`FPSController`, `FallRespawn` keep only their public surface → rewrite in layer 4), enemy
+        steering (`AIAgent`, BT nodes → layer 6), ragdolls (`EnemyDestruction`, skeleton-editor preview → layer 3),
+        weapon move spread (→ layer 5), per-entity surfaces (→ layer 7). Inert: projectiles move by transform and
+        hit nothing (layer 5); trigger callbacks (pickups, water, checkpoints, vision) are uncalled (layers 6–8);
+        hit → `EntityState` lookups resolve to nothing because characters aren't entities yet (layers 4–6).
+        `PhysicsPlayground` was deleted (recreate as ECS prefabs in 2.8).
       - **Gates changed**: `--script strafe` now **passes vacuously** (the player cannot move or fall), so it says
-        nothing until layer 4. Bench scenarios **ragdolls** and **projectiles** are gone until 2.5 / 2.6; **crates**
-        runs on ECS bodies; **ground** is ECS spheres rolling on an ECS mesh terrain (the `CharacterBody` runners
-        are gone). New ECS baseline (`--threads 1`, 3 runs): crates 0.66–1.34 ms/step, ground 0.03–0.07 ms/step.
-        Not comparable to the legacy numbers: different bodies, render path and awake counts.
-  - [ ] 2.5 Joints as components; constraints keyed by table index.
-  - [ ] 2.6 `CharacterBody` / `KinematicBody` components and systems (triggers already done in 2.L).
-  - [ ] 2.7 ~~Contact / trigger events; query API returns `Entity`~~ — done in 2.L; what remains: per-frame
+        nothing until layer 4.
+  - [x] 2.5 **Joints** (`Ecs/Physics/Joints.cs`): one `Joint` component (`JointKind` Ball / Fixed / Hinge /
+        Slider / Distance / Spring; `Connected` entity or the world; anchors in local space; limits / motor / spring;
+        break force / torque) + `JointConfig`; `JointSystem` (FixedTick, after sync, before step) creates the solver
+        constraint once both ends are registered, re-applies parameters every step (motors can be driven live),
+        keeps motorised bodies awake, and on a break (or the connected body leaving) removes it, adds
+        `[Sparse] JointBroken` and posts `JointBrokenEvent`. Level `phys_*` machines and `joint_*` connectors are
+        back on ECS joints (`EntityFollower` keeps each prop's named GameObject on its entity for targetname
+        lookups and rods; `SliderPatrol` component/system in the game). **Parity**: the dock's breakable shelf
+        (`phys_fixed`, break 260 N) breaks on spawn with exactly the legacy numbers (666 N / 147 N·m — a crate
+        lands on it from 2 cm), so that is level content, not a regression.
+  - [x] 2.6 **Characters + movers** (`Ecs/Physics/Movers.cs`). `CharacterMotor` (the force-driven capsule on a
+        ride spring; profiles Player / Enemy track tunables live) — gameplay writes intent (`Desired`,
+        `PendingJump` / `PendingImpulse` / `PendingDash` / `PendingStopDash` / `PendingMinVerticalSpeed`), reads
+        state (`IsGrounded`, `Ground` entity, `GroundDistance`, `GroundNormal`, `GroundVelocity`, `IsDashing`);
+        `CharacterMotorSystem` configures the body (no rotation / sleep / friction, CCD) and steps it. Not ported:
+        `SetHeight` (slide crouch) — add with layer 4. `KinematicMover` (swept move-and-slide, Slide / Bounce /
+        Stop, gravity / drag / terminal speed, pushes bodies, `Ignore` entity, `CollisionEvent`s with
+        `ReportCollisions`); runs in the **fixed** step (the legacy PerFrame mode is gone). A mover with a
+        `ColliderShape` is re-baked as it moves and fires triggers (`TriggerSystem` now counts any non-static
+        collider). **Bench**: all four scenarios back on ECS. ragdolls = 500 jointed figures (6 bodies, 5 ball
+        joints each: 3000 bodies / 2500 joints, same load as the old sprite ragdolls; those return in layer 3);
+        projectiles = `KinematicMover`s in Stop mode; ground = `CharacterMotor` runners again. Fixed a bench bug
+        inherited from legacy: runners jumped in mid-air and drifted into the sky (now only from the ground).
+        Baseline (`--threads 1`, 3 runs, ms/step avg): crates 0.9–2.5, ragdolls 30–54 (**FAIL**, as at the 2.0
+        baseline: legacy single-threaded was 34–40), projectiles ≈0.01–0.04, ground 0.03–0.16. **Metric note**:
+        "physics/step" averages per frame with `max(1, steps)`, so step-less frames count as 0 — at ~1000 fps
+        (`--no-render`) it understates fixed-step work (now including movers); compare "ms/frame" too.
+  - [ ] 2.7 ~~Contact / trigger events; query API returns `Entity`~~ — done in 2.L; what remains: character
+        `SetHeight`, per-frame
         interpolation for ECS bodies, dynamic mesh colliders, and caching hulls of moving boxes (`HullOf` allocates).
   - [ ] 2.8 ECS physics demo prefabs, full gate run, strafe investigation, roadmap update.
 - **Baselines (2.0, `37794e8`, Linux/WSL, 16 threads, `--no-render`)** — physics ms/step avg:

@@ -72,13 +72,7 @@ namespace RipNRage.SkeletonEditor
         // ---- preview ----
         private GameObject _previewGo;
         private SpriteRenderer _previewSr;
-        // ECS migration (layer 2): the ragdoll preview ran on the legacy SpriteRagdoll (rigid bodies + joints); it
-        // returns with the ECS ragdoll in layer 3. LEGACY_PHYSICS is never defined.
-#if LEGACY_PHYSICS
-        private SpriteRagdoll _ragdoll;
-#else
         private object _ragdoll => null;
-#endif
         private float _yaw = 180f, _pitch = 12f, _distance = 5.5f;
         private float _previewScale = 0.44f;
 
@@ -411,10 +405,6 @@ namespace RipNRage.SkeletonEditor
             {
                 if (Input.GetKeyDown(KeyCode.Space)) SpawnRagdoll(Ctrl);
                 if (Input.GetKeyDown(KeyCode.R)) ResetPreview();
-#if LEGACY_PHYSICS
-                if (Input.GetKeyDown(KeyCode.K) && _ragdoll != null) _ragdoll.BreakAll();
-                if (Input.GetKeyDown(KeyCode.UpArrow) && _ragdoll != null) _ragdoll.AddExplosion(40f, anchor.position + new Vector3(0f, -0.2f, 0.8f), 4f, 0.6f);
-#endif
             }
         }
 
@@ -476,34 +466,12 @@ namespace RipNRage.SkeletonEditor
 
         private void ResetPreview()
         {
-#if LEGACY_PHYSICS
-            if (_ragdoll != null) { GameObject.Destroy(_ragdoll.gameObject); _ragdoll = null; }
-#endif
             if (_previewSr != null) _previewSr.enabled = _mode == Mode.Preview && _cell != null;
         }
 
         private void SpawnRagdoll(bool gib)
         {
-#if LEGACY_PHYSICS
-            if (_skel == null || _cell == null) return;
-            ResetPreview();
-            var options = RagdollOptions.Default;
-            options.gib = gib;
-            options.scatterImpulse = gib ? 6f : 0f;
-            options.lifetime = 0f;
-            // a shove through the torso from the camera side, like a shot
-            Vector3 from = cam.transform.position;
-            Vector3 hit = _previewGo.transform.position;
-            options.impulse = (hit - from).normalized * (gib ? 0f : 12f);
-            options.impulsePoint = hit + Vector3.up * 0.3f;
-            _ragdoll = SpriteRagdoll.Spawn(_skel, _cell, _previewGo.transform.position, _previewGo.transform.lossyScale, options, _previewSr);
-            if (_ragdoll == null) { Status("NOTHING TO SLICE: THE VIEW HAS NO PARTS WITH 3+ VERTICES"); return; }
-            _ragdoll.lifetime = 0f;
-            _previewSr.enabled = false;
-            Status(gib ? "GIBBED — R = RESET" : "RAGDOLL — CLICK A PIECE TO TEAR IT OFF, K = BREAK ALL, UP = BLAST, R = RESET");
-#else
             Status("RAGDOLL PREVIEW RETURNS WITH THE ECS RAGDOLL (LAYER 3)");
-#endif
         }
 
         private void UpdatePreview()
@@ -523,23 +491,6 @@ namespace RipNRage.SkeletonEditor
             cam.transform.position = target - rot * Vector3.forward * _distance;
             cam.transform.rotation = rot;
 
-#if LEGACY_PHYSICS
-            if (over && Input.GetMouseButtonDown(0) && _ragdoll != null)
-            {
-                var win = Application.Current.Window;
-                var ray = cam.ScreenPointToRay(mouse, win.Width, win.Height);
-                if (Physics.Raycast(ray, out RaycastHit h, 100f))
-                {
-                    foreach (var p in _ragdoll.parts)
-                        if (p.collider == h.collider)
-                        {
-                            if (p.attached) { _ragdoll.Detach(p); Status("TORE OFF " + p.name); }
-                            p.body.AddImpulseAtPosition(ray.direction * 6f, h.point);
-                            break;
-                        }
-                }
-            }
-#endif
         }
 
         // ------------------------------------------------------------------ ui (Dear ImGui)

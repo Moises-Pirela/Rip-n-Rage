@@ -22,8 +22,7 @@ namespace RipNRage.Benchmark
 
         public static List<Scenario> Select(string which)
         {
-            // ragdolls (jointed bodies) and projectiles (kinematic movers) return with ECS joints (2.5) and kinematic bodies (2.6)
-            var all = new List<Scenario> { new CratesScenario(), new GroundScenario() };
+            var all = new List<Scenario> { new CratesScenario(), new RagdollsScenario(), new ProjectilesScenario(), new GroundScenario() };
             if (which == "all") return all;
             var list = new List<Scenario>();
             foreach (var part in which.Split(new[] { ',', ' ', '+' }, StringSplitOptions.RemoveEmptyEntries))
@@ -88,12 +87,13 @@ namespace RipNRage.Benchmark
         }
 
         /// <summary>A dynamic ECS body that renders through the ECS (mesh + texture).</summary>
-        public static Entity DynamicBody(Vector3 position, Quaternion rotation, ColliderShape shape, float mass, float friction, float restitution, Mesh mesh, Texture2D tex)
+        public static Entity DynamicBody(Vector3 position, Quaternion rotation, ColliderShape shape, float mass, float friction, float restitution, Mesh mesh, Texture2D tex, int group = 0)
         {
             var w = World;
             var e = Track(RipNRage.Engine.Ecs.Physics.PhysicsEntities.Dynamic(w, new LocalTransform { Position = position, Rotation = rotation, Scale = Vector3.one }, shape, mass));
             var cmd = w.Commands;
             cmd.Add(e, new RipNRage.Engine.Ecs.Physics.SurfaceMaterial { StaticFriction = friction, DynamicFriction = friction, Restitution = restitution, FrictionCombine = CombineMode.Average, RestitutionCombine = CombineMode.Maximum });
+            if (group != 0) cmd.Add(e, new CollisionFilter { Mask = ~0, UseLayerMatrix = true, Group = group });
             cmd.Add(e, new MeshRender { Mesh = RenderAssets.Meshes.Intern(mesh), Texture = RenderAssets.Textures.Intern(tex ?? Texture2D.White), Color = Color.white, UvScale = Vector2.one, CastsShadow = true, Layer = RenderLayer.World });
             return e;
         }
@@ -157,66 +157,190 @@ namespace RipNRage.Benchmark
         public override string Extra => $"sleeping(at last blast) {_sleeping}";
     }
 
-    // ==================================================================== 2. ground
+    // ==================================================================== 2. ragdolls
 
     /// <summary>
-    /// Fast ECS spheres rolling over a rough 30k-triangle mesh terrain, re-aimed every few seconds (the force-driven
-    /// CharacterBody runners this used to drive return with the ECS character body, step 2.6; numbers from before
-    /// layer 2's legacy removal are not comparable).
+    /// 500 jointed figures (torso box, head sphere, four capsule limbs on ball joints; each figure one negative
+    /// collision group) thrown onto the floor, a blast every 5 s — 3000 bodies, 2500 joints, the shape of the old
+    /// sprite-ragdoll scenario (the sliced sprite ragdolls themselves return in layer 3).
     /// </summary>
+    public sealed class RagdollsScenario : Scenario
+    {
+        public override string Name => "ragdolls";
+        public override string Description => "jointed figures: 6 ECS bodies on ball joints each, piece/piece and piece/floor contacts (a blast every 5 s)";
+        public override int Target(BenchmarkConfig cfg) => cfg.Count(cfg.ragdolls);
+        private readonly List<Entity> _pieces = new List<Entity>();
+        private readonly BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(11);
+        private float _nextBlast = 6f;
+        private int _figures;
+
+        public override void Build(GameObject root, BenchmarkConfig cfg)
+        {
+            int n = Target(cfg);
+            BenchmarkScene.Arena(root, 70f, 6f);
+            var torsoMesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.5f, 0.7f, 0.3f), 1f);
+            var headMesh = Mesh.CreateBox(Vector3.zero, Vector3.one * 0.3f, 1f);
+            var limbMesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.16f, 0.6f, 0.16f), 1f);
+            int side = Math.Max(2, (int)MathF.Ceiling(MathF.Sqrt(n)));
+            for (int i = 0; i < n; i++)
+            {
+                int x = i % side, z = i / side;
+                Vector3 c = new Vector3((x - side * 0.5f + 0.5f) * 2.2f, 1.6f, (z - side * 0.5f + 0.5f) * 2.2f);
+                int group = -(i + 1);
+                var torso = BenchmarkScene.DynamicBody(c, Quaternion.identity, new ColliderShape { Kind = ShapeKind.Box, Size = new Vector3(0.5f, 0.7f, 0.3f) }, 30f, 0.6f, 0.05f, torsoMesh, GameAssets.OrangeProto, group);
+                Part(c + new Vector3(0f, 0.55f, 0f), new ColliderShape { Kind = ShapeKind.Sphere, Radius = 0.15f }, 5f, headMesh, torso, new Vector3(0f, -0.15f, 0f), group);
+                Part(c + new Vector3(-0.35f, 0.05f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.08f, Height = 0.6f }, 4f, limbMesh, torso, new Vector3(0f, 0.3f, 0f), group);
+                Part(c + new Vector3(0.35f, 0.05f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.08f, Height = 0.6f }, 4f, limbMesh, torso, new Vector3(0f, 0.3f, 0f), group);
+                Part(c + new Vector3(-0.13f, -0.7f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.09f, Height = 0.7f }, 8f, limbMesh, torso, new Vector3(0f, 0.35f, 0f), group);
+                Part(c + new Vector3(0.13f, -0.7f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.09f, Height = 0.7f }, 8f, limbMesh, torso, new Vector3(0f, 0.35f, 0f), group);
+                Vector3 dir = _rng.OnCircle(); dir.y = 0.3f;
+                BenchmarkScene.World.Commands.Add(torso, new BodyVelocity { Linear = dir.normalized * _rng.Range(1f, 3f), Angular = _rng.InUnitSphere() * 3f });
+                _pieces.Add(torso);
+                _figures++;
+            }
+        }
+
+        private void Part(Vector3 at, ColliderShape shape, float mass, Mesh mesh, Entity parent, Vector3 anchor, int group)
+        {
+            var e = BenchmarkScene.DynamicBody(at, Quaternion.identity, shape, mass, 0.6f, 0.05f, mesh, GameAssets.PurpleProto, group);
+            var j = new JointConfig { kind = JointKind.Ball }.Bake();
+            j.Anchor = anchor; j.Connected = parent;
+            BenchmarkScene.World.Commands.Add(e, j);
+            _pieces.Add(e);
+        }
+
+        public override void Tick(float dt, float elapsed)
+        {
+            if (elapsed < _nextBlast) return;
+            _nextBlast = elapsed + 5f;
+            Physics.AddExplosionForce(120f, new Vector3(_rng.Range(-10f, 10f), 0.3f, _rng.Range(-10f, 10f)), 12f, 0.8f);
+        }
+
+        public override void Teardown() { _pieces.Clear(); _figures = 0; }
+        public override int Alive => _figures;
+        public override string Extra => $"pieces {_pieces.Count}";
+    }
+
+    // ==================================================================== 3. projectiles
+
+    /// <summary>1000+ swept kinematic movers (Stop mode) in flight at once, fired from a ring into a field of pillars and walls.</summary>
+    public sealed class ProjectilesScenario : Scenario
+    {
+        public override string Name => "projectiles";
+        public override string Description => "swept ECS kinematic movers (Stop mode, collision reports) flying through a pillar field";
+        public override int Target(BenchmarkConfig cfg) => cfg.Count(cfg.projectiles);
+        private readonly List<(Entity e, float age)> _live = new List<(Entity, float)>();
+        private Mesh _mesh;
+        private int _target, _spawned, _hits;
+        private float _spawnAcc;
+        private readonly BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(23);
+        private const float Speed = 40f, Life = 3.2f;
+
+        public override void Build(GameObject root, BenchmarkConfig cfg)
+        {
+            _target = Target(cfg);
+            BenchmarkScene.Arena(root, 160f, 10f);
+            var pr = new BenchmarkScene.Rng(5);
+            for (int i = 0; i < 80; i++)
+                BenchmarkScene.StaticBox(root, "Pillar" + i, new Vector3(pr.Range(-60f, 60f), 0f, pr.Range(-60f, 60f)), new Vector3(pr.Range(0.8f, 2.5f), pr.Range(2f, 7f), pr.Range(0.8f, 2.5f)), GameAssets.PurpleProto);
+            _mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.16f, 0.16f, 0.5f), 1f);
+        }
+
+        public override void Tick(float dt, float elapsed)
+        {
+            var w = BenchmarkScene.World;
+            for (int i = _live.Count - 1; i >= 0; i--)
+            {
+                var (e, age) = _live[i];
+                age += dt;
+                bool hit = w.IsAlive(e) && w.Get<KinematicMover>(e).Stopped;
+                if (hit) _hits++;
+                if (hit || age >= Life || !w.IsAlive(e)) { if (w.IsAlive(e)) w.Commands.DestroyEntity(e); _live.RemoveAt(i); continue; }
+                _live[i] = (e, age);
+            }
+            float rate = _target / Life * 1.15f;
+            _spawnAcc += rate * dt;
+            int n = (int)_spawnAcc;
+            if (_live.Count + n > _target + _target / 10) n = Math.Max(0, _target + _target / 10 - _live.Count);
+            _spawnAcc -= (int)_spawnAcc;
+            for (int i = 0; i < n; i++) Fire(w);
+        }
+
+        private void Fire(World w)
+        {
+            Vector3 from = _rng.OnCircle() * _rng.Range(55f, 70f); from.y = _rng.Range(1f, 6f);
+            Vector3 to = new Vector3(_rng.Range(-30f, 30f), _rng.Range(0.5f, 5f), _rng.Range(-30f, 30f));
+            Vector3 dir = (to - from).normalized;
+            var cmd = w.Commands;
+            var e = BenchmarkScene.Track(cmd.CreateEntity());
+            cmd.Add(e, new LocalTransform { Position = from, Rotation = Quaternion.LookRotation(dir, Vector3.up), Scale = Vector3.one });
+            var m = new KinematicMoverConfig { useGravity = false, terminalSpeed = 0f, mode = MotionMode.Stop, useLayerMatrix = false, halfExtents = new[] { 0.08f, 0.08f, 0.08f } }.Bake();
+            m.Velocity = dir * Speed;
+            cmd.Add(e, m);
+            cmd.Add(e, new MeshRender { Mesh = RenderAssets.Meshes.Intern(_mesh), Texture = RenderAssets.Textures.Intern(GameAssets.RedProto), Color = Color.white, UvScale = Vector2.one, Layer = RenderLayer.World });
+            _live.Add((e, 0f));
+            _spawned++;
+        }
+
+        public override void Teardown() { _live.Clear(); _spawned = _hits = 0; _spawnAcc = 0f; }
+        public override int Alive => _live.Count;
+        public override string Extra => $"fired {_spawned} hit {_hits}";
+    }
+
+    // ==================================================================== 4. ground
+
+    /// <summary>Fast force-driven characters (ECS CharacterMotor capsules) sprinting over a rough 30k-triangle mesh terrain.</summary>
     public sealed class GroundScenario : Scenario
     {
         public override string Name => "ground";
-        public override string Description => "fast ECS rolling spheres (12–16 m/s) on a hilly static mesh collider (~29k triangles)";
+        public override string Description => "fast ECS CharacterMotor runners (12–16 m/s) on a hilly static mesh collider (~29k triangles)";
         public override int Target(BenchmarkConfig cfg) => cfg.Count(cfg.runners);
-        private readonly List<Entity> _rollers = new List<Entity>();
-        private readonly List<float> _speeds = new List<float>();
-        private BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(31);
-        private float _nextAim = 0.5f;
+        private readonly List<(Entity e, BenchmarkScene.Rng rng, float speed, Vector3 dir, float turnIn)> _runners = new List<(Entity, BenchmarkScene.Rng, float, Vector3, float)>();
         private int _grounded; private float _speed;
 
         public override void Build(GameObject root, BenchmarkConfig cfg)
         {
             int n = Target(cfg);
             BuildTerrain(root, 200f, 120);
-            var mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.8f, 0.8f, 0.8f), 1f);
+            var mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.6f, 1.6f, 0.6f), 1f);
+            var rng = new BenchmarkScene.Rng(31);
             int side = Math.Max(2, (int)MathF.Ceiling(MathF.Sqrt(n)));
+            var w = BenchmarkScene.World;
             for (int i = 0; i < n; i++)
             {
                 int x = i % side, z = i / side;
                 Vector3 p = new Vector3((x - side * 0.5f + 0.5f) * 4f, 0f, (z - side * 0.5f + 0.5f) * 4f);
-                p.y = TerrainHeight(p.x, p.z) + 1.0f;
-                _rollers.Add(BenchmarkScene.DynamicBody(p, Quaternion.identity, new ColliderShape { Kind = ShapeKind.Sphere, Radius = 0.4f }, 20f, 0.6f, 0.1f, mesh, GameAssets.RedProto));
-                _speeds.Add(_rng.Range(12f, 16f));
+                p.y = TerrainHeight(p.x, p.z) + 1.6f;
+                var e = BenchmarkScene.DynamicBody(p, Quaternion.identity, new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.3f, Height = 1.6f }, 85f, 0.05f, 0f, mesh, GameAssets.RedProto);
+                w.Commands.Add(e, new CharacterMotorConfig { profile = CharacterProfileKind.Enemy, groundMask = 1 << Layers.Walkable }.Bake());
+                var r = new BenchmarkScene.Rng((uint)(100 + i));
+                _runners.Add((e, r, rng.Range(12f, 16f), r.OnCircle(), r.Range(1f, 3f)));
             }
         }
 
         public override void Tick(float dt, float elapsed)
         {
             var w = BenchmarkScene.World;
-            bool aim = elapsed >= _nextAim;
-            if (aim) _nextAim = elapsed + 2.5f;
             _grounded = 0; _speed = 0f; int n = 0;
-            for (int i = 0; i < _rollers.Count; i++)
+            for (int i = 0; i < _runners.Count; i++)
             {
-                var e = _rollers[i];
-                if (!w.IsAlive(e) || !w.Has<BodyVelocity>(e)) continue;
-                ref var v = ref w.Get<BodyVelocity>(e);
-                var p = w.Get<LocalTransform>(e).Position;
-                if (aim)
-                {
-                    // head inward from the edge, otherwise a new random heading at this roller's speed
-                    Vector3 dir = MathF.Abs(p.x) > 85f || MathF.Abs(p.z) > 85f ? (-new Vector3(p.x, 0f, p.z)).normalized : _rng.OnCircle();
-                    v.Linear = new Vector3(dir.x * _speeds[i], v.Linear.y, dir.z * _speeds[i]);
-                }
-                n++; _speed += v.Linear.magnitude;
-                if (p.y - TerrainHeight(p.x, p.z) < 0.6f) _grounded++;
+                var (e, rng, speed, dir, turnIn) = _runners[i];
+                if (!w.IsAlive(e) || !w.Has<CharacterMotor>(e)) continue;
+                ref var m = ref w.Get<CharacterMotor>(e);
+                Vector3 p = w.Get<LocalTransform>(e).Position;
+                turnIn -= dt;
+                if (MathF.Abs(p.x) > 88f || MathF.Abs(p.z) > 88f) { dir = (-new Vector3(p.x, 0f, p.z)).normalized; turnIn = rng.Range(2f, 4f); }
+                else if (turnIn <= 0f) { dir = Quaternion.Euler(0f, rng.Range(-70f, 70f), 0f) * dir; turnIn = rng.Range(1f, 3f); }
+                m.Desired = dir * speed;
+                if (m.IsGrounded && rng.Next01() < 0.002f) m.PendingJump = 6f; // only from the ground (the legacy runner air-jumped and drifted into the sky)
+                _runners[i] = (e, rng, speed, dir, turnIn);
+                n++; if (m.IsGrounded) _grounded++; _speed += w.Get<BodyVelocity>(e).Linear.magnitude;
             }
             if (n > 0) _speed /= n;
         }
 
-        public override void Teardown() { _rollers.Clear(); _speeds.Clear(); }
-        public override int Alive => _rollers.Count;
+        public override void Teardown() => _runners.Clear();
+        public override int Alive => _runners.Count;
         public override string Extra => $"grounded {_grounded} avg speed {_speed:0.0} m/s";
 
         // ---- terrain: hills from a few sines plus a hash wobble, so every triangle is a different slope

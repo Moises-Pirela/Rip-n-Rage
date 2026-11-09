@@ -9,7 +9,7 @@ namespace RipNRage.Benchmark
     /// <summary>
     /// Rip-n-Rage physics / engine benchmark (separate executable, no game logic).
     ///
-    ///   RipNRageBenchmark [--scenario crates|ground|all] [--duration s] [--warmup s]
+    ///   RipNRageBenchmark [--scenario crates|ragdolls|projectiles|ground|all] [--duration s] [--warmup s]
     ///                     [--scale f] [--crates N] [--ragdolls N] [--projectiles N] [--runners N]
     ///                     [--no-render] [--fixed-dt s] [--budget-frame ms] [--budget-physics ms]
     ///                     [--report out.md] [--csv out.csv] [--strict] [--assets dir] [--gpu auto|high|software]
@@ -59,7 +59,7 @@ namespace RipNRage.Benchmark
                     case "--gpu": options.Gpu = Next().ToLowerInvariant() switch { "high" => Engine.Platform.GpuPreference.High, "software" => Engine.Platform.GpuPreference.AllowSoftware, _ => Engine.Platform.GpuPreference.Auto }; break;
                     case "--verbose": options.Verbose = true; break;
                     case "--help": case "-h":
-                        Console.WriteLine("RipNRageBenchmark [--scenario crates|ground|all] [--duration s] [--warmup s] [--scale f]");
+                        Console.WriteLine("RipNRageBenchmark [--scenario crates|ragdolls|projectiles|ground|all] [--duration s] [--warmup s] [--scale f]");
                         Console.WriteLine("                  [--crates N] [--ragdolls N] [--projectiles N] [--runners N] [--no-render] [--fixed-dt s]");
                         Console.WriteLine("                  [--budget-frame ms] [--budget-physics ms] [--report out.md] [--csv out.csv] [--strict] [--threads N]");
                         return 0;

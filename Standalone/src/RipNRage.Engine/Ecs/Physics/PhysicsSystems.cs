@@ -49,6 +49,19 @@ namespace RipNRage.Engine.Ecs.Physics
         private readonly HashSet<Entity> _warned = new HashSet<Entity>();
         private Query _unregistered, _bodiesOnly;
         internal IReadOnlyDictionary<Entity, Registration> Registrations => _regs;
+        /// <summary>The solver body of a registered entity (null: not in the simulation yet, or static).</summary>
+        public SolverBody BodyOf(Entity e) => _regs.TryGetValue(e, out var r) ? r.Body : null;
+        internal ColliderTable.Slot SlotOf(Entity e) => _regs.TryGetValue(e, out var r) ? r.Slot : null;
+
+        /// <summary>A body-less collider was moved by a system this step (kinematic movers): re-bake it now so the solver sees it.</summary>
+        internal void Rebake(Entity e)
+        {
+            if (!_regs.TryGetValue(e, out var reg) || reg.Body != null || reg.Slot == null || !World.Has<LocalTransform>(e)) return;
+            var lt = World.Get<LocalTransform>(e);
+            BakeStaticShape(reg.Slot, lt);
+            PhysicsApi.World.RefreshEcs(reg.Slot);
+            reg.LastPos = lt.Position; reg.LastRot = lt.Rotation; reg.LastScale = lt.Scale;
+        }
         /// <summary>Raised (with the entity) when an entity leaves the simulation: the trigger system closes its overlaps.</summary>
         internal event Action<Registration> Unregistered;
 
@@ -92,6 +105,7 @@ namespace RipNRage.Engine.Ecs.Physics
             var shape = hasShape ? World.Get<ColliderShape>(e) : default;
             bool hasBody = World.Has<Body>(e);
             if (hasShape && shape.Kind == ShapeKind.Mesh && hasBody) return Skip(e, "mesh colliders must be static (no Body)");
+            if (hasBody && World.Has<KinematicMover>(e)) return Skip(e, "a KinematicMover must not also have a Body (use Body.Kind = Kinematic for a solver-driven kinematic body)");
             var lt = World.Get<LocalTransform>(e);
             var world = PhysicsApi.World;
 
@@ -324,7 +338,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
     /// <summary>
     /// Trigger colliders against bodies: after each step every <see cref="Trigger"/> entity is tested (exact shapes)
-    /// against the bodies near it; started overlaps post <see cref="TriggerEnterEvent"/>, ended ones (or either side
+    /// against the bodies and movers (any non-static collider) near it; started overlaps post <see cref="TriggerEnterEvent"/>, ended ones (or either side
     /// leaving the simulation) <see cref="TriggerExitEvent"/>. Static level geometry never counts as an overlap.
     /// </summary>
     [UpdateAfter(typeof(PhysicsWriteBackSystem))]
@@ -361,7 +375,7 @@ namespace RipNRage.Engine.Ecs.Physics
                 world.QueryBounds(s.worldBounds, filter, _candidates);
                 foreach (var o in _candidates)
                 {
-                    if (o.body == null || o.entity == reg.Entity) continue; // only things that move count
+                    if (o.isStatic || o.entity == reg.Entity) continue; // only things that move count (bodies, movers)
                     if (!PhysicsWorld.CollidersOverlap(s, o)) continue;
                     _current.Add((reg.Entity, o.entity));
                 }

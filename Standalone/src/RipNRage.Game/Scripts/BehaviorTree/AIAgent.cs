@@ -11,10 +11,6 @@ public class AIAgent : MonoBehaviour, IEnemyAI
 {
     public bool CanFire { get; set; }
     
-    // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
-#if LEGACY_PHYSICS
-    public NavMeshAgent navMeshAgent;
-#endif
 
     public AnimationStateController animationStateController;
 
@@ -43,11 +39,6 @@ public class AIAgent : MonoBehaviour, IEnemyAI
     {
         animationStateController.AnimationData = data.enemyAnimationData;
         CanFire = true;
-        // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
-#if LEGACY_PHYSICS
-        navMeshAgent.speed = data.movementSpeed;
-        navMeshAgent.angularSpeed = data.turnSpeed;
-#endif
         aiState = GetComponent<AIState>();
         aiState.OnDieCallback += Die;
         _audio = GetComponent<AudioSource>();
@@ -62,12 +53,6 @@ public class AIAgent : MonoBehaviour, IEnemyAI
 
         if (IsStaggered) StopAgent();
 
-#if LEGACY_PHYSICS
-        if (navMeshAgent.isStopped && animationStateController.AnimationState == AnimationState.MOVING)
-        {
-            animationStateController.AnimationState = AnimationState.IDLE;
-        }
-#endif
     }
 
     /// <summary>Hit reaction: flinch (the sprite flash is EnemyHitFlash's), stop and delay the next shot.</summary>
@@ -100,10 +85,6 @@ public class AIAgent : MonoBehaviour, IEnemyAI
         this.TargetLocation = targetLocation;
         if (IsStaggered || _attacking) return;
         
-        // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
-#if LEGACY_PHYSICS
-        navMeshAgent.SetDestination(targetLocation);
-#endif
 
         animationStateController.AnimationState = AnimationState.MOVING;
     }
@@ -175,52 +156,16 @@ public class AIAgent : MonoBehaviour, IEnemyAI
     }
     public bool HasReachedLocation()
     {
-#if LEGACY_PHYSICS
-        float distanceToTargetLocation = Vector3.Distance(TargetLocation, transform.position);
-
-        NavMeshPath path = navMeshAgent.path;
-
-        float closestCornerDistance = 0;
-
-        foreach (var corner in path.corners)
-        {
-            if (Vector3.Distance(corner, transform.position) <= closestCornerDistance)
-            {
-                closestCornerDistance = Vector3.Distance(corner, transform.position);
-            }
-        }
-
-        if (navMeshAgent.remainingDistance + closestCornerDistance <= 5f)
-        {
-            StopAgent();
-            return true;
-        }
-
-        AllowAgentToMove();
-
-        return false;
-#else
         return true; // no steering until layer 6: the tree sees every move as done
-#endif
     }
     
     private void StopAgent()
     {
-        // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
-#if LEGACY_PHYSICS
-        navMeshAgent.isStopped = true;
-        navMeshAgent.velocity = Vector3.zero;
-#endif
     }
 
     private void AllowAgentToMove()
     {
         if (IsStaggered || _attacking) return;
-        // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
-#if LEGACY_PHYSICS
-        navMeshAgent.isStopped = false;
-        navMeshAgent.velocity = navMeshAgent.desiredVelocity;
-#endif
     }
 
     private IEnumerator SetDeadCoroutine()

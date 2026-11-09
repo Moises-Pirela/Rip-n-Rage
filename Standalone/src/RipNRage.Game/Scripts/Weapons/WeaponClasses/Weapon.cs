@@ -13,10 +13,6 @@ public abstract class Weapon : MonoBehaviour
     protected LayerMask _LayerMask;
 
     protected float _bloom;
-    // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
-#if LEGACY_PHYSICS
-    private CharacterBody _playerBody;
-#endif
     public float Bloom => _bloom;
 
     /// <summary>Spread for the next shot: base + bloom + movement and air penalties (direction offset per unit forward).</summary>
@@ -26,25 +22,11 @@ public abstract class Weapon : MonoBehaviour
         {
             var st = weaponData.weaponStats;
             float s = st.weaponSpread + _bloom;
-            // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
-#if LEGACY_PHYSICS
-            var body = PlayerBody;
-            if (body != null)
-            {
-                Vector3 v = body.velocity; v.y = 0f;
-                s += st.moveSpread * Mathf.Clamp01(v.magnitude / 16f);
-                if (!body.isGrounded) s += st.airSpread;
-            }
-#endif
             float cap = Mathf.Max(st.spreadMax, st.weaponSpread);
             return st.spreadMax > 0f ? Mathf.Min(s, cap) : s;
         }
     }
 
-    // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
-#if LEGACY_PHYSICS
-    private CharacterBody PlayerBody => _playerBody ??= GetComponentInParent<CharacterBody>();
-#endif
 
     /// <summary>Call once per shot.</summary>
     protected void AddBloom()

@@ -23,29 +23,5 @@ public class EnemyDestruction : MonoBehaviour
     {
         // ECS migration (layer 2): SpriteRagdoll was legacy rigid bodies + joints; it returns in layer 3 on ECS
         // bodies and joints (2.5). Until then the enemy's own death timeline plays without a ragdoll.
-#if LEGACY_PHYSICS
-        if (Ragdoll != null || _state == null || _state.data == null || string.IsNullOrEmpty(_state.data.skeleton)) return;
-        var skeleton = SkeletonLibrary.Get(_state.data.skeleton);
-        var sr = _anim != null ? _anim.SpriteRenderer : GetComponentInChildren<SpriteRenderer>();
-        if (skeleton == null || sr == null || sr.sprite == null) return;
-
-        var options = RagdollOptions.Default;
-        options.lifetime = lifetime;
-        options.initialVelocity = _agent != null ? _agent.velocity * 0.5f : Vector3.zero;
-        if (DamageInfo.Available)
-        {
-            options.impulse = DamageInfo.Direction * (DamageInfo.Impulse * impulseScale);
-            options.impulsePoint = DamageInfo.Point;
-            options.gib = DamageInfo.Explosive;
-            options.scatterImpulse = DamageInfo.Explosive ? Mathf.Max(4f, DamageInfo.Impulse * 0.15f) : 0f;
-        }
-        Ragdoll = SpriteRagdoll.Spawn(skeleton, sr.sprite, sr.transform.position, sr.transform.lossyScale, options, sr);
-        if (Ragdoll == null) return;
-        if (options.gib && DamageInfo.Available && DamageInfo.ExplosionRadius > 0f)
-            Ragdoll.AddExplosion(DamageInfo.Impulse * impulseScale, DamageInfo.Point, DamageInfo.ExplosionRadius, 0.6f);
-        // the pieces are the corpse now
-        sr.enabled = false;
-        if (_anim != null) _anim.enabled = false;
-#endif
     }
 }

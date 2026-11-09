@@ -17,6 +17,17 @@ public sealed class PhysicsEventLog : SystemBase, IConsumes<TriggerEnterEvent>, 
     public void Consume(SystemContext ctx, ReadOnlySpan<CollisionEvent> events) { foreach (var e in events) Collisions.Add(e); }
 }
 
+[DisableAutoCreation]
+public sealed class JointEventLog : SystemBase, IConsumes<JointBrokenEvent>, IConsumes<CollisionEvent>, IConsumes<TriggerEnterEvent>
+{
+    public readonly List<Entity> Broken = new List<Entity>();
+    public readonly List<CollisionEvent> Hits = new List<CollisionEvent>();
+    public readonly List<(Entity, Entity)> Enters = new List<(Entity, Entity)>();
+    public void Consume(SystemContext ctx, ReadOnlySpan<JointBrokenEvent> events) { foreach (var e in events) Broken.Add(e.Entity); }
+    public void Consume(SystemContext ctx, ReadOnlySpan<CollisionEvent> events) { foreach (var e in events) Hits.Add(e); }
+    public void Consume(SystemContext ctx, ReadOnlySpan<TriggerEnterEvent> events) { foreach (var e in events) Enters.Add((e.Trigger, e.Other)); }
+}
+
 /// <summary>Layer 2: physics components / configs, and the ECS-only simulation.</summary>
 internal static class PhysicsEcsChecks
 {
@@ -95,6 +106,7 @@ internal static class PhysicsEcsChecks
         }
 
         EcsSimChecks(True);
+        JointAndMoverChecks(True);
     }
 
     /// <summary>2.4: ECS entities in the one simulation via PhysicsSync / PhysicsStep / PhysicsWriteBack.</summary>
@@ -193,6 +205,124 @@ internal static class PhysicsEcsChecks
 
         w.EndSim();
         True(simWorld.Table.EntityOf(w.Get<PhysicsHandle>(floor).Proxy).IsNull, "OnSimEnd unregisters the rest");
+    }
+
+    /// <summary>2.5 joints, 2.6 character motor and kinematic movers.</summary>
+    private static void JointAndMoverChecks(Action<bool, string> True)
+    {
+        using var w = new World(0);
+        w.AddSystemsFromAssemblies(typeof(World).Assembly);
+        var log = w.AddSystem(new JointEventLog());
+        void Step(int n) { for (int i = 0; i < n; i++) w.Update(1f / 60f); }
+        Entity Box(Vector3 at, Vector3 size, bool dynamic, float mass = 5f)
+        {
+            var e = w.CreateEntity();
+            w.Add(e, LocalTransform.At(at));
+            w.Add(e, new ColliderShape { Kind = ShapeKind.Box, Size = size, IsStatic = !dynamic });
+            if (dynamic) { w.Add(e, new BodyConfig { mass = mass }.Bake()); w.Add(e, new BodyVelocity()); }
+            return e;
+        }
+        var floor = Box(new Vector3(500, -0.5f, 0), new Vector3(40, 1, 40), false);
+
+        // ---- pendulum: a distance joint to the world keeps the bob at its length while it swings
+        var bob = Box(new Vector3(503, 5, 0), new Vector3(0.4f, 0.4f, 0.4f), true);
+        w.Add(bob, new JointConfig { kind = JointKind.Distance, connectedAnchor = new float[] { 500, 5, 0 } }.Bake());
+        Step(90);
+        var bp = w.Get<LocalTransform>(bob).Position;
+        float len = (bp - new Vector3(500, 5, 0)).magnitude;
+        True(MathF.Abs(len - 3f) < 0.05f && bp.y < 4.5f, $"a distance joint holds the pendulum at 3 m while it swings down (len={len:0.000}, y={bp.y:0.00})");
+
+        // ---- hinge with a motor spins its body about the axis and stays at the anchor
+        var wheel = Box(new Vector3(510, 3, 0), new Vector3(1.5f, 0.2f, 0.2f), true);
+        w.Add(wheel, new JointConfig { kind = JointKind.Hinge, axis = new float[] { 0, 0, 1 }, motorSpeed = 180f, motorForce = 500f }.Bake());
+        Step(60);
+        var wt = w.Get<LocalTransform>(wheel);
+        True((wt.Position - new Vector3(510, 3, 0)).magnitude < 0.05f && MathF.Abs(w.Get<BodyVelocity>(wheel).Angular.z) > 2f,
+             $"a motorised hinge spins in place (|w|={w.Get<BodyVelocity>(wheel).Angular.magnitude:0.0} rad/s)");
+
+        // ---- body-to-body ball chain hangs under its anchor; links stay connected
+        Entity prev = Entity.Null; var links = new List<Entity>();
+        for (int i = 0; i < 4; i++)
+        {
+            var link = Box(new Vector3(520, 8 - i * 0.6f, 0), new Vector3(0.2f, 0.5f, 0.2f), true, 2f);
+            var j = new JointConfig { kind = JointKind.Ball, anchor = new float[] { 0, 0.3f, 0 } }.Bake();
+            j.Connected = prev;
+            if (prev.IsNull) { j.AutoConnectedAnchor = false; j.ConnectedAnchor = new Vector3(520, 8.3f, 0); }
+            w.Add(link, j);
+            links.Add(link); prev = link;
+        }
+        w.Get<BodyVelocity>(links[3]) = new BodyVelocity { Linear = new Vector3(4, 0, 0) };
+        Step(120);
+        float gap = (w.Get<LocalTransform>(links[2]).Position - w.Get<LocalTransform>(links[3]).Position).magnitude;
+        True(MathF.Abs(gap - 0.6f) < 0.05f, $"a ball-joint chain stays linked (gap={gap:0.000})");
+        True(w.GetSystem<JointSystem>().ActiveJoints == 6, "six joints active");
+
+        // ---- breakable weld: a heavy body hung on a weak fixed joint breaks it, tag + event
+        var weak = Box(new Vector3(530, 4, 0), new Vector3(0.5f, 0.5f, 0.5f), true, 200f);
+        w.Add(weak, new JointConfig { kind = JointKind.Fixed, breakForce = 300f }.Bake());
+        Step(30);
+        True(w.Has<JointBroken>(weak) && log.Broken.Contains(weak) && w.Get<LocalTransform>(weak).Position.y < 3.9f, "an overloaded fixed joint breaks: JointBroken tag, event, body falls");
+
+        // ---- destroying the connected link breaks the joint that pointed at it
+        w.DestroyEntity(links[1]); w.Sync();
+        Step(2);
+        True(w.Has<JointBroken>(links[2]) && !w.Has<JointBroken>(links[0]), "destroying a connected body breaks only the joints that used it");
+
+        // ---- character motor: rides above the floor, walks to the requested speed, jumps
+        var ch = w.CreateEntity();
+        w.Add(ch, LocalTransform.At(new Vector3(500, 2, 10)));
+        w.Add(ch, new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.4f, Height = 1.3f });
+        w.Add(ch, new BodyConfig { mass = 80f }.Bake()); w.Add(ch, new BodyVelocity());
+        w.Add(ch, new CharacterMotorConfig { rideHeight = 0.5f }.Bake());
+        Step(120);
+        var cm = w.Get<CharacterMotor>(ch);
+        float bottom = w.Get<LocalTransform>(ch).Position.y - 0.65f;
+        True(cm.IsGrounded && cm.Ground == floor && MathF.Abs(bottom - 0.5f) < 0.06f, $"a character floats its ride height above the ground (gap={bottom:0.000}, grounded={cm.IsGrounded})");
+        w.Get<CharacterMotor>(ch).Desired = new Vector3(5, 0, 0);
+        for (int i = 0; i < 60; i++) { w.Get<CharacterMotor>(ch).Desired = new Vector3(5, 0, 0); Step(1); }
+        float vx = w.Get<BodyVelocity>(ch).Linear.x;
+        True(MathF.Abs(vx - 5f) < 0.3f && w.Get<LocalTransform>(ch).Rotation == Quaternion.identity, $"the motor reaches the wanted speed and never tumbles (vx={vx:0.00})");
+        w.Get<CharacterMotor>(ch).PendingJump = 6f;
+        Step(12);
+        True(!w.Get<CharacterMotor>(ch).IsGrounded && w.Get<LocalTransform>(ch).Position.y > 2f, "a jump leaves the ground");
+        Step(120);
+        True(w.Get<CharacterMotor>(ch).IsGrounded, "and lands again");
+
+        // ---- capsules on a mesh (the ground benchmark's runners): a plain capsule body, then a character
+        var meshFloor = PhysicsAssets.AddMesh("test-mesh-floor", new[] { new Vector3(-10, 0, -10), new Vector3(10, 0, -10), new Vector3(10, 0, 10), new Vector3(-10, 0, 10) }, new[] { 0, 2, 1, 0, 3, 2 });
+        var mf = w.CreateEntity(); w.Add(mf, LocalTransform.At(new Vector3(600, 0, 0)));
+        w.Add(mf, new ColliderShape { Kind = ShapeKind.Mesh, Mesh = meshFloor, IsStatic = true });
+        var cap = w.CreateEntity(); w.Add(cap, LocalTransform.At(new Vector3(600, 2, 0)));
+        w.Add(cap, new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.3f, Height = 1.6f }); w.Add(cap, new BodyConfig { mass = 85f, freezeRotation = true }.Bake()); w.Add(cap, new BodyVelocity());
+        var runner = w.CreateEntity(); w.Add(runner, LocalTransform.At(new Vector3(603, 2, 0)));
+        w.Add(runner, new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.3f, Height = 1.6f }); w.Add(runner, new BodyConfig { mass = 85f }.Bake()); w.Add(runner, new BodyVelocity());
+        w.Add(runner, new CharacterMotorConfig { rideHeight = 0.35f }.Bake());
+        Step(120);
+        float capY = w.Get<LocalTransform>(cap).Position.y, runY = w.Get<LocalTransform>(runner).Position.y;
+        True(MathF.Abs(capY - 0.8f) < 0.05f, $"a capsule body rests on a mesh collider (y={capY:0.000})");
+        True(w.Get<CharacterMotor>(runner).IsGrounded && MathF.Abs(runY - (0.8f + 0.35f)) < 0.08f, $"a character rides above a mesh collider (y={runY:0.000})");
+
+        // ---- kinematic mover in Stop mode: a fast projectile stops at the wall, reports it, no tunnelling
+        var wall = Box(new Vector3(540, 2, 0), new Vector3(0.2f, 4, 4), false);
+        var shot = w.CreateEntity();
+        w.Add(shot, LocalTransform.At(new Vector3(530, 2, 0)));
+        w.Add(shot, new KinematicMoverConfig { velocity = new float[] { 300, 0, 0 }, useGravity = false, mode = MotionMode.Stop, halfExtents = new float[] { 0.05f, 0.05f, 0.05f } }.Bake());
+        w.Add(shot, new ReportCollisions());
+        Step(10);
+        var sp = w.Get<LocalTransform>(shot).Position;
+        True(w.Get<KinematicMover>(shot).Stopped && sp.x < 539.9f && sp.x > 539.5f, $"a 300 m/s mover stops at a 20 cm wall (x={sp.x:0.000})");
+        True(log.Hits.Exists(h => h.Self == shot && h.Other == wall), "and reports the wall as a CollisionEvent");
+
+        // ---- a mover with a collider triggers trigger volumes
+        var vol = w.CreateEntity();
+        w.Add(vol, LocalTransform.At(new Vector3(550, 1, 0)));
+        w.Add(vol, new ColliderShape { Kind = ShapeKind.Box, Size = new Vector3(2, 2, 2), IsStatic = true }); w.Add(vol, new Trigger());
+        var walker = w.CreateEntity();
+        w.Add(walker, LocalTransform.At(new Vector3(546, 1, 0)));
+        w.Add(walker, new ColliderShape { Kind = ShapeKind.Sphere, Radius = 0.3f });
+        w.Add(walker, new KinematicMoverConfig { velocity = new float[] { 4, 0, 0 }, useGravity = false }.Bake());
+        Step(90);
+        True(log.Enters.Contains((vol, walker)), "a kinematic mover entering a trigger posts TriggerEnter");
     }
 
     private static bool Throws(Action a) { try { a(); return false; } catch (Exception) { return true; } }

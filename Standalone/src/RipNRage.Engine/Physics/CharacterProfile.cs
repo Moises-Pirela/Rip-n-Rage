@@ -27,7 +27,6 @@ namespace RipNRage.Engine
         }
     }
 
-    public enum CharacterProfileKind { Custom, Player, Enemy }
 
     public static class CharacterProfiles
     {

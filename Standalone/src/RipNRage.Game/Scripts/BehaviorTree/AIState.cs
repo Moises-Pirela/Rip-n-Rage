@@ -34,17 +34,6 @@ public class AIState : EntityState
     public override void Die()
     {
         HealthState = EntityHealthState.DEAD;
-        // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
-#if LEGACY_PHYSICS
-        var capsule = GetComponent<CapsuleCollider>();
-        if (capsule != null) capsule.enabled = false;
-        var agent = GetComponent<NavMeshAgent>();
-        if (agent != null) agent.enabled = false;
-        var motor = GetComponent<CharacterBody>();
-        if (motor != null) motor.enabled = false;
-        var body = GetComponent<RigidBody>();
-        if (body != null) body.enabled = false; // the ragdoll pieces are the corpse
-#endif
         GameVfx.Death(data != null ? data.name : null, transform.position + Vector3.up * 0.4f);
         OnDieCallback?.Invoke();
     }

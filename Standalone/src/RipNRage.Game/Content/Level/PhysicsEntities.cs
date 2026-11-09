@@ -2,7 +2,10 @@ using System;
 using System.Globalization;
 using RipNRage.Engine.Graphics;
 using RipNRage.Level;
+using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
+using RipNRage.Engine.Ecs.Transforms;
+using RipNRage.Game.Ecs;
 
 namespace RipNRage.Game.Content.Level
 {
@@ -150,21 +153,69 @@ namespace RipNRage.Game.Content.Level
                 : capsule ? new ColliderShape { Kind = ShapeKind.Capsule, Radius = Mathf.Max(size.x, size.z) * 0.5f, Height = Mathf.Max(size.y, Mathf.Max(size.x, size.z)) }
                 : new ColliderShape { Kind = ShapeKind.Box, Size = size };
             var world = Application.Current.World;
-            var ent = RipNRage.Engine.Ecs.Physics.PhysicsEntities.Dynamic(world, new RipNRage.Engine.Ecs.Transforms.LocalTransform { Position = center, Rotation = rotation, Scale = Vector3.one }, shape, mass);
+            var ent = RipNRage.Engine.Ecs.Physics.PhysicsEntities.Dynamic(world, new LocalTransform { Position = center, Rotation = rotation, Scale = Vector3.one }, shape, mass);
+            world.Commands.Add(ent, new BodyConfig { mass = mass, collisionDetection = CollisionDetectionMode.Continuous }.Bake());
             world.Commands.Add(ent, new RipNRage.Engine.Ecs.Rendering.MeshRender
             {
                 Mesh = RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Intern(mr.mesh), Texture = RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Intern(tex.Texture ?? Texture2D.White),
                 Color = tex.tint, UvScale = Vector2.one, CastsShadow = true, Layer = RenderLayer.World,
             });
+            go.AddComponent<EntityFollower>().entity = ent; // the level's named GameObject tracks the entity (targetname lookups, rods)
             return go;
         }
 
-        private static bool _jointsWarned;
-        private static void JointsPending(string cls)
+        /// <summary>The ECS entity behind a prop GameObject built by <see cref="Body"/> (Entity.Null for anything else).</summary>
+        public static Entity EntityOf(GameObject go) => go != null && go.GetComponent<EntityFollower>() is EntityFollower f ? f.entity : Entity.Null;
+
+        /// <summary>Copies an entity's pose onto its GameObject every frame (named anchors for level lookups and attached visuals).</summary>
+        public sealed class EntityFollower : MonoBehaviour
         {
-            if (_jointsWarned) return;
-            _jointsWarned = true;
-            Debug.LogWarning($"[physics] {cls}: joints are not ported to the ECS yet (layer 2.5); jointed props spawn loose");
+            public Entity entity;
+            protected override void LateUpdate()
+            {
+                var w = Application.Current.World;
+                if (!w.IsAlive(entity) || !w.Has<LocalTransform>(entity)) return;
+                var lt = w.Get<LocalTransform>(entity);
+                transform.position = lt.Position; transform.rotation = lt.Rotation;
+            }
+        }
+
+        private static void AddJoint(GameObject go, in Joint j)
+        {
+            var e = EntityOf(go);
+            if (!e.IsNull) Application.Current.World.Commands.Add(e, j);
+        }
+
+        private static Joint Hinge(Vector3 anchor, Vector3 axis, MapEntity e, string targetKey)
+        {
+            var j = new JointConfig { kind = JointKind.Hinge }.Bake();
+            j.Anchor = anchor; j.Axis = axis;
+            if (Limits(e, out float lo, out float hi)) { j.UseLimits = true; j.LowerLimit = lo; j.UpperLimit = hi; }
+            float motor = e.GetFloat("motor", 0f);
+            if (motor != 0f) { j.UseMotor = true; j.MotorSpeed = motor; j.MotorForce = Mathf.Max(e.GetFloat("motor_torque", 60f), 0f); }
+            float spring = e.GetFloat("spring", 0f);
+            if (spring > 0f) { j.UseSpring = true; j.SpringStiffness = spring; j.SpringDamping = Mathf.Max(e.GetFloat("damper", 2f), 0f); j.SpringTarget = e.GetFloat(targetKey, 0f); }
+            return Breakable(j, e);
+        }
+
+        private static Joint Slider(Vector3 anchor, Vector3 axis, MapEntity e)
+        {
+            var j = new JointConfig { kind = JointKind.Slider }.Bake();
+            j.Anchor = anchor; j.Axis = axis;
+            if (Limits(e, out float lo, out float hi)) { j.UseLimits = true; j.LowerLimit = lo; j.UpperLimit = hi; }
+            float motor = e.GetFloat("motor", 0f);
+            if (motor != 0f) { j.UseMotor = true; j.MotorSpeed = motor; j.MotorForce = Mathf.Max(e.GetFloat("motor_force", 300f), 0f); }
+            float spring = e.GetFloat("spring", 0f);
+            if (spring > 0f) { j.UseSpring = true; j.SpringStiffness = spring; j.SpringDamping = Mathf.Max(e.GetFloat("damper", 10f), 0f); j.SpringTarget = e.GetFloat("target", 0f); }
+            return Breakable(j, e);
+        }
+
+        private static Joint Breakable(Joint j, MapEntity e)
+        {
+            float f = e.GetFloat("break_force", 0f), t = e.GetFloat("break_torque", 0f);
+            j.BreakForce = f > 0f ? f : float.PositiveInfinity;
+            j.BreakTorque = t > 0f ? t : float.PositiveInfinity;
+            return j;
         }
 
         private static Vector3 Size(MapEntity e)
@@ -184,7 +235,16 @@ namespace RipNRage.Game.Content.Level
             Vector3 center = e.origin + Vector3.up * (size.y * 0.5f + 0.01f);
             var go = Body(e, preview, center, rot, "phys_door");
             if (preview) return go;
-            JointsPending(e.classname); // ECS joints arrive in layer 2.5; until then the prop is loose
+            string hinge = e.Get("hinge", "left").ToLowerInvariant();
+            Vector3 localAnchor, localAxis;
+            switch (hinge)
+            {
+                case "right": localAnchor = new Vector3(size.x * 0.5f, 0f, 0f); localAxis = Vector3.up; break;
+                case "top": localAnchor = new Vector3(0f, size.y * 0.5f, 0f); localAxis = Vector3.right; break;
+                case "bottom": localAnchor = new Vector3(0f, -size.y * 0.5f, 0f); localAxis = Vector3.right; break;
+                default: localAnchor = new Vector3(-size.x * 0.5f, 0f, 0f); localAxis = Vector3.up; break;
+            }
+            AddJoint(go, Hinge(localAnchor, localAxis, e, "closed_angle"));
             return go;
         }
 
@@ -196,7 +256,7 @@ namespace RipNRage.Game.Content.Level
             Vector3 center = e.origin + Vector3.up * (size.y * 0.5f + 0.01f);
             var go = Body(e, preview, center, rot, "phys_hinge");
             if (preview) return go;
-            JointsPending(e.classname); // ECS joints arrive in layer 2.5; until then the prop is loose
+            AddJoint(go, Hinge(e.GetVector("pivot", Vector3.zero), Axis(e, Vector3.forward), e, "target"));
             return go;
         }
 
@@ -208,7 +268,10 @@ namespace RipNRage.Game.Content.Level
             Vector3 center = e.origin + Vector3.up * (size.y * 0.5f + 0.01f);
             var go = Body(e, preview, center, rot, "phys_slider");
             if (preview) return go;
-            JointsPending(e.classname); // ECS joints arrive in layer 2.5; until then the prop is loose
+            var sj = Slider(Vector3.zero, Axis(e, Vector3.right), e);
+            AddJoint(go, sj);
+            if (sj.UseMotor && sj.UseLimits && e.GetInt("patrol", 0) != 0)
+                Application.Current.World.Commands.Add(EntityOf(go), new SliderPatrol { Origin = center, Axis = (rot * sj.Axis).normalized, Lower = sj.LowerLimit, Upper = sj.UpperLimit });
             return go;
         }
 
@@ -223,7 +286,8 @@ namespace RipNRage.Game.Content.Level
             var go = Body(e, preview, center, rot, "phys_pendulum");
             Rod(go, e.origin, center, preview);
             if (preview) return go;
-            JointsPending(e.classname); // ECS joints arrive in layer 2.5; until then the prop is loose
+            var pj = new JointConfig { kind = JointKind.Distance, connectedAnchor = new[] { e.origin.x, e.origin.y, e.origin.z }, rope = e.GetInt("rope", 0) != 0 }.Bake();
+            AddJoint(go, Breakable(pj, e));
             return go;
         }
 
@@ -236,7 +300,13 @@ namespace RipNRage.Game.Content.Level
             var go = Body(e, preview, center, rot, "phys_spring_prop");
             Rod(go, e.origin, center, preview, thin: true);
             if (preview) return go;
-            JointsPending(e.classname); // ECS joints arrive in layer 2.5; until then the prop is loose
+            float max = e.GetFloat("max_length", 0f);
+            var spj = new JointConfig
+            {
+                kind = JointKind.Spring, connectedAnchor = new[] { e.origin.x, e.origin.y, e.origin.z },
+                stiffness = Mathf.Max(e.GetFloat("stiffness", 150f), 0f), damping = Mathf.Max(e.GetFloat("damper", 6f), 0f), maxDistance = max > 0f ? max : -1f,
+            }.Bake();
+            AddJoint(go, Breakable(spj, e));
             return go;
         }
 
@@ -246,7 +316,7 @@ namespace RipNRage.Game.Content.Level
             var go = Prop(e, preview);
             go.name = "phys_fixed";
             if (preview) return go;
-            JointsPending(e.classname); // ECS joints arrive in layer 2.5; until then the prop is loose
+            AddJoint(go, Breakable(new JointConfig { kind = JointKind.Fixed }.Bake(), e));
             return go;
         }
 
@@ -254,8 +324,73 @@ namespace RipNRage.Game.Content.Level
 
         private static GameObject Connector(string cls, MapEntity e)
         {
-            JointsPending(cls);
-            return null;
+            var level = LevelLoader.Loading;
+            var bodyGo = level?.Find(e.Get("body"));
+            var body = EntityOf(bodyGo);
+            if (body.IsNull) { Debug.LogWarning($"{cls} at {e.origin}: body '{e.Get("body")}' not found or not a physics prop (set targetname on a prop)"); return null; }
+            Entity connected = Entity.Null;
+            GameObject cgo = null;
+            string connectedName = e.Get("connected");
+            if (!string.IsNullOrEmpty(connectedName))
+            {
+                cgo = level.Find(connectedName);
+                connected = EntityOf(cgo);
+                if (connected.IsNull) Debug.LogWarning($"{cls}: connected '{connectedName}' not found or not a physics prop; joining to the world");
+            }
+            Vector3 anchor = e.origin;
+            Vector3 localAnchor = bodyGo.transform.InverseTransformPoint(anchor);
+            Quaternion rot = Quaternion.Euler(0f, e.angle, 0f);
+            Vector3 worldAxis = rot * e.GetVector("axis", cls == "joint_slider" ? Vector3.right : Vector3.up);
+            if (worldAxis.sqrMagnitude < 1E-06f) worldAxis = Vector3.up;
+            Vector3 localAxis = bodyGo.transform.InverseTransformDirection(worldAxis.normalized);
+            bool hasConnectedAnchor = e.properties.ContainsKey("connected_anchor") && !string.IsNullOrWhiteSpace(e.Get("connected_anchor"));
+            Vector3 connectedAnchor = hasConnectedAnchor ? e.GetVector("connected_anchor") : (!connected.IsNull ? cgo.transform.position : anchor);
+
+            Joint j;
+            switch (cls)
+            {
+                case "joint_hinge": j = Hinge(localAnchor, localAxis, e, "target"); break;
+                case "joint_slider": j = Slider(localAnchor, localAxis, e); break;
+                case "joint_fixed": j = Breakable(new JointConfig { kind = JointKind.Fixed }.Bake(), e); j.Anchor = localAnchor; break;
+                case "joint_ball": j = Breakable(new JointConfig { kind = JointKind.Ball }.Bake(), e); j.Anchor = localAnchor; break;
+                case "joint_distance":
+                {
+                    j = Breakable(new JointConfig { kind = JointKind.Distance, rope = e.GetInt("rope", 0) != 0 }.Bake(), e);
+                    bool hasMin = !string.IsNullOrWhiteSpace(e.Get("min")), hasMax = !string.IsNullOrWhiteSpace(e.Get("max"));
+                    if (hasMin || hasMax)
+                    {
+                        float cur = (connectedAnchor - anchor).magnitude;
+                        j.AutoDistance = false;
+                        j.MinDistance = hasMin ? e.GetFloat("min") : (j.Rope ? 0f : cur);
+                        j.MaxDistance = hasMax ? e.GetFloat("max") : cur;
+                    }
+                    break;
+                }
+                case "joint_spring":
+                {
+                    float max = e.GetFloat("max", 0f);
+                    j = Breakable(new JointConfig
+                    {
+                        kind = JointKind.Spring, stiffness = Mathf.Max(e.GetFloat("stiffness", 100f), 0f), damping = Mathf.Max(e.GetFloat("damper", 5f), 0f),
+                        restLength = string.IsNullOrWhiteSpace(e.Get("rest")) ? -1f : e.GetFloat("rest"), maxDistance = max > 0f ? max : -1f,
+                    }.Bake(), e);
+                    j.MinDistance = Mathf.Max(e.GetFloat("min", 0f), 0f);
+                    break;
+                }
+                default: return null;
+            }
+            j.Anchor = localAnchor;
+            j.Connected = connected;
+            // ball / fixed / hinge / slider join at the anchor where the bodies stand now; only rods and springs
+            // reach to a separate connected anchor (the other body's centre by default)
+            bool reaches = cls == "joint_distance" || cls == "joint_spring";
+            j.AutoConnectedAnchor = !reaches;
+            if (reaches) j.ConnectedAnchor = !connected.IsNull ? cgo.transform.InverseTransformPoint(connectedAnchor) : connectedAnchor;
+            j.CollideConnected = e.GetInt("collide", 0) != 0;
+            Application.Current.World.Commands.Add(body, j);
+            var marker = new GameObject(cls); // the level keeps a named handle on the connector
+            marker.transform.position = anchor;
+            return marker;
         }
 
         private static Vector3 Axis(MapEntity e, Vector3 def)
