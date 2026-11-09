@@ -3,23 +3,51 @@ using System.Collections.Generic;
 
 namespace RipNRage.Engine
 {
+    public enum ForceMode { Force, Impulse, Acceleration, VelocityChange }
+
+    /// <summary>How a rigid body is kept from tunnelling (Unity's names).</summary>
+    public enum CollisionDetectionMode
+    {
+        /// <summary>Contacts are found once per step from the current poses (fast bodies can pass through thin geometry).</summary>
+        Discrete,
+        /// <summary>The body's motion is swept against static geometry (brushes, meshes, props, movers) every substep and clamped at the first contact.</summary>
+        Continuous,
+        /// <summary>As Continuous, and also swept against the other rigid bodies with their motion.</summary>
+        ContinuousDynamic,
+    }
+
+    /// <summary>One contact of a rigid body, reported after the step.</summary>
+    public struct RigidContact
+    {
+        /// <summary>The entity touched.</summary>
+        public Ecs.Entity other;
+        /// <summary>Its rigid body (null for static geometry).</summary>
+        public SolverBody otherBody;
+        public Vector3 point;
+        /// <summary>Normal pointing away from this body's surface towards the other.</summary>
+        public Vector3 normal;
+        /// <summary>Normal impulse applied this step (N·s): how hard the hit was.</summary>
+        public float impulse;
+        /// <summary>Relative speed along the normal before the step (negative = approaching).</summary>
+        public float approachSpeed;
+    }
+
     /// <summary>
-    /// The simulation state of one rigid body, independent of who owns it: a legacy <see cref="RigidBody"/> behaviour
-    /// (an adapter that forwards to this) or, from layer 2.4, an ECS entity. The solver, contact cache, islands and
-    /// constraints only ever see SolverBody. The pose source is the owner: the legacy transform, or for ECS bodies
-    /// <see cref="ecsPosition"/> / <see cref="ecsRotation"/>, which the sync system copies to and from LocalTransform.
+    /// The simulation state of one rigid body, owned by an ECS entity (the PhysicsSyncSystem creates it). The solver,
+    /// contact cache, islands and constraints see SolverBody. The pose lives in <see cref="ecsPosition"/> /
+    /// <see cref="ecsRotation"/> (entity origin), which the sync / write-back systems copy to and from LocalTransform.
     /// </summary>
     public sealed class SolverBody
     {
         private static int _nextId;
         /// <summary>Stable, never reused, monotonically increasing: pair keys and the pair order (lower id generates the pair) use it.</summary>
         public readonly int id = System.Threading.Interlocked.Increment(ref _nextId);
-        /// <summary>Legacy owner (null for ECS bodies).</summary>
-        public RigidBody legacy { get; internal set; }
-        /// <summary>The collider slot this body moves (null: no collider, or not registered yet). Legacy bodies resolve it
-        /// through their collider each time, so the Awake order of RigidBody and Collider does not matter.</summary>
-        internal ColliderTable.Slot collider { get => legacy != null ? legacy.ColliderSlot : _ecsCollider; set => _ecsCollider = value; }
-        private ColliderTable.Slot _ecsCollider;
+        /// <summary>The owning entity.</summary>
+        public Ecs.Entity entity { get; internal set; }
+        /// <summary>Defaults of new bodies (tunables.cfg [collision]).</summary>
+        public static float DefaultSleepThreshold = 0.08f, DefaultSleepDelay = 0.6f, DefaultMaxSpeed = 80f, DefaultMaxAngularSpeed = 40f;
+        /// <summary>The collider slot this body moves (null: a body without a collider).</summary>
+        internal ColliderTable.Slot collider;
         /// <summary>ECS bodies: live in the simulation (the sync system clears it when the entity goes).</summary>
         internal bool ecsAlive;
         internal Vector3 ecsPosition;
@@ -60,11 +88,11 @@ namespace RipNRage.Engine
         /// <summary>Defaults of new bodies (tunables.cfg [collision]).</summary>
 
         /// <summary>Speed (m/s and rad/s) under which the body may fall asleep after <see cref="sleepDelay"/> seconds.</summary>
-        public float sleepThreshold = RigidBody.DefaultSleepThreshold;
-        public float sleepDelay = RigidBody.DefaultSleepDelay;
+        public float sleepThreshold = DefaultSleepThreshold;
+        public float sleepDelay = DefaultSleepDelay;
         /// <summary>Largest speed the body may ever reach (stops explosions from tunnelling things into orbit).</summary>
-        public float maxSpeed = RigidBody.DefaultMaxSpeed;
-        public float maxAngularSpeed = RigidBody.DefaultMaxAngularSpeed;
+        public float maxSpeed = DefaultMaxSpeed;
+        public float maxAngularSpeed = DefaultMaxAngularSpeed;
 
         // ---- state ----
         internal Vector3 position;      // centre of mass, world
@@ -100,33 +128,23 @@ namespace RipNRage.Engine
         /// <summary>Contacts of the last step.</summary>
         public IReadOnlyList<RigidContact> Contacts => contacts;
 
-        /// <summary>Owner still exists and takes part in the simulation (legacy: active, enabled, not destroyed).</summary>
-        internal bool IsLive => legacy != null ? !legacy.destroyed && legacy.isActiveAndEnabled : ecsAlive;
+        /// <summary>Takes part in the simulation (the sync system clears it when the entity goes).</summary>
+        internal bool IsLive => ecsAlive;
 
-        /// <summary>The legacy collider (null for ECS colliders / no collider): filters and surface lookup still take it.</summary>
-        internal Collider legacyCollider => collider?.collider;
-
-        /// <summary>
-        /// Step-time snapshot of <see cref="IsLive"/> and <see cref="legacyCollider"/>, taken once per body at the start of
-        /// the step (<see cref="RefreshStepState"/>). The solver checks liveness per body and per constraint every
-        /// iteration; reading the owner each time costs two extra object hops (SolverBody → RigidBody → GameObject).
-        /// Nothing changes ownership mid-step, so the snapshot is exact for the step.
-        /// </summary>
+        /// <summary>Step-time snapshot of <see cref="IsLive"/> (the solver checks it per constraint iteration).</summary>
         internal bool live;
-        internal Collider stepCollider;
-        internal void RefreshStepState() { live = IsLive; stepCollider = legacyCollider; }
+        internal void RefreshStepState() { live = ecsAlive; }
 
         /// <summary>Filter for this body's collisions (ECS bodies key the layer matrix by their slot's layer).</summary>
         internal QueryFilter Filter => new QueryFilter
         {
-            layerMask = collisionMask, self = stepCollider,
-            useLayerMatrix = useLayerMatrix && (stepCollider != null || legacy == null),
-            selfLayerPlus1 = legacy == null && collider != null ? collider.layer + 1 : 0,
+            layerMask = collisionMask, self = ColliderTable.ProxyOf(collider),
+            useLayerMatrix = useLayerMatrix && collider != null, selfLayer = collider != null ? collider.layer : 0,
         };
 
         /// <summary>
         /// Configures an ECS-owned body from its components (the sync system calls this at registration and after a
-        /// component change): shape-derived mass properties like the legacy adapter's ComputeMass.
+        /// component change): shape-derived mass properties.
         /// </summary>
         internal void SetupEcs(in Ecs.Physics.Body cfg, in Ecs.Physics.ColliderShape shapeCfg, Vector3 scale)
         {
@@ -155,7 +173,7 @@ namespace RipNRage.Engine
                 case Ecs.Physics.ShapeKind.Box:
                     boxHalfExtents = Vector3.Scale(shapeCfg.Size, scale) * 0.5f;
                     break;
-                case Ecs.Physics.ShapeKind.Convex: // a convex-bodied rigid simulates as its hull's bounding box (like the legacy model)
+                case Ecs.Physics.ShapeKind.Convex: // a convex-bodied rigid simulates as its hull's bounding box
                     var hull = Ecs.Physics.PhysicsAssets.Hulls.Resolve(shapeCfg.Hull);
                     boxHalfExtents = hull != null ? Vector3.Scale(hull.Hull.bounds.extents, scale) : new Vector3(0.25f, 0.25f, 0.25f);
                     break;
@@ -201,14 +219,12 @@ namespace RipNRage.Engine
 
         internal void GetSourcePose(out Vector3 origin, out Quaternion rot)
         {
-            if (legacy != null) { origin = legacy.transform.position; rot = legacy.transform.rotation; }
-            else { origin = ecsPosition; rot = ecsRotation; }
+            origin = ecsPosition; rot = ecsRotation;
         }
 
         internal void SetSourcePose(Vector3 origin, Quaternion rot)
         {
-            if (legacy != null) { legacy.transform.rotation = rot; legacy.transform.position = origin; }
-            else { ecsPosition = origin; ecsRotation = rot; }
+            ecsPosition = origin; ecsRotation = rot;
         }
 
         /// <summary>Takes the pose from the owner (after a teleport, or every step for kinematic bodies).</summary>
@@ -374,7 +390,6 @@ namespace RipNRage.Engine
         /// <summary>Start of a step: kinematic bodies follow their transform, the others refresh their world shape.</summary>
         internal void BeginStep()
         {
-            if (!initialised) legacy?.ComputeMass();
             if (sleeping && !isKinematic) return; // nothing moved: shape, bounds and caches are still current
             prevPosition = position; prevRotation = rotation; hasPrev = true;
             if (isKinematic)
@@ -459,6 +474,5 @@ namespace RipNRage.Engine
         /// <summary>Index in the solver's body list for the current step.</summary>
         internal int solverIndex = -1;
 
-        internal void RaiseContacts() => legacy?.RaiseContacts();
     }
 }

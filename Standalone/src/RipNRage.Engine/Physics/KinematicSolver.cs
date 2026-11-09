@@ -4,19 +4,20 @@ using System.Collections.Generic;
 namespace RipNRage.Engine
 {
     public enum ContactKind { Floor, Wall, Ceiling }
+    [Flags] public enum CollisionFlags { None = 0, Sides = 1, Above = 2, Below = 4 }
 
     /// <summary>One surface a move touched.</summary>
     public struct Contact
     {
-        public Collider collider;
+        /// <summary>The entity whose collider was touched.</summary>
+        public Ecs.Entity entity;
+        public PhysicsProxy proxy;
         public Vector3 point;
         /// <summary>Surface normal, pointing away from the collider.</summary>
         public Vector3 normal;
         public ContactKind kind;
         /// <summary>Fraction of the motion that was left when the contact happened (1 = touched at the very start).</summary>
         public float remainingFraction;
-        public Transform transform => collider?.transform;
-        public GameObject gameObject => collider?.gameObject;
         public bool isFloor => kind == ContactKind.Floor;
         public bool isWall => kind == ContactKind.Wall;
         public bool isCeiling => kind == ContactKind.Ceiling;
@@ -74,7 +75,8 @@ namespace RipNRage.Engine
         public Vector3 remainder;
         public bool isGrounded;
         public Vector3 groundNormal = Vector3.up;
-        public Collider ground;
+        /// <summary>The entity stood on (Entity.Null when airborne).</summary>
+        public Ecs.Entity ground;
         public bool hitWall, hitCeiling;
         public CollisionFlags flags;
         /// <summary>The move climbed a step this high.</summary>
@@ -94,7 +96,7 @@ namespace RipNRage.Engine
         {
             position = start = center;
             remainder = Vector3.zero;
-            isGrounded = false; groundNormal = Vector3.up; ground = null;
+            isGrounded = false; groundNormal = Vector3.up; ground = Ecs.Entity.Null;
             hitWall = hitCeiling = false; flags = CollisionFlags.None;
             steppedUp = snappedDown = 0f;
             slides = 0; depenetration = 0f; startedSolid = stuck = false;
@@ -132,7 +134,7 @@ namespace RipNRage.Engine
     {
         private const int MaxPlanes = 5;
         private static readonly Vector3[] _planes = new Vector3[MaxPlanes];
-        private static readonly List<Collider> _candidates = new List<Collider>(64);
+        private static readonly List<ColliderTable.Slot> _candidates = new List<ColliderTable.Slot>(64);
         private static int _depth; // guards the shared scratch buffers against re-entrant use
 
         public static void MoveAndSlide(PhysicsWorld world, Vector3 center, Vector3 halfExtents, Vector3 motion, MoveSettings s, MoveResult r) =>
@@ -144,7 +146,7 @@ namespace RipNRage.Engine
             if (_depth > 0)
             {
                 // re-entrant call (a collision callback moving another body): use private buffers
-                MoveAndSlideCore(world, in shape, motion, s, r, new List<Collider>(32), new Vector3[MaxPlanes]);
+                MoveAndSlideCore(world, in shape, motion, s, r, new List<ColliderTable.Slot>(32), new Vector3[MaxPlanes]);
                 return;
             }
             _depth++;
@@ -152,7 +154,7 @@ namespace RipNRage.Engine
             finally { _depth--; }
         }
 
-        private static void MoveAndSlideCore(PhysicsWorld world, in CollisionShape shape, Vector3 motion, MoveSettings s, MoveResult r, List<Collider> candidates, Vector3[] planes)
+        private static void MoveAndSlideCore(PhysicsWorld world, in CollisionShape shape, Vector3 motion, MoveSettings s, MoveResult r, List<ColliderTable.Slot> candidates, Vector3[] planes)
         {
             CollisionShape cur = shape;
             r.Reset(cur.center);
@@ -215,14 +217,14 @@ namespace RipNRage.Engine
                     cur.center = stepped;
                     remaining = stepRemaining;
                     groundedNow = true;
-                    r.isGrounded = true; r.groundNormal = landing.normal; r.ground = landing.collider;
+                    r.isGrounded = true; r.groundNormal = landing.normal; r.ground = landing.entity;
                     AddContact(r, landing, remaining.magnitude / MathF.Max(motion.magnitude, 1E-06f));
                     planeCount = 0;
                     continue;
                 }
 
-                AddContact(r, new Contact { collider = hit.collider, point = hit.point, normal = n, kind = kind }, remaining.magnitude / MathF.Max(motion.magnitude, 1E-06f));
-                if (kind == ContactKind.Floor) { groundedNow = true; r.isGrounded = true; r.groundNormal = n; r.ground = hit.collider; }
+                AddContact(r, new Contact { entity = hit.entity, proxy = hit.proxy, point = hit.point, normal = n, kind = kind }, remaining.magnitude / MathF.Max(motion.magnitude, 1E-06f));
+                if (kind == ContactKind.Floor) { groundedNow = true; r.isGrounded = true; r.groundNormal = n; r.ground = hit.entity; }
 
                 if (planeCount >= MaxPlanes) { remaining = Vector3.zero; break; }
                 planes[planeCount++] = n;
@@ -259,7 +261,7 @@ namespace RipNRage.Engine
             // The probe is not a contact of the motion (a projectile skimming the floor must not "hit" it): it only
             // answers "is there a floor under us" — see isGrounded / groundNormal / ground.
             bool touchedFloor = r.isGrounded;
-            r.isGrounded = false; r.ground = null; r.groundNormal = Vector3.up;
+            r.isGrounded = false; r.ground = Ecs.Entity.Null; r.groundNormal = Vector3.up;
             float probe = skin * 2f + 0.02f;
             bool maySnap = s.snapLength > 0f && (s.wasGrounded || touchedFloor) && motion.y <= 1E-04f;
             float reachDown = maySnap ? MathF.Max(s.snapLength, probe) : probe;
@@ -267,11 +269,11 @@ namespace RipNRage.Engine
             if (ground.hit && !ground.startSolid && ground.normal.y >= cosFloor)
             {
                 float drop = ground.fraction * reachDown;
-                if (drop <= probe) { r.isGrounded = true; r.groundNormal = ground.normal; r.ground = ground.collider; }
+                if (drop <= probe) { r.isGrounded = true; r.groundNormal = ground.normal; r.ground = ground.entity; }
                 else if (maySnap)
                 {
                     cur.center += Vector3.down * drop; r.snappedDown = drop;
-                    r.isGrounded = true; r.groundNormal = ground.normal; r.ground = ground.collider;
+                    r.isGrounded = true; r.groundNormal = ground.normal; r.ground = ground.entity;
                 }
             }
 
@@ -317,7 +319,7 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Up, forward, down: climbs a ledge if the shape lands on a floor higher than where it was.</summary>
-        private static bool TryStepUp(List<Collider> candidates, in CollisionShape shape, Vector3 remaining, float skin, float cosFloor, float stepHeight,
+        private static bool TryStepUp(List<ColliderTable.Slot> candidates, in CollisionShape shape, Vector3 remaining, float skin, float cosFloor, float stepHeight,
             out Vector3 newCenter, out Vector3 newRemaining, out Contact landing)
         {
             Vector3 center = shape.center;
@@ -343,12 +345,12 @@ namespace RipNRage.Engine
 
             newCenter = landed;
             newRemaining = horizontal * (1f - fwd.fraction);
-            landing = new Contact { collider = down.collider, point = down.point, normal = down.normal, kind = ContactKind.Floor };
+            landing = new Contact { entity = down.entity, proxy = down.proxy, point = down.point, normal = down.normal, kind = ContactKind.Floor };
             return true;
         }
 
         /// <summary>Pushes an axis-aligned box out of every candidate it overlaps; returns the total distance moved.</summary>
-        public static float Depenetrate(List<Collider> candidates, ref Vector3 center, Vector3 halfExtents, float skin, out bool stillSolid)
+        internal static float Depenetrate(List<ColliderTable.Slot> candidates, ref Vector3 center, Vector3 halfExtents, float skin, out bool stillSolid)
         {
             CollisionShape s = CollisionShape.AxisAlignedBox(center, halfExtents);
             float moved = Depenetrate(candidates, ref s, skin, out stillSolid);
@@ -360,7 +362,7 @@ namespace RipNRage.Engine
         /// Pushes the shape out of every candidate it overlaps along the true minimum translation vector, a few
         /// rounds so the push out of one solid does not end inside another. Returns the total distance moved.
         /// </summary>
-        public static float Depenetrate(List<Collider> candidates, ref CollisionShape shape, float skin, out bool stillSolid)
+        internal static float Depenetrate(List<ColliderTable.Slot> candidates, ref CollisionShape shape, float skin, out bool stillSolid)
         {
             const float tolerance = 0.0005f;
             const float downBias = 2f; // ejecting a character downwards out of the world is nearly always wrong

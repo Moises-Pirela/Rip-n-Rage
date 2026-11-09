@@ -34,7 +34,7 @@ namespace RipNRage.Engine
         public const int MaxPoints = 8;
         public SolverBody bodyA;
         public SolverBody bodyB;        // null: B is static / a kinematic mover
-        public Collider colliderA, colliderB;
+        internal ColliderTable.Slot colliderA, colliderB;
         public Vector3 normal;         // from A to B
         public int count;
         public readonly ManifoldPoint[] points = new ManifoldPoint[MaxPoints];

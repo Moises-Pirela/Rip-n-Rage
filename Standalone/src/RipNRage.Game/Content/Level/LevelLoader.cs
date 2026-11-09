@@ -142,19 +142,16 @@ namespace RipNRage.Game.Content.Level
                     var surf = go.AddComponent<BrushSurface>();
                     foreach (var f in b.faces) surf.faces.Add(new BrushSurface.FaceSurface { normal = f.plane.normal, surface = LevelTextures.Get(f.texture).surface });
                     if (b.faces.Count > 0) surf.fallback = LevelTextures.Get(b.faces[0].texture).surface;
+                    // collision: an ECS static collider (the GameObject keeps the face surfaces for impact effects)
+                    var world = Application.Current.World;
                     if (b.IsAxisAligned)
-                    {
-                        var col = go.AddComponent<BoxCollider>();
-                        col.size = b.boundsMax - b.boundsMin;
-                        col.isStatic = true; // level geometry: cached in the broadphase grid
-                    }
+                        RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, (b.boundsMin + b.boundsMax) * 0.5f, Quaternion.identity, b.boundsMax - b.boundsMin, Layers.Walkable);
                     else
                     {
-                        var col = go.AddComponent<ConvexCollider>();
                         var planes = new Plane[b.faces.Count];
                         var verts = new List<Vector3>();
                         for (int i = 0; i < b.faces.Count; i++) { planes[i] = b.faces[i].plane; verts.AddRange(b.faces[i].polygon); }
-                        col.SetShape(planes, verts.ToArray());
+                        RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticConvex(world, planes, verts.ToArray(), Layers.Walkable);
                     }
                 }
             }

@@ -292,10 +292,13 @@ namespace AI.BehaviorTree
 
         protected override State OnUpdate()
         {
+            // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
+#if LEGACY_PHYSICS
             if (agent.navMeshAgent.velocity.sqrMagnitude > Mathf.Epsilon)
             {
                 agent.transform.rotation = Quaternion.LookRotation(-blackboard.MoveToTarget);
             }
+#endif
             
             return State.SUCCESS;
         }
@@ -308,7 +311,10 @@ namespace AI.BehaviorTree
         {
             if (!(Vector3.Distance(agent.transform.position, blackboard.MoveToTarget) <= attackRange)) return false;
             
+            // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
+#if LEGACY_PHYSICS
             agent.navMeshAgent.isStopped = true;
+#endif
             
             return true;
 

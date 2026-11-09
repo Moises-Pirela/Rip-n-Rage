@@ -50,7 +50,7 @@ public class M1887Shotgun : HitscanWeapon
             if (!Physics.Raycast(cameraTransform.position, finalDirection, out RaycastHit hit, 100,
                 _LayerMask)) continue;
             
-            var entityState = hit.collider.GetComponent<EntityState>();
+            EntityState entityState = null; // ECS migration (layer 2): hits name ECS entities; characters become entities in layers 4-6, so nothing resolves yet
 
             GameObject hitVFX = null;
             string bulletKey = GameVfx.AmmoKey(weaponData.ammoType);

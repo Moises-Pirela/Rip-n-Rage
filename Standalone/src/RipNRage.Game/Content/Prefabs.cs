@@ -74,34 +74,12 @@ namespace RipNRage.Game.Content
 
         // ---------------------------------------------------------------- projectiles (Prefabs/Projectiles/*.prefab)
 
-        /// <summary>
-        /// The body that flies a projectile: swept through the world once per frame (no tunnelling at any speed or frame
-        /// time), stops at the first solid it touches and hands the contact to the Projectile script. The trigger box
-        /// stays for the volume overlaps (water, checkpoints) and is registered as a mover by the body.
-        /// </summary>
-        private static KinematicBody AddProjectileBody(GameObject go, float halfSize)
-        {
-            var body = go.AddComponent<KinematicBody>();
-            body.simulation = SimulationMode.PerFrame;
-            body.motionMode = MotionMode.Stop;
-            body.useGravity = false;
-            body.terminalSpeed = 0f;
-            body.halfExtents = new Vector3(halfSize, halfSize, halfSize);
-            body.useLayerMatrix = false;
-            body.collisionMask = Projectile.HitMask;
-            body.collideWithTriggers = false;
-            return body;
-        }
-
-        /// <summary>Projectile_Rocket.prefab: speed 50, damage 1000, range 100; flown by a swept KinematicBody (the Unity prefab's 0.2x0.2x1 trigger box is now a cube).</summary>
+        /// <summary>Projectile_Rocket.prefab: speed 50, damage 1000, range 100; (moves by its transform until layer 5).</summary>
         public static readonly Prefab ProjectileRocket = new Prefab("Projectile_Rocket", () =>
         {
             var go = new GameObject("Projectile_Rocket");
             go.layer = Layers.Projectile;
-            var col = go.AddComponent<BoxCollider>();
-            col.isTrigger = true;
-            col.size = new Vector3(0.2f, 0.2f, 0.2f); // the body's sweep finds the hits; the trigger only has to notice volumes (water)
-            AddProjectileBody(go, 0.1f);
+            // ECS migration (layer 2): no collider / swept body until projectiles are ECS entities (layer 5)
             var p = go.AddComponent<RocketProjectile>();
             p.projectileStats = new ProjectileStats { speed = 50, damage = 1000, range = 100, hitVFX = RocketExplosion, trailEffect = "rocket", explosionEffect = "rocket", bulletKey = "explosive", explosionImpulse = 260f, explosionRadius = 9f };
             var vis = new GameObject("Visual");
@@ -121,10 +99,7 @@ namespace RipNRage.Game.Content
         {
             var go = new GameObject("Projectile_StandardBullet");
             go.layer = Layers.Projectile;
-            var col = go.AddComponent<BoxCollider>();
-            col.isTrigger = true;
-            col.size = new Vector3(0.16f, 0.16f, 0.16f);
-            AddProjectileBody(go, 0.08f);
+            // ECS migration (layer 2): no collider / swept body until projectiles are ECS entities (layer 5)
             var p = go.AddComponent<Projectile>();
             // readability + lethality (standalone): slower but twice as damaging, a bright glowing slug with a trail and its own light
             p.projectileStats = new ProjectileStats { speed = 40, damage = 10, range = 100, hitVFX = BulletImpact, bulletKey = "enemy", trailEffect = "bullet" };
@@ -155,9 +130,7 @@ namespace RipNRage.Game.Content
             var go = new GameObject(name);
             go.layer = Layers.Pickup;
             go.transform.localScale = new Vector3(0.75f, 0.75f, 1f);
-            var trigger = go.AddComponent<SphereCollider>();
-            trigger.isTrigger = true;
-            trigger.radius = 1.5f;
+            // ECS migration (layer 2): the pickup trigger returns as an ECS Trigger in layer 7
             var spriteGo = new GameObject("Sprite");
             spriteGo.transform.SetParent(go.transform, false);
             var sr = spriteGo.AddComponent<SpriteRenderer>();
@@ -181,7 +154,7 @@ namespace RipNRage.Game.Content
         // ---------------------------------------------------------------- enemies (AR_Grunt from TestArea.unity)
 
         /// <summary>
-        /// The AR_Grunt rifleman: AIState + AIAgent + BehaviorTreeOwner + NavMeshAgent + capsule,
+        /// The AR_Grunt rifleman: AIState + AIAgent + BehaviorTreeOwner,
         /// a 4-direction sprite (AnimationStateController), a 10 m vision trigger, projectile spawn and
         /// grapple point. The scene scaled them by 2.25; the sprite scale here keeps them ~2.2 m tall.
         /// </summary>
@@ -195,11 +168,8 @@ namespace RipNRage.Game.Content
             go.AddComponent<AudioSource>(); // attack telegraph / shot / alert sounds (standalone)
             // the body floats RideHeight above the floor (CharacterBody); the capsule covers the sprite from the hover
             // gap up to its head and the sprite holder hangs the ride height below the transform so the feet touch
-            float RideHeight = CharacterBody.EnemyProfile.rideHeight;
-            var capsule = go.AddComponent<CapsuleCollider>();
-            capsule.radius = 0.15f * S;
-            capsule.height = 1f * S - RideHeight;
-            capsule.center = new Vector3(0f, -RideHeight * 0.5f, 0f);
+            float RideHeight = CharacterProfiles.Enemy.rideHeight;
+            // ECS migration (layer 2): capsule + force-driven body + steering return as an ECS character in layer 6
 
             // 512 px tiles @100 ppu, centred on the body; scaled so the character is ~2.25 units tall.
             var holder = new GameObject("SpriteHolder");
@@ -210,20 +180,11 @@ namespace RipNRage.Game.Content
             sr.billboard = true;
             sr.lit = true;
 
-            // force-driven body: the capsule floats on a spring and the NavMeshAgent steers it with accelerations
-            var body = go.AddComponent<RigidBody>();
-            body.mass = CharacterBody.EnemyProfile.mass;
-            var motor = go.AddComponent<CharacterBody>();
-            motor.profile = CharacterProfileKind.Enemy; // tunables.cfg [enemy_character]
-            motor.groundMask = ~((1 << Layers.Player) | (1 << Layers.Enemies) | (1 << Layers.Projectile) | (1 << Layers.VisionSensor) | (1 << Layers.Pickup));
-            var nav = go.AddComponent<NavMeshAgent>();
-            nav.speed = 2f; nav.radius = 0.25f * S; nav.height = 1f * S; nav.baseOffset = 0.5f * S;
             var state = go.AddComponent<AIState>();
             state.data = GameAssets.RiflemanData;
             var animCtrl = go.AddComponent<AnimationStateController>();
             animCtrl.SpriteRenderer = sr;
             var agent = go.AddComponent<AIAgent>();
-            agent.navMeshAgent = nav;
             agent.animationStateController = animCtrl;
             agent.projectile = ProjectileStandardBullet;
             agent.data = GameAssets.RiflemanData;
@@ -235,9 +196,6 @@ namespace RipNRage.Game.Content
             var vision = new GameObject("VisionSensor");
             vision.transform.SetParent(go.transform, false);
             vision.layer = Layers.VisionSensor;
-            var visionCol = vision.AddComponent<SphereCollider>();
-            visionCol.isTrigger = true;
-            visionCol.radius = 10f;
             vision.AddComponent<AgentVisionSensor>()._treeOwner = owner;
 
             var spawn = new GameObject("ProjectileSpawnPostion");
@@ -254,7 +212,7 @@ namespace RipNRage.Game.Content
 
         /// <summary>Spawns a rifleman with its feet on <paramref name="floorPosition"/> (the body floats its ride height above the floor).</summary>
         public static GameObject SpawnRifleman(Vector3 floorPosition, Quaternion rotation) =>
-            Rifleman.Instantiate(floorPosition + Vector3.up * (0.5f * 2.25f + CharacterBody.EnemyProfile.rideHeight), rotation);
+            Rifleman.Instantiate(floorPosition + Vector3.up * (0.5f * 2.25f + CharacterProfiles.Enemy.rideHeight), rotation);
     }
 
     /// <summary>Fades a sprite out over its lifetime (replaces particle-system lifetime/alpha curves).</summary>

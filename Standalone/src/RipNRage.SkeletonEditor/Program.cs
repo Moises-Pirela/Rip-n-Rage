@@ -86,14 +86,14 @@ namespace RipNRage.SkeletonEditor
             fmr.mesh = Mesh.CreatePlane(Vector3.zero, 40f, 40f, 0.25f);
             fmr.texture = ProceduralTextures.WoodPlanks();
             fmr.occluder = true;
-            var fcol = floor.AddComponent<BoxCollider>(); fcol.size = new Vector3(40f, 1f, 40f); fcol.center = new Vector3(0f, -0.5f, 0f); fcol.isStatic = true;
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, floor.transform.position + new Vector3(0f, -0.5f, 0f), Quaternion.identity, new Vector3(40f, 1f, 40f), Layers.Walkable);
 
             var wall = new GameObject("BackWall");
             wall.layer = Layers.Walkable;
             var wmr = wall.AddComponent<MeshRenderer>();
             wmr.mesh = Mesh.CreateBox(new Vector3(0f, 2.5f, 6f), new Vector3(30f, 5f, 1f), 0.25f);
             wmr.texture = GameAssets.Texture13;
-            var wcol = wall.AddComponent<BoxCollider>(); wcol.center = new Vector3(0f, 2.5f, 6f); wcol.size = new Vector3(30f, 5f, 1f); wcol.isStatic = true;
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, wall.transform.position + new Vector3(0f, 2.5f, 6f), Quaternion.identity, new Vector3(30f, 5f, 1f), Layers.Walkable);
 
             var crate = new GameObject("Crate");
             crate.layer = Layers.Walkable;
@@ -101,7 +101,7 @@ namespace RipNRage.SkeletonEditor
             var cmr = crate.AddComponent<MeshRenderer>();
             cmr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one, 1f);
             cmr.texture = GameAssets.OrangeProto;
-            var ccol = crate.AddComponent<BoxCollider>(); ccol.size = Vector3.one; ccol.isStatic = true;
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, crate.transform.position + Vector3.zero, Quaternion.identity, Vector3.one, Layers.Walkable);
             RenderSettings.drawSky = true;
         }
     }

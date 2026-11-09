@@ -6,25 +6,30 @@ using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Transforms;
 
-/// <summary>Layer 2: physics components / configs (2.1) and the collider table under the broadphase (2.2).</summary>
+/// <summary>Records physics events for the checks.</summary>
+[DisableAutoCreation]
+public sealed class PhysicsEventLog : SystemBase, IConsumes<TriggerEnterEvent>, IConsumes<TriggerExitEvent>, IConsumes<CollisionEvent>
+{
+    public readonly List<(Entity, Entity)> Enters = new List<(Entity, Entity)>(), Exits = new List<(Entity, Entity)>();
+    public readonly List<CollisionEvent> Collisions = new List<CollisionEvent>();
+    public void Consume(SystemContext ctx, ReadOnlySpan<TriggerEnterEvent> events) { foreach (var e in events) Enters.Add((e.Trigger, e.Other)); }
+    public void Consume(SystemContext ctx, ReadOnlySpan<TriggerExitEvent> events) { foreach (var e in events) Exits.Add((e.Trigger, e.Other)); }
+    public void Consume(SystemContext ctx, ReadOnlySpan<CollisionEvent> events) { foreach (var e in events) Collisions.Add(e); }
+}
+
+/// <summary>Layer 2: physics components / configs, and the ECS-only simulation.</summary>
 internal static class PhysicsEcsChecks
 {
-    private static Scene _scene;
-
     public static void Run(Action<bool, string> True)
     {
-        // legacy behaviours Awake (and register with physics) in the scene's next lifecycle pass
-        _scene = new Scene(); Scene.MakeCurrent(_scene);
 
-        // ---- 2.1 configs: defaults match the legacy RigidBody, prefab JSON bakes, bad data is rejected
+        // ---- 2.1 configs: defaults match the solver, prefab JSON bakes, bad data is rejected
         {
-            var legacy = new GameObject("legacy-defaults").AddComponent<RigidBody>();
-            _scene.Tick(0f);
+            var sb = new SolverBody();
             var b = new BodyConfig().Bake();
-            True(b.Kind == BodyKind.Dynamic && b.Mass == legacy.mass && b.LinearDamping == legacy.linearDamping
-                 && b.AngularDamping == legacy.angularDamping && b.UseGravity == legacy.useGravity && b.CanSleep == legacy.canSleep
-                 && b.SleepThreshold == legacy.sleepThreshold && b.MaxSpeed == legacy.maxSpeed, "Body defaults equal the legacy RigidBody");
-            GameObject.DestroyImmediate(legacy.gameObject);
+            True(b.Kind == BodyKind.Dynamic && b.Mass == sb.mass && b.LinearDamping == sb.linearDamping
+                 && b.AngularDamping == sb.angularDamping && b.UseGravity == sb.useGravity && b.CanSleep == sb.canSleep
+                 && b.SleepThreshold == sb.sleepThreshold && b.MaxSpeed == sb.maxSpeed, "Body defaults equal the solver's defaults");
 
             using var w = new World(0);
             var lib = new PrefabLibrary();
@@ -89,47 +94,13 @@ internal static class PhysicsEcsChecks
             True(!hw.Get<PhysicsHandle>(wedge).IsRegistered, "PhysicsHandle always bakes unregistered");
         }
 
-        // ---- 2.2 collider table: legacy colliders own slots; the broadphase finds them through it
-        {
-            var world = Physics.World;
-            int before = world.Table.Alive;
-            var a = Box("table-a", new Vector3(100, 0, 0), isStatic: true);
-            var b = Box("table-b", new Vector3(100, 0, 3), isStatic: false);
-            _scene.Tick(0f);
-            var pa = a.Proxy; var pb = b.Proxy;
-            True(!pa.IsNone && !pb.IsNone && !pa.Equals(pb) && world.Table.Alive == before + 2, "registration allocates distinct slots");
-            True(world.Table.ColliderOf(pa) == a && world.Table.EntityOf(pa).IsNull, "a legacy slot resolves to its collider, no entity");
-
-            var found = new List<Collider>();
-            world.QueryBounds(new Bounds(new Vector3(99, -1, -1), new Vector3(101, 1, 4)), QueryFilter.Everything, found);
-            True(found.Contains(a) && found.Contains(b), "static and dynamic grids return colliders through slot indices");
-
-            GameObject.DestroyImmediate(b.gameObject);
-            True(b.Proxy.IsNone && !world.Table.IsAlive(pb) && world.Table.ColliderOf(pb) == null && world.Table.Alive == before + 1,
-                 "unregistering frees the slot; the old proxy goes stale");
-
-            var c = Box("table-c", new Vector3(100, 0, 6), isStatic: false);
-            _scene.Tick(0f);
-            True(c.Proxy.Index == pb.Index && c.Proxy.Generation != pb.Generation && world.Table.ColliderOf(pb) == null && world.Table.ColliderOf(c.Proxy) == c,
-                 "a reused slot gets a new generation; the stale proxy cannot reach the new collider");
-            found.Clear();
-            world.QueryBounds(new Bounds(new Vector3(99, -1, -1), new Vector3(101, 1, 7)), QueryFilter.Everything, found);
-            True(found.Contains(a) && found.Contains(c) && !found.Contains(b), "broadphase sees the reused slot's new collider only");
-
-            a.isStatic = false; // static -> dynamic re-insert keeps the slot
-            True(a.Proxy.Equals(pa), "Refresh keeps the proxy");
-            GameObject.DestroyImmediate(a.gameObject); GameObject.DestroyImmediate(c.gameObject);
-            True(world.Table.Alive == before, "all test slots released");
-        }
-
-        SolverBodyChecks(True);
         EcsSimChecks(True);
     }
 
     /// <summary>2.4: ECS entities in the one simulation via PhysicsSync / PhysicsStep / PhysicsWriteBack.</summary>
     private static void EcsSimChecks(Action<bool, string> True)
     {
-        var legacyWorld = Physics.World;
+        var simWorld = Physics.World;
         using var w = new World(0);
         w.AddSystemsFromAssemblies(typeof(World).Assembly);
         w.FixedDeltaTime = 1f / 60f;
@@ -149,7 +120,7 @@ internal static class PhysicsEcsChecks
         Step(2);
         True(w.Has<PhysicsHandle>(crate) && w.Has<PhysicsHandle>(floor), "sync registers entities and adds PhysicsHandle");
         var proxy = w.Get<PhysicsHandle>(crate).Proxy;
-        True(legacyWorld.Table.IsAlive(proxy) && legacyWorld.Table.EntityOf(proxy) == crate && legacyWorld.Table.BodyOf(proxy) != null,
+        True(simWorld.Table.IsAlive(proxy) && simWorld.Table.EntityOf(proxy) == crate && simWorld.Table.BodyOf(proxy) != null,
              "the crate's slot knows its entity and body");
         Step(180);
         var lt = w.Get<LocalTransform>(crate);
@@ -166,75 +137,62 @@ internal static class PhysicsEcsChecks
         Step(240);
         True(MathF.Abs(w.Get<LocalTransform>(crate).Position.y - 1.0f) < 0.05f, "it settles again");
 
-        // one simulation, direction 1: an ECS crate rests on a LEGACY static collider
-        var goFloor = new GameObject("legacy-floor"); goFloor.transform.position = new Vector3(340, 0, 0);
-        var lf = goFloor.AddComponent<BoxCollider>(); lf.size = new Vector3(20, 1, 20); lf.isStatic = true;
-        _scene.Tick(0f);
-        lib.AddJson(@"{ ""name"": ""crate2"", ""base"": ""crate"", ""components"": { ""LocalTransform"": { ""position"": [340, 3, 0] } } }");
-        var crate2 = lib.Get("crate2").Instantiate(w);
-        w.Sync();
-        Step(240);
-        True(MathF.Abs(w.Get<LocalTransform>(crate2).Position.y - 1.0f) < 0.05f,
-             $"an ECS crate rests on a legacy collider (y={w.Get<LocalTransform>(crate2).Position.y:0.000})");
+        // ---- raycasts / sweeps name the entity
+        bool rayOk = Physics.Raycast(new Vector3(300, 10, 0), Vector3.down, out var rh, 20f);
+        True(rayOk && rh.entity == crate && MathF.Abs(rh.point.y - 1.5f) < 0.02f,
+             "a ray down hits the crate's top and names its entity");
+        True(Physics.Raycast(new Vector3(305, 10, 0), Vector3.down, out var fh, 20f) && fh.entity == floor && MathF.Abs(fh.point.y - 0.5f) < 0.01f,
+             "a ray beside it hits the floor entity");
+        var floorOnly = new QueryFilter { layerMask = ~0, ignore = crate };
+        True(Physics.Raycast(new Ray(new Vector3(300, 10, 0), Vector3.down), 20f, floorOnly, out var ih) && ih.entity == floor, "QueryFilter.ignore skips an entity");
+        var hits = Physics.OverlapSphere(new Vector3(300, 1, 0), 0.3f);
+        True(hits.Contains(crate) && !hits.Contains(floor), "OverlapSphere returns entities");
 
-        // direction 2: a LEGACY rigid body rests on an ECS static floor
-        var goBody = new GameObject("legacy-crate"); goBody.transform.position = new Vector3(300, 3, 5);
-        var lc = goBody.AddComponent<BoxCollider>(); var lrb = goBody.AddComponent<RigidBody>();
-        _scene.Tick(0f);
+        // ---- body vs body: a second crate dropped on the first stacks on it (regression: 2.4 bodies never saw each other)
+        var top = lib.Get("crate").Instantiate(w); w.Sync();
+        w.Get<LocalTransform>(top).Position = new Vector3(300, 3, 0);
+        Step(300);
+        True(MathF.Abs(w.Get<LocalTransform>(top).Position.y - 2.0f) < 0.06f && MathF.Abs(w.Get<LocalTransform>(crate).Position.y - 1.0f) < 0.05f,
+             $"ECS bodies collide with each other: stacked crate at y={w.Get<LocalTransform>(top).Position.y:0.000}");
+        w.DestroyEntity(top); w.Sync();
+
+        // ---- static mesh collider (terrain): a body lands on its triangles
+        var terrainMesh = PhysicsAssets.AddMesh("test-ramp", new[] { new Vector3(-5, 0, -5), new Vector3(5, 0, -5), new Vector3(5, 0, 5), new Vector3(-5, 0, 5) }, new[] { 0, 2, 1, 0, 3, 2 });
+        var terrain = w.CreateEntity();
+        w.Add(terrain, LocalTransform.At(new Vector3(360, 0, 0)));
+        w.Add(terrain, new ColliderShape { Kind = ShapeKind.Mesh, Mesh = terrainMesh, IsStatic = true });
+        var ball = lib.Get("crate").Instantiate(w); w.Sync();
+        w.Get<LocalTransform>(ball).Position = new Vector3(360, 2, 0);
         Step(240);
-        True(MathF.Abs(goBody.transform.position.y - 1.0f) < 0.05f,
-             $"a legacy rigid body rests on an ECS static floor (y={goBody.transform.position.y:0.000})");
+        True(MathF.Abs(w.Get<LocalTransform>(ball).Position.y - 0.5f) < 0.05f, $"a crate rests on a static mesh collider (y={w.Get<LocalTransform>(ball).Position.y:0.000})");
+        True(Physics.Raycast(new Vector3(362, 5, 2), Vector3.down, out var mh, 10f) && mh.entity == terrain && MathF.Abs(mh.point.y) < 0.01f, "rays hit mesh triangles");
+
+        // ---- kinematic move-and-slide against ECS colliders
+        var mr = Physics.MoveAndSlide(CollisionShape.AxisAlignedBox(new Vector3(305, 1.0f, 0), new Vector3(0.25f, 0.25f, 0.25f)), new Vector3(0, -2f, 0), MoveSettings.Character(QueryFilter.Everything));
+        True(mr.isGrounded && mr.ground == floor && MathF.Abs(mr.position.y - 0.75f) < 0.03f, $"move-and-slide lands on the ECS floor and names it (y={mr.position.y:0.000})");
+
+        // ---- triggers + collision reports
+        var log = w.AddSystem(new PhysicsEventLog());
+        var trig = w.CreateEntity();
+        w.Add(trig, LocalTransform.At(new Vector3(300, 4, 6)));
+        w.Add(trig, new ColliderShape { Kind = ShapeKind.Box, Size = new Vector3(2, 2, 2), IsStatic = true });
+        w.Add(trig, new Trigger());
+        var dropper = lib.Get("crate").Instantiate(w); w.Sync();
+        w.Get<LocalTransform>(dropper).Position = new Vector3(300, 8, 6);
+        w.Add(dropper, new ReportCollisions());
+        Step(240);
+        True(log.Enters.Contains((trig, dropper)) && log.Exits.Contains((trig, dropper)), "a body falling through a trigger posts enter, then exit");
+        True(MathF.Abs(w.Get<LocalTransform>(dropper).Position.y - 1.0f) < 0.05f, "the trigger does not block it");
+        True(log.Collisions.Exists(c => c.Self == dropper && c.Other == floor && c.Impulse > 0f), "ReportCollisions posts CollisionEvents naming the floor");
 
         // destroying the entity frees slot and body
-        int bodiesBefore = legacyWorld.Bodies.Count;
+        int bodiesBefore = simWorld.Bodies.Count;
         w.DestroyEntity(crate); w.Sync();
         Step(1);
-        True(!legacyWorld.Table.IsAlive(proxy) && legacyWorld.Bodies.Count == bodiesBefore - 1, "destroying the entity frees its slot and body");
+        True(!simWorld.Table.IsAlive(proxy) && simWorld.Bodies.Count == bodiesBefore - 1, "destroying the entity frees its slot and body");
 
-        GameObject.DestroyImmediate(goFloor); GameObject.DestroyImmediate(goBody);
         w.EndSim();
-        True(legacyWorld.Table.EntityOf(w.Get<PhysicsHandle>(floor).Proxy).IsNull, "OnSimEnd unregisters the rest");
-    }
-
-    /// <summary>2.3: the solver runs on SolverBody; RigidBody is an adapter. Called from Run.</summary>
-    private static void SolverBodyChecks(Action<bool, string> True)
-    {
-        var world = Physics.World;
-        // collider first, then body (the usual order)
-        var go1 = new GameObject("sb-1"); go1.transform.position = new Vector3(200, 10, 0);
-        var col1 = go1.AddComponent<BoxCollider>(); var rb1 = go1.AddComponent<RigidBody>();
-        // body first, then collider: the slot / body link must still form
-        var go2 = new GameObject("sb-2"); go2.transform.position = new Vector3(203, 10, 0);
-        var rb2 = go2.AddComponent<RigidBody>(); var col2 = go2.AddComponent<SphereCollider>();
-        _scene.Tick(0f);
-        rb2.ComputeMass(); // the sphere arrived after the body's Awake: recompute like game code does after changing the collider
-
-        True(rb1.body.legacy == rb1 && ReferenceEquals((SolverBody)rb1, rb1.body), "the adapter owns its SolverBody (and converts implicitly)");
-        rb1.mass = 7f; rb1.linearVelocity = new Vector3(1, 2, 3);
-        True(rb1.body.mass == 7f && rb1.body.linearVelocity == new Vector3(1, 2, 3), "public fields forward to the SolverBody");
-        True(rb1.body.id < rb2.body.id, "body ids follow creation order (the solver's pair order relies on it)");
-        True(world.Table.BodyOf(col1.Proxy) == rb1.body && world.Table.BodyOf(col2.Proxy) == rb2.body,
-             "collider slot and body link up in either Awake order");
-        True(world.Bodies.Contains(rb1.body) && world.Bodies.Contains(rb2.body), "the world lists SolverBodies");
-        True(rb2.isRounded && !rb1.isRounded, "mass properties come from the legacy collider through the adapter");
-
-        rb1.linearVelocity = Vector3.zero; rb1.useGravity = true;
-        float y0 = go1.transform.position.y;
-        for (int i = 0; i < 10; i++) world.StepFixed(1f / 60f);
-        True(go1.transform.position.y < y0 - 0.05f && rb1.linearVelocity.y < 0f, "a SolverBody falls under gravity and writes the transform back");
-
-        var proxy1 = col1.Proxy;
-        GameObject.DestroyImmediate(go1);
-        True(!world.Bodies.Contains(rb1.body) && world.Table.BodyOf(proxy1) == null, "destroying the owner removes the body and clears the slot link");
-        GameObject.DestroyImmediate(go2);
-        True(!world.Bodies.Contains(rb2.body), "second body removed");
-    }
-
-    private static BoxCollider Box(string name, Vector3 at, bool isStatic)
-    {
-        var go = new GameObject(name); go.transform.position = at;
-        var col = go.AddComponent<BoxCollider>(); col.isStatic = isStatic;
-        return col;
+        True(simWorld.Table.EntityOf(w.Get<PhysicsHandle>(floor).Proxy).IsNull, "OnSimEnd unregisters the rest");
     }
 
     private static bool Throws(Action a) { try { a(); return false; } catch (Exception) { return true; } }

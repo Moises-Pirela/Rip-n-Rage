@@ -21,9 +21,8 @@ namespace RipNRage.Engine
     }
 
     /// <summary>
-    /// The one simulation's collider registry: every collider — a legacy <see cref="Collider"/> behaviour today, an
-    /// ECS entity from layer 2.4 on — owns a slot here, and the broadphase grids store slot indices. Slots are
-    /// recycled through a free list; the generation bumps on free.
+    /// The simulation's collider registry: every ECS collider owns a slot here, and the broadphase grids store slot
+    /// indices. Slots are recycled through a free list; the generation bumps on free.
     /// </summary>
     public sealed class ColliderTable
     {
@@ -32,27 +31,26 @@ namespace RipNRage.Engine
             public int index, generation = 1;
             /// <summary>Never reused across allocations (contact-cache keys); the slot index is.</summary>
             public int uid;
-            /// <summary>The rigid body moving this collider (null: static / kinematic mover / trigger).</summary>
+            public bool alive;
+            /// <summary>The ECS entity that owns this collider.</summary>
+            public Entity entity;
+            /// <summary>The rigid body moving this collider (null: static / trigger).</summary>
             public SolverBody body;
-            // ---- ECS collider state (used when collider == null; the sync system fills it) ----
-            /// <summary>Local-space shape description of an ECS collider.</summary>
+            /// <summary>Local-space shape description (the entity's ColliderShape).</summary>
             public Ecs.Physics.ColliderShape ecsShape;
             public Ecs.Physics.SurfaceMaterial ecsMaterial; public bool hasEcsMaterial;
             public int layer; public bool isTrigger;
-            /// <summary>ECS: current world-space shape (sphere / capsule / box; static convex uses <see cref="polytope"/>).</summary>
+            // ---- world geometry (baked by the sync system; dynamic slots follow their body every step) ----
+            /// <summary>World-space shape: sphere / capsule / box, or a polytope for convex.</summary>
             public CollisionShape worldShape;
-            /// <summary>ECS static box / convex: baked world polytope for the narrow phase.</summary>
+            /// <summary>Box / convex: world polytope for the narrow phase.</summary>
             public ConvexShape polytope;
-            /// <summary>ECS: current tight world bounds (legacy slots read the collider instead).</summary>
-            public Bounds ecsBounds;
-
-            /// <summary>Tight world bounds whoever the owner is.</summary>
-            public Bounds CurrentBounds() => collider != null ? collider.bounds : ecsBounds;
-            public bool alive;
-            /// <summary>Legacy owner (adapter; null once ECS colliders register).</summary>
-            public Collider collider;
-            /// <summary>ECS owner (Entity.Null for legacy colliders).</summary>
-            public Entity entity;
+            /// <summary>Box / convex statics: world hull (planes) for the exact axis-aligned box trace of the kinematic solver.</summary>
+            public ConvexHull hull;
+            /// <summary>Mesh colliders: world triangles + BVH.</summary>
+            public MeshShape mesh;
+            /// <summary>Tight world bounds.</summary>
+            public Bounds worldBounds;
             // ---- broadphase state ----
             public Bounds bounds;       // statics: cached bounds; dynamics: the fat box they are bucketed by
             public Bounds tight;        // dynamics: bounds at the last refresh
@@ -61,13 +59,17 @@ namespace RipNRage.Engine
             public int stamp;           // last query that visited this slot (grid entries appear in several cells)
             public int x0, y0, z0, x1, y1, z1; // dynamics: cell range currently occupied
             public bool bucketed;
+            /// <summary>In the broadphase (Insert ran, Extract did not): Touch on a slot that is not inserted yet must not bucket it.</summary>
+            public bool inserted;
 
-            public void ResetBroadphase()
+            public bool IsRounded => worldShape.type == ShapeType.Sphere || worldShape.type == ShapeType.Capsule;
+
+            public void Reset()
             {
-                bounds = tight = default; isStatic = large = bucketed = false; stamp = 0;
+                bounds = tight = default; isStatic = large = bucketed = inserted = false; stamp = 0;
                 x0 = y0 = z0 = x1 = y1 = z1 = 0;
                 ecsShape = default; ecsMaterial = default; hasEcsMaterial = false;
-                layer = 0; isTrigger = false; worldShape = default; polytope = null; ecsBounds = default;
+                layer = 0; isTrigger = false; worldShape = default; polytope = null; hull = null; mesh = null; worldBounds = default;
             }
         }
 
@@ -82,7 +84,7 @@ namespace RipNRage.Engine
         /// <summary>Direct slot access by index (hot path: broadphase cell lists hold indices).</summary>
         internal Slot this[int index] => _slots[index];
 
-        internal Slot Allocate(Collider collider, Entity entity)
+        internal Slot Allocate(Entity entity)
         {
             int i;
             if (_free.Count > 0) i = _free.Pop();
@@ -93,9 +95,9 @@ namespace RipNRage.Engine
                 _slots[i] = new Slot { index = i };
             }
             var s = _slots[i];
-            s.alive = true; s.collider = collider; s.entity = entity; s.body = null;
+            s.alive = true; s.entity = entity; s.body = null;
             s.uid = System.Threading.Interlocked.Increment(ref _nextUid);
-            s.ResetBroadphase();
+            s.Reset();
             Alive++;
             return s;
         }
@@ -103,7 +105,7 @@ namespace RipNRage.Engine
         internal void Free(Slot s)
         {
             if (s == null || !s.alive) return;
-            s.alive = false; s.collider = null; s.entity = Entity.Null; s.body = null;
+            s.alive = false; s.entity = Entity.Null; s.body = null; s.mesh = null; s.polytope = null; s.hull = null;
             s.generation++; if (s.generation == 0) s.generation = 1;
             _free.Push(s.index);
             Alive--;
@@ -120,9 +122,7 @@ namespace RipNRage.Engine
         }
 
         public bool IsAlive(PhysicsProxy p) => Resolve(p) != null;
-        /// <summary>The legacy collider behind a proxy (null for ECS colliders or stale proxies).</summary>
-        public Collider ColliderOf(PhysicsProxy p) => Resolve(p)?.collider;
-        /// <summary>The ECS entity behind a proxy (Entity.Null for legacy colliders or stale proxies).</summary>
+        /// <summary>The ECS entity behind a proxy (Entity.Null for stale proxies).</summary>
         public Entity EntityOf(PhysicsProxy p) => Resolve(p)?.entity ?? Entity.Null;
         /// <summary>The rigid body moving the collider behind a proxy (null: static, no body, or stale).</summary>
         public SolverBody BodyOf(PhysicsProxy p) => Resolve(p)?.body;

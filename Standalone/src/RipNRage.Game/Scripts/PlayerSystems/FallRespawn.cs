@@ -72,7 +72,6 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
 
     private struct Sample { public Vector3 pos; public float yaw; public float time; }
 
-    private CharacterBody _cc;
     private FPSController _fps;
     private PlayerInputActions _input;
     private PlayerState _state;
@@ -87,6 +86,9 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
     private float _fade;
     private float _cooldown;
 
+// ECS migration (layer 2): the legacy physics this code drove is gone. Fenced, not deleted: it is the reference for
+// the ECS port (layer 4: falls / respawn on the ECS player character). LEGACY_PHYSICS is never defined.
+#if LEGACY_PHYSICS
     protected override void Start()
     {
         _cc = GetComponent<CharacterBody>();
@@ -242,6 +244,10 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
         return true;
     }
 
+#else
+    /// <summary>Respawn needs the player character body (layer 4).</summary>
+    public void Respawn() { }
+#endif
     public void DrawUi(UiBatch ui)
     {
         if (_fade <= 0f) return;

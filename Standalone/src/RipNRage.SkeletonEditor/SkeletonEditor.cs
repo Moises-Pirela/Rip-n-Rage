@@ -72,7 +72,13 @@ namespace RipNRage.SkeletonEditor
         // ---- preview ----
         private GameObject _previewGo;
         private SpriteRenderer _previewSr;
+        // ECS migration (layer 2): the ragdoll preview ran on the legacy SpriteRagdoll (rigid bodies + joints); it
+        // returns with the ECS ragdoll in layer 3. LEGACY_PHYSICS is never defined.
+#if LEGACY_PHYSICS
         private SpriteRagdoll _ragdoll;
+#else
+        private object _ragdoll => null;
+#endif
         private float _yaw = 180f, _pitch = 12f, _distance = 5.5f;
         private float _previewScale = 0.44f;
 
@@ -405,8 +411,10 @@ namespace RipNRage.SkeletonEditor
             {
                 if (Input.GetKeyDown(KeyCode.Space)) SpawnRagdoll(Ctrl);
                 if (Input.GetKeyDown(KeyCode.R)) ResetPreview();
+#if LEGACY_PHYSICS
                 if (Input.GetKeyDown(KeyCode.K) && _ragdoll != null) _ragdoll.BreakAll();
                 if (Input.GetKeyDown(KeyCode.UpArrow) && _ragdoll != null) _ragdoll.AddExplosion(40f, anchor.position + new Vector3(0f, -0.2f, 0.8f), 4f, 0.6f);
+#endif
             }
         }
 
@@ -468,12 +476,15 @@ namespace RipNRage.SkeletonEditor
 
         private void ResetPreview()
         {
+#if LEGACY_PHYSICS
             if (_ragdoll != null) { GameObject.Destroy(_ragdoll.gameObject); _ragdoll = null; }
+#endif
             if (_previewSr != null) _previewSr.enabled = _mode == Mode.Preview && _cell != null;
         }
 
         private void SpawnRagdoll(bool gib)
         {
+#if LEGACY_PHYSICS
             if (_skel == null || _cell == null) return;
             ResetPreview();
             var options = RagdollOptions.Default;
@@ -490,6 +501,9 @@ namespace RipNRage.SkeletonEditor
             _ragdoll.lifetime = 0f;
             _previewSr.enabled = false;
             Status(gib ? "GIBBED — R = RESET" : "RAGDOLL — CLICK A PIECE TO TEAR IT OFF, K = BREAK ALL, UP = BLAST, R = RESET");
+#else
+            Status("RAGDOLL PREVIEW RETURNS WITH THE ECS RAGDOLL (LAYER 3)");
+#endif
         }
 
         private void UpdatePreview()
@@ -509,6 +523,7 @@ namespace RipNRage.SkeletonEditor
             cam.transform.position = target - rot * Vector3.forward * _distance;
             cam.transform.rotation = rot;
 
+#if LEGACY_PHYSICS
             if (over && Input.GetMouseButtonDown(0) && _ragdoll != null)
             {
                 var win = Application.Current.Window;
@@ -524,6 +539,7 @@ namespace RipNRage.SkeletonEditor
                         }
                 }
             }
+#endif
         }
 
         // ------------------------------------------------------------------ ui (Dear ImGui)

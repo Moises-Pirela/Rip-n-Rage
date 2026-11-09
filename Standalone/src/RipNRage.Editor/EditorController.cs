@@ -292,9 +292,9 @@ namespace RipNRage.Editor
                 var def = EntityRegistry.Get(e.classname);
                 Vector3 ext = def?.pickExtents ?? new Vector3(0.5f, 0.5f, 0.5f);
                 Vector3 c = e.origin + new Vector3(0, ext.y, 0);
-                if (Physics.RayAabb(ray, new Bounds(c - ext, c + ext), best, null, out var hit) && hit.distance < best)
+                if (Physics.RayAabb(ray, new Bounds(c - ext, c + ext), best, out float hitDist, out _) && hitDist < best)
                 {
-                    best = hit.distance; _hoverEntity = e; _hoverBrush = null; _hoverFace = null;
+                    best = hitDist; _hoverEntity = e; _hoverBrush = null; _hoverFace = null;
                 }
             }
             if (best < float.MaxValue) _hoverPoint = ray.GetPoint(best);

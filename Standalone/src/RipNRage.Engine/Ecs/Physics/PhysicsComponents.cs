@@ -14,7 +14,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
     /// <summary>
     /// A rigid body (layer 2 data; simulated from step 2.4). Same parameters and defaults as the legacy
-    /// <see cref="RipNRage.Engine.RigidBody"/>. An entity with a <see cref="ColliderShape"/> but no Body is static
+    /// legacy RigidBody. An entity with a <see cref="ColliderShape"/> but no Body is static
     /// geometry. Velocities live in <see cref="BodyVelocity"/> so systems that only steer don't write the whole body.
     /// </summary>
     public struct Body : IComponent
@@ -54,7 +54,7 @@ namespace RipNRage.Engine.Ecs.Physics
         /// <summary>Capsule total height along local Y (including the caps).</summary>
         public float Height;
         public AssetHandle<ConvexColliderAsset> Hull;
-        public AssetHandle<Mesh> Mesh;
+        public AssetHandle<TriangleMesh> Mesh;
         /// <summary>Static geometry is cached in the broadphase's static grid (level geometry, props that never move).</summary>
         public bool IsStatic;
     }
@@ -82,6 +82,9 @@ namespace RipNRage.Engine.Ecs.Physics
     /// <summary>Tag set by the simulation while the body sleeps (toggles often: sparse).</summary>
     [SparseComponent] public struct Sleeping : IComponent { }
 
+    /// <summary>Opt-in: the body's contacts are posted as <see cref="CollisionEvent"/>s after each step (thousands of contacts otherwise).</summary>
+    [SparseComponent] public struct ReportCollisions : IComponent { }
+
     /// <summary>A shared convex collider: the hull (queries, bounds) plus the faces / vertices it was built from (narrow-phase polytopes).</summary>
     public sealed class ConvexColliderAsset
     {
@@ -91,11 +94,22 @@ namespace RipNRage.Engine.Ecs.Physics
         public ConvexColliderAsset(Plane[] faces, Vector3[] vertices) { Faces = faces; Vertices = vertices; Hull = ConvexHull.FromPlanes(faces, vertices, true); }
     }
 
-    /// <summary>Shape assets colliders reference. Meshes share <see cref="RenderAssets.Meshes"/> so a "box" is one asset.</summary>
+    /// <summary>Local-space triangles of a mesh collider (shared; each static entity bakes its own world copy).</summary>
+    public sealed class TriangleMesh
+    {
+        public readonly Vector3[] Vertices;
+        public readonly int[] Triangles;
+        public TriangleMesh(Vector3[] vertices, int[] triangles) { Vertices = vertices ?? Array.Empty<Vector3>(); Triangles = triangles ?? Array.Empty<int>(); }
+        public static TriangleMesh FromMesh(Mesh m) => new TriangleMesh(m.vertices, m.triangles);
+    }
+
+    /// <summary>Shape assets colliders reference by handle.</summary>
     public static class PhysicsAssets
     {
         public static readonly AssetRegistry<ConvexColliderAsset> Hulls = new AssetRegistry<ConvexColliderAsset>();
-        public static AssetRegistry<Mesh> Meshes => RenderAssets.Meshes;
+        public static readonly AssetRegistry<TriangleMesh> Meshes = new AssetRegistry<TriangleMesh>();
+        /// <summary>Interns explicit triangles (terrain, level meshes built in code) as a collider mesh.</summary>
+        public static AssetHandle<TriangleMesh> AddMesh(string name, Vector3[] vertices, int[] triangles) => Meshes.Intern(new TriangleMesh(vertices, triangles), name);
     }
 
     // ---------------------------------------------------------------- configs (JSON prefabs)
@@ -111,7 +125,7 @@ namespace RipNRage.Engine.Ecs.Physics
         public CollisionDetectionMode collisionDetection = CollisionDetectionMode.Discrete;
         public bool interpolate;
         public bool canSleep = true;
-        /// <summary>Null = the tunables.cfg defaults (<see cref="RigidBody.DefaultSleepThreshold"/> etc.) at bake time.</summary>
+        /// <summary>Null = the tunables.cfg defaults (<see cref="SolverBody.DefaultSleepThreshold"/> etc.) at bake time.</summary>
         public float? sleepThreshold, sleepDelay, maxSpeed, maxAngularSpeed;
 
         public override Body Bake()
@@ -123,10 +137,10 @@ namespace RipNRage.Engine.Ecs.Physics
                 Kind = kind, Mass = mass, LinearDamping = linearDamping, AngularDamping = angularDamping,
                 UseGravity = useGravity, GravityScale = gravityScale, FreezeRotation = freezeRotation,
                 CollisionDetection = collisionDetection, Interpolate = interpolate, CanSleep = canSleep,
-                SleepThreshold = sleepThreshold ?? RigidBody.DefaultSleepThreshold,
-                SleepDelay = sleepDelay ?? RigidBody.DefaultSleepDelay,
-                MaxSpeed = maxSpeed ?? RigidBody.DefaultMaxSpeed,
-                MaxAngularSpeed = maxAngularSpeed ?? RigidBody.DefaultMaxAngularSpeed,
+                SleepThreshold = sleepThreshold ?? SolverBody.DefaultSleepThreshold,
+                SleepDelay = sleepDelay ?? SolverBody.DefaultSleepDelay,
+                MaxSpeed = maxSpeed ?? SolverBody.DefaultMaxSpeed,
+                MaxAngularSpeed = maxAngularSpeed ?? SolverBody.DefaultMaxAngularSpeed,
             };
         }
     }
@@ -165,7 +179,7 @@ namespace RipNRage.Engine.Ecs.Physics
                     throw new ArgumentOutOfRangeException(nameof(radius), radius, "radius must be > 0");
                 case ShapeKind.Mesh:
                     if (string.IsNullOrEmpty(mesh)) throw new ArgumentException("a mesh collider needs a mesh name", nameof(mesh));
-                    s.Mesh = PhysicsAssets.Meshes.GetOrLoad(mesh, MeshLibrary.Get);
+                    s.Mesh = PhysicsAssets.Meshes.GetOrLoad(mesh, n => TriangleMesh.FromMesh(MeshLibrary.Get(n)));
                     break;
                 case ShapeKind.Convex:
                     s.Hull = ConvexConfig.Bake(vertices, planes);
@@ -201,6 +215,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
     public sealed class TriggerConfig : ComponentConfig<Trigger> { public override Trigger Bake() => default; }
     public sealed class SleepingConfig : ComponentConfig<Sleeping> { public override Sleeping Bake() => default; }
+    public sealed class ReportCollisionsConfig : ComponentConfig<ReportCollisions> { public override ReportCollisions Bake() => default; }
 
     /// <summary>Convex hull data from a config: validated, faces derived when not given, interned by content (equal hulls share one asset).</summary>
     internal static class ConvexConfig

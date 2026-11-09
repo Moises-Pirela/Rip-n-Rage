@@ -26,15 +26,16 @@ public class AIState : EntityState
     /// <summary>Standalone addition: true when a hit point lies in the top part of the capsule (head).</summary>
     public bool IsHeadshot(Vector3 point)
     {
-        var capsule = GetComponent<CapsuleCollider>();
-        if (capsule == null) return false;
-        var b = capsule.bounds;
-        return point.y > b.min.y + (b.max.y - b.min.y) * 0.76f;
+        // the capsule collider is gone (enemies become ECS characters in layer 6): judge by the 2.25 m sprite height
+        float bottom = transform.position.y - 0.5f * 2.25f;
+        return point.y > bottom + 2.25f * 0.76f;
     }
 
     public override void Die()
     {
         HealthState = EntityHealthState.DEAD;
+        // ECS migration (layer 2): legacy steering is gone; reference for the ECS port (layer 6).
+#if LEGACY_PHYSICS
         var capsule = GetComponent<CapsuleCollider>();
         if (capsule != null) capsule.enabled = false;
         var agent = GetComponent<NavMeshAgent>();
@@ -43,6 +44,7 @@ public class AIState : EntityState
         if (motor != null) motor.enabled = false;
         var body = GetComponent<RigidBody>();
         if (body != null) body.enabled = false; // the ragdoll pieces are the corpse
+#endif
         GameVfx.Death(data != null ? data.name : null, transform.position + Vector3.up * 0.4f);
         OnDieCallback?.Invoke();
     }

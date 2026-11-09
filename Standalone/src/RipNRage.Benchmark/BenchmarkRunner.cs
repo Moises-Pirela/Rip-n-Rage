@@ -118,6 +118,7 @@ namespace RipNRage.Benchmark
         private void Teardown()
         {
             _current.Teardown();
+            BenchmarkScene.DestroyEntities();
             if (_root != null) GameObject.DestroyImmediate(_root);
             _root = null; _current = null;
             Physics.World.Rigid.Contacts.Clear();
@@ -138,7 +139,7 @@ namespace RipNRage.Benchmark
                 _hudTimer = 1f;
                 var w = Physics.World;
                 int steps = Math.Max(1, Scene.Current != null ? Scene.Current.FixedStepsLastFrame : 1);
-                Debug.LogWarning($"[bench] {_current.Name} t={_elapsed:0.0}s {(_measuring ? "MEASURE" : "warmup")}  frame {Profiler.FrameMsAvg:0.0} ms  physics {Profiler.StageMs("fixed physics") / steps + Profiler.StageMs("physics"):0.0} ms/step ({steps} steps)  bodies {w.RigidBodyCount} ({w.Rigid.AwakeBodies} awake)  islands {w.Rigid.IslandCount} (max {w.Rigid.LargestIsland})  threads {w.Rigid.ThreadsUsed}  manifolds {w.Rigid.ManifoldCount}  contacts {w.Rigid.ContactCount}  joints {w.Rigid.JointCount}  movers {w.MoverCount}  alive {_current.Alive} {_current.Extra}");
+                Debug.LogWarning($"[bench] {_current.Name} t={_elapsed:0.0}s {(_measuring ? "MEASURE" : "warmup")}  frame {Profiler.FrameMsAvg:0.0} ms  physics {Profiler.StageMs("fixed physics") / steps + Profiler.StageMs("physics"):0.0} ms/step ({steps} steps)  bodies {w.RigidBodyCount} ({w.Rigid.AwakeBodies} awake)  islands {w.Rigid.IslandCount} (max {w.Rigid.LargestIsland})  threads {w.Rigid.ThreadsUsed}  manifolds {w.Rigid.ManifoldCount}  contacts {w.Rigid.ContactCount}  joints {w.Rigid.JointCount}  movers {w.DynamicCount}  alive {_current.Alive} {_current.Extra}");
             }
         }
 
@@ -155,7 +156,7 @@ namespace RipNRage.Benchmark
                 physicsMs = fixedMs + frameMs, stepMs = fixedMs / Math.Max(1, steps) + frameMs, fixedSteps = steps,
                 sceneMs = Profiler.StageMs("scene"), renderMs = Profiler.StageMs("render"),
                 rigidBodies = w.RigidBodyCount, awake = w.Rigid.AwakeBodies, manifolds = w.Rigid.ManifoldCount, contacts = w.Rigid.ContactCount, joints = w.Rigid.JointCount,
-                kinematic = w.BodyCount, movers = w.MoverCount, queries = w.QueriesLastFrame, sweeps = w.SweepsLastFrame, raycasts = w.RaycastsLastFrame, ccd = w.Rigid.CcdSweepsThisStep,
+                kinematic = 0, movers = w.DynamicCount, queries = w.QueriesLastFrame, sweeps = w.SweepsLastFrame, raycasts = w.RaycastsLastFrame, ccd = w.Rigid.CcdSweepsThisStep,
                 alive = _current.Alive, islands = w.Rigid.IslandCount, largestIsland = w.Rigid.LargestIsland, threads = w.Rigid.ThreadsUsed, allocBytes = Profiler.AllocBytesThisFrame,
                 drawCalls = Application.Current != null ? Application.Current.Renderer.DrawCalls : 0,
                 dispatches = w.Rigid.Dispatches, stages = w.Rigid.StageCount,

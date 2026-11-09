@@ -26,16 +26,16 @@ namespace RipNRage.Game.Content.Level
     }
 
     /// <summary>Writes a full game save ("checkpoint" slot) when the player enters the volume (once).</summary>
-    public class CheckpointAutoSave : MonoBehaviour, ITriggerListener
+    public class CheckpointAutoSave : MonoBehaviour
     {
         private bool _used;
-        public void OnTriggerEnter(Collider other)
+        public void OnTriggerEnter(GameObject other)
         {
             if (_used || !other.CompareTag("Player")) return;
             _used = true;
             GameSaveSystem.Save("checkpoint");
         }
-        public void OnTriggerExit(Collider other) { }
+        public void OnTriggerExit(GameObject other) { }
     }
 
     /// <summary>All entity classes the level files can use (Quake-style classnames).</summary>
@@ -190,7 +190,7 @@ namespace RipNRage.Game.Content.Level
                 spawn = e =>
                 {
                     var go = new GameObject("Checkpoint"); go.transform.position = e.origin; go.tag = "Checkpoint";
-                    var col = go.AddComponent<BoxCollider>(); col.isTrigger = true; col.size = e.GetVector("size", new Vector3(4, 4, 4));
+                    RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin, Quaternion.identity, e.GetVector("size", new Vector3(4, 4, 4)), Layers.Default, trigger: true); // CheckpointAutoSave reacts again in layer 8
                     go.AddComponent<Checkpoint>();
                     go.AddComponent<CheckpointAutoSave>();
                     return go;
@@ -249,7 +249,7 @@ namespace RipNRage.Game.Content.Level
             var pole = post.AddComponent<MeshRenderer>();
             pole.mesh = Mesh.CreateBox(new Vector3(0, 2.6f, 0), new Vector3(0.28f, 5.2f, 0.28f), 1f);
             pole.texture = GameAssets.Texture13; pole.color = new Color(0.35f, 0.35f, 0.38f, 1f);
-            var col = post.AddComponent<BoxCollider>(); col.center = new Vector3(0, 2.6f, 0); col.size = new Vector3(0.4f, 5.2f, 0.4f); col.isStatic = true;
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, 2.6f, 0), Quaternion.identity, new Vector3(0.4f, 5.2f, 0.4f), Layers.Walkable);
             var head = new GameObject("LampHead"); head.transform.SetParent(post.transform, false); head.transform.localPosition = new Vector3(0, 5.4f, 0);
             var headMr = head.AddComponent<MeshRenderer>();
             headMr.mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.7f, 0.5f, 0.7f), 1f);
@@ -271,10 +271,10 @@ namespace RipNRage.Game.Content.Level
             var mr = go.AddComponent<MeshRenderer>();
             mr.mesh = Mesh.CreatePlane(Vector3.zero, w, l, uvScale);
             mr.texture = texture; mr.color = color; mr.transparent = transparent; mr.castsShadow = false; mr.material = material;
-            if (collider) { var c = go.AddComponent<BoxCollider>(); c.size = new Vector3(w, 2f, l); c.center = new Vector3(0, -1f, 0); c.isStatic = true; }
+            if (collider) RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(w, 2f, l), Layers.Walkable);
             if (water)
             {
-                var trig = go.AddComponent<BoxCollider>(); trig.isTrigger = true; trig.size = new Vector3(w, 100f, l); trig.center = new Vector3(0, -50f, 0);
+                RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -50f, 0), Quaternion.identity, new Vector3(w, 100f, l), Layers.Water, trigger: true);
                 go.AddComponent<EnterWaterCollision>();
             }
             return go;

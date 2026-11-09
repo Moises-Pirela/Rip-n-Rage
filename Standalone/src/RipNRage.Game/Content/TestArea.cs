@@ -2,6 +2,10 @@ using System.Collections.Generic;
 using System.IO;
 using RipNRage.Engine.Graphics.Lighting;
 using RipNRage.Game.Content.Level;
+using RipNRage.Engine.Ecs;
+using EcsPhysics = RipNRage.Engine.Ecs.Physics;
+using RipNRage.Engine.Ecs.Rendering;
+using RipNRage.Engine.Ecs.Transforms;
 
 namespace RipNRage.Game.Content
 {
@@ -78,7 +82,7 @@ namespace RipNRage.Game.Content
             mr.texture = ProceduralTextures.WoodPlanks(); // Dock.blend's materials were not exported; generated planks instead
             mr.uvScale = new Vector2(2f, 2f);             // one 64-unit brush face = 2 texture tiles (16 planks)
             mr.color = Color.white;
-            BuildDockCollision(dock, mr.mesh);
+            BuildDockCollision(mr.mesh);
 
             // SkyRotator
             new GameObject("SkyRotator").AddComponent<SkyboxRotator>();
@@ -95,10 +99,8 @@ namespace RipNRage.Game.Content
             waterMr.transparent = true;
             waterMr.castsShadow = false;
             waterMr.material = Materials.Water; // animated water shader (shaders/water.glsl)
-            var waterTrigger = water.AddComponent<BoxCollider>();
-            waterTrigger.isTrigger = true;
-            waterTrigger.size = new Vector3(1732.1f, 100f, 1000f);
-            waterTrigger.center = new Vector3(0, -50f, 0);
+            // the water volume is an ECS trigger (EnterWaterCollision reacts to it again in layer 7)
+            EcsPhysics.PhysicsEntities.StaticBox(World, water.transform.position + new Vector3(0, -50f, 0), Quaternion.identity, new Vector3(1732.1f, 100f, 1000f), Layers.Water, trigger: true);
             water.AddComponent<EnterWaterCollision>();
 
             var sand = new GameObject("SandPlane");
@@ -111,21 +113,20 @@ namespace RipNRage.Game.Content
             sandMr.texture = ProceduralTextures.Sand();
             sandMr.color = Color.white;
             sandMr.castsShadow = false;
-            var sandCol = sand.AddComponent<BoxCollider>();
-            sandCol.size = new Vector3(1732.1f, 2f, 1000f);
-            sandCol.center = new Vector3(0, -1f, 0);
-            sandCol.isStatic = true;
+            EcsPhysics.PhysicsEntities.StaticBox(World, sand.transform.position + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(1732.1f, 2f, 1000f), Layers.Walkable);
         }
 
         /// <summary>
         /// The dock collides as a triangle mesh (the rendered <c>dock.obj</c> itself), so the slanted pier and every
         /// rotated brush are exact — the old grid of small boxes that approximated them is gone.
         /// </summary>
-        private static void BuildDockCollision(GameObject dock, Mesh mesh)
+        private static void BuildDockCollision(Mesh mesh)
         {
-            var col = dock.AddComponent<MeshCollider>();
-            col.mesh = mesh;
+            var tris = EcsPhysics.PhysicsAssets.AddMesh("dock", mesh.vertices, mesh.triangles);
+            EcsPhysics.PhysicsEntities.StaticMesh(World, tris, LocalTransform.At(DockOffset), Layers.Walkable);
         }
+
+        private static World World => Application.Current.World;
 
         // ------------------------------------------------------------------ props & lights
 
@@ -156,47 +157,33 @@ namespace RipNRage.Game.Content
             PhysicsBall(props, new Vector3(1f, floor + 1.2f, -12f), 0.45f, 8f, GameAssets.RedProto);
             PhysicsBall(props, new Vector3(-6f, floor + 1.2f, -16f), 0.35f, 4f, GameAssets.RedProto);
 
-            // joints: door, pendulum, bungee crate, seesaw, windmill, patrolling piston, chain, breakable shelf
-            PhysicsPlayground.Build(props, floor);
+            // the joint playground (door, pendulum, seesaw...) returns as ECS prefabs with joints (layer 2.5)
         }
 
-        /// <summary>A crate that is a rigid body: box collider + RigidBody, wood surface for the impact effects.</summary>
-        public static GameObject PhysicsCrate(GameObject parent, Vector3 center, float size, float mass, Texture2D tex)
-        {
-            var go = new GameObject("PhysicsCrate");
-            if (parent != null) go.transform.SetParent(parent.transform, false);
-            go.transform.position = center;
-            go.layer = Layers.Default;
-            go.AddComponent<SurfaceMaterial>().surface = Surfaces.Wood;
-            var mr = go.AddComponent<MeshRenderer>();
-            mr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * size, 1f / size);
-            mr.texture = tex;
-            mr.material = Materials.Crate;
-            var col = go.AddComponent<BoxCollider>();
-            col.size = Vector3.one * size;
-            var rb = go.AddComponent<RigidBody>();
-            rb.mass = mass; rb.friction = 0.55f; rb.restitution = 0.05f;
-            rb.collisionDetection = CollisionDetectionMode.Continuous; // a rocket can throw it fast enough to cross a wall in one step
-            return go;
-        }
+        /// <summary>A crate that is an ECS rigid body (renders through the ECS too).</summary>
+        public static Entity PhysicsCrate(GameObject parent, Vector3 center, float size, float mass, Texture2D tex) =>
+            DynamicProp(center, new EcsPhysics.ColliderShape { Kind = EcsPhysics.ShapeKind.Box, Size = Vector3.one * size }, mass, 0.55f, 0.05f,
+                Mesh.CreateBox(Vector3.zero, Vector3.one * size, 1f / size), tex, Materials.Crate, CollisionDetectionMode.Continuous);
 
-        /// <summary>A ball that is a rigid body (sphere collider), rendered as a small box mesh.</summary>
-        public static GameObject PhysicsBall(GameObject parent, Vector3 center, float radius, float mass, Texture2D tex)
+        /// <summary>A ball that is an ECS rigid body (sphere collider), rendered as a small box mesh.</summary>
+        public static Entity PhysicsBall(GameObject parent, Vector3 center, float radius, float mass, Texture2D tex) =>
+            DynamicProp(center, new EcsPhysics.ColliderShape { Kind = EcsPhysics.ShapeKind.Sphere, Radius = radius }, mass, 0.4f, 0.45f,
+                Mesh.CreateBox(Vector3.zero, Vector3.one * (radius * 1.6f), 1f / radius), tex, null, CollisionDetectionMode.ContinuousDynamic);
+
+        private static Entity DynamicProp(Vector3 center, EcsPhysics.ColliderShape shape, float mass, float friction, float restitution, Mesh mesh, Texture2D tex, Material material, CollisionDetectionMode ccd)
         {
-            var go = new GameObject("PhysicsBall");
-            if (parent != null) go.transform.SetParent(parent.transform, false);
-            go.transform.position = center;
-            go.layer = Layers.Default;
-            go.AddComponent<SurfaceMaterial>().surface = Surfaces.Metal;
-            var mr = go.AddComponent<MeshRenderer>();
-            mr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * (radius * 1.6f), 1f / radius);
-            mr.texture = tex;
-            var col = go.AddComponent<SphereCollider>();
-            col.radius = radius;
-            var rb = go.AddComponent<RigidBody>();
-            rb.mass = mass; rb.friction = 0.4f; rb.restitution = 0.45f; rb.angularDamping = 0.3f;
-            rb.collisionDetection = CollisionDetectionMode.ContinuousDynamic; // small and fast: swept against the world and the crates
-            return go;
+            var world = World;
+            var e = EcsPhysics.PhysicsEntities.Dynamic(world, LocalTransform.At(center), shape, mass);
+            var cmd = world.Commands;
+            var body = new EcsPhysics.BodyConfig { mass = mass, collisionDetection = ccd }.Bake();
+            cmd.Add(e, body);
+            cmd.Add(e, new EcsPhysics.SurfaceMaterial { StaticFriction = friction, DynamicFriction = friction, Restitution = restitution, FrictionCombine = CombineMode.Average, RestitutionCombine = CombineMode.Maximum });
+            cmd.Add(e, new MeshRender
+            {
+                Mesh = RenderAssets.Meshes.Intern(mesh), Texture = RenderAssets.Textures.Intern(tex ?? Texture2D.White),
+                Material = RenderAssets.Materials.Intern(material), Color = Color.white, UvScale = Vector2.one, CastsShadow = true, Layer = RenderLayer.World,
+            });
+            return e;
         }
 
         private static void LampPost(GameObject parent, Vector3 basePos)
@@ -210,9 +197,7 @@ namespace RipNRage.Game.Content
             pole.mesh = Mesh.CreateBox(new Vector3(0, 2.6f, 0), new Vector3(0.28f, 5.2f, 0.28f), 1f);
             pole.texture = GameAssets.Texture13;
             pole.color = new Color(0.35f, 0.35f, 0.38f, 1f);
-            var poleCol = post.AddComponent<BoxCollider>();
-            poleCol.center = new Vector3(0, 2.6f, 0); poleCol.size = new Vector3(0.4f, 5.2f, 0.4f);
-            poleCol.isStatic = true;
+            EcsPhysics.PhysicsEntities.StaticBox(World, basePos + new Vector3(0, 2.6f, 0), Quaternion.identity, new Vector3(0.4f, 5.2f, 0.4f), Layers.Walkable);
 
             var head = new GameObject("LampHead");
             head.transform.SetParent(post.transform, false);
@@ -242,9 +227,7 @@ namespace RipNRage.Game.Content
             mr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * size, 1f / size);
             mr.texture = tex;
             mr.material = Materials.Crate;
-            var col = go.AddComponent<BoxCollider>();
-            col.size = Vector3.one * size;
-            col.isStatic = true;
+            EcsPhysics.PhysicsEntities.StaticBox(World, go.transform.position, Quaternion.identity, Vector3.one * size, Layers.Walkable);
         }
 
         // ------------------------------------------------------------------ managers

@@ -146,7 +146,7 @@ public class CombatController : MonoBehaviour
         {
             if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out RaycastHit hit, 1, layerMask))
             {
-                var enemy = hit.collider.GetComponent<AIState>();
+                AIState enemy = null; // ECS migration (layer 2): hits name ECS entities; characters become entities in layers 4-6, so nothing resolves yet
 
                 if (enemy == null)
                 {

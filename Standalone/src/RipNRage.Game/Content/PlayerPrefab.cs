@@ -32,15 +32,8 @@ namespace RipNRage.Game.Content
             player.tag = "Player";
             player.layer = Layers.Player;
 
-            // force-driven body: a capsule floating half a metre above the ground on a spring (see CharacterBody);
-            // the capsule spans 0.5..1.8 m above the feet, the transform sits 0.9 m up like the old box mover did
-            var capsule = player.AddComponent<CapsuleCollider>();
-            capsule.radius = 0.4f; capsule.height = 1.3f; capsule.center = new Vector3(0f, 0.25f, 0f);
-            var body = player.AddComponent<RigidBody>();
-            body.mass = 80f;
-            var motor = player.AddComponent<CharacterBody>();
-            motor.profile = CharacterProfileKind.Player; // tunables.cfg [character]
-            motor.groundMask = ~((1 << Layers.Player) | (1 << Layers.Projectile) | (1 << Layers.VisionSensor) | (1 << Layers.Pickup));
+            // ECS migration (layer 2): the force-driven capsule (RigidBody + CharacterBody, 80 kg, radius 0.4, height 1.3,
+            // centre 0.25 m up, riding 0.5 m above the ground) returns as an ECS character entity in layers 2.6 / 4.
 
             var footAudio = player.AddComponent<AudioSource>();
 

@@ -292,13 +292,8 @@ namespace RipNRage.Game
             var cc = renderer.CameraConfig;
             text += $"FOV WORLD {cam?.fieldOfView:0} / VIEWMODEL {cc.viewmodelFov:0} ({(cc.viewmodelLit ? "LIT" : "UNLIT")})  CULLING {(cc.frustumCulling ? "FRUSTUM " : "")}{(cc.occlusionCulling ? $"OCCLUSION {cc.occlusionMode.ToString().ToUpperInvariant()}{(renderer.GpuOcclusion != null && cc.occlusionMode == OcclusionMode.Gpu ? $" ({renderer.GpuOcclusion.Tested} QUERIES, {renderer.GpuOcclusion.Pending} PENDING)" : "")} " : "")}{renderer.Culling}\n";
             var world = Physics.World;
-            text += $"PHYSICS {world.StaticCount} STATIC ({world.CellCount} CELLS) + {world.DynamicCount} DYNAMIC COLLIDERS  {world.BodyCount} KINEMATIC / {world.RigidBodyCount} RIGID BODIES ({world.Rigid.ManifoldCount} MANIFOLDS, {world.Rigid.ContactCount} CONTACTS ({world.Rigid.MatchedPoints} WARM, {world.Rigid.CachedManifolds} CACHED), {world.Rigid.JointCount} JOINTS, {world.Rigid.IslandCount} ISLANDS (MAX {world.Rigid.LargestIsland}), {world.Rigid.ThreadsUsed} THREADS, {world.Rigid.CcdSweepsThisStep} CCD, {world.Rigid.positionCorrection.ToString().ToUpperInvariant()})  {world.MoverCount} MOVERS  {world.RaycastsLastFrame} RAYS / {world.SweepsLastFrame} SWEEPS / {world.QueriesLastFrame} QUERIES\n";
-            var mover = ps != null ? ps.GetComponent<CharacterBody>() : null;
-            if (mover != null)
-            {
-                var fall = ps.GetComponent<FallRespawn>();
-                text += $"MOVER  {(mover.isGrounded ? "GROUNDED" : "AIRBORNE")}  SPEED {mover.velocity.magnitude:0.0} M/S  RIDE {(float.IsInfinity(mover.groundDistance) ? "-" : (mover.groundDistance * 100f).ToString("0") + " CM")}  SLOPE {Mathf.Acos(Mathf.Clamp(mover.groundNormal.y, -1f, 1f)) * Mathf.Rad2Deg:0}°  CONTACTS {(mover.body != null ? mover.body.Contacts.Count : 0)}{(mover.isDashing ? "  DASH" : "")}{(fall != null ? $"  FALLS {fall.Falls} (MODE {FallRespawn.Mode.ToString().ToUpperInvariant()}, LAST: {fall.LastFallKind})" : "")}\n";
-            }
+            text += $"PHYSICS {world.StaticCount} STATIC ({world.CellCount} CELLS) + {world.DynamicCount} DYNAMIC COLLIDERS  {world.RigidBodyCount} RIGID BODIES ({world.Rigid.ManifoldCount} MANIFOLDS, {world.Rigid.ContactCount} CONTACTS ({world.Rigid.MatchedPoints} WARM, {world.Rigid.CachedManifolds} CACHED), {world.Rigid.JointCount} JOINTS, {world.Rigid.IslandCount} ISLANDS (MAX {world.Rigid.LargestIsland}), {world.Rigid.ThreadsUsed} THREADS, {world.Rigid.CcdSweepsThisStep} CCD, {world.Rigid.positionCorrection.ToString().ToUpperInvariant()})  {world.RaycastsLastFrame} RAYS / {world.SweepsLastFrame} SWEEPS / {world.QueriesLastFrame} QUERIES\n";
+            // ECS migration (layer 2): the MOVER line (grounded / speed / ride / slope) returns with the ECS player character (layer 4)
             text += "WASD MOVE  MOUSE LOOK  LMB FIRE  RMB JAB  1-4/WHEEL WEAPONS  SPACE JUMP  F3 OVERLAY  F11 GPU SYNC  ESC PAUSE\n";
             text += "F6 QUICK SAVE  F9 QUICK LOAD  F7 LOAD CHECKPOINT  F8 RESTART LEVEL";
             return text;
@@ -592,8 +587,7 @@ namespace RipNRage.Game
                     input.overrideMove = new Vector2(_strafeDir, _frame % 90 < 45 ? 0.4f : -0.4f);
                     if (_frame % 70 == 35 && Mathf.Abs(x) < 2f) input.OnJump();
                     var fr = p.GetComponent<FallRespawn>();
-                    var cc = p.GetComponent<CharacterBody>();
-                    if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {p.transform.position} grounded={cc?.isGrounded} ride={(cc != null && !float.IsInfinity(cc.groundDistance) ? cc.groundDistance * 100f : -1f):0}cm falls={fr?.Falls} last={fr?.LastFallKind}");
+                    if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {p.transform.position} falls={fr?.Falls} last={fr?.LastFallKind}");
                     if (_frame == 600)
                     {
                         bool ok = (fr == null || fr.Falls == 0) && !p.IsDead;

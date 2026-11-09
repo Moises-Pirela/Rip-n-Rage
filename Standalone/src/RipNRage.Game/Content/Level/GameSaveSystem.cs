@@ -209,9 +209,8 @@ namespace RipNRage.Game.Content.Level
             yield return null;
             var player = PlayerState.Current;
             var combat = EnragedInjector<CombatController>.GetInstance();
-            var cc = player.GetComponent<CharacterBody>();
             var p = save.player;
-            if (cc != null) cc.Warp(new Vector3(p.x, p.y, p.z)); else player.transform.position = new Vector3(p.x, p.y, p.z);
+            player.transform.position = new Vector3(p.x, p.y, p.z); // the ECS character warp replaces this in layer 4
             FPSCameraController.instance?.SetLook(p.yaw, p.pitch);
             player.RestoreState(p.rage, (PlayerRageState)p.rageState, (PlayerCombatState)p.combatState, p.health, p.armor);
             // GameManager.Init re-reads the legacy "Save1" file during the build, so apply the inventory explicitly

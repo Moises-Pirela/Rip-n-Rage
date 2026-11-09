@@ -67,7 +67,7 @@ public abstract class HitscanWeapon : Weapon
             }
             if (vfx) GameVfx.Tracer(bulletKey, muzzle, hit.point);
             
-            var entityState = hit.collider.GetComponent<EntityState>();
+            EntityState entityState = null; // ECS migration (layer 2): hits name ECS entities; characters become entities in layers 4-6, so nothing resolves yet
 
             GameObject hitVFX = null;
 
@@ -90,13 +90,12 @@ public abstract class HitscanWeapon : Weapon
             {
                 GameVfx.Impact(hit, bulletKey);
                 // bullets shove loose props, swing doors, set pendulums going
-                var rb = hit.collider.attachedRigidbody;
+                var rb = Physics.World.Table.BodyOf(hit.proxy);
                 if (rb != null && !rb.isKinematic) rb.AddImpulseAtPosition(finalDirection.normalized * (weaponData.weaponStats.hitImpulse > 0f ? weaponData.weaponStats.hitImpulse : 6f), hit.point);
             }
             else
             {
                 hitVFX = Instantiate(weaponData.spawnableVFX, hit.point, Quaternion.LookRotation(hit.normal));
-                hitVFX.transform.parent = hit.collider.transform;
             }
 
             if (hitVFX != null) Destroy(hitVFX, 0.5f);

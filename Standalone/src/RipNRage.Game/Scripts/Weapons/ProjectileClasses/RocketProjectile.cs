@@ -8,14 +8,14 @@ using RipNRage.Game.Content.Vfx;
 public class RocketProjectile : Projectile
 {
     /// <summary>A rocket detonates on anything solid, enemies included (only its shooter is skipped).</summary>
-    protected override bool ShouldCollide(Collider other) => _instigator == null || other.gameObject != _instigator.gameObject;
+    protected override bool ShouldCollide(GameObject other) => _instigator == null || other != _instigator.gameObject;
 
-    public override void OnTriggerEnter(Collider other)
+    public override void OnTriggerEnter(GameObject other)
     {
         if (HasHit) return;
         if (_instigator != null)
         {   
-            if (other.gameObject == _instigator.gameObject) return;
+            if (other == _instigator.gameObject) return;
         }
         Consume();
         
@@ -50,13 +50,11 @@ public class RocketProjectile : Projectile
             }
         }
 
-        var hits = Physics.SphereCastAll(contactPoint, 10, contactPoint, 100);
-
-        foreach (var enemy in hits)
+        // blast damage by distance (the legacy sphere cast returned colliders; hits now name ECS entities, and
+        // characters are not entities until layers 4 / 6)
+        foreach (var enemyState in Scene.Current.FindObjectsOfType<EntityState>())
         {
-            var enemyState = enemy.collider.GetComponent<EntityState>();
-
-            if (enemyState == null) continue;
+            if ((enemyState.transform.position - contactPoint).sqrMagnitude > 10f * 10f) continue;
             
             if (enemyState is AIState)
             {

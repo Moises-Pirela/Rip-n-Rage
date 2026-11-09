@@ -51,15 +51,16 @@ public static class SurfaceResolver
 {
     public static string Resolve(in RaycastHit hit)
     {
-        var col = hit.collider;
-        if (col == null) return Surfaces.Default;
-        var go = col.gameObject;
+        // ECS migration (layer 2): hits name ECS entities, not GameObjects; per-entity surfaces return with layer 7.
+#if LEGACY_PHYSICS
+        var go = hit.collider.gameObject;
         if (go.GetComponent<EntityState>() != null) return Surfaces.Flesh;
         var brush = go.GetComponent<BrushSurface>();
         if (brush != null) return brush.Resolve(hit.normal);
         var mat = go.GetComponentInParent<SurfaceMaterial>();
         if (mat != null && !string.IsNullOrEmpty(mat.surface)) return mat.surface;
         if (go.layer == Layers.Water) return Surfaces.Water;
+#endif
         return Surfaces.Default;
     }
 }

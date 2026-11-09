@@ -12,7 +12,6 @@ using System.Collections;
 // boost decays with friction; jumping out of a slide keeps the momentum), wall running (airborne next to a wall
 // while pushing forward: reduced gravity, speed along the wall, camera tilt, wall jump away from the wall),
 // external impulses (explosion knockback / rocket jumps) and the style meter's S-rank speed bonus.
-[RequireComponent(typeof(CharacterBody))]
 public class FPSController : MonoBehaviour
 {
     [Space, Header("Data")]
@@ -105,8 +104,6 @@ public class FPSController : MonoBehaviour
     [Range(1f, 100f)] [SerializeField] public float smoothVelocitySpeed = 5f;
     [Range(1f, 100f)] [SerializeField] public float smoothFinalDirectionSpeed = 5f;
 
-    #region Components / Custom Classes / Caches
-    private CharacterBody m_characterController; // the force-driven body (name kept so the ported code reads the same)
     private Transform m_yawTransform;
     private Transform m_camTransform;
     private HeadBob m_headBob;
@@ -115,9 +112,7 @@ public class FPSController : MonoBehaviour
     private RaycastHit m_hitInfo;
     private IEnumerator m_CrouchRoutine;
     private IEnumerator m_LandRoutine;
-    #endregion
 
-    #region Debug
     [Space]
     private Vector2 m_inputVector;
     private Vector2 m_smoothInputVector;
@@ -156,8 +151,10 @@ public class FPSController : MonoBehaviour
     private float m_StepCycle;
     private float m_NextStep;
 
-    #endregion
 
+// ECS migration (layer 2): the legacy physics this code drove is gone. Fenced, not deleted: it is the reference for
+// the ECS port (layer 4: player movement on the ECS character body, step 2.6). LEGACY_PHYSICS is never defined.
+#if LEGACY_PHYSICS
     protected override void Start()
     {
         GetComponents();
@@ -295,7 +292,6 @@ public class FPSController : MonoBehaviour
         m_FootstepSounds[0] = m_AudioSource.clip;
     }
 
-    #region Smoothing Methods
     protected virtual void SmoothInput()
     {
         m_inputVector = _inputActions.MovementInput.normalized;
@@ -316,9 +312,7 @@ public class FPSController : MonoBehaviour
         m_smoothFinalMoveDir = Vector3.Lerp(m_smoothFinalMoveDir, m_finalMoveDir, Time.deltaTime * smoothFinalDirectionSpeed);
         Debug.DrawRay(transform.position, m_smoothFinalMoveDir, Color.yellow);
     }
-    #endregion
 
-    #region Locomotion Calculation Methods
     protected virtual bool CheckIfGrounded()
     {
         Vector3 _origin = transform.position + _standCenter;
@@ -389,7 +383,6 @@ public class FPSController : MonoBehaviour
         m_currentSpeed *= StyleMeter.SpeedMultiplier; // S rank: faster
     }
 
-    #region Slide & wall run (standalone additions)
 
     private Vector3 HorizontalVelocity => new Vector3(m_characterController.velocity.x, 0f, m_characterController.velocity.z);
 
@@ -568,7 +561,6 @@ public class FPSController : MonoBehaviour
         if (impulse.y > 0f) { _inputActions.IsGrounded = false; m_previouslyGrounded = true; }
     }
 
-    #endregion
 
     protected virtual void CalculateFinalMovement()
     {
@@ -578,9 +570,7 @@ public class FPSController : MonoBehaviour
         m_finalMoveVector.x = finalVector.x;
         m_finalMoveVector.z = finalVector.z;
     }
-    #endregion
 
-    #region Landing Methods
     protected virtual void HandleLanding()
     {
         if (m_previouslyGrounded || !_inputActions.IsGrounded) return;
@@ -621,9 +611,7 @@ public class FPSController : MonoBehaviour
             yield return null;
         }
     }
-    #endregion
 
-    #region Locomotion Apply
     protected virtual void HandleJump()
     {
         if (_inputActions.IsJumping)
@@ -680,5 +668,12 @@ public class FPSController : MonoBehaviour
         m_smoothCurrentSpeed = 0f;
         m_inAirTimer = 0f;
     }
-    #endregion
+#else
+    // input is not physics: head bob, weapon sway and the camera keep reading it
+    protected override void Start() => _inputActions = GetComponent<PlayerInputActions>();
+
+    /// <summary>Knockback / rocket-jump impulse (no-op until the player is an ECS character, layer 4).</summary>
+    public void AddImpulse(Vector3 impulse) { }
+    public void ResetVelocity() { IsDashing = false; }
+#endif
 }

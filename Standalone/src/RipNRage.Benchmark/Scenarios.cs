@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using RipNRage.Engine;
-using RipNRage.Engine.Destruction;
+using RipNRage.Engine.Ecs;
+using RipNRage.Engine.Ecs.Physics;
+using RipNRage.Engine.Ecs.Rendering;
+using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Engine.Graphics;
 using RipNRage.Game.Content;
 
@@ -19,7 +22,8 @@ namespace RipNRage.Benchmark
 
         public static List<Scenario> Select(string which)
         {
-            var all = new List<Scenario> { new CratesScenario(), new RagdollsScenario(), new ProjectilesScenario(), new GroundScenario() };
+            // ragdolls (jointed bodies) and projectiles (kinematic movers) return with ECS joints (2.5) and kinematic bodies (2.6)
+            var all = new List<Scenario> { new CratesScenario(), new GroundScenario() };
             if (which == "all") return all;
             var list = new List<Scenario>();
             foreach (var part in which.Split(new[] { ',', ' ', '+' }, StringSplitOptions.RemoveEmptyEntries))
@@ -54,7 +58,7 @@ namespace RipNRage.Benchmark
             var mr = go.AddComponent<MeshRenderer>();
             mr.mesh = Mesh.CreateBox(Vector3.zero, size, uvScale);
             mr.texture = tex;
-            var col = go.AddComponent<BoxCollider>(); col.size = size; col.isStatic = true;
+            Track(RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(World, go.transform.position, Quaternion.identity, size, Layers.Walkable));
             return go;
         }
 
@@ -68,6 +72,30 @@ namespace RipNRage.Benchmark
             StaticBox(root, "WallS", new Vector3(0f, 0f, -h), new Vector3(size, wallHeight, 1f), GameAssets.GreenProto);
             StaticBox(root, "WallE", new Vector3(h, 0f, 0f), new Vector3(1f, wallHeight, size), GameAssets.GreenProto);
             StaticBox(root, "WallW", new Vector3(-h, 0f, 0f), new Vector3(1f, wallHeight, size), GameAssets.GreenProto);
+        }
+
+        public static World World => Application.Current.World;
+        private static readonly List<Entity> _spawned = new List<Entity>();
+        /// <summary>Remembers an entity the scenario created so <see cref="DestroyEntities"/> can remove it at teardown.</summary>
+        public static Entity Track(Entity e) { _spawned.Add(e); return e; }
+        public static void DestroyEntities()
+        {
+            var w = World;
+            w.Sync();
+            foreach (var e in _spawned) if (w.IsAlive(e)) w.DestroyEntity(e);
+            _spawned.Clear();
+            w.Sync();
+        }
+
+        /// <summary>A dynamic ECS body that renders through the ECS (mesh + texture).</summary>
+        public static Entity DynamicBody(Vector3 position, Quaternion rotation, ColliderShape shape, float mass, float friction, float restitution, Mesh mesh, Texture2D tex)
+        {
+            var w = World;
+            var e = Track(RipNRage.Engine.Ecs.Physics.PhysicsEntities.Dynamic(w, new LocalTransform { Position = position, Rotation = rotation, Scale = Vector3.one }, shape, mass));
+            var cmd = w.Commands;
+            cmd.Add(e, new RipNRage.Engine.Ecs.Physics.SurfaceMaterial { StaticFriction = friction, DynamicFriction = friction, Restitution = restitution, FrictionCombine = CombineMode.Average, RestitutionCombine = CombineMode.Maximum });
+            cmd.Add(e, new MeshRender { Mesh = RenderAssets.Meshes.Intern(mesh), Texture = RenderAssets.Textures.Intern(tex ?? Texture2D.White), Color = Color.white, UvScale = Vector2.one, CastsShadow = true, Layer = RenderLayer.World });
+            return e;
         }
 
         /// <summary>Deterministic pseudo-random numbers so runs compare.</summary>
@@ -84,13 +112,13 @@ namespace RipNRage.Benchmark
 
     // ==================================================================== 1. crates
 
-    /// <summary>1000+ one-metre crates dropped in a loose block so they tumble into a heap; an explosion every few seconds keeps them colliding.</summary>
+    /// <summary>1000+ one-metre ECS crates dropped in a loose block so they tumble into a heap; an explosion every few seconds keeps them colliding.</summary>
     public sealed class CratesScenario : Scenario
     {
         public override string Name => "crates";
-        public override string Description => "colliding rigid-body crates (box/box contacts, stacking, sleeping; a blast every 4 s)";
+        public override string Description => "colliding ECS rigid-body crates (box/box contacts, stacking, sleeping; a blast every 4 s)";
         public override int Target(BenchmarkConfig cfg) => cfg.Count(cfg.crates);
-        private readonly List<RigidBody> _bodies = new List<RigidBody>();
+        private readonly List<Entity> _bodies = new List<Entity>();
         private float _nextBlast = 4f;
         private BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(7);
         private int _sleeping;
@@ -107,16 +135,9 @@ namespace RipNRage.Benchmark
                 for (int x = 0; x < side && placed < n; x++)
                     for (int z = 0; z < side && placed < n; z++, placed++)
                     {
-                        var go = new GameObject("Crate" + placed);
-                        go.transform.SetParent(root.transform, false);
-                        go.transform.position = new Vector3((x - side * 0.5f + 0.5f) * spacing + _rng.Range(-0.1f, 0.1f), 1f + layer * spacing + _rng.Range(0f, 0.2f), (z - side * 0.5f + 0.5f) * spacing + _rng.Range(-0.1f, 0.1f));
-                        go.transform.rotation = Quaternion.Euler(0f, _rng.Range(0f, 90f), 0f);
-                        go.layer = Layers.Default;
-                        var mr = go.AddComponent<MeshRenderer>(); mr.mesh = mesh; mr.texture = (placed & 1) == 0 ? GameAssets.OrangeProto : GameAssets.PurpleProto;
-                        var col = go.AddComponent<BoxCollider>(); col.size = Vector3.one;
-                        var rb = go.AddComponent<RigidBody>();
-                        rb.mass = 12f; rb.friction = 0.55f; rb.restitution = 0.05f;
-                        _bodies.Add(rb);
+                        var pos = new Vector3((x - side * 0.5f + 0.5f) * spacing + _rng.Range(-0.1f, 0.1f), 1f + layer * spacing + _rng.Range(0f, 0.2f), (z - side * 0.5f + 0.5f) * spacing + _rng.Range(-0.1f, 0.1f));
+                        _bodies.Add(BenchmarkScene.DynamicBody(pos, Quaternion.Euler(0f, _rng.Range(0f, 90f), 0f), new ColliderShape { Kind = ShapeKind.Box, Size = Vector3.one },
+                            12f, 0.55f, 0.05f, mesh, (placed & 1) == 0 ? GameAssets.OrangeProto : GameAssets.PurpleProto));
                     }
         }
 
@@ -127,239 +148,75 @@ namespace RipNRage.Benchmark
             Vector3 at = new Vector3(_rng.Range(-6f, 6f), 0.5f, _rng.Range(-6f, 6f));
             Physics.AddExplosionForce(260f, at, 14f, 0.8f);
             _sleeping = 0;
-            foreach (var b in _bodies) if (b != null && !b.IsDestroyed && b.isSleeping) _sleeping++;
+            var w = BenchmarkScene.World;
+            foreach (var b in _bodies) if (w.IsAlive(b) && w.Has<Sleeping>(b)) _sleeping++;
         }
 
+        public override void Teardown() => _bodies.Clear();
         public override int Alive => _bodies.Count;
         public override string Extra => $"sleeping(at last blast) {_sleeping}";
     }
 
-    // ==================================================================== 2. ragdolls
+    // ==================================================================== 2. ground
 
-    /// <summary>500+ sprite entities sliced into ragdolls (box / capsule pieces on ball constraints, piece/piece and piece/floor contacts).</summary>
-    public sealed class RagdollsScenario : Scenario
-    {
-        public override string Name => "ragdolls";
-        public override string Description => "sprite destruction: billboard enemies sliced into jointed ragdoll pieces (a blast every 5 s)";
-        public override int Target(BenchmarkConfig cfg) => cfg.Count(cfg.ragdolls);
-        private readonly List<GameObject> _entities = new List<GameObject>();
-        private readonly List<SpriteRagdoll> _ragdolls = new List<SpriteRagdoll>();
-        private GameObject _root;
-        private Sprite _sprite;
-        private SpriteSkeleton _skeleton;
-        private int _sliced;
-        private float _nextBlast = 6f;
-        private readonly BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(11);
-        private int _parts;
-
-        public override void Build(GameObject root, BenchmarkConfig cfg)
-        {
-            _root = root;
-            int n = Target(cfg);
-            BenchmarkScene.Arena(root, 70f, 6f);
-            _skeleton = SkeletonLibrary.Get("rifleman") ?? DefaultSkeletons.Rifleman();
-            _sprite = new DirectionalSpriteSheet(GameAssets.RiflemanIdle, 1, 4, 1f).GetSprite(0, 0);
-            int side = Math.Max(2, (int)MathF.Ceiling(MathF.Sqrt(n)));
-            float spacing = 2.2f;
-            const float S = 2.25f;
-            for (int i = 0; i < n; i++)
-            {
-                int x = i % side, z = i / side;
-                var go = new GameObject("Grunt" + i);
-                go.transform.SetParent(root.transform, false);
-                go.transform.position = new Vector3((x - side * 0.5f + 0.5f) * spacing, 0.5f * S + 0.35f, (z - side * 0.5f + 0.5f) * spacing);
-                go.layer = Layers.Default;
-                var holder = new GameObject("Sprite"); holder.transform.SetParent(go.transform, false);
-                holder.transform.localPosition = new Vector3(0f, -0.35f, 0f);
-                holder.transform.localScale = Vector3.one * (S / 5.12f);
-                var sr = holder.AddComponent<SpriteRenderer>(); sr.sprite = _sprite; sr.billboard = true; sr.lit = true;
-                var capsule = go.AddComponent<CapsuleCollider>(); capsule.radius = 0.15f * S; capsule.height = S - 0.35f; capsule.center = new Vector3(0f, -0.175f, 0f);
-                var rb = go.AddComponent<RigidBody>(); rb.mass = 85f; rb.freezeRotation = true;
-                _entities.Add(go);
-            }
-        }
-
-        public override void Tick(float dt, float elapsed)
-        {
-            // slice the standing entities over the first second or so of the warm-up
-            if (_sliced < _entities.Count)
-            {
-                int perFrame = Math.Max(1, _entities.Count / 45);
-                for (int k = 0; k < perFrame && _sliced < _entities.Count; k++, _sliced++) Slice(_entities[_sliced]);
-            }
-            if (elapsed >= _nextBlast)
-            {
-                _nextBlast = elapsed + 5f;
-                Vector3 at = new Vector3(_rng.Range(-10f, 10f), 0.3f, _rng.Range(-10f, 10f));
-                Physics.AddExplosionForce(120f, at, 12f, 0.8f);
-            }
-            _parts = 0;
-            foreach (var r in _ragdolls) if (r != null && !r.IsDestroyed) _parts += r.parts.Count;
-        }
-
-        private void Slice(GameObject entity)
-        {
-            var sr = entity.GetComponentInChildren<SpriteRenderer>();
-            var options = RagdollOptions.Default;
-            options.lifetime = 100000f; options.fadeOut = false;
-            Vector3 dir = _rng.OnCircle(); dir.y = 0.3f;
-            options.impulse = dir.normalized * _rng.Range(30f, 90f);
-            options.impulsePoint = sr.transform.position + new Vector3(0f, _rng.Range(-0.5f, 0.8f), 0f);
-            var rag = SpriteRagdoll.Spawn(_skeleton, sr.sprite, sr.transform.position, sr.transform.lossyScale, options, sr);
-            if (rag != null) { rag.transform.SetParent(_root.transform, true); _ragdolls.Add(rag); }
-            GameObject.Destroy(entity);
-        }
-
-        public override int Alive { get { int n = 0; foreach (var r in _ragdolls) if (r != null && !r.IsDestroyed) n++; return n; } }
-        public override string Extra => $"pieces {_parts}";
-    }
-
-    // ==================================================================== 3. projectiles
-
-    /// <summary>1000+ swept kinematic projectiles in flight at once, fired from ring emitters into a field of pillars and walls.</summary>
-    public sealed class ProjectilesScenario : Scenario
-    {
-        public override string Name => "projectiles";
-        public override string Description => "swept KinematicBody projectiles (Stop mode, trigger volumes) flying through a pillar field";
-        public override int Target(BenchmarkConfig cfg) => cfg.Count(cfg.projectiles);
-        private GameObject _root;
-        private Mesh _mesh;
-        private int _target;
-        private float _spawnAcc;
-        private readonly BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(23);
-        public static int Alive_;
-        public static int Spawned, Hits;
-        private const float Speed = 40f, Life = 3.2f;
-
-        public override void Build(GameObject root, BenchmarkConfig cfg)
-        {
-            _root = root; _target = Target(cfg);
-            Alive_ = 0; Spawned = 0; Hits = 0;
-            BenchmarkScene.Arena(root, 160f, 10f);
-            var pr = new BenchmarkScene.Rng(5);
-            for (int i = 0; i < 80; i++)
-                BenchmarkScene.StaticBox(root, "Pillar" + i, new Vector3(pr.Range(-60f, 60f), 0f, pr.Range(-60f, 60f)), new Vector3(pr.Range(0.8f, 2.5f), pr.Range(2f, 7f), pr.Range(0.8f, 2.5f)), GameAssets.PurpleProto);
-            _mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.16f, 0.16f, 0.5f), 1f);
-        }
-
-        public override void Tick(float dt, float elapsed)
-        {
-            // keep the target number in the air: each projectile lives Life seconds (or less)
-            float rate = _target / Life * 1.15f;
-            _spawnAcc += rate * dt;
-            int n = (int)_spawnAcc;
-            if (Alive_ + n > _target + _target / 10) n = Math.Max(0, _target + _target / 10 - Alive_);
-            _spawnAcc -= (int)_spawnAcc;
-            for (int i = 0; i < n; i++) Fire();
-        }
-
-        private void Fire()
-        {
-            Vector3 from = _rng.OnCircle() * _rng.Range(55f, 70f); from.y = _rng.Range(1f, 6f);
-            Vector3 to = new Vector3(_rng.Range(-30f, 30f), _rng.Range(0.5f, 5f), _rng.Range(-30f, 30f));
-            var go = new GameObject("Bullet");
-            go.transform.SetParent(_root.transform, false);
-            go.transform.position = from;
-            go.transform.rotation = Quaternion.LookRotation((to - from).normalized, Vector3.up);
-            go.layer = Layers.Projectile;
-            var mr = go.AddComponent<MeshRenderer>(); mr.mesh = _mesh; mr.texture = GameAssets.RedProto; mr.castsShadow = false;
-            var col = go.AddComponent<BoxCollider>(); col.isTrigger = true; col.size = new Vector3(0.16f, 0.16f, 0.16f);
-            var body = go.AddComponent<KinematicBody>();
-            body.simulation = SimulationMode.PerFrame; body.motionMode = MotionMode.Stop; body.useGravity = false; body.terminalSpeed = 0f;
-            body.halfExtents = new Vector3(0.08f, 0.08f, 0.08f); body.useLayerMatrix = false;
-            body.collisionMask = ~(1 << Layers.Projectile); body.collideWithTriggers = false;
-            body.velocity = go.transform.forward * Speed;
-            var p = go.AddComponent<BenchProjectile>(); p.life = Life;
-            Spawned++;
-        }
-
-        public override int Alive => Alive_;
-        public override string Extra => $"fired {Spawned} hit {Hits}";
-    }
-
-    /// <summary>Flies until it hits something or its life runs out.</summary>
-    public sealed class BenchProjectile : Behaviour
-    {
-        public float life = 3f;
-        private KinematicBody _body;
-        private float _age;
-        private bool _dead;
-
-        protected override void Awake()
-        {
-            ProjectilesScenario.Alive_++;
-            _body = GetComponent<KinematicBody>();
-            if (_body != null) _body.Collided += OnCollided;
-        }
-
-        private void OnCollided(KinematicBody b, Contact c)
-        {
-            if (_dead) return;
-            ProjectilesScenario.Hits++;
-            Kill();
-        }
-
-        protected override void Update()
-        {
-            if (_dead) return;
-            _age += Time.deltaTime;
-            if (_age >= life) Kill();
-        }
-
-        private void Kill() { _dead = true; GameObject.Destroy(gameObject); }
-
-        protected override void OnDestroy() { if (_body != null) _body.Collided -= OnCollided; ProjectilesScenario.Alive_--; }
-    }
-
-    // ==================================================================== 4. ground
-
-    /// <summary>Fast force-driven characters (CharacterBody capsules) sprinting over a rough 30k-triangle mesh terrain.</summary>
+    /// <summary>
+    /// Fast ECS spheres rolling over a rough 30k-triangle mesh terrain, re-aimed every few seconds (the force-driven
+    /// CharacterBody runners this used to drive return with the ECS character body, step 2.6; numbers from before
+    /// layer 2's legacy removal are not comparable).
+    /// </summary>
     public sealed class GroundScenario : Scenario
     {
         public override string Name => "ground";
-        public override string Description => "fast CharacterBody runners (12–16 m/s) on a hilly MeshCollider terrain (~29k triangles)";
+        public override string Description => "fast ECS rolling spheres (12–16 m/s) on a hilly static mesh collider (~29k triangles)";
         public override int Target(BenchmarkConfig cfg) => cfg.Count(cfg.runners);
-        private readonly List<Runner> _runners = new List<Runner>();
+        private readonly List<Entity> _rollers = new List<Entity>();
+        private readonly List<float> _speeds = new List<float>();
+        private BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(31);
+        private float _nextAim = 0.5f;
         private int _grounded; private float _speed;
 
         public override void Build(GameObject root, BenchmarkConfig cfg)
         {
             int n = Target(cfg);
             BuildTerrain(root, 200f, 120);
-            var mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.6f, 1.6f, 0.6f), 1f);
-            var rng = new BenchmarkScene.Rng(31);
+            var mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.8f, 0.8f, 0.8f), 1f);
             int side = Math.Max(2, (int)MathF.Ceiling(MathF.Sqrt(n)));
             for (int i = 0; i < n; i++)
             {
                 int x = i % side, z = i / side;
-                var go = new GameObject("Runner" + i);
-                go.transform.SetParent(root.transform, false);
                 Vector3 p = new Vector3((x - side * 0.5f + 0.5f) * 4f, 0f, (z - side * 0.5f + 0.5f) * 4f);
-                p.y = TerrainHeight(p.x, p.z) + 1.6f;
-                go.transform.position = p;
-                go.layer = Layers.Default;
-                var mr = go.AddComponent<MeshRenderer>(); mr.mesh = mesh; mr.texture = GameAssets.RedProto;
-                var capsule = go.AddComponent<CapsuleCollider>(); capsule.radius = 0.3f; capsule.height = 1.6f;
-                var rb = go.AddComponent<RigidBody>(); rb.mass = 85f;
-                var motor = go.AddComponent<CharacterBody>(); motor.profile = CharacterProfileKind.Enemy;
-                motor.groundMask = 1 << Layers.Walkable;
-                var r = go.AddComponent<Runner>(); r.rng = new BenchmarkScene.Rng((uint)(100 + i)); r.speed = rng.Range(12f, 16f);
-                _runners.Add(r);
+                p.y = TerrainHeight(p.x, p.z) + 1.0f;
+                _rollers.Add(BenchmarkScene.DynamicBody(p, Quaternion.identity, new ColliderShape { Kind = ShapeKind.Sphere, Radius = 0.4f }, 20f, 0.6f, 0.1f, mesh, GameAssets.RedProto));
+                _speeds.Add(_rng.Range(12f, 16f));
             }
         }
 
         public override void Tick(float dt, float elapsed)
         {
+            var w = BenchmarkScene.World;
+            bool aim = elapsed >= _nextAim;
+            if (aim) _nextAim = elapsed + 2.5f;
             _grounded = 0; _speed = 0f; int n = 0;
-            foreach (var r in _runners)
+            for (int i = 0; i < _rollers.Count; i++)
             {
-                if (r == null || r.IsDestroyed || r.motor == null) continue;
-                n++; if (r.motor.isGrounded) _grounded++; _speed += r.motor.velocity.magnitude;
+                var e = _rollers[i];
+                if (!w.IsAlive(e) || !w.Has<BodyVelocity>(e)) continue;
+                ref var v = ref w.Get<BodyVelocity>(e);
+                var p = w.Get<LocalTransform>(e).Position;
+                if (aim)
+                {
+                    // head inward from the edge, otherwise a new random heading at this roller's speed
+                    Vector3 dir = MathF.Abs(p.x) > 85f || MathF.Abs(p.z) > 85f ? (-new Vector3(p.x, 0f, p.z)).normalized : _rng.OnCircle();
+                    v.Linear = new Vector3(dir.x * _speeds[i], v.Linear.y, dir.z * _speeds[i]);
+                }
+                n++; _speed += v.Linear.magnitude;
+                if (p.y - TerrainHeight(p.x, p.z) < 0.6f) _grounded++;
             }
             if (n > 0) _speed /= n;
         }
 
-        public override int Alive => _runners.Count;
+        public override void Teardown() { _rollers.Clear(); _speeds.Clear(); }
+        public override int Alive => _rollers.Count;
         public override string Extra => $"grounded {_grounded} avg speed {_speed:0.0} m/s";
 
         // ---- terrain: hills from a few sines plus a hash wobble, so every triangle is a different slope
@@ -398,34 +255,7 @@ namespace RipNRage.Benchmark
             go.transform.SetParent(root.transform, false);
             go.layer = Layers.Walkable;
             var mr = go.AddComponent<MeshRenderer>(); mr.mesh = mesh; mr.texture = GameAssets.Texture13;
-            var mc = go.AddComponent<MeshCollider>(); mc.mesh = mesh;
-        }
-    }
-
-    /// <summary>Steers a CharacterBody at a constant speed, turning now and then and away from the edge of the terrain.</summary>
-    public sealed class Runner : Behaviour
-    {
-        public BenchmarkScene.Rng rng;
-        public float speed = 14f;
-        public CharacterBody motor;
-        private Vector3 _dir = Vector3.forward;
-        private float _turnIn;
-
-        protected override void Awake()
-        {
-            motor = GetComponent<CharacterBody>();
-            _dir = rng.OnCircle(); _turnIn = rng.Range(1f, 3f);
-        }
-
-        protected override void Update()
-        {
-            if (motor == null) return;
-            _turnIn -= Time.deltaTime;
-            Vector3 p = transform.position;
-            if (MathF.Abs(p.x) > 88f || MathF.Abs(p.z) > 88f) { _dir = (-new Vector3(p.x, 0f, p.z)).normalized; _turnIn = rng.Range(2f, 4f); }
-            else if (_turnIn <= 0f) { _dir = Quaternion.Euler(0f, rng.Range(-70f, 70f), 0f) * _dir; _turnIn = rng.Range(1f, 3f); }
-            motor.Move(_dir * speed);
-            if (rng.Next01() < 0.002f) motor.Jump(6f);
+            BenchmarkScene.Track(RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticMesh(BenchmarkScene.World, PhysicsAssets.AddMesh("bench-terrain", verts, tris), LocalTransform.At(Vector3.zero), Layers.Walkable));
         }
     }
 }

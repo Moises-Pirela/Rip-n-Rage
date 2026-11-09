@@ -263,28 +263,19 @@ namespace RipNRage.Engine
             rigid.maxBiasVelocity = maxBiasVelocity; rigid.restitutionThreshold = restitutionThreshold;
             rigid.staticFriction = staticFriction; rigid.dynamicFriction = dynamicFriction; rigid.staticRestitution = staticRestitution;
             rigid.frictionCombine = frictionCombine; rigid.restitutionCombine = restitutionCombine;
-            RigidBody.DefaultMaxSpeed = maxBodySpeed; RigidBody.DefaultMaxAngularSpeed = maxBodyAngularSpeed;
-            RigidBody.DefaultSleepThreshold = sleepThreshold; RigidBody.DefaultSleepDelay = sleepDelay;
+            SolverBody.DefaultMaxSpeed = maxBodySpeed; SolverBody.DefaultMaxAngularSpeed = maxBodyAngularSpeed;
+            SolverBody.DefaultSleepThreshold = sleepThreshold; SolverBody.DefaultSleepDelay = sleepDelay;
             foreach (var b in Physics.World.Bodies)
             {
-                if (b.legacy != null && b.legacy.destroyed) continue;
                 b.maxSpeed = maxBodySpeed; b.maxAngularSpeed = maxBodyAngularSpeed; b.sleepThreshold = sleepThreshold; b.sleepDelay = sleepDelay;
             }
             Constraint.DefaultHertz = jointHertz; Constraint.DefaultDampingRatio = jointDamping;
             foreach (var j in Physics.World.Constraints) { j.hertz = jointHertz; j.dampingRatio = jointDamping; }
 
             MoveSettings.DefaultFloorMaxAngle = floorMaxAngle; MoveSettings.DefaultMaxSlides = maxSlides;
-            AI.NavMeshAgent.DefaultStepHeight = agentStepHeight; AI.NavMeshAgent.DefaultSlopeLimit = agentSlopeLimit;
-            CharacterController.DefaultPushMass = pushMass;
 
-            CharacterBody.PlayerProfile.CopyFrom(player);
-            CharacterBody.EnemyProfile.CopyFrom(enemy);
-            var scene = Scene.Current;
-            if (scene != null)
-            {
-                foreach (var c in scene.FindObjectsOfType<CharacterBody>()) c.ApplyProfile();
-                foreach (var a in scene.FindObjectsOfType<AI.NavMeshAgent>()) { a.stepHeight = agentStepHeight; a.slopeLimit = agentSlopeLimit; }
-            }
+            CharacterProfiles.Player.CopyFrom(player);
+            CharacterProfiles.Enemy.CopyFrom(enemy);
             Applied?.Invoke();
         }
 

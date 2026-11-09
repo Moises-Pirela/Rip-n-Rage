@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 
 // Ported from Assets/_Game/Scripts/Pickups/AmmoPickup.cs (trigger callback via ITriggerListener).
-public class AmmoPickup : MonoBehaviour, IPickup, ITriggerListener
+public class AmmoPickup : MonoBehaviour, IPickup
 {
     [SerializeField] public int ammoCount;
     [SerializeField] public AmmoType ammoType;
@@ -28,11 +28,11 @@ public class AmmoPickup : MonoBehaviour, IPickup, ITriggerListener
         Destroy(gameObject);
     }
 
-    public void OnTriggerEnter(Collider other)
+    public void OnTriggerEnter(GameObject other)
     {
-        if (other.gameObject.CompareTag("Player"))
+        if (other.CompareTag("Player"))
             OnPickup();
     }
 
-    public void OnTriggerExit(Collider other) { }
+    public void OnTriggerExit(GameObject other) { }
 }

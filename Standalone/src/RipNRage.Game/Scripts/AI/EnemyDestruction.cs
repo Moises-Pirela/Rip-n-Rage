@@ -8,22 +8,22 @@ public class EnemyDestruction : MonoBehaviour
     public float impulseScale = 1f;
     /// <summary>Seconds the ragdoll stays (0 = the skeleton's lifetime).</summary>
     public float lifetime = 0f;
-    public SpriteRagdoll Ragdoll { get; private set; }
 
     private AIState _state;
     private AnimationStateController _anim;
-    private NavMeshAgent _agent;
 
     protected override void Start()
     {
         _state = GetComponent<AIState>();
         _anim = GetComponent<AnimationStateController>();
-        _agent = GetComponent<NavMeshAgent>();
         if (_state != null) _state.OnDieCallback += OnDie;
     }
 
     private void OnDie()
     {
+        // ECS migration (layer 2): SpriteRagdoll was legacy rigid bodies + joints; it returns in layer 3 on ECS
+        // bodies and joints (2.5). Until then the enemy's own death timeline plays without a ragdoll.
+#if LEGACY_PHYSICS
         if (Ragdoll != null || _state == null || _state.data == null || string.IsNullOrEmpty(_state.data.skeleton)) return;
         var skeleton = SkeletonLibrary.Get(_state.data.skeleton);
         var sr = _anim != null ? _anim.SpriteRenderer : GetComponentInChildren<SpriteRenderer>();
@@ -46,5 +46,6 @@ public class EnemyDestruction : MonoBehaviour
         // the pieces are the corpse now
         sr.enabled = false;
         if (_anim != null) _anim.enabled = false;
+#endif
     }
 }

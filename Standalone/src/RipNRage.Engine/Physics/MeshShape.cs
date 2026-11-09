@@ -1,95 +1,51 @@
 using System;
 using System.Collections.Generic;
-using RipNRage.Engine.Graphics;
 
 namespace RipNRage.Engine
 {
     /// <summary>
-    /// Triangle-mesh collider for static geometry (a rendered <see cref="Mesh"/> or explicit triangles). The
-    /// triangles are baked to world space when the collider registers (call <see cref="RefreshBounds"/> after
-    /// moving it) and indexed by an AABB tree, so queries only look at the triangles near them.
-    ///
-    /// Triangles are double-sided surfaces with no thickness. For box sweeps every triangle becomes a small
-    /// <see cref="ConvexHull"/> with bevel planes (Quake 3's patch-collision trick: two faces, three side planes,
-    /// bevels), built on first use and cached; rigid bodies collide with the triangles through the same SAT as any
-    /// convex shape, with a bias towards the triangle's own normal so things sliding over a tessellated floor do
-    /// not catch on the edges between its triangles.
+    /// A static triangle mesh in world space, indexed by an AABB tree (the core of the old MeshCollider, as plain
+    /// data owned by a collider slot). Triangles are double-sided surfaces with no thickness. For box sweeps every
+    /// triangle becomes a small <see cref="ConvexHull"/> with bevel planes (Quake 3's patch-collision trick), built on
+    /// first use and cached; rigid bodies collide with the triangles through the same SAT as any convex shape.
     /// </summary>
-    public sealed class MeshCollider : Collider
+    public sealed class MeshShape
     {
-        /// <summary>The mesh to collide with (its vertices / triangles; the transform places it).</summary>
-        public Mesh mesh;
-
-        private Vector3[] _verts = Array.Empty<Vector3>();
-        private int[] _tris = Array.Empty<int>();
-        private Bounds _bounds;
-        private Bvh _bvh;
-        private ConvexHull[] _hulls = Array.Empty<ConvexHull>();
-        private bool _baked;
-
-        public MeshCollider() { isStatic = true; }
-
+        private readonly Vector3[] _verts;
+        private readonly int[] _tris;
+        private readonly Bvh _bvh;
+        private readonly ConvexHull[] _hulls;
+        public Bounds Bounds { get; }
         public int TriangleCount => _tris.Length / 3;
-        public override Bounds bounds { get { if (!_baked) Bake(); return _bounds; } }
 
-        /// <summary>Uses explicit triangles (local space) instead of a <see cref="Mesh"/>.</summary>
-        public void SetTriangles(Vector3[] vertices, int[] triangles)
+        /// <summary>Builds from world-space vertices and a triangle index list; degenerate / out-of-range triangles are dropped.</summary>
+        public MeshShape(Vector3[] worldVertices, int[] triangles)
         {
-            mesh = null;
-            _source = vertices; _sourceTris = triangles;
-            _baked = false;
-            RefreshBounds();
-        }
-
-        private Vector3[] _source;
-        private int[] _sourceTris;
-
-        protected override void Awake()
-        {
-            Bake();
-            base.Awake();
-        }
-
-        public override void RefreshBounds()
-        {
-            Bake();
-            base.RefreshBounds();
-        }
-
-        /// <summary>Transforms the triangles to world space and (re)builds the tree.</summary>
-        public void Bake()
-        {
-            Vector3[] src = mesh != null ? mesh.vertices : _source;
-            int[] tris = mesh != null ? mesh.triangles : _sourceTris;
-            _baked = true;
-            if (src == null || tris == null || tris.Length < 3)
-            {
-                _verts = Array.Empty<Vector3>(); _tris = Array.Empty<int>(); _hulls = Array.Empty<ConvexHull>(); _bvh = null;
-                _bounds = new Bounds(transform.position, transform.position);
-                return;
-            }
-            Matrix4x4 m = transform.localToWorldMatrix;
-            _verts = new Vector3[src.Length];
+            _verts = worldVertices ?? Array.Empty<Vector3>();
+            var keep = new List<int>(triangles?.Length ?? 0);
             Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue), max = -min;
-            for (int i = 0; i < src.Length; i++)
-            {
-                Vector3 w = m.MultiplyPoint3x4(src[i]);
-                _verts[i] = w;
-                min = Vector3.Min(min, w); max = Vector3.Max(max, w);
-            }
-            // drop degenerate triangles
-            var keep = new List<int>(tris.Length);
-            for (int t = 0; t + 2 < tris.Length; t += 3)
-            {
-                int a = tris[t], b = tris[t + 1], c = tris[t + 2];
-                if (a < 0 || b < 0 || c < 0 || a >= _verts.Length || b >= _verts.Length || c >= _verts.Length) continue;
-                if (Vector3.Cross(_verts[b] - _verts[a], _verts[c] - _verts[a]).sqrMagnitude < 1E-12f) continue;
-                keep.Add(a); keep.Add(b); keep.Add(c);
-            }
+            if (triangles != null)
+                for (int t = 0; t + 2 < triangles.Length; t += 3)
+                {
+                    int a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
+                    if (a < 0 || b < 0 || c < 0 || a >= _verts.Length || b >= _verts.Length || c >= _verts.Length) continue;
+                    if (Vector3.Cross(_verts[b] - _verts[a], _verts[c] - _verts[a]).sqrMagnitude < 1E-12f) continue;
+                    keep.Add(a); keep.Add(b); keep.Add(c);
+                    min = Vector3.Min(min, Vector3.Min(_verts[a], Vector3.Min(_verts[b], _verts[c])));
+                    max = Vector3.Max(max, Vector3.Max(_verts[a], Vector3.Max(_verts[b], _verts[c])));
+                }
             _tris = keep.ToArray();
             _hulls = new ConvexHull[_tris.Length / 3];
-            _bounds = _tris.Length > 0 ? new Bounds(min, max) : new Bounds(transform.position, transform.position);
+            Bounds = _tris.Length > 0 ? new Bounds(min, max) : default;
             _bvh = _tris.Length > 0 ? new Bvh(_verts, _tris) : null;
+        }
+
+        /// <summary>World-space copy of a local mesh placed by a transform.</summary>
+        public static MeshShape FromLocal(Vector3[] localVertices, int[] triangles, Matrix4x4 localToWorld)
+        {
+            var w = new Vector3[localVertices?.Length ?? 0];
+            for (int i = 0; i < w.Length; i++) w[i] = localToWorld.MultiplyPoint3x4(localVertices[i]);
+            return new MeshShape(w, triangles);
         }
 
         public void GetTriangle(int index, out Vector3 a, out Vector3 b, out Vector3 c)
@@ -98,7 +54,7 @@ namespace RipNRage.Engine
             a = _verts[_tris[t]]; b = _verts[_tris[t + 1]]; c = _verts[_tris[t + 2]];
         }
 
-        /// <summary>Bevelled hull of one triangle for box sweeps (built on first use).</summary>
+        /// <summary>Bevelled hull of one triangle for box sweeps (built on first use; a racing first build just wastes one allocation).</summary>
         public ConvexHull TriangleHull(int index)
         {
             var h = _hulls[index];
@@ -110,27 +66,21 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Indices of the triangles whose bounds touch <paramref name="region"/>.</summary>
-        public void QueryTriangles(Bounds region, List<int> results)
-        {
-            if (!_baked) Bake();
-            _bvh?.Query(region, results);
-        }
+        public void QueryTriangles(Bounds region, List<int> results) => _bvh?.Query(region, results);
 
-        public override bool Raycast(Ray ray, float maxDistance, out RaycastHit hit)
+        public bool Raycast(Ray ray, float maxDistance, out float distance, out Vector3 normal)
         {
-            hit = default;
-            if (!_baked) Bake();
+            distance = 0f; normal = Vector3.up;
             if (_bvh == null) return false;
             float best = maxDistance; int bestTri = -1; Vector3 bestN = Vector3.up;
             _bvh.Raycast(ray, ref best, ref bestTri, ref bestN);
             if (bestTri < 0) return false;
-            hit = new RaycastHit { collider = this, point = ray.GetPoint(best), normal = bestN, distance = best };
+            distance = best; normal = bestN;
             return true;
         }
 
-        public override Vector3 ClosestPoint(Vector3 p)
+        public Vector3 ClosestPoint(Vector3 p)
         {
-            if (!_baked) Bake();
             if (_bvh == null) return p;
             float best = float.MaxValue; Vector3 bestPoint = p;
             _bvh.Closest(p, ref best, ref bestPoint);
@@ -252,7 +202,7 @@ namespace RipNRage.Engine
             private void Raycast(int i, Ray ray, ref float best, ref int bestTri, ref Vector3 bestNormal)
             {
                 var n = _nodes[i];
-                if (!Physics.RayAabb(ray, n.bounds, best, null, out var box) || box.distance > best) return;
+                if (!Physics.RayAabb(ray, n.bounds, best, out float boxDist, out _) || boxDist > best) return;
                 if (n.count > 0)
                 {
                     for (int k = n.start; k < n.start + n.count; k++)
@@ -266,11 +216,11 @@ namespace RipNRage.Engine
                     return;
                 }
                 // nearer child first so the far one can be pruned
-                bool hitL = Physics.RayAabb(ray, _nodes[n.left].bounds, best, null, out var l);
-                bool hitR = Physics.RayAabb(ray, _nodes[n.right].bounds, best, null, out var r);
+                bool hitL = Physics.RayAabb(ray, _nodes[n.left].bounds, best, out float ld, out _);
+                bool hitR = Physics.RayAabb(ray, _nodes[n.right].bounds, best, out float rd, out _);
                 if (hitL && hitR)
                 {
-                    if (l.distance <= r.distance) { Raycast(n.left, ray, ref best, ref bestTri, ref bestNormal); Raycast(n.right, ray, ref best, ref bestTri, ref bestNormal); }
+                    if (ld <= rd) { Raycast(n.left, ray, ref best, ref bestTri, ref bestNormal); Raycast(n.right, ray, ref best, ref bestTri, ref bestNormal); }
                     else { Raycast(n.right, ray, ref best, ref bestTri, ref bestNormal); Raycast(n.left, ray, ref best, ref bestTri, ref bestNormal); }
                 }
                 else if (hitL) Raycast(n.left, ray, ref best, ref bestTri, ref bestNormal);

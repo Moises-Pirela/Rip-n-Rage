@@ -553,7 +553,7 @@ namespace RipNRage.Engine
             foreach (var b in _pendingWake) if (b.sleeping) b.WakeUp();
             _pendingWake.Clear();
             foreach (var m in _manifolds) Report(m);
-            foreach (var b in _awake) b.RaiseContacts();
+            // collision reports: PhysicsWriteBackSystem posts CollisionEvents for entities tagged ReportCollisions
             Profiler.End();
         }
 
@@ -657,6 +657,7 @@ namespace RipNRage.Engine
         {
             var candidates = w.candidates;
             candidates.Clear();
+            if (a.collider != null && a.collider.isTrigger) return; // a trigger body senses (TriggerSystem); it never makes contacts
             Bounds region = a.worldBounds.Expanded(ContactGeneration.ContactMargin + 0.01f);
             world.QueryBoundsConcurrent(region, a.Filter, candidates);
             float wake = a.sleepThreshold * a.sleepThreshold * 4f;
@@ -665,7 +666,6 @@ namespace RipNRage.Engine
             {
                 SolverBody b = s.body;
                 if (b == a) continue;
-                var c = s.collider;
                 if (b != null)
                 {
                     if (!b.live) continue;
@@ -678,8 +678,9 @@ namespace RipNRage.Engine
                     }
                 }
                 long key = ((long)a.id << 32) ^ (long)s.uid;
-                if (c is MeshCollider mesh)
+                if (s.mesh != null)
                 {
+                    var mesh = s.mesh;
                     var tris = w.tris;
                     tris.Clear();
                     mesh.QueryTriangles(region, tris);
@@ -713,26 +714,8 @@ namespace RipNRage.Engine
             return ContactGeneration.ConvexVsConvex(a.shape, b.shape, scratch);
         }
 
-        private static bool IsRoundedCollider(Collider c) =>
-            c is SphereCollider || c is CapsuleCollider || (c is CharacterController cc && cc.controllerShape == ControllerShape.Capsule);
-
-        /// <summary>Contacts between a rigid body and a collider without a body (level geometry, props, movers) — legacy or ECS.</summary>
-        private static bool CollideStatic(SolverBody a, ColliderTable.Slot s, Worker w)
-        {
-            var c = s.collider;
-            if (c == null) return CollideEcsStatic(a, s, w);
-            if (IsRoundedCollider(c))
-            {
-                CollisionShape sc = c.shape;
-                if (a.isRounded) return ContactGeneration.RoundedVsRounded(a.WorldShape, in sc, w.scratch);
-                bool hit = ContactGeneration.RoundedVsConvex(in sc, a.shape, w.scratch);
-                if (hit) w.scratch.normal = -w.scratch.normal;
-                return hit;
-            }
-            ConvexShape other = ShapeOf(c, w);
-            if (a.isRounded) return ContactGeneration.RoundedVsConvex(a.WorldShape, other, w.scratch);
-            return ContactGeneration.ConvexVsConvex(a.shape, other, w.scratch);
-        }
+        /// <summary>Contacts between a rigid body and a collider without a body (level geometry, props).</summary>
+        private static bool CollideStatic(SolverBody a, ColliderTable.Slot s, Worker w) => CollideEcsStatic(a, s, w);
 
         /// <summary>Contacts between a rigid body and an ECS collider without a body (baked world shape / polytope).</summary>
         private static bool CollideEcsStatic(SolverBody a, ColliderTable.Slot s, Worker w)
@@ -751,30 +734,12 @@ namespace RipNRage.Engine
             return ContactGeneration.ConvexVsConvex(a.shape, other, w.scratch);
         }
 
-        /// <summary>World polytope of a collider without a rigid body, built into the worker's scratch (no shared caches are touched from worker threads).</summary>
-        private static ConvexShape ShapeOf(Collider c, Worker w)
-        {
-            switch (c)
-            {
-                case ConvexCollider hull: return hull.Shape; // built once per brush; a racing first build just wastes one allocation
-                default:
-                {
-                    CollisionShape s = c.shape;
-                    if (s.isPolytope && s.polytope != null) return s.polytope;
-                    if (s.type == ShapeType.Box) { w.aabb.SetBox(s.center, s.halfExtents, s.rotation); return w.aabb; }
-                    Bounds b = c.bounds;
-                    w.aabb.SetBox(b.center, b.extents, Quaternion.identity);
-                    return w.aabb;
-                }
-            }
-        }
-
         private void Commit(Worker w, SolverBody a, SolverBody b, ColliderTable.Slot s, long key)
         {
             var scratch = w.scratch;
             if (scratch.count == 0) return;
             var m = NewManifold(w);
-            m.bodyA = a; m.bodyB = b; m.colliderA = a.stepCollider; m.colliderB = s.collider;
+            m.bodyA = a; m.bodyB = b; m.colliderA = a.collider; m.colliderB = s;
             m.normal = scratch.normal; m.count = scratch.count;
             for (int i = 0; i < m.count; i++) m.points[i] = scratch.points[i];
             m.key = key;
@@ -788,17 +753,15 @@ namespace RipNRage.Engine
             w.manifolds.Add(m);
         }
 
-        /// <summary>Surface values of a collider slot: its material (legacy object or ECS component), else its body's values, else the solver's defaults.</summary>
+        /// <summary>Surface values of a collider slot: its SurfaceMaterial, else its body's values, else the solver's defaults.</summary>
         private void Surface(ColliderTable.Slot s, SolverBody body, out float mus, out float mud, out float rest, out CombineMode fc, out CombineMode rc)
         {
-            if (s != null && s.collider == null && s.hasEcsMaterial)
+            if (s != null && s.hasEcsMaterial)
             {
                 var em = s.ecsMaterial;
                 mus = em.StaticFriction; mud = em.DynamicFriction; rest = em.Restitution; fc = em.FrictionCombine; rc = em.RestitutionCombine;
                 return;
             }
-            var mat = s?.collider != null ? s.collider.material : null;
-            if (mat != null) { mus = mat.staticFriction; mud = mat.dynamicFriction; rest = mat.restitution; fc = mat.frictionCombine; rc = mat.restitutionCombine; return; }
             if (body != null) { mus = body.staticFriction; mud = body.friction; rest = body.restitution; fc = frictionCombine; rc = restitutionCombine; return; }
             mus = staticFriction; mud = dynamicFriction; rest = staticRestitution; fc = frictionCombine; rc = restitutionCombine;
         }
@@ -809,8 +772,6 @@ namespace RipNRage.Engine
         public float ccdSkin = 0.003f;
         public int CcdSweepsThisStep { get; private set; }
 
-        private static bool StaticOnly(Collider c) { var rb = c.broadphase?.body; return rb == null || rb.isKinematic || rb.isSleeping; }
-        private static readonly Func<Collider, bool> StaticOnlyPredicate = StaticOnly;
 
         /// <summary>
         /// Continuous collision for one substep: a body that would move more than half its smallest extent is swept
@@ -830,7 +791,7 @@ namespace RipNRage.Engine
             float fraction = 1f;
             QueryFilter bodyFilter = b.Filter;
             QueryFilter filter = bodyFilter;
-            filter.predicate = StaticOnlyPredicate;
+            filter.staticOnly = true;
             if (world.Sweep(in shape, motion, filter, ccdSkin, out ShapeHit hit)) fraction = MathF.Max(0f, hit.fraction);
             if (b.collisionDetection == CollisionDetectionMode.ContinuousDynamic)
             {
@@ -839,7 +800,7 @@ namespace RipNRage.Engine
                 {
                     var o = bodies[i];
                     if (o == b || o.isKinematic || o.sleeping || !o.live) continue;
-                    if (o.stepCollider != null && !bodyFilter.Accepts(o.stepCollider)) continue;
+                    if (o.collider != null && !bodyFilter.Accepts(o.collider)) continue;
                     Vector3 otherMotion = o.linearVelocity * h;
                     if (!o.worldBounds.Swept(otherMotion).Intersects(shape.bounds.Swept(motion))) continue;
                     CollisionShape os = o.WorldShape;
@@ -858,8 +819,8 @@ namespace RipNRage.Engine
             for (int i = 0; i < m.count; i++)
             {
                 ref ManifoldPoint p = ref m.points[i];
-                a.contacts.Add(new RigidContact { other = m.colliderB, otherBody = b?.legacy, point = p.point, normal = m.normal, impulse = p.normalImpulse, approachSpeed = p.relativeVelocity });
-                if (b != null) b.contacts.Add(new RigidContact { other = m.colliderA, otherBody = a.legacy, point = p.point, normal = -m.normal, impulse = p.normalImpulse, approachSpeed = p.relativeVelocity });
+                a.contacts.Add(new RigidContact { other = m.colliderB != null ? m.colliderB.entity : Ecs.Entity.Null, otherBody = b, point = p.point, normal = m.normal, impulse = p.normalImpulse, approachSpeed = p.relativeVelocity });
+                if (b != null) b.contacts.Add(new RigidContact { other = m.colliderA != null ? m.colliderA.entity : Ecs.Entity.Null, otherBody = a, point = p.point, normal = -m.normal, impulse = p.normalImpulse, approachSpeed = p.relativeVelocity });
             }
         }
     }

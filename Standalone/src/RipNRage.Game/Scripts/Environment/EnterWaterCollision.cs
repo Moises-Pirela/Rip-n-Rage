@@ -4,10 +4,10 @@ using System.Collections.Generic;
 
 // Ported from Assets/_Game/Scripts/Environment/EnterWaterCollision.cs.
 // RenderSettings.skybox swapping became toggling the engine's procedural sky.
-public class EnterWaterCollision : MonoBehaviour, ITriggerListener
+public class EnterWaterCollision : MonoBehaviour
 {
     private bool startingSky;
-    public void OnTriggerEnter(Collider other)
+    public void OnTriggerEnter(GameObject other)
     {
         if (!other.CompareTag("MainCamera")) return;
         
@@ -16,7 +16,7 @@ public class EnterWaterCollision : MonoBehaviour, ITriggerListener
         RenderSettings.drawSky = false;
     }
 
-    public void OnTriggerExit(Collider other)
+    public void OnTriggerExit(GameObject other)
     {
         if (!other.CompareTag("MainCamera")) return;
         

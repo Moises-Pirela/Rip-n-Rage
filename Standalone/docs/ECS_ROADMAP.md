@@ -21,6 +21,7 @@ then start at the first unchecked layer.
 | AI | **Keep the behavior tree** (shared tree data + per-entity runtime state component) |
 | Physics | **Convert** to components / systems (not a handle wrapper) |
 | Migration | **Big bang**, but done in **layers, foundational engine systems first, then gameplay**, stopping for review after each layer |
+| Priority (set during layer 2) | **The ECS comes first; the game may be broken while we refactor.** Legacy code is removed as soon as its ECS replacement exists — or before, if nothing replaces it yet. Gameplay that depended on it goes inert until its layer ports it. Don't spend effort keeping legacy gameplay working |
 | Editors | Editor integration of configs comes **later** (after gameplay) |
 | Assets in components | **Handles, not references**: `AssetHandle<T>` into an `AssetRegistry<T>` (`Ecs/Assets.cs`); registries keep the name a config baked from (`NameOf`) so handles serialise back to config data. Render registries: `RenderAssets`. Physics collider shapes reuse the same pattern |
 
@@ -133,9 +134,41 @@ Convert, keeping the tuned solver behaviour:
         simulated yet** (2.6); ECS colliders are still invisible to legacy raycasts / sweeps / kinematic movers and
         CCD (public query API converts in 2.7); no per-frame interpolation for ECS bodies. `--ecs-demo` drops a
         4-crate ECS stack onto the dock's legacy geometry.
+  - [x] **2.L Legacy physics removed** (ahead of 2.5–2.7, by request). Deleted: `Collider` and every subclass
+        (`Box`/`Sphere`/`Capsule`/`Mesh`/`ConvexCollider`, `CharacterController`), `RigidBody`, `CharacterBody`,
+        `KinematicBody`, every `Joint` behaviour, `NavMeshAgent`, `ITriggerListener`/`ITriggerStayListener`,
+        `SpriteRagdoll`, the mover / kinematic / trigger passes in `PhysicsWorld`. Collider slots are ECS-only;
+        their algorithms moved, not lost: per-shape raycasts → `PhysicsWorld.RaycastSlot`; sweeps / penetration /
+        overlap on slots; mesh BVH + triangle hulls → `Physics/MeshShape.cs`; move-and-slide (`KinematicSolver`) on
+        slots. Queries return `Entity` (`RaycastHit.entity`, `ShapeHit.entity`, `Contact.entity`,
+        `MoveResult.ground`, `OverlapSphere` → `List<Entity>`); `QueryFilter.self` is a `PhysicsProxy`,
+        `ignore` an `Entity`. New ECS replacements: static **mesh** colliders (`TriangleMesh` assets,
+        `PhysicsAssets.AddMesh`), static box / convex hulls baked at registration, **`TriggerSystem`**
+        (`TriggerEnterEvent` / `TriggerExitEvent`), opt-in **`CollisionEvent`**s (`[Sparse] ReportCollisions`),
+        and `Ecs.Physics.PhysicsEntities` helpers (`StaticBox` / `StaticConvex` / `StaticMesh` / `Dynamic`).
+        `CharacterProfile` (tunables) survives in `Physics/CharacterProfile.cs` for 2.6.
+      - **Bug found and fixed**: since 2.4, ECS bodies never collided *with each other*. `ReadTransform` → `Touch`
+        bucketed a body's slot before `InsertEcs`, which then skipped it, so it never joined the dynamic list.
+        Slots now carry an `inserted` flag; a body-vs-body stacking test guards it.
+      - **Game (inert until ported)**: level brushes, the dock mesh, sand, water, lamp posts, crates and
+        `prop_physics` are ECS entities (dynamic props render through the ECS). Code that drove deleted types is
+        fenced as `#if LEGACY_PHYSICS` (never defined), kept as the reference for its port: player movement and
+        fall/respawn (`FPSController`, `FallRespawn` → layer 4), enemy steering (`AIAgent`, BT nodes → layer 6),
+        ragdolls (`EnemyDestruction`, skeleton-editor preview → layer 3), weapon move spread (→ layer 5).
+        Inert without a fence: projectiles move by transform and hit nothing (layer 5); trigger callbacks
+        (pickups, water, checkpoints, vision) are uncalled (layers 6–8); hit → `EntityState` lookups resolve to
+        nothing because characters aren't entities yet (layers 4–6); surfaces resolve to Default (layer 7).
+        Jointed level props (`phys_*`, `joint_*`) spawn loose / are skipped with a warning (2.5).
+        `PhysicsPlayground` was deleted (recreate as ECS prefabs in 2.5).
+      - **Gates changed**: `--script strafe` now **passes vacuously** (the player cannot move or fall), so it says
+        nothing until layer 4. Bench scenarios **ragdolls** and **projectiles** are gone until 2.5 / 2.6; **crates**
+        runs on ECS bodies; **ground** is ECS spheres rolling on an ECS mesh terrain (the `CharacterBody` runners
+        are gone). New ECS baseline (`--threads 1`, 3 runs): crates 0.66–1.34 ms/step, ground 0.03–0.07 ms/step.
+        Not comparable to the legacy numbers: different bodies, render path and awake counts.
   - [ ] 2.5 Joints as components; constraints keyed by table index.
-  - [ ] 2.6 `CharacterBody` / `KinematicBody` components and systems; triggers.
-  - [ ] 2.7 Contact / trigger events as `IPostProcessEvent`s; query API returns `Entity` for ECS hits.
+  - [ ] 2.6 `CharacterBody` / `KinematicBody` components and systems (triggers already done in 2.L).
+  - [ ] 2.7 ~~Contact / trigger events; query API returns `Entity`~~ — done in 2.L; what remains: per-frame
+        interpolation for ECS bodies, dynamic mesh colliders, and caching hulls of moving boxes (`HullOf` allocates).
   - [ ] 2.8 ECS physics demo prefabs, full gate run, strafe investigation, roadmap update.
 - **Baselines (2.0, `37794e8`, Linux/WSL, 16 threads, `--no-render`)** — physics ms/step avg:
   crates 1.19 (PASS), ragdolls 11.21 (**FAIL at baseline**: 25.4 ms frame, over budget — pre-existing on this

@@ -84,7 +84,7 @@ namespace RipNRage.VfxEditor
             fmr.mesh = Mesh.CreatePlane(Vector3.zero, 40f, 40f, 0.25f);
             fmr.texture = ProceduralTextures.WoodPlanks();
             fmr.occluder = true;
-            var fcol = floor.AddComponent<BoxCollider>(); fcol.size = new Vector3(40f, 1f, 40f); fcol.center = new Vector3(0f, -0.5f, 0f); fcol.isStatic = true;
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, floor.transform.position + new Vector3(0f, -0.5f, 0f), Quaternion.identity, new Vector3(40f, 1f, 40f), Layers.Walkable);
             floor.AddComponent<SurfaceMaterial>().surface = Surfaces.Wood;
 
             var wall = new GameObject("Wall");
@@ -94,7 +94,7 @@ namespace RipNRage.VfxEditor
             wmr.texture = GameAssets.Texture13;
             wmr.color = new Color(0.8f, 0.8f, 0.82f, 1f);
             wmr.occluder = true;
-            var wcol = wall.AddComponent<BoxCollider>(); wcol.center = new Vector3(0f, 2f, 4.5f); wcol.size = new Vector3(14f, 4f, 1f); wcol.isStatic = true;
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, wall.transform.position + new Vector3(0f, 2f, 4.5f), Quaternion.identity, new Vector3(14f, 4f, 1f), Layers.Walkable);
             wall.AddComponent<SurfaceMaterial>().surface = Surfaces.Concrete;
 
             var crate = new GameObject("Crate");
@@ -103,7 +103,7 @@ namespace RipNRage.VfxEditor
             var cmr = crate.AddComponent<MeshRenderer>();
             cmr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * 1.2f, 1f / 1.2f);
             cmr.texture = GameAssets.OrangeProto;
-            var ccol = crate.AddComponent<BoxCollider>(); ccol.size = Vector3.one * 1.2f; ccol.isStatic = true;
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, crate.transform.position + Vector3.zero, Quaternion.identity, Vector3.one * 1.2f, Layers.Walkable);
             crate.AddComponent<SurfaceMaterial>().surface = Surfaces.Wood;
 
             var post = new GameObject("Post");
@@ -112,7 +112,7 @@ namespace RipNRage.VfxEditor
             var pmr = post.AddComponent<MeshRenderer>();
             pmr.mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.3f, 2.4f, 0.3f), 1f);
             pmr.texture = GameAssets.Texture13; pmr.color = new Color(0.35f, 0.35f, 0.38f, 1f);
-            var pcol = post.AddComponent<BoxCollider>(); pcol.size = new Vector3(0.3f, 2.4f, 0.3f); pcol.isStatic = true;
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, post.transform.position + Vector3.zero, Quaternion.identity, new Vector3(0.3f, 2.4f, 0.3f), Layers.Walkable);
             post.AddComponent<SurfaceMaterial>().surface = Surfaces.Metal;
 
             // dummy "projectile" that flies a circle for trail-type (open ended) effects

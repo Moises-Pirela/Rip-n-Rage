@@ -9,7 +9,7 @@ using System.Collections;
 // Current returns null once the player object was destroyed (level restart), and the per-frame
 // Debug.Log calls in Update were removed (they built two strings every frame).
 [System.Serializable]
-public class PlayerState : EntityState, ITriggerListener
+public class PlayerState : EntityState
 {
     public const float MaxHealthValue = 100f;
     public const float MaxArmorValue = 100f;
@@ -199,7 +199,7 @@ public class PlayerState : EntityState, ITriggerListener
         ResetRageState = StartCoroutine(ResetRageState_Coroutine(duration));
     }
 
-    public void OnTriggerEnter(Collider other)
+    public void OnTriggerEnter(GameObject other)
     {
         if (!other.CompareTag("Checkpoint")) return;
         
@@ -217,5 +217,5 @@ public class PlayerState : EntityState, ITriggerListener
         SaveManager.Save("Save1", SaveData.Current);
     }
 
-    public void OnTriggerExit(Collider other) { }
+    public void OnTriggerExit(GameObject other) { }
 }
