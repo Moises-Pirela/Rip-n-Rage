@@ -34,6 +34,20 @@ namespace RipNRage.Engine
             public int uid;
             /// <summary>The rigid body moving this collider (null: static / kinematic mover / trigger).</summary>
             public SolverBody body;
+            // ---- ECS collider state (used when collider == null; the sync system fills it) ----
+            /// <summary>Local-space shape description of an ECS collider.</summary>
+            public Ecs.Physics.ColliderShape ecsShape;
+            public Ecs.Physics.SurfaceMaterial ecsMaterial; public bool hasEcsMaterial;
+            public int layer; public bool isTrigger;
+            /// <summary>ECS: current world-space shape (sphere / capsule / box; static convex uses <see cref="polytope"/>).</summary>
+            public CollisionShape worldShape;
+            /// <summary>ECS static box / convex: baked world polytope for the narrow phase.</summary>
+            public ConvexShape polytope;
+            /// <summary>ECS: current tight world bounds (legacy slots read the collider instead).</summary>
+            public Bounds ecsBounds;
+
+            /// <summary>Tight world bounds whoever the owner is.</summary>
+            public Bounds CurrentBounds() => collider != null ? collider.bounds : ecsBounds;
             public bool alive;
             /// <summary>Legacy owner (adapter; null once ECS colliders register).</summary>
             public Collider collider;
@@ -52,6 +66,8 @@ namespace RipNRage.Engine
             {
                 bounds = tight = default; isStatic = large = bucketed = false; stamp = 0;
                 x0 = y0 = z0 = x1 = y1 = z1 = 0;
+                ecsShape = default; ecsMaterial = default; hasEcsMaterial = false;
+                layer = 0; isTrigger = false; worldShape = default; polytope = null; ecsBounds = default;
             }
         }
 

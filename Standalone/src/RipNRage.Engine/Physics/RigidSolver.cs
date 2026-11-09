@@ -115,7 +115,7 @@ namespace RipNRage.Engine
         private sealed class Worker
         {
             public int index;
-            public readonly List<Collider> candidates = new List<Collider>(32);
+            public readonly List<ColliderTable.Slot> candidates = new List<ColliderTable.Slot>(32);
             public readonly List<int> tris = new List<int>(32);
             public readonly ConvexShape triangle = ConvexShape.CreateTriangle();
             public readonly ConvexShape aabb = ConvexShape.CreateBox();
@@ -661,10 +661,11 @@ namespace RipNRage.Engine
             world.QueryBoundsConcurrent(region, a.Filter, candidates);
             float wake = a.sleepThreshold * a.sleepThreshold * 4f;
             bool aMoving = a.linearVelocity.sqrMagnitude > wake || a.angularVelocity.sqrMagnitude > wake;
-            foreach (var c in candidates)
+            foreach (var s in candidates)
             {
-                SolverBody b = c.broadphase?.body;
+                SolverBody b = s.body;
                 if (b == a) continue;
+                var c = s.collider;
                 if (b != null)
                 {
                     if (!b.live) continue;
@@ -676,7 +677,7 @@ namespace RipNRage.Engine
                         else if (a.id > b.id) continue; // the other side generates this pair
                     }
                 }
-                long key = ((long)a.id << 32) ^ (long)c.broadphase.uid;
+                long key = ((long)a.id << 32) ^ (long)s.uid;
                 if (c is MeshCollider mesh)
                 {
                     var tris = w.tris;
@@ -689,12 +690,12 @@ namespace RipNRage.Engine
                         bool hit = a.isRounded
                             ? ContactGeneration.RoundedVsConvex(a.WorldShape, w.triangle, w.scratch)
                             : ContactGeneration.ConvexVsConvex(a.shape, w.triangle, w.scratch, w.triangle.triangleNormal);
-                        if (hit) Commit(w, a, null, c, key ^ ((long)(t + 1) << 20));
+                        if (hit) Commit(w, a, null, s, key ^ ((long)(t + 1) << 20));
                     }
                     continue;
                 }
-                bool contact = b != null ? CollideBodies(a, b, w.scratch) : CollideStatic(a, c, w);
-                if (contact) Commit(w, a, b, c, key);
+                bool contact = b != null ? CollideBodies(a, b, w.scratch) : CollideStatic(a, s, w);
+                if (contact) Commit(w, a, b, s, key);
             }
         }
 
@@ -715,9 +716,11 @@ namespace RipNRage.Engine
         private static bool IsRoundedCollider(Collider c) =>
             c is SphereCollider || c is CapsuleCollider || (c is CharacterController cc && cc.controllerShape == ControllerShape.Capsule);
 
-        /// <summary>Contacts between a rigid body and a collider without one (level geometry, props, movers).</summary>
-        private static bool CollideStatic(SolverBody a, Collider c, Worker w)
+        /// <summary>Contacts between a rigid body and a collider without a body (level geometry, props, movers) — legacy or ECS.</summary>
+        private static bool CollideStatic(SolverBody a, ColliderTable.Slot s, Worker w)
         {
+            var c = s.collider;
+            if (c == null) return CollideEcsStatic(a, s, w);
             if (IsRoundedCollider(c))
             {
                 CollisionShape sc = c.shape;
@@ -727,6 +730,23 @@ namespace RipNRage.Engine
                 return hit;
             }
             ConvexShape other = ShapeOf(c, w);
+            if (a.isRounded) return ContactGeneration.RoundedVsConvex(a.WorldShape, other, w.scratch);
+            return ContactGeneration.ConvexVsConvex(a.shape, other, w.scratch);
+        }
+
+        /// <summary>Contacts between a rigid body and an ECS collider without a body (baked world shape / polytope).</summary>
+        private static bool CollideEcsStatic(SolverBody a, ColliderTable.Slot s, Worker w)
+        {
+            if (s.worldShape.type == ShapeType.Sphere || s.worldShape.type == ShapeType.Capsule)
+            {
+                CollisionShape sc = s.worldShape;
+                if (a.isRounded) return ContactGeneration.RoundedVsRounded(a.WorldShape, in sc, w.scratch);
+                bool hit = ContactGeneration.RoundedVsConvex(in sc, a.shape, w.scratch);
+                if (hit) w.scratch.normal = -w.scratch.normal;
+                return hit;
+            }
+            ConvexShape other = s.polytope;
+            if (other == null) { w.aabb.SetBox(s.worldShape.center, s.worldShape.halfExtents, s.worldShape.rotation); other = w.aabb; }
             if (a.isRounded) return ContactGeneration.RoundedVsConvex(a.WorldShape, other, w.scratch);
             return ContactGeneration.ConvexVsConvex(a.shape, other, w.scratch);
         }
@@ -749,17 +769,17 @@ namespace RipNRage.Engine
             }
         }
 
-        private void Commit(Worker w, SolverBody a, SolverBody b, Collider c, long key)
+        private void Commit(Worker w, SolverBody a, SolverBody b, ColliderTable.Slot s, long key)
         {
             var scratch = w.scratch;
             if (scratch.count == 0) return;
             var m = NewManifold(w);
-            m.bodyA = a; m.bodyB = b; m.colliderA = a.stepCollider; m.colliderB = c;
+            m.bodyA = a; m.bodyB = b; m.colliderA = a.stepCollider; m.colliderB = s.collider;
             m.normal = scratch.normal; m.count = scratch.count;
             for (int i = 0; i < m.count; i++) m.points[i] = scratch.points[i];
             m.key = key;
-            Surface(a.stepCollider, a, out float musA, out float mudA, out float restA, out CombineMode fcA, out CombineMode rcA);
-            Surface(c, b, out float musB, out float mudB, out float restB, out CombineMode fcB, out CombineMode rcB);
+            Surface(a.collider, a, out float musA, out float mudA, out float restA, out CombineMode fcA, out CombineMode rcA);
+            Surface(s, b, out float musB, out float mudB, out float restB, out CombineMode fcB, out CombineMode rcB);
             CombineMode fc = PhysicsMaterial.Pick(fcA, fcB), rc = PhysicsMaterial.Pick(rcA, rcB);
             m.staticFriction = MathF.Max(0f, PhysicsMaterial.Combine(musA, musB, fc));
             m.dynamicFriction = MathF.Max(0f, PhysicsMaterial.Combine(mudA, mudB, fc));
@@ -768,10 +788,16 @@ namespace RipNRage.Engine
             w.manifolds.Add(m);
         }
 
-        /// <summary>Surface values of a collider: its material, else its body's values, else the solver's defaults for the level.</summary>
-        private void Surface(Collider c, SolverBody body, out float mus, out float mud, out float rest, out CombineMode fc, out CombineMode rc)
+        /// <summary>Surface values of a collider slot: its material (legacy object or ECS component), else its body's values, else the solver's defaults.</summary>
+        private void Surface(ColliderTable.Slot s, SolverBody body, out float mus, out float mud, out float rest, out CombineMode fc, out CombineMode rc)
         {
-            var mat = c != null ? c.material : null;
+            if (s != null && s.collider == null && s.hasEcsMaterial)
+            {
+                var em = s.ecsMaterial;
+                mus = em.StaticFriction; mud = em.DynamicFriction; rest = em.Restitution; fc = em.FrictionCombine; rc = em.RestitutionCombine;
+                return;
+            }
+            var mat = s?.collider != null ? s.collider.material : null;
             if (mat != null) { mus = mat.staticFriction; mud = mat.dynamicFriction; rest = mat.restitution; fc = mat.frictionCombine; rc = mat.restitutionCombine; return; }
             if (body != null) { mus = body.staticFriction; mud = body.friction; rest = body.restitution; fc = frictionCombine; rc = restitutionCombine; return; }
             mus = staticFriction; mud = dynamicFriction; rest = staticRestitution; fc = frictionCombine; rc = restitutionCombine;

@@ -1,0 +1,10 @@
+// A simulated ECS crate (--ecs-demo drops a small stack onto the level's legacy geometry: one simulation).
+{ "name": "ecs_demo_crate",
+  "components": {
+    "LocalTransform": { "position": [2, 3, 6], "scale": [0.6, 0.6, 0.6] },
+    "MeshRender": { "mesh": "box", "texture": "Textures/TEX-Orange_Proto.png" },
+    "Body": { "mass": 8 },
+    "BodyVelocity": {},
+    "ColliderShape": { "kind": "Box", "size": [1, 1, 1] },
+    "SurfaceMaterial": { "restitution": 0.15 }
+  } }

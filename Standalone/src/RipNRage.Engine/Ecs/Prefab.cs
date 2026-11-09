@@ -58,6 +58,8 @@ namespace RipNRage.Engine.Ecs
             _raw[name] = node; _built.Remove(name);
         }
 
+        public bool Contains(string name) => _raw.ContainsKey(name);
+
         public Prefab Get(string name)
         {
             if (_built.TryGetValue(name, out var p)) return p;

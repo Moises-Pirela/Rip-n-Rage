@@ -121,8 +121,18 @@ Convert, keeping the tuned solver behaviour:
         on every constraint iteration cost ~10% on ragdolls. Gates: bench at parity (ragdolls 34.6 vs 34.3 ms/step,
         `--threads 1`, interleaved, 5 runs), strafe identical, look 0.040%. **Left for 2.4**: narrow-phase candidates
         and `QueryFilter` are still `Collider`-typed; ECS colliders need the slot-typed path there.
-  - [ ] 2.4 `PhysicsSyncSystem` + `PhysicsStepSystem` in FixedTick: ECS entities enter the table; poses written back
-        to `LocalTransform`; fixed-step lockstep with the legacy `FixedUpdate`.
+  - [x] 2.4 ECS entities simulate (`Ecs/Physics/PhysicsSystems.cs`). `PhysicsSyncSystem` registers entities with
+        `ColliderShape` / `Body` (slot + `SolverBody` + `PhysicsHandle`), treats external `LocalTransform` writes as
+        teleports and external `BodyVelocity` writes as authoritative; `PhysicsStepSystem` steps the one simulation;
+        `PhysicsWriteBackSystem` writes poses / velocities / the `Sleeping` tag back. **One fixed clock**: the scene's
+        fixed loop calls `Scene.FixedPhysicsStep` (default = legacy `Physics.FixedStep`; the Application re-points it
+        at `World.RunFixed`, and `World.DriveFixedInternally = false` disables the ECS's own accumulator) — lockstep
+        by construction. The narrow phase + `QueryFilter` are slot-typed (ECS colliders collide; the old
+        `Collider`-typed `QueryBoundsConcurrent` is gone); static ECS colliders bake world shapes (box / sphere /
+        capsule / convex). Constraints: physics entities must be **root** entities; ECS **mesh colliders are not
+        simulated yet** (2.6); ECS colliders are still invisible to legacy raycasts / sweeps / kinematic movers and
+        CCD (public query API converts in 2.7); no per-frame interpolation for ECS bodies. `--ecs-demo` drops a
+        4-crate ECS stack onto the dock's legacy geometry.
   - [ ] 2.5 Joints as components; constraints keyed by table index.
   - [ ] 2.6 `CharacterBody` / `KinematicBody` components and systems; triggers.
   - [ ] 2.7 Contact / trigger events as `IPostProcessEvent`s; query API returns `Entity` for ECS hits.

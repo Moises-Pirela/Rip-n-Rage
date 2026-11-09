@@ -44,7 +44,13 @@ namespace RipNRage.Game.Ecs
             cmd.Add(moon, new Parent { Value = spinner });
             var pickup = lib.Get("ecs_demo_pickup").Instantiate(world);
             cmd.Add(pickup, new Parent { Value = moon });
+            var crates = new Entity[4]; // a small stack: lands on the dock's legacy geometry via the one simulation
+            bool hasCrate = lib.Contains("ecs_demo_crate");
+            if (hasCrate) for (int i = 0; i < crates.Length; i++) crates[i] = lib.Get("ecs_demo_crate").Instantiate(world);
             world.Sync();
+            if (hasCrate) for (int i = 0; i < crates.Length; i++)
+                world.Get<LocalTransform>(crates[i]) = new LocalTransform
+                { Position = new Vector3(2f + 0.05f * i, 2.5f + 0.75f * i, 6f), Rotation = Quaternion.Euler(0, 12f * i, 0), Scale = new Vector3(0.6f, 0.6f, 0.6f) };
             Debug.LogWarning($"[ecs-demo] {world.EntityCount} entities in {world.Archetypes.Count} archetypes from {prefabDir}");
         }
     }

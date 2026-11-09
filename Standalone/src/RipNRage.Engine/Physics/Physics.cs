@@ -296,15 +296,37 @@ namespace RipNRage.Engine
         public bool useLayerMatrix;
         public bool includeTriggers;
         public Func<Collider, bool> predicate;
+        /// <summary>Layer of the querying ECS collider + 1 (0 = none): drives the layer-matrix row when there is no <see cref="self"/> collider.</summary>
+        internal int selfLayerPlus1;
 
         public static QueryFilter Everything => new QueryFilter { layerMask = ~0 };
         public static QueryFilter Solids(int layerMask = ~0) => new QueryFilter { layerMask = layerMask };
         /// <summary>What a collider-bearing mover should collide with: the layer matrix row of its own collider, never itself.</summary>
         public static QueryFilter For(Collider self, int layerMask = ~0) => new QueryFilter { layerMask = layerMask, self = self, useLayerMatrix = true };
 
+        /// <summary>
+        /// Slot-typed accept (the one simulation's narrow phase): legacy slots defer to the collider; ECS slots are
+        /// filtered by their cached layer / trigger bits. <see cref="predicate"/> is legacy-typed and cannot judge an
+        /// ECS collider, so ECS slots bypass it.
+        /// </summary>
+        internal bool Accepts(ColliderTable.Slot s)
+        {
+            if (s == null || !s.alive) return false;
+            var c = s.collider;
+            if (c != null) return Accepts(c);
+            if (s.isTrigger && !includeTriggers) return false;
+            if (((1 << s.layer) & layerMask) == 0) return false;
+            if (useLayerMatrix)
+            {
+                if (self != null && Physics.GetIgnoreLayerCollision(self.gameObject.layer, s.layer)) return false;
+                if (selfLayerPlus1 != 0 && Physics.GetIgnoreLayerCollision(selfLayerPlus1 - 1, s.layer)) return false;
+            }
+            return true;
+        }
+
         public bool Accepts(Collider c)
         {
-            if (!c.IsEnabledForPhysics) return false;
+            if (c == null || !c.IsEnabledForPhysics) return false;
             if (c.isTrigger && !includeTriggers) return false;
             if (((1 << c.gameObject.layer) & layerMask) == 0) return false;
             if (self != null)

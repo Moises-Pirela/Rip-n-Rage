@@ -123,6 +123,29 @@ namespace RipNRage.Engine
             _movers.Remove(c);
         }
 
+        /// <summary>
+        /// Registers an ECS collider: the sync system allocates the slot, fills the ECS shape fields, then inserts.
+        /// </summary>
+        internal ColliderTable.Slot AddEcs(Ecs.Entity entity, bool isStatic)
+        {
+            var e = _table.Allocate(null, entity);
+            e.isStatic = isStatic;
+            return e;
+        }
+
+        /// <summary>Puts an ECS slot (shape fields filled) into the broadphase.</summary>
+        internal void InsertEcs(ColliderTable.Slot e) { if (e != null && e.alive && !e.bucketed && e.collider == null) Insert(e); }
+
+        internal void RemoveEcs(ColliderTable.Slot e)
+        {
+            if (e == null || !e.alive || e.collider != null) return;
+            Extract(e);
+            _table.Free(e);
+        }
+
+        /// <summary>Re-inserts an ECS slot after its shape or pose was re-baked (static ECS colliders that moved).</summary>
+        internal void RefreshEcs(ColliderTable.Slot e) { if (e == null || !e.alive) return; Extract(e); Insert(e); }
+
         /// <summary>Re-inserts a collider after its static flag, transform or shape changed.</summary>
         public void Refresh(Collider c)
         {
@@ -135,8 +158,8 @@ namespace RipNRage.Engine
 
         private void Insert(ColliderTable.Slot e)
         {
-            if (!e.isStatic) { _dynamic.Add(e); BucketDynamic(e, e.collider.bounds); return; }
-            e.bounds = e.collider.bounds;
+            if (!e.isStatic) { _dynamic.Add(e); BucketDynamic(e, e.CurrentBounds()); return; }
+            e.bounds = e.CurrentBounds();
             StaticCount++;
             if (_hasStatics) _staticBounds.Encapsulate(e.bounds); else { _staticBounds = e.bounds; _hasStatics = true; }
             CellRange(e.bounds, out int x0, out int y0, out int z0, out int x1, out int y1, out int z1);
@@ -270,10 +293,9 @@ namespace RipNRage.Engine
             for (int i = 0; i < _dynamic.Count; i++)
             {
                 var e = _dynamic[i];
-                var c = e.collider;
-                if (c.destroyed) continue;
-                var rb = c.attachedRigidbody;
-                if (rb == null || rb.isKinematic || !e.bucketed) Touch(e, c.bounds);
+                if (e.collider != null && e.collider.destroyed) continue;
+                var b = e.body;
+                if (b == null || b.isKinematic || !e.bucketed) Touch(e, e.CurrentBounds());
                 if (!e.bucketed) continue;
                 if (any) union.Encapsulate(e.bounds); else { union = e.bounds; any = true; }
             }
@@ -284,7 +306,7 @@ namespace RipNRage.Engine
         {
             foreach (var e in _dynamic) UnbucketDynamic(e);
             _dynCells.Clear(); _largeDynamic.Clear(); _hasDynamics = false;
-            foreach (var e in _dynamic) BucketDynamic(e, e.collider.bounds);
+            foreach (var e in _dynamic) BucketDynamic(e, e.CurrentBounds());
         }
 
         private static long Key(int x, int y, int z) =>
@@ -351,11 +373,12 @@ namespace RipNRage.Engine
         }
 
         /// <summary>
-        /// <see cref="QueryBounds"/> for worker threads: no visit stamps (duplicates from shapes spanning several cells
-        /// are removed by scanning the short result list) and only an interlocked counter. Safe to call concurrently
-        /// as long as nothing inserts or moves colliders meanwhile (the rigid solver's narrow phase).
+        /// Broadphase for worker threads (the rigid solver's narrow phase), over collider slots so ECS colliders take
+        /// part: no visit stamps (duplicates from shapes spanning several cells are removed by scanning the short
+        /// result list) and only an interlocked counter. Safe to call concurrently as long as nothing inserts or
+        /// moves colliders meanwhile.
         /// </summary>
-        public void QueryBoundsConcurrent(Bounds region, QueryFilter filter, List<Collider> results)
+        internal void QueryBoundsConcurrent(Bounds region, QueryFilter filter, List<ColliderTable.Slot> results)
         {
             System.Threading.Interlocked.Increment(ref _queriesConcurrent);
             int first = results.Count;
@@ -364,7 +387,7 @@ namespace RipNRage.Engine
                 foreach (var e in _largeDynamic)
                 {
                     if (!e.bounds.Intersects(region)) continue;
-                    if (filter.Accepts(e.collider)) results.Add(e.collider);
+                    if (filter.Accepts(e)) results.Add(e);
                 }
                 if (_dynCells.Count > 0)
                 {
@@ -378,8 +401,8 @@ namespace RipNRage.Engine
                                 {
                                     var e = _table[list[i]];
                                     if (!e.bounds.Intersects(region)) continue;
-                                    if ((e.x0 != e.x1 || e.y0 != e.y1 || e.z0 != e.z1) && Contains(results, first, e.collider)) continue;
-                                    if (filter.Accepts(e.collider)) results.Add(e.collider);
+                                    if ((e.x0 != e.x1 || e.y0 != e.y1 || e.z0 != e.z1) && Contains(results, first, e)) continue;
+                                    if (filter.Accepts(e)) results.Add(e);
                                 }
                             }
                 }
@@ -387,7 +410,7 @@ namespace RipNRage.Engine
             foreach (var e in _largeStatic)
             {
                 if (!e.bounds.Intersects(region)) continue;
-                if (filter.Accepts(e.collider)) results.Add(e.collider);
+                if (filter.Accepts(e)) results.Add(e);
             }
             if (_cells.Count == 0) return;
             if (_hasStatics && !_staticBounds.Intersects(region)) return;
@@ -402,15 +425,15 @@ namespace RipNRage.Engine
                         {
                             var e = _table[list[i]];
                             if (!e.bounds.Intersects(region)) continue;
-                            if (several && Contains(results, first, e.collider)) continue;
-                            if (filter.Accepts(e.collider)) results.Add(e.collider);
+                            if (several && Contains(results, first, e)) continue;
+                            if (filter.Accepts(e)) results.Add(e);
                         }
                     }
         }
 
-        private static bool Contains(List<Collider> list, int from, Collider c)
+        private static bool Contains(List<ColliderTable.Slot> list, int from, ColliderTable.Slot e)
         {
-            for (int i = from; i < list.Count; i++) if (list[i] == c) return true;
+            for (int i = from; i < list.Count; i++) if (list[i] == e) return true;
             return false;
         }
 

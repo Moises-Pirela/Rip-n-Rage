@@ -102,6 +102,8 @@ namespace RipNRage.Engine.Ecs
 
         public float FixedDeltaTime = 1f / 60f;
         public int MaxFixedSteps = 8;
+        /// <summary>False when the host drives fixed steps itself through <see cref="RunFixed"/> (the Application's scene loop): Update then skips its own accumulator.</summary>
+        public bool DriveFixedInternally = true;
         private double _fixedAccumulator, _time;
         private long _frame;
         public bool SimRunning { get; private set; }
@@ -172,17 +174,27 @@ namespace RipNRage.Engine.Ecs
             _frame++;
             Sync(); // structural changes made outside systems since last frame
             RunPhase(_tick, dt, (s, c) => ((ITick)s).Tick(c));
-            _fixedAccumulator += dt;
-            int steps = 0;
-            while (_fixedAccumulator >= FixedDeltaTime && steps < MaxFixedSteps)
+            if (DriveFixedInternally)
             {
-                RunPhase(_fixed, FixedDeltaTime, (s, c) => ((IFixedTick)s).FixedTick(c));
-                _fixedAccumulator -= FixedDeltaTime; steps++;
+                _fixedAccumulator += dt;
+                int steps = 0;
+                while (_fixedAccumulator >= FixedDeltaTime && steps < MaxFixedSteps)
+                {
+                    RunPhase(_fixed, FixedDeltaTime, (s, c) => ((IFixedTick)s).FixedTick(c));
+                    _fixedAccumulator -= FixedDeltaTime; steps++;
+                }
+                if (steps == MaxFixedSteps) _fixedAccumulator = 0; // falling behind: drop the backlog instead of spiralling
             }
-            if (steps == MaxFixedSteps) _fixedAccumulator = 0; // falling behind: drop the backlog instead of spiralling
             RunPhase(_late, dt, (s, c) => ((ILateTick)s).LateTick(c));
             DispatchPostProcessEvents(dt);
             _time += dt;
+        }
+
+        /// <summary>One externally driven fixed step (the scene's fixed loop calls this so legacy FixedUpdate and FixedTick share one clock).</summary>
+        public void RunFixed(float dt)
+        {
+            if (!SimRunning) StartSim();
+            RunPhase(_fixed, dt, (s, c) => ((IFixedTick)s).FixedTick(c));
         }
 
         private void RebuildSchedule()

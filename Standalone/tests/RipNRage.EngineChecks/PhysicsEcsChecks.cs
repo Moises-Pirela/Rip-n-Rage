@@ -4,6 +4,7 @@ using System.Linq;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
+using RipNRage.Engine.Ecs.Transforms;
 
 /// <summary>Layer 2: physics components / configs (2.1) and the collider table under the broadphase (2.2).</summary>
 internal static class PhysicsEcsChecks
@@ -62,16 +63,16 @@ internal static class PhysicsEcsChecks
             float[][] cube = { new float[]{-1,-1,-1}, new float[]{1,-1,-1}, new float[]{-1,1,-1}, new float[]{1,1,-1},
                                new float[]{-1,-1,1}, new float[]{1,-1,1}, new float[]{-1,1,1}, new float[]{1,1,1} };
             var c1 = new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = cube }.Bake();
-            var hull = PhysicsAssets.Hulls.Resolve(c1.Hull);
+            var hull = PhysicsAssets.Hulls.Resolve(c1.Hull)?.Hull;
             True(!c1.Hull.IsNone && hull != null && hull.faceCount == 6, "a cube's 8 points derive 6 faces");
             True(hull.Contains(new Vector3(0.5f, -0.5f, 0.9f)) && !hull.Contains(new Vector3(1.2f, 0, 0)), "derived hull contains its inside, not its outside");
             var c2 = new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = cube }.Bake();
             True(c1.Hull.Equals(c2.Hull), "identical convex configs share one hull asset");
             float[][] tet = { new float[]{0,0,0}, new float[]{1,0,0}, new float[]{0,1,0}, new float[]{0,0,1} };
-            True(PhysicsAssets.Hulls.Resolve(new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = tet }.Bake().Hull).faceCount == 4, "a tetrahedron derives 4 faces");
+            True(PhysicsAssets.Hulls.Resolve(new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = tet }.Bake().Hull).Hull.faceCount == 4, "a tetrahedron derives 4 faces");
             float[][] cubePlanes = { new float[]{1,0,0,1}, new float[]{-1,0,0,1}, new float[]{0,1,0,1}, new float[]{0,-1,0,1}, new float[]{0,0,1,1}, new float[]{0,0,-1,1} };
             var c3 = new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = cube, planes = cubePlanes }.Bake();
-            True(PhysicsAssets.Hulls.Resolve(c3.Hull).faceCount == 6, "explicit planes are taken as given");
+            True(PhysicsAssets.Hulls.Resolve(c3.Hull).Hull.faceCount == 6, "explicit planes are taken as given");
             float[][] flat = { new float[]{0,0,0}, new float[]{1,0,0}, new float[]{0,1,0}, new float[]{1,1,0} };
             float[][] badPlanes = { new float[]{1,0,0,0.5f}, new float[]{-1,0,0,1}, new float[]{0,1,0,1}, new float[]{0,-1,0,1}, new float[]{0,0,1,1}, new float[]{0,0,-1,1} };
             True(Throws(() => new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = flat }.Bake())
@@ -84,7 +85,7 @@ internal static class PhysicsEcsChecks
             lib.AddJson(@"{ ""name"": ""wedge"", ""components"": { ""ColliderShape"": { ""kind"": ""Convex"",
                 ""vertices"": [[0,0,0],[2,0,0],[0,0,2],[2,0,2],[0,1,0],[0,1,2]] }, ""PhysicsHandle"": {} } }");
             var wedge = lib.Get("wedge").Instantiate(hw); hw.Sync();
-            True(PhysicsAssets.Hulls.Resolve(hw.Get<ColliderShape>(wedge).Hull).faceCount == 5, "convex prefab JSON bakes (wedge: 5 faces)");
+            True(PhysicsAssets.Hulls.Resolve(hw.Get<ColliderShape>(wedge).Hull).Hull.faceCount == 5, "convex prefab JSON bakes (wedge: 5 faces)");
             True(!hw.Get<PhysicsHandle>(wedge).IsRegistered, "PhysicsHandle always bakes unregistered");
         }
 
@@ -122,6 +123,77 @@ internal static class PhysicsEcsChecks
         }
 
         SolverBodyChecks(True);
+        EcsSimChecks(True);
+    }
+
+    /// <summary>2.4: ECS entities in the one simulation via PhysicsSync / PhysicsStep / PhysicsWriteBack.</summary>
+    private static void EcsSimChecks(Action<bool, string> True)
+    {
+        var legacyWorld = Physics.World;
+        using var w = new World(0);
+        w.AddSystemsFromAssemblies(typeof(World).Assembly);
+        w.FixedDeltaTime = 1f / 60f;
+        var lib = new PrefabLibrary();
+        lib.AddJson(@"{ ""name"": ""floor"", ""components"": {
+            ""LocalTransform"": { ""position"": [300, 0, 0], ""scale"": [1, 1, 1] },
+            ""ColliderShape"": { ""kind"": ""Box"", ""size"": [20, 1, 20], ""isStatic"": true } } }");
+        lib.AddJson(@"{ ""name"": ""crate"", ""components"": {
+            ""LocalTransform"": { ""position"": [300, 3, 0] },
+            ""Body"": { ""mass"": 5 }, ""BodyVelocity"": {},
+            ""ColliderShape"": { ""kind"": ""Box"", ""size"": [1, 1, 1] } } }");
+        var floor = lib.Get("floor").Instantiate(w);
+        var crate = lib.Get("crate").Instantiate(w);
+        w.Sync();
+        void Step(int n) { for (int i = 0; i < n; i++) w.Update(1f / 60f); }
+
+        Step(2);
+        True(w.Has<PhysicsHandle>(crate) && w.Has<PhysicsHandle>(floor), "sync registers entities and adds PhysicsHandle");
+        var proxy = w.Get<PhysicsHandle>(crate).Proxy;
+        True(legacyWorld.Table.IsAlive(proxy) && legacyWorld.Table.EntityOf(proxy) == crate && legacyWorld.Table.BodyOf(proxy) != null,
+             "the crate's slot knows its entity and body");
+        Step(180);
+        var lt = w.Get<LocalTransform>(crate);
+        True(MathF.Abs(lt.Position.y - 1.0f) < 0.05f && MathF.Abs(lt.Position.x - 300f) < 0.01f,
+             $"an ECS crate falls onto an ECS static floor and rests (y={lt.Position.y:0.000})");
+        True(w.Get<BodyVelocity>(crate).Linear.magnitude < 0.3f, "write-back keeps BodyVelocity current");
+        Step(120);
+        True(w.Has<Sleeping>(crate), "a resting body gets the Sleeping tag");
+
+        // teleport by writing LocalTransform; wakes and falls again
+        w.Get<LocalTransform>(crate).Position = new Vector3(300, 5, 0);
+        Step(30);
+        True(!w.Has<Sleeping>(crate) && w.Get<LocalTransform>(crate).Position.y < 4.9f, "moving LocalTransform teleports and wakes the body");
+        Step(240);
+        True(MathF.Abs(w.Get<LocalTransform>(crate).Position.y - 1.0f) < 0.05f, "it settles again");
+
+        // one simulation, direction 1: an ECS crate rests on a LEGACY static collider
+        var goFloor = new GameObject("legacy-floor"); goFloor.transform.position = new Vector3(340, 0, 0);
+        var lf = goFloor.AddComponent<BoxCollider>(); lf.size = new Vector3(20, 1, 20); lf.isStatic = true;
+        _scene.Tick(0f);
+        lib.AddJson(@"{ ""name"": ""crate2"", ""base"": ""crate"", ""components"": { ""LocalTransform"": { ""position"": [340, 3, 0] } } }");
+        var crate2 = lib.Get("crate2").Instantiate(w);
+        w.Sync();
+        Step(240);
+        True(MathF.Abs(w.Get<LocalTransform>(crate2).Position.y - 1.0f) < 0.05f,
+             $"an ECS crate rests on a legacy collider (y={w.Get<LocalTransform>(crate2).Position.y:0.000})");
+
+        // direction 2: a LEGACY rigid body rests on an ECS static floor
+        var goBody = new GameObject("legacy-crate"); goBody.transform.position = new Vector3(300, 3, 5);
+        var lc = goBody.AddComponent<BoxCollider>(); var lrb = goBody.AddComponent<RigidBody>();
+        _scene.Tick(0f);
+        Step(240);
+        True(MathF.Abs(goBody.transform.position.y - 1.0f) < 0.05f,
+             $"a legacy rigid body rests on an ECS static floor (y={goBody.transform.position.y:0.000})");
+
+        // destroying the entity frees slot and body
+        int bodiesBefore = legacyWorld.Bodies.Count;
+        w.DestroyEntity(crate); w.Sync();
+        Step(1);
+        True(!legacyWorld.Table.IsAlive(proxy) && legacyWorld.Bodies.Count == bodiesBefore - 1, "destroying the entity frees its slot and body");
+
+        GameObject.DestroyImmediate(goFloor); GameObject.DestroyImmediate(goBody);
+        w.EndSim();
+        True(legacyWorld.Table.EntityOf(w.Get<PhysicsHandle>(floor).Proxy).IsNull, "OnSimEnd unregisters the rest");
     }
 
     /// <summary>2.3: the solver runs on SolverBody; RigidBody is an adapter. Called from Run.</summary>

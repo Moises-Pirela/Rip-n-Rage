@@ -24,6 +24,13 @@ namespace RipNRage.Engine
         /// <summary>Most fixed steps one frame may run before the simulation is allowed to fall behind real time.</summary>
         public static int MaxFixedSteps = 8;
 
+        /// <summary>
+        /// What one fixed physics step is. Default: the legacy <see cref="Physics.FixedStep"/>. The Application
+        /// re-points it at the ECS world's FixedTick (whose PhysicsStepSystem steps the one simulation), so the ECS
+        /// fixed step and the legacy FixedUpdate are the same loop and can never drift apart.
+        /// </summary>
+        public static Action<float> FixedPhysicsStep = Physics.FixedStep;
+
         public IReadOnlyList<GameObject> GameObjects => _gameObjects;
 
         public Scene()
@@ -134,8 +141,8 @@ namespace RipNRage.Engine
                 RunPass(_fixedUpdaters, 0, "FixedUpdate");
                 // fixed-step kinematic bodies move after the FixedUpdate callbacks that set their velocities (Unity order)
                 Profiler.Begin("fixed physics");
-                try { Physics.FixedStep(Time.fixedDeltaTime); }
-                catch (Exception e) { Debug.LogError($"Physics.FixedStep threw: {e}"); }
+                try { FixedPhysicsStep(Time.fixedDeltaTime); }
+                catch (Exception e) { Debug.LogError($"FixedPhysicsStep threw: {e}"); }
                 Profiler.End();
                 steps++;
             }

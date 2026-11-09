@@ -53,7 +53,7 @@ namespace RipNRage.Engine.Ecs.Physics
         public float Radius;
         /// <summary>Capsule total height along local Y (including the caps).</summary>
         public float Height;
-        public AssetHandle<ConvexHull> Hull;
+        public AssetHandle<ConvexColliderAsset> Hull;
         public AssetHandle<Mesh> Mesh;
         /// <summary>Static geometry is cached in the broadphase's static grid (level geometry, props that never move).</summary>
         public bool IsStatic;
@@ -82,10 +82,19 @@ namespace RipNRage.Engine.Ecs.Physics
     /// <summary>Tag set by the simulation while the body sleeps (toggles often: sparse).</summary>
     [SparseComponent] public struct Sleeping : IComponent { }
 
+    /// <summary>A shared convex collider: the hull (queries, bounds) plus the faces / vertices it was built from (narrow-phase polytopes).</summary>
+    public sealed class ConvexColliderAsset
+    {
+        public readonly ConvexHull Hull;
+        public readonly Plane[] Faces;
+        public readonly Vector3[] Vertices;
+        public ConvexColliderAsset(Plane[] faces, Vector3[] vertices) { Faces = faces; Vertices = vertices; Hull = ConvexHull.FromPlanes(faces, vertices, true); }
+    }
+
     /// <summary>Shape assets colliders reference. Meshes share <see cref="RenderAssets.Meshes"/> so a "box" is one asset.</summary>
     public static class PhysicsAssets
     {
-        public static readonly AssetRegistry<ConvexHull> Hulls = new AssetRegistry<ConvexHull>();
+        public static readonly AssetRegistry<ConvexColliderAsset> Hulls = new AssetRegistry<ConvexColliderAsset>();
         public static AssetRegistry<Mesh> Meshes => RenderAssets.Meshes;
     }
 
@@ -199,7 +208,7 @@ namespace RipNRage.Engine.Ecs.Physics
         public const int MaxDerivedPoints = 64;
         private const float Eps = 1E-4f;
 
-        public static AssetHandle<ConvexHull> Bake(float[][] vertices, float[][] planes)
+        public static AssetHandle<ConvexColliderAsset> Bake(float[][] vertices, float[][] planes)
         {
             if (vertices == null || vertices.Length < 4) throw new ArgumentException("a convex collider needs at least 4 vertices", nameof(vertices));
             var pts = new Vector3[vertices.Length];
@@ -212,7 +221,7 @@ namespace RipNRage.Engine.Ecs.Physics
             }
             Plane[] faces = planes != null ? ParsePlanes(planes, pts) : DeriveFaces(pts);
             string key = "convex:" + Fingerprint(pts, faces);
-            return PhysicsAssets.Hulls.GetOrLoad(key, _ => ConvexHull.FromPlanes(faces, pts, true));
+            return PhysicsAssets.Hulls.GetOrLoad(key, _ => new ConvexColliderAsset(faces, pts));
         }
 
         private static Plane[] ParsePlanes(float[][] planes, Vector3[] pts)

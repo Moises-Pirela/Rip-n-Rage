@@ -116,8 +116,57 @@ namespace RipNRage.Engine
         internal Collider stepCollider;
         internal void RefreshStepState() { live = IsLive; stepCollider = legacyCollider; }
 
-        /// <summary>Filter for this body's collisions.</summary>
-        internal QueryFilter Filter => new QueryFilter { layerMask = collisionMask, self = stepCollider, useLayerMatrix = useLayerMatrix && stepCollider != null };
+        /// <summary>Filter for this body's collisions (ECS bodies key the layer matrix by their slot's layer).</summary>
+        internal QueryFilter Filter => new QueryFilter
+        {
+            layerMask = collisionMask, self = stepCollider,
+            useLayerMatrix = useLayerMatrix && (stepCollider != null || legacy == null),
+            selfLayerPlus1 = legacy == null && collider != null ? collider.layer + 1 : 0,
+        };
+
+        /// <summary>
+        /// Configures an ECS-owned body from its components (the sync system calls this at registration and after a
+        /// component change): shape-derived mass properties like the legacy adapter's ComputeMass.
+        /// </summary>
+        internal void SetupEcs(in Ecs.Physics.Body cfg, in Ecs.Physics.ColliderShape shapeCfg, Vector3 scale)
+        {
+            mass = cfg.Mass; isKinematic = cfg.Kind == Ecs.Physics.BodyKind.Kinematic;
+            linearDamping = cfg.LinearDamping; angularDamping = cfg.AngularDamping;
+            useGravity = cfg.UseGravity; gravityScale = cfg.GravityScale; freezeRotation = cfg.FreezeRotation;
+            collisionDetection = cfg.CollisionDetection; interpolate = cfg.Interpolate;
+            canSleep = cfg.CanSleep; sleepThreshold = cfg.SleepThreshold; sleepDelay = cfg.SleepDelay;
+            maxSpeed = cfg.MaxSpeed; maxAngularSpeed = cfg.MaxAngularSpeed;
+
+            isSphere = false; isCapsule = false;
+            float maxScale = MathF.Max(MathF.Abs(scale.x), MathF.Max(MathF.Abs(scale.y), MathF.Abs(scale.z)));
+            switch (shapeCfg.Kind)
+            {
+                case Ecs.Physics.ShapeKind.Sphere:
+                    isSphere = true;
+                    sphereRadius = shapeCfg.Radius * maxScale;
+                    boxHalfExtents = new Vector3(sphereRadius, sphereRadius, sphereRadius);
+                    break;
+                case Ecs.Physics.ShapeKind.Capsule:
+                    isCapsule = true;
+                    sphereRadius = shapeCfg.Radius * MathF.Max(MathF.Abs(scale.x), MathF.Abs(scale.z));
+                    capsuleHalfHeight = MathF.Max(shapeCfg.Height * MathF.Abs(scale.y) * 0.5f - sphereRadius, 0f);
+                    boxHalfExtents = new Vector3(sphereRadius, capsuleHalfHeight + sphereRadius, sphereRadius);
+                    break;
+                case Ecs.Physics.ShapeKind.Box:
+                    boxHalfExtents = Vector3.Scale(shapeCfg.Size, scale) * 0.5f;
+                    break;
+                case Ecs.Physics.ShapeKind.Convex: // a convex-bodied rigid simulates as its hull's bounding box (like the legacy model)
+                    var hull = Ecs.Physics.PhysicsAssets.Hulls.Resolve(shapeCfg.Hull);
+                    boxHalfExtents = hull != null ? Vector3.Scale(hull.Hull.bounds.extents, scale) : new Vector3(0.25f, 0.25f, 0.25f);
+                    break;
+                default:
+                    boxHalfExtents = new Vector3(0.25f, 0.25f, 0.25f);
+                    break;
+            }
+            comOffsetLocal = Vector3.Scale(shapeCfg.Center, scale);
+            boxHalfExtents = Vector3.Max(boxHalfExtents, new Vector3(0.01f, 0.01f, 0.01f));
+            ComputeMassProperties();
+        }
 
         /// <summary>Inverse mass and inertia from <see cref="mass"/> and the shape description (isSphere / isCapsule / radius / half extents).</summary>
         internal void ComputeMassProperties()
