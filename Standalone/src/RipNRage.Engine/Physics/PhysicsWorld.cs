@@ -60,7 +60,7 @@ namespace RipNRage.Engine
 
         private readonly List<Collider> _movers = new List<Collider>();
         private readonly List<KinematicBody> _bodies = new List<KinematicBody>();
-        private readonly List<RigidBody> _rigidBodies = new List<RigidBody>();
+        private readonly List<SolverBody> _rigidBodies = new List<SolverBody>();
         private readonly List<Constraint> _constraints = new List<Constraint>();
         /// <summary>Every joint / constraint in the simulation (ball, distance, hinge, fixed...).</summary>
         public IReadOnlyList<Constraint> Constraints => _constraints;
@@ -75,7 +75,8 @@ namespace RipNRage.Engine
         public int ConstraintCount => _constraints.Count;
         /// <summary>The rigid-body contact solver and its tuning.</summary>
         public RigidSolver Rigid { get; } = new RigidSolver();
-        public IReadOnlyList<RigidBody> RigidBodies => _rigidBodies;
+        /// <summary>Every rigid body in the one simulation (legacy adapters and, from 2.4, ECS entities).</summary>
+        public IReadOnlyList<SolverBody> Bodies => _rigidBodies;
         public int RigidBodyCount => _rigidBodies.Count;
         private readonly Stack<List<Collider>> _listPool = new Stack<List<Collider>>();
 
@@ -102,6 +103,7 @@ namespace RipNRage.Engine
             if (c == null || c.broadphase != null) return;
             var e = _table.Allocate(c, Ecs.Entity.Null);
             e.isStatic = c.isStatic;
+            e.body = c.attachedRigidbody?.body; // either Awake order: RigidBody.ComputeMass sets it too
             c.broadphase = e;
             _all.Add(c);
             Insert(e);
@@ -248,7 +250,7 @@ namespace RipNRage.Engine
             Touch(e, tight);
         }
 
-        private void Touch(ColliderTable.Slot e, Bounds tight)
+        internal void Touch(ColliderTable.Slot e, Bounds tight)
         {
             if (e.bucketed && e.bounds.Contains(tight.min) && e.bounds.Contains(tight.max)) { e.tight = tight; return; }
             UnbucketDynamic(e);
@@ -774,8 +776,8 @@ namespace RipNRage.Engine
         public void RemoveMover(Collider c) => _movers.Remove(c);
         internal void AddBody(KinematicBody b) { if (b != null && !_bodies.Contains(b)) _bodies.Add(b); }
         internal void RemoveBody(KinematicBody b) => _bodies.Remove(b);
-        internal void AddRigidBody(RigidBody b) { if (b != null && !_rigidBodies.Contains(b)) _rigidBodies.Add(b); }
-        internal void RemoveRigidBody(RigidBody b)
+        internal void AddRigidBody(SolverBody b) { if (b != null && !_rigidBodies.Contains(b)) _rigidBodies.Add(b); }
+        internal void RemoveRigidBody(SolverBody b)
         {
             _rigidBodies.Remove(b);
             _constraints.RemoveAll(c => c.bodyA == b || c.bodyB == b);
@@ -785,14 +787,14 @@ namespace RipNRage.Engine
         public void StepFrame(float dt)
         {
             float alpha = Scene.Current != null ? Scene.Current.FixedAlpha : 1f;
-            foreach (var rb in _rigidBodies) if (rb.interpolate && !rb.destroyed && rb.isActiveAndEnabled) rb.InterpolateTransform(alpha);
+            foreach (var rb in _rigidBodies) if (rb.interpolate && rb.IsLive) rb.InterpolateTransform(alpha);
             StepBodies(SimulationMode.PerFrame, dt);
             StepTriggers();
             QueriesLastFrame = QueriesThisFrame + _queriesConcurrent; RaycastsLastFrame = RaycastsThisFrame; SweepsLastFrame = SweepsThisFrame;
             QueriesThisFrame = 0; RaycastsThisFrame = 0; SweepsThisFrame = 0; _queriesConcurrent = 0;
         }
 
-        private readonly List<RigidBody> _rigidScratch = new List<RigidBody>();
+        private readonly List<SolverBody> _rigidScratch = new List<SolverBody>();
 
         /// <summary>Once per fixed step (after the FixedUpdate callbacks): fixed-step kinematic bodies, then the rigid bodies.</summary>
         public void StepFixed(float dt)
@@ -801,7 +803,7 @@ namespace RipNRage.Engine
             StepBodies(SimulationMode.FixedStep, dt);
             if (dt <= 0f || _rigidBodies.Count == 0) return;
             _rigidScratch.Clear();
-            foreach (var b in _rigidBodies) if (!b.destroyed) _rigidScratch.Add(b);
+            foreach (var b in _rigidBodies) if (b.legacy == null ? b.ecsAlive : !b.legacy.destroyed) _rigidScratch.Add(b);
             try { Rigid.Step(this, _rigidScratch, dt); }
             catch (Exception e) { Debug.LogError("Rigid-body step threw: " + e); }
         }

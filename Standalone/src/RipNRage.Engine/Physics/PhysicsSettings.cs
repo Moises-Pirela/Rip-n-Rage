@@ -265,9 +265,9 @@ namespace RipNRage.Engine
             rigid.frictionCombine = frictionCombine; rigid.restitutionCombine = restitutionCombine;
             RigidBody.DefaultMaxSpeed = maxBodySpeed; RigidBody.DefaultMaxAngularSpeed = maxBodyAngularSpeed;
             RigidBody.DefaultSleepThreshold = sleepThreshold; RigidBody.DefaultSleepDelay = sleepDelay;
-            foreach (var b in Physics.World.RigidBodies)
+            foreach (var b in Physics.World.Bodies)
             {
-                if (b.destroyed) continue;
+                if (b.legacy != null && b.legacy.destroyed) continue;
                 b.maxSpeed = maxBodySpeed; b.maxAngularSpeed = maxBodyAngularSpeed; b.sleepThreshold = sleepThreshold; b.sleepDelay = sleepDelay;
             }
             Constraint.DefaultHertz = jointHertz; Constraint.DefaultDampingRatio = jointDamping;

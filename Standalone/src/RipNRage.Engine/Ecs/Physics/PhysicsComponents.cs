@@ -2,9 +2,7 @@ using System;
 using RipNRage.Engine.Ecs.Rendering;
 using RipNRage.Engine.Graphics;
 
-// Namespace is "Dynamics", not "Physics": RipNRage.Engine.Physics is the legacy static facade, and a namespace of
-// the same name would shadow it inside RipNRage.Engine.Ecs.
-namespace RipNRage.Engine.Ecs.Dynamics
+namespace RipNRage.Engine.Ecs.Physics
 {
     public enum BodyKind
     {
@@ -138,6 +136,12 @@ namespace RipNRage.Engine.Ecs.Dynamics
         public float radius = 0.5f, height = 2f;
         /// <summary>Mesh colliders: a <see cref="MeshLibrary"/> name (shared with rendering).</summary>
         public string mesh;
+        /// <summary>
+        /// Convex colliders, local space: the hull's corner points as [x, y, z] triples. With <see cref="planes"/> the
+        /// faces are taken as given (brushes: [nx, ny, nz, d], outward normals); without, they are derived from the points.
+        /// </summary>
+        public float[][] vertices;
+        public float[][] planes;
         public bool isStatic;
 
         public override ColliderShape Bake()
@@ -155,9 +159,8 @@ namespace RipNRage.Engine.Ecs.Dynamics
                     s.Mesh = PhysicsAssets.Meshes.GetOrLoad(mesh, MeshLibrary.Get);
                     break;
                 case ShapeKind.Convex:
-                    // Convex hulls come from level brushes (code / the level loader sets ColliderShape.Hull);
-                    // a config cannot describe one yet (layer 10: editors on configs).
-                    throw new NotSupportedException("convex colliders cannot be baked from a config yet; set ColliderShape.Hull from code");
+                    s.Hull = ConvexConfig.Bake(vertices, planes);
+                    break;
             }
             return s;
         }
@@ -189,6 +192,101 @@ namespace RipNRage.Engine.Ecs.Dynamics
 
     public sealed class TriggerConfig : ComponentConfig<Trigger> { public override Trigger Bake() => default; }
     public sealed class SleepingConfig : ComponentConfig<Sleeping> { public override Sleeping Bake() => default; }
+
+    /// <summary>Convex hull data from a config: validated, faces derived when not given, interned by content (equal hulls share one asset).</summary>
+    internal static class ConvexConfig
+    {
+        public const int MaxDerivedPoints = 64;
+        private const float Eps = 1E-4f;
+
+        public static AssetHandle<ConvexHull> Bake(float[][] vertices, float[][] planes)
+        {
+            if (vertices == null || vertices.Length < 4) throw new ArgumentException("a convex collider needs at least 4 vertices", nameof(vertices));
+            var pts = new Vector3[vertices.Length];
+            for (int i = 0; i < pts.Length; i++)
+            {
+                var v = vertices[i];
+                if (v == null || v.Length != 3 || !float.IsFinite(v[0]) || !float.IsFinite(v[1]) || !float.IsFinite(v[2]))
+                    throw new ArgumentException($"convex vertex {i} must be 3 finite numbers", nameof(vertices));
+                pts[i] = new Vector3(v[0], v[1], v[2]);
+            }
+            Plane[] faces = planes != null ? ParsePlanes(planes, pts) : DeriveFaces(pts);
+            string key = "convex:" + Fingerprint(pts, faces);
+            return PhysicsAssets.Hulls.GetOrLoad(key, _ => ConvexHull.FromPlanes(faces, pts, true));
+        }
+
+        private static Plane[] ParsePlanes(float[][] planes, Vector3[] pts)
+        {
+            if (planes.Length < 4) throw new ArgumentException("a convex collider needs at least 4 planes", nameof(planes));
+            var result = new Plane[planes.Length];
+            for (int i = 0; i < planes.Length; i++)
+            {
+                var p = planes[i];
+                if (p == null || p.Length != 4) throw new ArgumentException($"convex plane {i} must be [nx, ny, nz, d]", nameof(planes));
+                var n = new Vector3(p[0], p[1], p[2]);
+                float len = n.magnitude;
+                if (!(len > 1E-6f) || !float.IsFinite(p[3])) throw new ArgumentException($"convex plane {i} has no usable normal", nameof(planes));
+                result[i] = new Plane(n / len, p[3] / len);
+                foreach (var v in pts)
+                    if (result[i].Distance(v) > 1E-3f * MathF.Max(1f, MathF.Abs(result[i].dist)))
+                        throw new ArgumentException($"vertex {v} lies outside convex plane {i}: planes and vertices disagree", nameof(planes));
+            }
+            return result;
+        }
+
+        /// <summary>Brute-force face planes of a small point set: every triple whose plane has all points behind it. O(n^4), hence the point cap.</summary>
+        internal static Plane[] DeriveFaces(Vector3[] pts)
+        {
+            if (pts.Length > MaxDerivedPoints) throw new ArgumentException($"deriving faces supports up to {MaxDerivedPoints} vertices; give planes for larger hulls");
+            var faces = new System.Collections.Generic.List<Plane>();
+            float scale = 0f; foreach (var p in pts) scale = MathF.Max(scale, p.magnitude);
+            float eps = Eps * MathF.Max(1f, scale);
+            for (int i = 0; i < pts.Length; i++)
+                for (int j = i + 1; j < pts.Length; j++)
+                    for (int k = j + 1; k < pts.Length; k++)
+                    {
+                        Vector3 n = Vector3.Cross(pts[j] - pts[i], pts[k] - pts[i]);
+                        float len = n.magnitude;
+                        if (len < eps * eps) continue; // collinear
+                        n /= len;
+                        float d = Vector3.Dot(n, pts[i]);
+                        bool front = false, back = false;
+                        foreach (var p in pts) { float s = Vector3.Dot(n, p) - d; if (s > eps) front = true; else if (s < -eps) back = true; if (front && back) break; }
+                        if (front && back) continue;
+                        if (!front && !back) throw new ArgumentException("convex vertices are coplanar: the hull has no volume");
+                        if (front) { n = -n; d = -d; } // outward: every point behind the plane
+                        bool dup = false;
+                        foreach (var f in faces) if (Vector3.Dot(f.normal, n) > 1f - 1E-5f && MathF.Abs(f.dist - d) < eps) { dup = true; break; }
+                        if (!dup) faces.Add(new Plane(n, d));
+                    }
+            if (faces.Count < 4) throw new ArgumentException("convex vertices do not enclose a volume");
+            return faces.ToArray();
+        }
+
+        private static string Fingerprint(Vector3[] pts, Plane[] faces)
+        {
+            var sb = new System.Text.StringBuilder();
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            foreach (var p in pts) sb.Append(p.x.ToString("R", inv)).Append(',').Append(p.y.ToString("R", inv)).Append(',').Append(p.z.ToString("R", inv)).Append(';');
+            sb.Append('|');
+            foreach (var f in faces) sb.Append(f.normal.x.ToString("R", inv)).Append(',').Append(f.normal.y.ToString("R", inv)).Append(',').Append(f.normal.z.ToString("R", inv)).Append(',').Append(f.dist.ToString("R", inv)).Append(';');
+            return sb.ToString();
+        }
+    }
+
+    /// <summary>
+    /// Runtime-only: the entity's slot in the one simulation (<see cref="PhysicsWorld.Table"/>; the slot also points at
+    /// the entity's <see cref="SolverBody"/> when it has a <see cref="Body"/>). Added and cleared by the physics sync
+    /// system (2.4); prefabs never set it, so a baked or copied entity starts unregistered.
+    /// </summary>
+    public struct PhysicsHandle : IComponent
+    {
+        public PhysicsProxy Proxy;
+        public bool IsRegistered => !Proxy.IsNone;
+    }
+
+    /// <summary>Exists only to satisfy one-config-per-component; always bakes "not registered".</summary>
+    public sealed class PhysicsHandleConfig : ComponentConfig<PhysicsHandle> { public override PhysicsHandle Bake() => default; }
 
     internal static class PhysicsConfigUtil
     {

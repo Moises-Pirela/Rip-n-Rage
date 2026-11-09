@@ -64,7 +64,7 @@ namespace RipNRage.Engine
         /// <summary>Per-manifold setup for the step; <paramref name="p"/> carries the solver settings. Safe to run on several threads at once (the cache is only read).</summary>
         public void Prepare(Manifold m, in SolverParams p)
         {
-            RigidBody a = m.bodyA, b = m.bodyB;
+            SolverBody a = m.bodyA, b = m.bodyB;
             Vector3 n = m.normal;
             m.tangent0 = Vector3.Cross(n, MathF.Abs(n.x) < 0.9f ? Vector3.right : Vector3.up).normalized;
             m.tangent1 = Vector3.Cross(n, m.tangent0);
@@ -159,7 +159,7 @@ namespace RipNRage.Engine
 
         public static Vector3 RelativeVelocity(Manifold m, in ManifoldPoint p)
         {
-            RigidBody a = m.bodyA, b = m.bodyB;
+            SolverBody a = m.bodyA, b = m.bodyB;
             Vector3 va = a.linearVelocity + Vector3.Cross(a.angularVelocity, p.rA);
             Vector3 vb = b != null && !b.sleeping ? b.linearVelocity + Vector3.Cross(b.angularVelocity, p.rB) : Vector3.zero;
             return vb - va;
@@ -168,7 +168,7 @@ namespace RipNRage.Engine
         /// <summary>Impulse <paramref name="impulse"/> pushes B and pulls A (the manifold normal runs from A to B).</summary>
         private static void ApplyImpulse(Manifold m, in ManifoldPoint p, Vector3 impulse)
         {
-            RigidBody a = m.bodyA, b = m.bodyB;
+            SolverBody a = m.bodyA, b = m.bodyB;
             a.linearVelocity -= impulse * a.inverseMass;
             a.angularVelocity -= a.ApplyInverseInertia(Vector3.Cross(p.rA, impulse));
             if (Constraint.Dynamic(b))
@@ -191,7 +191,7 @@ namespace RipNRage.Engine
         /// <summary>Current separation of a point: the anchors have moved with their bodies since the start of the step.</summary>
         public static float Separation(Manifold m, in ManifoldPoint p)
         {
-            RigidBody a = m.bodyA, b = m.bodyB;
+            SolverBody a = m.bodyA, b = m.bodyB;
             // how far each anchor moved since the step started (A's motion into B closes the gap)
             Vector3 d = p.anchorA0 - (a.position + a.RotateToWorld(p.localA));
             if (b != null) d += (b.position + b.RotateToWorld(p.localB)) - p.anchorB0;
@@ -280,7 +280,7 @@ namespace RipNRage.Engine
         /// <summary>One position pass: pushes the poses apart along the normal where the penetration exceeds the slop.</summary>
         public void SolvePosition(Manifold m, in SolverParams p)
         {
-            RigidBody a = m.bodyA, b = m.bodyB;
+            SolverBody a = m.bodyA, b = m.bodyB;
             Vector3 n = m.normal;
             bool da = Constraint.Dynamic(a), db = Constraint.Dynamic(b);
             for (int i = 0; i < m.count; i++)

@@ -30,6 +30,10 @@ namespace RipNRage.Engine
         internal sealed class Slot
         {
             public int index, generation = 1;
+            /// <summary>Never reused across allocations (contact-cache keys); the slot index is.</summary>
+            public int uid;
+            /// <summary>The rigid body moving this collider (null: static / kinematic mover / trigger).</summary>
+            public SolverBody body;
             public bool alive;
             /// <summary>Legacy owner (adapter; null once ECS colliders register).</summary>
             public Collider collider;
@@ -54,6 +58,7 @@ namespace RipNRage.Engine
         private Slot[] _slots = new Slot[64];
         private int _count;                       // slots ever created (high-water mark)
         private readonly Stack<int> _free = new Stack<int>();
+        private static int _nextUid;
 
         public int Alive { get; private set; }
         public int Capacity => _count;
@@ -72,7 +77,8 @@ namespace RipNRage.Engine
                 _slots[i] = new Slot { index = i };
             }
             var s = _slots[i];
-            s.alive = true; s.collider = collider; s.entity = entity;
+            s.alive = true; s.collider = collider; s.entity = entity; s.body = null;
+            s.uid = System.Threading.Interlocked.Increment(ref _nextUid);
             s.ResetBroadphase();
             Alive++;
             return s;
@@ -81,7 +87,7 @@ namespace RipNRage.Engine
         internal void Free(Slot s)
         {
             if (s == null || !s.alive) return;
-            s.alive = false; s.collider = null; s.entity = Entity.Null;
+            s.alive = false; s.collider = null; s.entity = Entity.Null; s.body = null;
             s.generation++; if (s.generation == 0) s.generation = 1;
             _free.Push(s.index);
             Alive--;
@@ -102,6 +108,8 @@ namespace RipNRage.Engine
         public Collider ColliderOf(PhysicsProxy p) => Resolve(p)?.collider;
         /// <summary>The ECS entity behind a proxy (Entity.Null for legacy colliders or stale proxies).</summary>
         public Entity EntityOf(PhysicsProxy p) => Resolve(p)?.entity ?? Entity.Null;
+        /// <summary>The rigid body moving the collider behind a proxy (null: static, no body, or stale).</summary>
+        public SolverBody BodyOf(PhysicsProxy p) => Resolve(p)?.body;
 
     }
 }

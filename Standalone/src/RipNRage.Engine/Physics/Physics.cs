@@ -608,16 +608,16 @@ namespace RipNRage.Engine
         }
 
         /// <summary>All rigid bodies in the world.</summary>
-        public static IReadOnlyList<RigidBody> RigidBodies => World.RigidBodies;
+        public static IReadOnlyList<SolverBody> Bodies => World.Bodies;
 
         /// <summary>Explosion impulse on every rigid body within <paramref name="radius"/> (linear falloff, see <see cref="RigidBody.AddExplosionForce"/>).</summary>
         public static void AddExplosionForce(float impulse, Vector3 origin, float radius, float upwardsModifier = 0f, int layerMask = DefaultRaycastLayers)
         {
-            var bodies = World.RigidBodies;
+            var bodies = World.Bodies;
             for (int i = 0; i < bodies.Count; i++)
             {
                 var b = bodies[i];
-                if (b.destroyed || !b.isActiveAndEnabled || ((1 << b.gameObject.layer) & layerMask) == 0) continue;
+                if (!b.IsLive || (b.legacy != null && ((1 << b.legacy.gameObject.layer) & layerMask) == 0)) continue;
                 if ((b.worldCenterOfMass - origin).sqrMagnitude > (radius + 5f) * (radius + 5f)) continue;
                 b.AddExplosionForce(impulse, origin, radius, upwardsModifier);
             }

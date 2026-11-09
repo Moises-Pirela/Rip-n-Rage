@@ -69,9 +69,9 @@ namespace RipNRage.Engine
     /// </summary>
     public abstract class Constraint
     {
-        public RigidBody bodyA;
+        public SolverBody bodyA;
         /// <summary>Null = the world.</summary>
-        public RigidBody bodyB;
+        public SolverBody bodyB;
         public bool enabled = true;
         /// <summary>Force (N) the constraint can transmit before it breaks; infinity = unbreakable.</summary>
         public float breakForce = float.PositiveInfinity;
@@ -137,13 +137,13 @@ namespace RipNRage.Engine
 
         // ---- shared helpers ----
 
-        internal static bool Dynamic(RigidBody b) => b != null && !b.isKinematic && !b.sleeping && b.isActiveAndEnabled;
+        internal static bool Dynamic(SolverBody b) => b != null && !b.isKinematic && !b.sleeping && b.live;
 
         /// <summary>Both bodies usable for this step (one of them must be dynamic; a moving body wakes its partner).</summary>
         internal bool BodiesReady()
         {
-            if (!enabled || broken || bodyA == null || bodyA.destroyed || (bodyB != null && bodyB.destroyed)) return false;
-            if (!bodyA.isActiveAndEnabled || (bodyB != null && !bodyB.isActiveAndEnabled)) return false;
+            if (!enabled || broken || bodyA == null || !bodyA.live || (bodyB != null && !bodyB.live)) return false;
+            
             if (bodyA.sleeping && bodyB != null && Dynamic(bodyB)) bodyA.WakeUp();
             if (bodyB != null && bodyB.sleeping && Dynamic(bodyA)) bodyB.WakeUp();
             return Dynamic(bodyA) || Dynamic(bodyB);
@@ -183,25 +183,25 @@ namespace RipNRage.Engine
             else BiasFor(in p, c, useBias, out bias, out ms, out isc);
         }
 
-        internal static Vector3 PointVelocity(RigidBody b, Vector3 r) => b != null && (Dynamic(b) || b.isKinematic) ? b.linearVelocity + Vector3.Cross(b.angularVelocity, r) : Vector3.zero;
-        internal static Vector3 AngularVelocity(RigidBody b) => b != null && (Dynamic(b) || b.isKinematic) ? b.angularVelocity : Vector3.zero;
+        internal static Vector3 PointVelocity(SolverBody b, Vector3 r) => b != null && (Dynamic(b) || b.isKinematic) ? b.linearVelocity + Vector3.Cross(b.angularVelocity, r) : Vector3.zero;
+        internal static Vector3 AngularVelocity(SolverBody b) => b != null && (Dynamic(b) || b.isKinematic) ? b.angularVelocity : Vector3.zero;
 
         /// <summary>Applies an impulse at the anchors: +P on B, −P on A.</summary>
-        internal static void ApplyImpulse(RigidBody a, RigidBody b, Vector3 rA, Vector3 rB, Vector3 impulse)
+        internal static void ApplyImpulse(SolverBody a, SolverBody b, Vector3 rA, Vector3 rB, Vector3 impulse)
         {
             if (Dynamic(a)) { a.linearVelocity -= impulse * a.inverseMass; a.angularVelocity -= a.ApplyInverseInertia(Vector3.Cross(rA, impulse)); }
             if (Dynamic(b)) { b.linearVelocity += impulse * b.inverseMass; b.angularVelocity += b.ApplyInverseInertia(Vector3.Cross(rB, impulse)); }
         }
 
         /// <summary>Applies an angular impulse: +L on B, −L on A.</summary>
-        internal static void ApplyAngularImpulse(RigidBody a, RigidBody b, Vector3 angularImpulse)
+        internal static void ApplyAngularImpulse(SolverBody a, SolverBody b, Vector3 angularImpulse)
         {
             if (Dynamic(a)) a.angularVelocity -= a.ApplyInverseInertia(angularImpulse);
             if (Dynamic(b)) b.angularVelocity += b.ApplyInverseInertia(angularImpulse);
         }
 
         /// <summary>Effective mass matrix of the anchor pair (how the relative anchor velocity responds to an impulse).</summary>
-        internal static Matrix3x3 PointMass(RigidBody a, RigidBody b, Vector3 rA, Vector3 rB)
+        internal static Matrix3x3 PointMass(SolverBody a, SolverBody b, Vector3 rA, Vector3 rB)
         {
             bool da = Dynamic(a), db = Dynamic(b);
             Vector3 c0 = Vector3.zero, c1 = Vector3.zero, c2 = Vector3.zero;
@@ -217,7 +217,7 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Effective angular mass matrix (the sum of the world inverse inertias).</summary>
-        internal static Matrix3x3 AngularMass(RigidBody a, RigidBody b)
+        internal static Matrix3x3 AngularMass(SolverBody a, SolverBody b)
         {
             Matrix3x3 k = new Matrix3x3();
             if (Dynamic(a)) k = k + a.InverseInertiaWorld();
@@ -226,7 +226,7 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Effective mass of a single angular row about <paramref name="axis"/>.</summary>
-        internal static float AngularRowMass(RigidBody a, RigidBody b, Vector3 axis)
+        internal static float AngularRowMass(SolverBody a, SolverBody b, Vector3 axis)
         {
             float k = 0f;
             if (Dynamic(a)) k += Vector3.Dot(axis, a.ApplyInverseInertia(axis));
@@ -235,7 +235,7 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Effective mass of a single linear row along <paramref name="axis"/> at the anchors.</summary>
-        internal static float LinearRowMass(RigidBody a, RigidBody b, Vector3 rA, Vector3 rB, Vector3 axis)
+        internal static float LinearRowMass(SolverBody a, SolverBody b, Vector3 rA, Vector3 rB, Vector3 axis)
         {
             float k = 0f;
             if (Dynamic(a)) { Vector3 rn = Vector3.Cross(rA, axis); k += a.inverseMass + Vector3.Dot(rn, a.ApplyInverseInertia(rn)); }
@@ -244,13 +244,13 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Position-level correction at the anchors (NGS): +P moves B, −P moves A.</summary>
-        internal static void ApplyPositionImpulse(RigidBody a, RigidBody b, Vector3 rA, Vector3 rB, Vector3 impulse)
+        internal static void ApplyPositionImpulse(SolverBody a, SolverBody b, Vector3 rA, Vector3 rB, Vector3 impulse)
         {
             if (Dynamic(a)) a.ApplyPositionImpulse(-impulse, rA);
             if (Dynamic(b)) b.ApplyPositionImpulse(impulse, rB);
         }
 
-        internal static void ApplyPositionRotation(RigidBody a, RigidBody b, Vector3 angularImpulse)
+        internal static void ApplyPositionRotation(SolverBody a, SolverBody b, Vector3 angularImpulse)
         {
             if (Dynamic(a)) a.ApplyPositionRotation(-angularImpulse);
             if (Dynamic(b)) b.ApplyPositionRotation(angularImpulse);
@@ -345,7 +345,7 @@ namespace RipNRage.Engine
         public BallConstraint() { }
 
         /// <summary>Joint between two bodies meeting at <paramref name="worldAnchor"/> (their current poses).</summary>
-        public BallConstraint(RigidBody a, RigidBody b, Vector3 worldAnchor)
+        public BallConstraint(SolverBody a, SolverBody b, Vector3 worldAnchor)
         {
             bodyA = a; bodyB = b;
             SetWorldAnchor(worldAnchor);
@@ -428,7 +428,7 @@ namespace RipNRage.Engine
         public DistanceConstraint() { }
 
         /// <summary>Rigid rod between two world points on the bodies at their current distance.</summary>
-        public DistanceConstraint(RigidBody a, RigidBody b, Vector3 worldAnchorA, Vector3 worldAnchorB)
+        public DistanceConstraint(SolverBody a, SolverBody b, Vector3 worldAnchorA, Vector3 worldAnchorB)
         {
             bodyA = a; bodyB = b;
             localAnchorA = a != null ? Quaternion.Inverse(a.rotation) * (worldAnchorA - a.position) : worldAnchorA;
@@ -552,7 +552,7 @@ namespace RipNRage.Engine
         public SpringConstraint() { minLength = 0f; maxLength = float.PositiveInfinity; stiffness = 100f; damping = 5f; }
 
         /// <summary>Spring between two world points, at rest at their current distance.</summary>
-        public SpringConstraint(RigidBody a, RigidBody b, Vector3 worldAnchorA, Vector3 worldAnchorB, float stiffness, float damping)
+        public SpringConstraint(SolverBody a, SolverBody b, Vector3 worldAnchorA, Vector3 worldAnchorB, float stiffness, float damping)
             : base(a, b, worldAnchorA, worldAnchorB)
         {
             minLength = 0f; maxLength = float.PositiveInfinity;
@@ -601,7 +601,7 @@ namespace RipNRage.Engine
         public HingeConstraint() { }
 
         /// <summary>Hinge between two bodies through <paramref name="worldAnchor"/> about <paramref name="worldAxis"/> (their current poses define angle 0).</summary>
-        public HingeConstraint(RigidBody a, RigidBody b, Vector3 worldAnchor, Vector3 worldAxis)
+        public HingeConstraint(SolverBody a, SolverBody b, Vector3 worldAnchor, Vector3 worldAxis)
         {
             bodyA = a; bodyB = b;
             worldAxis = worldAxis.sqrMagnitude > 1E-08f ? worldAxis.normalized : Vector3.up;
@@ -833,7 +833,7 @@ namespace RipNRage.Engine
         public SliderConstraint() { }
 
         /// <summary>Slider between two bodies through <paramref name="worldAnchor"/> along <paramref name="worldAxis"/> (the current poses are position 0).</summary>
-        public SliderConstraint(RigidBody a, RigidBody b, Vector3 worldAnchor, Vector3 worldAxis)
+        public SliderConstraint(SolverBody a, SolverBody b, Vector3 worldAnchor, Vector3 worldAxis)
         {
             bodyA = a; bodyB = b;
             worldAxis = worldAxis.sqrMagnitude > 1E-08f ? worldAxis.normalized : Vector3.right;
@@ -1032,7 +1032,7 @@ namespace RipNRage.Engine
 
         public FixedConstraint() { }
 
-        public FixedConstraint(RigidBody a, RigidBody b, Vector3 worldAnchor)
+        public FixedConstraint(SolverBody a, SolverBody b, Vector3 worldAnchor)
         {
             bodyA = a; bodyB = b;
             localAnchorA = a != null ? Quaternion.Inverse(a.rotation) * (worldAnchor - a.position) : worldAnchor;

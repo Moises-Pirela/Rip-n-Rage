@@ -58,7 +58,7 @@ before/after.
 | Renderer input | `src/RipNRage.Engine/Graphics/RenderData.cs` (`RenderFrame`, `SpriteDraw`, `MeshDraw`, `LightDraw`, `CameraView`, `IRenderProducer`) |
 | Temporary bridge | `src/RipNRage.Engine/Graphics/LegacySceneProducer.cs` — delete in layer 9 |
 | Prefabs | `Standalone/prefabs/` (`demo/` holds the layer-1 demo) |
-| ECS physics | `src/RipNRage.Engine/Ecs/Dynamics/` (components, configs); collider table `src/RipNRage.Engine/Physics/ColliderTable.cs` |
+| ECS physics | `src/RipNRage.Engine/Ecs/Physics/` (components, configs); collider table `src/RipNRage.Engine/Physics/ColliderTable.cs` |
 | Tests | `tests/RipNRage.EngineChecks/` — `EcsChecks.cs`, `TransformChecks.cs`, `PhysicsEcsChecks.cs` (run in CI) |
 | World ownership | `Application.World` (created in the constructor, `Update` after scene + physics, cleared in `ResetScene`) |
 
@@ -99,16 +99,28 @@ Convert, keeping the tuned solver behaviour:
   entities both register into it (legacy as thin adapters, deleted in layer 9).
 - **Steps** (one commit + review stop each):
   - [x] 2.0 Baselines recorded (below).
-  - [x] 2.1 Physics components + configs + tests (data only, nothing simulates them). `Ecs/Dynamics/`: `Body`,
-        `BodyVelocity`, `ColliderShape` (one component, `ShapeKind` enum; hull / mesh by handle via `PhysicsAssets`),
-        `SurfaceMaterial`, `CollisionFilter`, `[Sparse] Trigger`, `[Sparse] Sleeping`. Namespace is `Dynamics` because
-        `Ecs.Physics` would shadow the legacy `Physics` facade. Convex shapes are code-only for now (no config form).
+  - [x] 2.1 Physics components + configs + tests (data only, nothing simulates them). `Ecs/Physics/`
+        (namespace `RipNRage.Engine.Ecs.Physics`): `Body`, `BodyVelocity`, `ColliderShape` (one component, `ShapeKind`
+        enum; hull / mesh by handle via `PhysicsAssets`), `SurfaceMaterial`, `CollisionFilter`, `[Sparse] Trigger`,
+        `[Sparse] Sleeping`, and runtime-only `PhysicsHandle` (the entity's `PhysicsProxy`; set by the 2.4 sync system,
+        always bakes unregistered). Convex colliders bake from config: `vertices` (faces derived, ≤64 points) or
+        `vertices` + `planes` (brush form, validated against each other); interned by content.
+        Caveat: inside `RipNRage.Engine.Ecs.*`, `Physics.X` now resolves to this namespace — write
+        `RipNRage.Engine.Physics.X` (or alias it) when ECS code needs the legacy facade.
   - [x] 2.2 Internal collider table (`Physics/ColliderTable.cs`): slots with generation-checked `PhysicsProxy`
         handles, owner = legacy `Collider` or ECS `Entity`; broadphase grids store slot indices. Gates: single-threaded
         bench equal or slightly faster (ragdolls median 34.8 vs 35.9 ms/step), strafe fails identically to baseline,
         look-script pixel diff 0.037%. Multi-threaded bench is too noisy here (ragdolls 6–16 ms) to gate on: use
         `--threads 1`, interleaved with a baseline worktree.
-  - [ ] 2.3 `RigidSolver` / contact cache / islands on table indices instead of `RigidBody` / `Collider` objects.
+  - [x] 2.3 Solver on `SolverBody` (`Physics/SolverBody.cs`): all simulation state and maths moved out of
+        `RigidBody`, which is now an adapter (public fields forward; implicit `RigidBody → SolverBody`). Manifolds,
+        contact cache, islands, constraints and `PhysicsWorld.Bodies` hold `SolverBody`. Pose source is the owner (legacy
+        transform, or `ecsPosition` / `ecsRotation` for ECS). Cache keys: body `id` (monotonic, never reused — keeps
+        the old pair order) and collider slot `uid`. Collider slots link to their body (`Slot.body`,
+        `ColliderTable.BodyOf`). Liveness / collider are snapshotted per step (`RefreshStepState`): reading the owner
+        on every constraint iteration cost ~10% on ragdolls. Gates: bench at parity (ragdolls 34.6 vs 34.3 ms/step,
+        `--threads 1`, interleaved, 5 runs), strafe identical, look 0.040%. **Left for 2.4**: narrow-phase candidates
+        and `QueryFilter` are still `Collider`-typed; ECS colliders need the slot-typed path there.
   - [ ] 2.4 `PhysicsSyncSystem` + `PhysicsStepSystem` in FixedTick: ECS entities enter the table; poses written back
         to `LocalTransform`; fixed-step lockstep with the legacy `FixedUpdate`.
   - [ ] 2.5 Joints as components; constraints keyed by table index.

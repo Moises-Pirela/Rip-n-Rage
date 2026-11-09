@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
-using RipNRage.Engine.Ecs.Dynamics;
+using RipNRage.Engine.Ecs.Physics;
 
 /// <summary>Layer 2: physics components / configs (2.1) and the collider table under the broadphase (2.2).</summary>
 internal static class PhysicsEcsChecks
@@ -56,6 +57,37 @@ internal static class PhysicsEcsChecks
                  && Throws(() => new CollisionFilterConfig { layer = 32 }.Bake()), "invalid shapes / layers are rejected at bake");
         }
 
+        // ---- convex colliders from config: faces derived or given, validated, shared by content
+        {
+            float[][] cube = { new float[]{-1,-1,-1}, new float[]{1,-1,-1}, new float[]{-1,1,-1}, new float[]{1,1,-1},
+                               new float[]{-1,-1,1}, new float[]{1,-1,1}, new float[]{-1,1,1}, new float[]{1,1,1} };
+            var c1 = new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = cube }.Bake();
+            var hull = PhysicsAssets.Hulls.Resolve(c1.Hull);
+            True(!c1.Hull.IsNone && hull != null && hull.faceCount == 6, "a cube's 8 points derive 6 faces");
+            True(hull.Contains(new Vector3(0.5f, -0.5f, 0.9f)) && !hull.Contains(new Vector3(1.2f, 0, 0)), "derived hull contains its inside, not its outside");
+            var c2 = new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = cube }.Bake();
+            True(c1.Hull.Equals(c2.Hull), "identical convex configs share one hull asset");
+            float[][] tet = { new float[]{0,0,0}, new float[]{1,0,0}, new float[]{0,1,0}, new float[]{0,0,1} };
+            True(PhysicsAssets.Hulls.Resolve(new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = tet }.Bake().Hull).faceCount == 4, "a tetrahedron derives 4 faces");
+            float[][] cubePlanes = { new float[]{1,0,0,1}, new float[]{-1,0,0,1}, new float[]{0,1,0,1}, new float[]{0,-1,0,1}, new float[]{0,0,1,1}, new float[]{0,0,-1,1} };
+            var c3 = new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = cube, planes = cubePlanes }.Bake();
+            True(PhysicsAssets.Hulls.Resolve(c3.Hull).faceCount == 6, "explicit planes are taken as given");
+            float[][] flat = { new float[]{0,0,0}, new float[]{1,0,0}, new float[]{0,1,0}, new float[]{1,1,0} };
+            float[][] badPlanes = { new float[]{1,0,0,0.5f}, new float[]{-1,0,0,1}, new float[]{0,1,0,1}, new float[]{0,-1,0,1}, new float[]{0,0,1,1}, new float[]{0,0,-1,1} };
+            True(Throws(() => new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = flat }.Bake())
+                 && Throws(() => new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = tet[..3] }.Bake())
+                 && Throws(() => new ColliderShapeConfig { kind = ShapeKind.Convex, vertices = cube, planes = badPlanes }.Bake())
+                 && Throws(() => new ColliderShapeConfig { kind = ShapeKind.Convex }.Bake()),
+                 "coplanar points, too few points, planes that cut vertices, and missing data are rejected");
+            using var hw = new World(0);
+            var lib = new PrefabLibrary();
+            lib.AddJson(@"{ ""name"": ""wedge"", ""components"": { ""ColliderShape"": { ""kind"": ""Convex"",
+                ""vertices"": [[0,0,0],[2,0,0],[0,0,2],[2,0,2],[0,1,0],[0,1,2]] }, ""PhysicsHandle"": {} } }");
+            var wedge = lib.Get("wedge").Instantiate(hw); hw.Sync();
+            True(PhysicsAssets.Hulls.Resolve(hw.Get<ColliderShape>(wedge).Hull).faceCount == 5, "convex prefab JSON bakes (wedge: 5 faces)");
+            True(!hw.Get<PhysicsHandle>(wedge).IsRegistered, "PhysicsHandle always bakes unregistered");
+        }
+
         // ---- 2.2 collider table: legacy colliders own slots; the broadphase finds them through it
         {
             var world = Physics.World;
@@ -88,6 +120,42 @@ internal static class PhysicsEcsChecks
             GameObject.DestroyImmediate(a.gameObject); GameObject.DestroyImmediate(c.gameObject);
             True(world.Table.Alive == before, "all test slots released");
         }
+
+        SolverBodyChecks(True);
+    }
+
+    /// <summary>2.3: the solver runs on SolverBody; RigidBody is an adapter. Called from Run.</summary>
+    private static void SolverBodyChecks(Action<bool, string> True)
+    {
+        var world = Physics.World;
+        // collider first, then body (the usual order)
+        var go1 = new GameObject("sb-1"); go1.transform.position = new Vector3(200, 10, 0);
+        var col1 = go1.AddComponent<BoxCollider>(); var rb1 = go1.AddComponent<RigidBody>();
+        // body first, then collider: the slot / body link must still form
+        var go2 = new GameObject("sb-2"); go2.transform.position = new Vector3(203, 10, 0);
+        var rb2 = go2.AddComponent<RigidBody>(); var col2 = go2.AddComponent<SphereCollider>();
+        _scene.Tick(0f);
+        rb2.ComputeMass(); // the sphere arrived after the body's Awake: recompute like game code does after changing the collider
+
+        True(rb1.body.legacy == rb1 && ReferenceEquals((SolverBody)rb1, rb1.body), "the adapter owns its SolverBody (and converts implicitly)");
+        rb1.mass = 7f; rb1.linearVelocity = new Vector3(1, 2, 3);
+        True(rb1.body.mass == 7f && rb1.body.linearVelocity == new Vector3(1, 2, 3), "public fields forward to the SolverBody");
+        True(rb1.body.id < rb2.body.id, "body ids follow creation order (the solver's pair order relies on it)");
+        True(world.Table.BodyOf(col1.Proxy) == rb1.body && world.Table.BodyOf(col2.Proxy) == rb2.body,
+             "collider slot and body link up in either Awake order");
+        True(world.Bodies.Contains(rb1.body) && world.Bodies.Contains(rb2.body), "the world lists SolverBodies");
+        True(rb2.isRounded && !rb1.isRounded, "mass properties come from the legacy collider through the adapter");
+
+        rb1.linearVelocity = Vector3.zero; rb1.useGravity = true;
+        float y0 = go1.transform.position.y;
+        for (int i = 0; i < 10; i++) world.StepFixed(1f / 60f);
+        True(go1.transform.position.y < y0 - 0.05f && rb1.linearVelocity.y < 0f, "a SolverBody falls under gravity and writes the transform back");
+
+        var proxy1 = col1.Proxy;
+        GameObject.DestroyImmediate(go1);
+        True(!world.Bodies.Contains(rb1.body) && world.Table.BodyOf(proxy1) == null, "destroying the owner removes the body and clears the slot link");
+        GameObject.DestroyImmediate(go2);
+        True(!world.Bodies.Contains(rb2.body), "second body removed");
     }
 
     private static BoxCollider Box(string name, Vector3 at, bool isStatic)

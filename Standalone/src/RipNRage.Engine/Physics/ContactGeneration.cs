@@ -32,8 +32,8 @@ namespace RipNRage.Engine
     public sealed class Manifold
     {
         public const int MaxPoints = 8;
-        public RigidBody bodyA;
-        public RigidBody bodyB;        // null: B is static / a kinematic mover
+        public SolverBody bodyA;
+        public SolverBody bodyB;        // null: B is static / a kinematic mover
         public Collider colliderA, colliderB;
         public Vector3 normal;         // from A to B
         public int count;

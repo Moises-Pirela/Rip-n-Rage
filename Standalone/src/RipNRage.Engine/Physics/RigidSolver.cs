@@ -104,10 +104,10 @@ namespace RipNRage.Engine
         private readonly List<Manifold> _manifolds = new List<Manifold>(64);
         private readonly List<Constraint> _activeConstraints = new List<Constraint>(16);
         private readonly HashSet<long> _noCollide = new HashSet<long>();
-        private readonly List<RigidBody> _awake = new List<RigidBody>(64);
-        private readonly List<RigidBody> _kinematic = new List<RigidBody>(8);
-        private readonly List<RigidBody> _ccd = new List<RigidBody>(16);
-        private readonly List<RigidBody> _pendingWake = new List<RigidBody>(16);
+        private readonly List<SolverBody> _awake = new List<SolverBody>(64);
+        private readonly List<SolverBody> _kinematic = new List<SolverBody>(8);
+        private readonly List<SolverBody> _ccd = new List<SolverBody>(16);
+        private readonly List<SolverBody> _pendingWake = new List<SolverBody>(16);
 
         // ------------------------------------------------------------------ worker scratch
 
@@ -122,7 +122,7 @@ namespace RipNRage.Engine
             public readonly Manifold scratch = new Manifold();
             public readonly Stack<Manifold> pool = new Stack<Manifold>();
             public readonly List<Manifold> manifolds = new List<Manifold>(64);
-            public readonly List<RigidBody> wake = new List<RigidBody>(8);
+            public readonly List<SolverBody> wake = new List<SolverBody>(8);
         }
 
         private Worker[] _workers = Array.Empty<Worker>();
@@ -141,9 +141,9 @@ namespace RipNRage.Engine
             _workers = arr;
         }
 
-        private static long PairKey(RigidBody a, RigidBody b)
+        private static long PairKey(SolverBody a, SolverBody b)
         {
-            int x = a.instanceId, y = b.instanceId;
+            int x = a.id, y = b.id;
             return x < y ? ((long)x << 32) | (uint)y : ((long)y << 32) | (uint)x;
         }
 
@@ -151,7 +151,7 @@ namespace RipNRage.Engine
 
         private sealed class Island
         {
-            public readonly List<RigidBody> bodies = new List<RigidBody>(16);
+            public readonly List<SolverBody> bodies = new List<SolverBody>(16);
             public readonly List<Manifold> manifolds = new List<Manifold>(32);
             public readonly List<Constraint> constraints = new List<Constraint>(4);
             // graph colouring (large islands only)
@@ -402,7 +402,7 @@ namespace RipNRage.Engine
 
         // ------------------------------------------------------------------ step
 
-        public void Step(PhysicsWorld world, List<RigidBody> bodies, float dt)
+        public void Step(PhysicsWorld world, List<SolverBody> bodies, float dt)
         {
             Contacts.BeginStep();
             int sub = Math.Max(1, substeps);
@@ -424,7 +424,8 @@ namespace RipNRage.Engine
             foreach (var b in bodies)
             {
                 b.solverIndex = -1;
-                if (!b.isActiveAndEnabled) continue;
+                b.RefreshStepState();
+                if (!b.live) continue;
                 b.contacts.Clear(); b.BeginStep(); b.WarmCaches();
                 if (b.isKinematic) _kinematic.Add(b);
                 else if (!b.sleeping)
@@ -557,9 +558,9 @@ namespace RipNRage.Engine
         }
 
         /// <summary>A body referenced by a constraint that Prepare woke up joins the awake list for this step.</summary>
-        private void Adopt(RigidBody b)
+        private void Adopt(SolverBody b)
         {
-            if (b == null || b.isKinematic || b.sleeping || !b.isActiveAndEnabled || b.solverIndex >= 0) return;
+            if (b == null || b.isKinematic || b.sleeping || !b.live || b.solverIndex >= 0) return;
             b.solverIndex = _awake.Count; _awake.Add(b);
             if (b.collisionDetection != CollisionDetectionMode.Discrete) _ccd.Add(b);
         }
@@ -629,7 +630,7 @@ namespace RipNRage.Engine
             }
         }
 
-        private static bool Dynamic(RigidBody b) => b != null && !b.isKinematic && !b.sleeping;
+        private static bool Dynamic(SolverBody b) => b != null && !b.isKinematic && !b.sleeping;
 
         // ------------------------------------------------------------------ pairs
 
@@ -652,7 +653,7 @@ namespace RipNRage.Engine
             return m;
         }
 
-        private void CollectContacts(PhysicsWorld world, RigidBody a, Worker w)
+        private void CollectContacts(PhysicsWorld world, SolverBody a, Worker w)
         {
             var candidates = w.candidates;
             candidates.Clear();
@@ -662,20 +663,20 @@ namespace RipNRage.Engine
             bool aMoving = a.linearVelocity.sqrMagnitude > wake || a.angularVelocity.sqrMagnitude > wake;
             foreach (var c in candidates)
             {
-                RigidBody b = c.attachedRigidbody;
+                SolverBody b = c.broadphase?.body;
                 if (b == a) continue;
                 if (b != null)
                 {
-                    if (!b.isActiveAndEnabled) continue;
+                    if (!b.live) continue;
                     if (a.collisionGroup != 0 && a.collisionGroup == b.collisionGroup && a.collisionGroup < 0) continue; // same negative group: never
                     if (_noCollide.Contains(PairKey(a, b))) continue; // joined without collideConnected
                     if (!b.isKinematic)
                     {
                         if (b.sleeping) { if (aMoving) w.wake.Add(b); }
-                        else if (a.instanceId > b.instanceId) continue; // the other side generates this pair
+                        else if (a.id > b.id) continue; // the other side generates this pair
                     }
                 }
-                long key = ((long)a.instanceId << 32) ^ (long)c.instanceId;
+                long key = ((long)a.id << 32) ^ (long)c.broadphase.uid;
                 if (c is MeshCollider mesh)
                 {
                     var tris = w.tris;
@@ -698,7 +699,7 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Contacts between two rigid bodies (normal from A to B).</summary>
-        private static bool CollideBodies(RigidBody a, RigidBody b, Manifold scratch)
+        private static bool CollideBodies(SolverBody a, SolverBody b, Manifold scratch)
         {
             if (a.isRounded && b.isRounded) return ContactGeneration.RoundedVsRounded(a.WorldShape, b.WorldShape, scratch);
             if (a.isRounded) return ContactGeneration.RoundedVsConvex(a.WorldShape, b.shape, scratch);
@@ -715,7 +716,7 @@ namespace RipNRage.Engine
             c is SphereCollider || c is CapsuleCollider || (c is CharacterController cc && cc.controllerShape == ControllerShape.Capsule);
 
         /// <summary>Contacts between a rigid body and a collider without one (level geometry, props, movers).</summary>
-        private static bool CollideStatic(RigidBody a, Collider c, Worker w)
+        private static bool CollideStatic(SolverBody a, Collider c, Worker w)
         {
             if (IsRoundedCollider(c))
             {
@@ -748,16 +749,16 @@ namespace RipNRage.Engine
             }
         }
 
-        private void Commit(Worker w, RigidBody a, RigidBody b, Collider c, long key)
+        private void Commit(Worker w, SolverBody a, SolverBody b, Collider c, long key)
         {
             var scratch = w.scratch;
             if (scratch.count == 0) return;
             var m = NewManifold(w);
-            m.bodyA = a; m.bodyB = b; m.colliderA = a.Shape; m.colliderB = c;
+            m.bodyA = a; m.bodyB = b; m.colliderA = a.stepCollider; m.colliderB = c;
             m.normal = scratch.normal; m.count = scratch.count;
             for (int i = 0; i < m.count; i++) m.points[i] = scratch.points[i];
             m.key = key;
-            Surface(a.Shape, a, out float musA, out float mudA, out float restA, out CombineMode fcA, out CombineMode rcA);
+            Surface(a.stepCollider, a, out float musA, out float mudA, out float restA, out CombineMode fcA, out CombineMode rcA);
             Surface(c, b, out float musB, out float mudB, out float restB, out CombineMode fcB, out CombineMode rcB);
             CombineMode fc = PhysicsMaterial.Pick(fcA, fcB), rc = PhysicsMaterial.Pick(rcA, rcB);
             m.staticFriction = MathF.Max(0f, PhysicsMaterial.Combine(musA, musB, fc));
@@ -768,7 +769,7 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Surface values of a collider: its material, else its body's values, else the solver's defaults for the level.</summary>
-        private void Surface(Collider c, RigidBody body, out float mus, out float mud, out float rest, out CombineMode fc, out CombineMode rc)
+        private void Surface(Collider c, SolverBody body, out float mus, out float mud, out float rest, out CombineMode fc, out CombineMode rc)
         {
             var mat = c != null ? c.material : null;
             if (mat != null) { mus = mat.staticFriction; mud = mat.dynamicFriction; rest = mat.restitution; fc = mat.frictionCombine; rc = mat.restitutionCombine; return; }
@@ -782,7 +783,7 @@ namespace RipNRage.Engine
         public float ccdSkin = 0.003f;
         public int CcdSweepsThisStep { get; private set; }
 
-        private static bool StaticOnly(Collider c) { var rb = c.attachedRigidbody; return rb == null || rb.isKinematic || rb.isSleeping; }
+        private static bool StaticOnly(Collider c) { var rb = c.broadphase?.body; return rb == null || rb.isKinematic || rb.isSleeping; }
         private static readonly Func<Collider, bool> StaticOnlyPredicate = StaticOnly;
 
         /// <summary>
@@ -792,7 +793,7 @@ namespace RipNRage.Engine
         /// contact. It then sits within the contact margin, so the next step's manifold takes over (bounce, slide,
         /// rest); nothing can be skipped however fast it goes. Runs on the calling thread (broadphase sweeps).
         /// </summary>
-        private void ClampMotion(PhysicsWorld world, RigidBody b, float h)
+        private void ClampMotion(PhysicsWorld world, SolverBody b, float h)
         {
             if (b.collisionDetection == CollisionDetectionMode.Discrete || b.sleeping || b.isKinematic) return;
             Vector3 motion = b.linearVelocity * h;
@@ -807,12 +808,12 @@ namespace RipNRage.Engine
             if (world.Sweep(in shape, motion, filter, ccdSkin, out ShapeHit hit)) fraction = MathF.Max(0f, hit.fraction);
             if (b.collisionDetection == CollisionDetectionMode.ContinuousDynamic)
             {
-                var bodies = world.RigidBodies;
+                var bodies = world.Bodies;
                 for (int i = 0; i < bodies.Count; i++)
                 {
                     var o = bodies[i];
-                    if (o == b || o.isKinematic || o.sleeping || !o.isActiveAndEnabled || o.destroyed) continue;
-                    if (o.Shape != null && !bodyFilter.Accepts(o.Shape)) continue;
+                    if (o == b || o.isKinematic || o.sleeping || !o.live) continue;
+                    if (o.stepCollider != null && !bodyFilter.Accepts(o.stepCollider)) continue;
                     Vector3 otherMotion = o.linearVelocity * h;
                     if (!o.worldBounds.Swept(otherMotion).Intersects(shape.bounds.Swept(motion))) continue;
                     CollisionShape os = o.WorldShape;
@@ -827,12 +828,12 @@ namespace RipNRage.Engine
 
         private static void Report(Manifold m)
         {
-            RigidBody a = m.bodyA, b = m.bodyB;
+            SolverBody a = m.bodyA, b = m.bodyB;
             for (int i = 0; i < m.count; i++)
             {
                 ref ManifoldPoint p = ref m.points[i];
-                a.contacts.Add(new RigidContact { other = m.colliderB, otherBody = b, point = p.point, normal = m.normal, impulse = p.normalImpulse, approachSpeed = p.relativeVelocity });
-                if (b != null) b.contacts.Add(new RigidContact { other = m.colliderA, otherBody = a, point = p.point, normal = -m.normal, impulse = p.normalImpulse, approachSpeed = p.relativeVelocity });
+                a.contacts.Add(new RigidContact { other = m.colliderB, otherBody = b?.legacy, point = p.point, normal = m.normal, impulse = p.normalImpulse, approachSpeed = p.relativeVelocity });
+                if (b != null) b.contacts.Add(new RigidContact { other = m.colliderA, otherBody = a.legacy, point = p.point, normal = -m.normal, impulse = p.normalImpulse, approachSpeed = p.relativeVelocity });
             }
         }
     }

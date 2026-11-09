@@ -74,14 +74,14 @@ namespace RipNRage.Engine
         public float currentTorque => constraint != null ? constraint.lastTorque : 0f;
 
         public Vector3 worldAnchor => body != null ? BodyPoint(body, anchor) : transform.TransformPoint(anchor);
-        public Vector3 worldAxis => (body != null ? body.rotation * axis : transform.TransformDirection(axis)).normalized;
+        public Vector3 worldAxis => (body != null ? body.body.rotation * axis : transform.TransformDirection(axis)).normalized;
         public Vector3 connectedWorldAnchor => connectedBody != null ? BodyPoint(connectedBody, connectedAnchor) : connectedAnchor;
 
         /// <summary>World position of a point given in a body's transform space (the body pose is authoritative, the transform may be interpolated).</summary>
         private static Vector3 BodyPoint(RigidBody b, Vector3 local)
         {
             Vector3 scaled = Vector3.Scale(local, b.transform.lossyScale);
-            return b.position + b.rotation * (scaled - b.comOffsetLocal);
+            return b.body.position + b.body.rotation * (scaled - b.body.comOffsetLocal);
         }
 
         protected override void OnEnable() { Attach(); }
@@ -100,7 +100,7 @@ namespace RipNRage.Engine
             connectedBody?.EnsureAwake();
             Vector3 wa = worldAnchor;
             if (autoConfigureConnectedAnchor)
-                connectedAnchor = connectedBody != null ? Quaternion.Inverse(connectedBody.rotation) * (wa - connectedBody.position) + connectedBody.comOffsetLocal : wa;
+                connectedAnchor = connectedBody != null ? Quaternion.Inverse(connectedBody.body.rotation) * (wa - connectedBody.body.position) + connectedBody.body.comOffsetLocal : wa;
             constraint = Create(body, connectedBody, wa, connectedWorldAnchor, worldAxis);
             if (constraint == null) return;
             constraint.collideConnected = enableCollision;
@@ -166,7 +166,7 @@ namespace RipNRage.Engine
         protected override Constraint Create(RigidBody body, RigidBody other, Vector3 worldAnchor, Vector3 connectedWorldAnchor, Vector3 worldAxis)
         {
             var c = new BallConstraint(body, other, worldAnchor);
-            if (!autoConfigureConnectedAnchor) c.localAnchorB = other != null ? Quaternion.Inverse(other.rotation) * (connectedWorldAnchor - other.position) : connectedWorldAnchor;
+            if (!autoConfigureConnectedAnchor) c.localAnchorB = other != null ? Quaternion.Inverse(other.body.rotation) * (connectedWorldAnchor - other.body.position) : connectedWorldAnchor;
             return c;
         }
     }
