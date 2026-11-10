@@ -126,7 +126,13 @@ namespace RipNRage.Game.Content
             var go = new GameObject(name);
             go.layer = Layers.Pickup;
             go.transform.localScale = new Vector3(0.75f, 0.75f, 1f);
-            // ECS migration (layer 2): the pickup trigger returns as an ECS Trigger in layer 7
+            // the pickup's trigger sphere (prefab radius 1.5) is an ECS Trigger entity; TriggerVolume relays its
+            // overlaps to AmmoPickup.OnTriggerEnter. It follows the GameObject, which Bob moves up and down.
+            var trigger = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticSphere(
+                Application.Current.World, Vector3.zero, 1.5f, Layers.Pickup, trigger: true);
+            RipNRage.Game.Ecs.TriggerVolume.Attach(go, trigger);
+            go.AddComponent<RipNRage.Game.Ecs.TriggerFollower>();
+
             var spriteGo = new GameObject("Sprite");
             spriteGo.transform.SetParent(go.transform, false);
             var sr = spriteGo.AddComponent<SpriteRenderer>();

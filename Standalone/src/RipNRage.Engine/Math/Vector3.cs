@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace RipNRage.Engine
 {
@@ -26,9 +27,12 @@ namespace RipNRage.Engine
             set { if (i == 0) x = value; else if (i == 1) y = value; else z = value; }
         }
 
-        public float magnitude => MathF.Sqrt(x * x + y * y + z * z);
-        public float sqrMagnitude => x * x + y * y + z * z;
+        // Derived, not state. Without [JsonIgnore] a serializer walks normalized.normalized... until it gives up:
+        // that was the "possible object cycle" failure when saving the game.
+        [JsonIgnore] public float magnitude => MathF.Sqrt(x * x + y * y + z * z);
+        [JsonIgnore] public float sqrMagnitude => x * x + y * y + z * z;
 
+        [JsonIgnore]
         public Vector3 normalized
         {
             get

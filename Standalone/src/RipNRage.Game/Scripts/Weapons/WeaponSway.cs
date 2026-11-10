@@ -36,7 +36,11 @@ public class WeaponSway : MonoBehaviour
     // Update is called once per frame
     protected override void Update()
     {
-        if (controller._inputActions.MovementInput.y != 0 || controller._inputActions.MovementInput.x != 0)
+        if (controller == null) return;
+        Vector2 move = Application.Current?.World != null
+            ? Application.Current.World.GetSingleton<RipNRage.Engine.Ecs.Input.InputState>().Move
+            : Vector2.zero;
+        if (move.y != 0 || move.x != 0)
         {
             timer += Time.deltaTime * swaySpeed;
             
@@ -46,13 +50,13 @@ public class WeaponSway : MonoBehaviour
             
             float zLerp = Mathf.LerpAngle(z, 0, Time.deltaTime * zSmoothLerp);
             
-            float zSway = Mathf.Clamp(controller._inputActions.MovementInput.x * zSwayMultiplier * Time.smoothDeltaTime * zSmoothSway, -zSwayAngle, zSwayAngle);
+            float zSway = Mathf.Clamp(move.x * zSwayMultiplier * Time.smoothDeltaTime * zSmoothSway, -zSwayAngle, zSwayAngle);
             
             zSway = Mathf.LerpAngle(z, zSway, Time.deltaTime * zSmoothLerp);
             
             transform.localRotation = Quaternion.Euler(transform.localEulerAngles.x, transform.localEulerAngles.y, zSway);
 
-            if (!controller._inputActions.IsGrounded) return;
+            if (!controller.IsGrounded) return;
             
             transform.localPosition = new Vector3(startPos.x + Mathf.Sin(horizontalTimer) * horizontalSwayAmount, 
                     startPos.y + Mathf.Sin(timer) * swayAmount, 
@@ -66,7 +70,7 @@ public class WeaponSway : MonoBehaviour
             
             transform.localRotation = Quaternion.Euler(transform.localEulerAngles.x, transform.localEulerAngles.y, zLerp);
             
-            if (!controller._inputActions.IsGrounded) return;
+            if (!controller.IsGrounded) return;
             
             timer = 0;
             horizontalTimer = 0;

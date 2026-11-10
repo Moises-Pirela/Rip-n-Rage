@@ -39,6 +39,12 @@ namespace RipNRage.Engine.Ecs.Physics
         public float PendingMinVerticalSpeed;
         /// <summary>New capsule height (slide crouch / stand up), the bottom stays put; NaN = none. Consumed.</summary>
         public float PendingHeight;
+        /// <summary>
+        /// Gravity multiplier for the body, re-applied every step (a wall run glides at a fraction, the player falls
+        /// at 2.5×). Unlike the <c>Pending*</c> commands this is a level, not an edge: hold the value. A dash sets
+        /// gravity aside and restores this when it ends.
+        /// </summary>
+        public float GravityScale;
         // ---- state (written by the system) ----
         public bool IsGrounded, IsDashing;
         public Vector3 GroundNormal, GroundVelocity;
@@ -46,7 +52,7 @@ namespace RipNRage.Engine.Ecs.Physics
         /// <summary>From the capsule bottom to the ground (infinity = none in reach).</summary>
         public float GroundDistance;
         // ---- internal timers (sim time) ----
-        internal float UngroundedUntil, DashUntil, SavedGravityScale;
+        internal float UngroundedUntil, DashUntil;
         internal Vector3 DashVelocity;
         internal bool Configured;
     }
@@ -57,12 +63,14 @@ namespace RipNRage.Engine.Ecs.Physics
         public float rideHeight = 0.5f, rideFrequency = 6f, rideDamping = 0.8f, maxRideAcceleration = 90f, groundTolerance = 0.25f, maxSlopeAngle = 50f;
         public float acceleration = 70f, airAcceleration = 20f, stopDeceleration = 60f, jumpGrace = 0.25f;
         public int groundMask = ~0;
+        public float gravityScale = 1f;
         public override CharacterMotor Bake() => new CharacterMotor
         {
+            GravityScale = gravityScale,
             Profile = profile, RideHeight = rideHeight, RideFrequency = rideFrequency, RideDamping = rideDamping, MaxRideAcceleration = maxRideAcceleration,
             GroundTolerance = groundTolerance, MaxSlopeAngle = maxSlopeAngle, Acceleration = acceleration, AirAcceleration = airAcceleration,
             StopDeceleration = stopDeceleration, JumpGrace = jumpGrace, GroundMask = groundMask,
-            PendingMinVerticalSpeed = float.NaN, PendingHeight = float.NaN, GroundNormal = Vector3.up, GroundDistance = float.PositiveInfinity, SavedGravityScale = 1f,
+            PendingMinVerticalSpeed = float.NaN, PendingHeight = float.NaN, GroundNormal = Vector3.up, GroundDistance = float.PositiveInfinity,
         };
     }
 
@@ -123,7 +131,6 @@ namespace RipNRage.Engine.Ecs.Physics
             b.freezeRotation = true; b.canSleep = false; b.friction = 0.05f; b.staticFriction = 0.05f; b.restitution = 0f;
             b.collisionDetection = CollisionDetectionMode.Continuous; b.linearDamping = 0f; b.angularDamping = 0f; b.interpolate = true;
             b.ComputeMassProperties();
-            m.SavedGravityScale = b.gravityScale;
             m.Configured = true;
         }
 
@@ -142,7 +149,7 @@ namespace RipNRage.Engine.Ecs.Physics
         {
             if (!m.IsDashing) return;
             m.IsDashing = false;
-            b.gravityScale = m.SavedGravityScale;
+            b.gravityScale = m.GravityScale;
         }
 
         internal void Step(ref CharacterMotor m, SolverBody b, float dt)
@@ -150,13 +157,13 @@ namespace RipNRage.Engine.Ecs.Physics
             if (!m.Configured) Configure(ref m, b);
             ApplyProfile(ref m);
             b.WakeUp();
+            if (!m.IsDashing) b.gravityScale = m.GravityScale; // a level, re-applied every step (the dash owns it meanwhile)
 
             // ---- commands ----
             Vector3 v = b.linearVelocity;
             if (m.PendingStopDash) { StopDash(ref m, b); m.PendingStopDash = false; }
             if (m.PendingDashTime > 0f)
             {
-                if (!m.IsDashing) m.SavedGravityScale = b.gravityScale;
                 m.IsDashing = true; m.DashVelocity = m.PendingDash; m.DashUntil = _time + m.PendingDashTime;
                 b.gravityScale = 0f; v = m.PendingDash;
                 Unground(ref m, m.PendingDashTime + 0.05f);

@@ -9,7 +9,7 @@ using System.Collections;
 // Current returns null once the player object was destroyed (level restart), and the per-frame
 // Debug.Log calls in Update were removed (they built two strings every frame).
 [System.Serializable]
-public class PlayerState : EntityState
+public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
 {
     public const float MaxHealthValue = 100f;
     public const float MaxArmorValue = 100f;

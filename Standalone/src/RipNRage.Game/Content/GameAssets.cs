@@ -219,6 +219,20 @@ namespace RipNRage.Game.Content
             Land = AudioClip.Load(A("Audio/Locomotion/Land.wav"));
         }
 
+        /// <summary>
+        /// A footstep that is not the one just played: the picked clip is swapped to index 0 and index 0 is excluded
+        /// next time (the legacy FPSController's trick for never repeating a step immediately).
+        /// </summary>
+        public static AudioClip RandomFootstep()
+        {
+            if (Footsteps == null || Footsteps.Length < 2) return Footsteps != null && Footsteps.Length > 0 ? Footsteps[0] : null;
+            int n = Random.Range(1, Footsteps.Length);
+            var clip = Footsteps[n];
+            Footsteps[n] = Footsteps[0];
+            Footsteps[0] = clip;
+            return clip;
+        }
+
         // ------------------------------------------------------------------ animation
 
         private const float F = 1f / 60f; // the clips were authored at 60 samples/second

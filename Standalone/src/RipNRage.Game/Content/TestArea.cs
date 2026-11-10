@@ -99,8 +99,9 @@ namespace RipNRage.Game.Content
             waterMr.transparent = true;
             waterMr.castsShadow = false;
             waterMr.material = Materials.Water; // animated water shader (shaders/water.glsl)
-            // the water volume is an ECS trigger (EnterWaterCollision reacts to it again in layer 7)
-            EcsPhysics.PhysicsEntities.StaticBox(World, water.transform.position + new Vector3(0, -50f, 0), Quaternion.identity, new Vector3(1732.1f, 100f, 1000f), Layers.Water, trigger: true);
+            // the water volume is an ECS trigger; TriggerVolume relays its overlaps to EnterWaterCollision
+            var waterVolume = EcsPhysics.PhysicsEntities.StaticBox(World, water.transform.position + new Vector3(0, -50f, 0), Quaternion.identity, new Vector3(1732.1f, 100f, 1000f), Layers.Water, trigger: true);
+            RipNRage.Game.Ecs.TriggerVolume.Attach(water, waterVolume);
             water.AddComponent<EnterWaterCollision>();
 
             var sand = new GameObject("SandPlane");

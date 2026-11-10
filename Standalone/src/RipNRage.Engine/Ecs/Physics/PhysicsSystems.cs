@@ -354,9 +354,13 @@ namespace RipNRage.Engine.Ecs.Physics
             {
                 var b = reg.Body;
                 if (b == null || !b.interpolate || b.isKinematic || b.sleeping || !b.hasPrev || !World.Has<LocalTransform>(reg.Entity)) continue;
+                ref var lt = ref World.Get<LocalTransform>(reg.Entity);
+                // Someone moved the entity since the last pose was written (a teleport from gameplay, which runs
+                // between fixed steps): leave it alone, or the blend would overwrite the teleport *and* update
+                // LastPos, so the next sync would never see it either and the body would snap back.
+                if (lt.Position != reg.LastPos || lt.Rotation != reg.LastRot) continue;
                 Vector3 p = Vector3.LerpUnclamped(b.prevPosition, b.position, alpha);
                 Quaternion r = Quaternion.Slerp(b.prevRotation, b.rotation, alpha);
-                ref var lt = ref World.Get<LocalTransform>(reg.Entity);
                 lt.Position = p - r * b.comOffsetLocal; lt.Rotation = r;
                 reg.LastPos = lt.Position; reg.LastRot = lt.Rotation;
             }

@@ -20,7 +20,7 @@ public class HeadBob : MonoBehaviour
 
     private Vector3 startPos;
     private float timer;
-    /// <summary>Standalone addition: vertical offset added by the controller (slide crouch).</summary>
+    /// <summary>Vertical offset the slide crouch asks for; taken from the player's PlayerMotor component.</summary>
     public float heightOffset;
 
     protected override void Start()
@@ -30,9 +30,14 @@ public class HeadBob : MonoBehaviour
 
     protected override void Update()
     {
-        if (!controller._inputActions.IsGrounded) return;
+        if (controller == null) return;
+        heightOffset = controller.CameraHeightOffset;
+        if (!controller.IsGrounded) return;
 
-        if (controller._inputActions.MovementInput.y != 0 || controller._inputActions.MovementInput.x != 0)
+        Vector2 move = Application.Current?.World != null
+            ? Application.Current.World.GetSingleton<RipNRage.Engine.Ecs.Input.InputState>().Move
+            : Vector2.zero;
+        if (move.y != 0 || move.x != 0)
         {
             timer += Time.deltaTime * frequency;
             transform.localPosition = new Vector3(transform.localPosition.x, startPos.y + heightOffset + Mathf.Sin(timer) * waveLength, transform.localPosition.z);

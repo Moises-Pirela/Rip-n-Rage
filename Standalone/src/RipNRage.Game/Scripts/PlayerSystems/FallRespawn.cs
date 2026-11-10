@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using RipNRage.Game.Content.Level;
+using RipNRage.Game.Ecs;
 
 /// <summary>What happens when the player drops below the level's kill height.</summary>
 public enum FallMode
@@ -28,7 +29,7 @@ public enum FallMode
 /// level start is used instead.
 ///
 /// Every fall is classified and logged so a real collision bug cannot hide behind a walk off the edge: the
-/// position where the controller lost ground is probed straight down — floor right there means the player
+/// position where the character lost ground is probed straight down — floor right there means the player
 /// went <b>through</b> geometry, no floor means they stepped <b>off an edge</b>. The F3 overlay's MOVER line
 /// shows the last verdict.
 /// </summary>
@@ -73,7 +74,7 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
     private struct Sample { public Vector3 pos; public float yaw; public float time; }
 
     private FPSController _fps;
-    private PlayerInputActions _input;
+    private PlayerLink _link;
     private PlayerState _state;
     private readonly List<Sample> _history = new List<Sample>();
     private readonly List<float> _recentFallTimes = new List<float>();
@@ -86,8 +87,159 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
     private float _fade;
     private float _cooldown;
 
-    /// <summary>Respawn needs the player character body (layer 4).</summary>
-    public void Respawn() { }
+    protected override void Start()
+    {
+        _fps = GetComponent<FPSController>();
+        _link = GetComponent<PlayerLink>();
+        _state = GetComponent<PlayerState>();
+        _lastGroundedPos = _dropPos = transform.position;
+    }
+
+    protected override void Update()
+    {
+        if (_fade > 0f) _fade -= Time.unscaledDeltaTime / Mathf.Max(0.05f, fadeDuration);
+        if (_cooldown > 0f) _cooldown -= Time.deltaTime;
+        if (_link == null || !_link.HasMotor || (_state != null && _state.IsDead)) return;
+
+        // a position is only trustworthy while standing normally: mid-slide/wall-run/dash the capsule shape or
+        // velocity are temporarily abnormal, so that instant must not be remembered as "safe ground".
+        bool normalStance = _fps == null || (!_fps.IsSliding && !_fps.IsWallRunning && !_fps.IsDashing);
+        bool grounded = _link.IsGrounded;
+        float now = Time.unscaledTime;
+        if (grounded)
+        {
+            _lastGroundedPos = transform.position;
+            _dropRecorded = false;
+            if (normalStance)
+            {
+                _groundedTime += Time.deltaTime;
+                if (_groundedTime >= safeDelay && now - _lastSampleTime >= historyInterval && transform.position.y > KillY + 2f && Supported(transform.position))
+                {
+                    _history.Add(new Sample { pos = transform.position, yaw = FPSCameraController.instance != null ? FPSCameraController.instance.Yaw : 0f, time = now });
+                    _lastSampleTime = now;
+                    while (_history.Count > 0 && now - _history[0].time > historySeconds) _history.RemoveAt(0);
+                }
+            }
+            else _groundedTime = 0f;
+        }
+        else
+        {
+            _groundedTime = 0f;
+            // the spot where the player first is clearly below the level they last stood on: for a walk or jump
+            // off an edge that is beyond the edge, for a fall through the floor it is inside / under the floor
+            if (!_dropRecorded && transform.position.y < _lastGroundedPos.y - 0.5f) { _dropPos = transform.position; _dropTime = now; _dropRecorded = true; }
+        }
+
+        if (transform.position.y < KillY && _cooldown <= 0f) OnFell();
+    }
+
+    // ------------------------------------------------------------------ the fall
+
+    private void OnFell()
+    {
+        Falls++;
+        _cooldown = 1f;
+        Classify();
+        if (Mode == FallMode.Die) Drown(); else Respawn();
+    }
+
+    /// <summary>
+    /// Edge or bug? Probes straight down at the spot where the player first dropped clearly below the level they
+    /// last stood on. Floor at that standing level right there means they were standing on something and went
+    /// through it; no floor means they walked, jumped or were knocked off an edge.
+    /// </summary>
+    private void Classify()
+    {
+        float fallTime = Time.unscaledTime - _dropTime;
+        if (!_dropRecorded)
+        {
+            LastFallKind = "UNKNOWN";
+            LastFallReport = $"Fall #{Falls}: fell below y={KillY:0.0} without ever standing on ground (spawned or teleported in the air?). Last grounded at {F(_lastGroundedPos)}.";
+        }
+        else
+        {
+            Vector3 origin = new Vector3(_dropPos.x, _lastGroundedPos.y + 2f, _dropPos.z);
+            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 2f + 1.5f, GroundMask))
+            {
+                LastFallKind = "THROUGH GEOMETRY";
+                LastFallReport = $"Fall #{Falls}: FELL THROUGH GEOMETRY — dropped through {hit.entity} (top at y={hit.point.y:0.00}) at {F(_dropPos)}, {fallTime:0.0}s before reaching the kill height. Last grounded at {F(_lastGroundedPos)}. This is a collision bug: please report it with these numbers.";
+            }
+            else
+            {
+                LastFallKind = "EDGE";
+                LastFallReport = $"Fall #{Falls}: went off an edge — at {F(_dropPos)} there is no floor at the level last stood on ({F(_lastGroundedPos)}); reached the kill height y={KillY:0.0} {fallTime:0.0}s later.";
+            }
+        }
+        Debug.LogWarning(LastFallReport);
+    }
+
+    private static string F(Vector3 v) => $"({v.x:0.0}, {v.y:0.0}, {v.z:0.0})";
+
+    /// <summary>Lethal fall: freeze the body where it is and run the normal death sequence.</summary>
+    private void Drown()
+    {
+        _link?.ResetVelocity();
+        if (_fps != null) _fps.enabled = false;
+        bool edge = LastFallKind == "EDGE";
+        GameSaveSystem.OnMessage?.Invoke(edge ? "You fell into the harbour." : "You fell out of the world.");
+        DeathScreen.NextCause = edge ? "YOU FELL INTO THE HARBOUR" : "YOU FELL OUT OF THE WORLD";
+        if (_state != null && !_state.IsDead) _state.Die();
+    }
+
+    /// <summary>Arcade respawn: back to a recorded, footprint-supported spot from before the fall — or the level start if those keep failing.</summary>
+    public void Respawn()
+    {
+        if (_link == null) return;
+        _groundedTime = 0f;
+        float now = Time.unscaledTime;
+        _recentFallTimes.RemoveAll(t => now - t > repeatFallWindow);
+        _recentFallTimes.Add(now);
+        bool loopDetected = _recentFallTimes.Count > repeatFallLimit;
+
+        Vector3 basePos = SpawnPosition;
+        float yaw = SpawnRotation.eulerAngles.y;
+        bool fromHistory = false;
+        if (!loopDetected)
+        {
+            // newest sample that is old enough and still has ground under every corner of the footprint
+            for (int i = _history.Count - 1; i >= 0; i--)
+            {
+                var s = _history[i];
+                if (now - s.time < rewindSeconds) continue;
+                if (!Supported(s.pos)) continue;
+                basePos = s.pos; yaw = s.yaw; fromHistory = true;
+                break;
+            }
+        }
+        if (!fromHistory)
+        {
+            if (loopDetected) Debug.LogWarning($"Player fell {_recentFallTimes.Count} times in {repeatFallWindow:0}s — the recorded spots are not trusted any more, using the level start");
+            _recentFallTimes.Clear();
+            _history.Clear();
+        }
+
+        Vector3 target = basePos + Vector3.up * respawnHeight;
+        _link.Teleport(target, yaw);
+        _fade = 1f;
+        _lastGroundedPos = _dropPos = target; _dropRecorded = false;
+        Debug.LogWarning($"Player respawned at {F(target)} ({(fromHistory ? "recorded spot" : "level start")})");
+        GameSaveSystem.OnMessage?.Invoke(LastFallKind == "EDGE" ? "You fell off. Back on your feet." : "You fell out of the world. Back on your feet.");
+    }
+
+    /// <summary>True when every corner of the capsule's footprint has ground within <see cref="supportDepth"/> under the feet.</summary>
+    private bool Supported(Vector3 center)
+    {
+        float r = Mathf.Max(0.05f, PlayerLink.Radius - 0.1f);
+        // from the entity origin down past the feet, plus the margin (the origin sits one ride height above them)
+        float reach = PlayerLink.RideHeight + supportDepth;
+        for (int i = 0; i < 4; i++)
+        {
+            Vector3 corner = center + new Vector3((i & 1) == 0 ? -r : r, 0f, (i & 2) == 0 ? -r : r);
+            if (!Physics.Raycast(corner, Vector3.down, reach, GroundMask)) return false;
+        }
+        return true;
+    }
+
     public void DrawUi(UiBatch ui)
     {
         if (_fade <= 0f) return;

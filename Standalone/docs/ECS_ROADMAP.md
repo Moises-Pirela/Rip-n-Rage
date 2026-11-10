@@ -33,7 +33,7 @@ then start at the first unchecked layer.
   parity with the pre-ECS renderer is within run-to-run noise.
 - [x] **Layer 2 — Physics**: ECS-only simulation, joints, characters, movers, triggers; legacy physics deleted (close-out below)
 - [x] **Layer 3 — Animation, audio, particles, destruction** (details below)
-- [ ] Layer 4 — Input, camera, player **(next — pick up here)**
+- [ ] Layer 4 — Input, camera, player **(in progress: 4.1 + 4.2 done, 4.3 next — pick up here)**
 - [ ] Layer 5 — Weapons, combat, damage
 - [ ] Layer 6 — Enemies, AI, spawning
 - [ ] Layer 7 — Pickups, rage, style, environment
@@ -41,28 +41,23 @@ then start at the first unchecked layer.
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
 
-### Pick-up point for the next session (written 2026-11-10, at `0ef0b23`)
+### Pick-up point for the next session (written 2026-11-10, after 4.2)
 
-Layers 0–3 are done; start **layer 4**. Everything below is already true in the tree:
+Layers 0–3 and steps **4.1 + 4.2** are done — the player moves again, the gates are honest, and the trigger
+callbacks fire. Start at **4.3** (details in the layer 4 section): camera and first-person viewmodel as entities,
+`ViewSprite` deleted, head bob / sway / shake as components.
 
-- The player cannot move: `FPSController` / `FallRespawn` kept only their public surface (tunables, `AddImpulse`,
-  `IsSliding`...) — the movement logic was deleted with the legacy physics; rewrite it on `CharacterMotor`
-  (`Ecs/Physics/Movers.cs`: intent in `Desired` / `Pending*`, state out; `PendingHeight` is the slide crouch).
-  The capsule + 80 kg body the player needs is described in a comment in `PlayerPrefab.Build`.
-- **Delete the `ViewSprite` bridge** (`RipNRage.Game/Ecs/ViewSprite.cs` + `ViewSpriteEventSystem`): the camera and the
-  first-person viewmodel (weapon / fists / muzzle flash, `RenderLayer.FirstPerson`) become camera-child entities; the
-  weapon scripts then talk to `SpriteAnimator` directly. The animation editor's preview also uses the bridge.
+Still true in the tree:
+
 - Hooks to re-point when the camera is an entity: `RagdollSystem.Viewer` and the `EcsRenderProducer` camera priority
   (an ECS `CameraLens` already outranks the legacy camera).
-- Restore the overlay's MOVER line (`Program.cs`, removed in 2.L) from `CharacterMotor` state.
-- **Strafe**: `--script strafe` has passed vacuously since 2.L (no movement). With the player on `CharacterMotor` it
-  becomes meaningful again — and the pre-existing dock-edge fall (macOS + WSL, `(-18.9, 1.2, 6.7)`, see the 2.0
-  baselines) must be investigated as part of this layer.
-- `trigger_checkpoint` / water / pickups still fire nothing (`TriggerSystem` posts events, but the listeners are
-  GameObjects): wire the player's trigger events when it is an entity, or leave for layers 7–8 as planned.
-- Gates as in layer 2/3 close-outs: compare bench interleaved against the previous commit (`--threads 1` for the
+- The animation editor's controller preview goes through `ViewSprite`, so it needs a replacement in the same step.
+- Projectiles still move by transform and hit nothing (layer 5); `AgentVisionSensor`'s trigger is uncalled (layer 6).
+- Gates as in the layer 2/3 close-outs: compare bench interleaved against the previous commit (`--threads 1` for the
   stable numbers; the per-step metric only counts frames with a fixed step); ragdolls sit at 8.3–8.7 ms vs budget 8
   (knobs: pieces sleep less than boxes, and legacy-faithful CCD on every piece costs ~0.85 ms serially).
+- Running anything here needs `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` on this VM: there is no `libicu`, and the
+  SDK fails to start without it. `build.sh` / `run.sh` / `bench.sh` do not set it.
 
 ### Resolved: asset handles (answered before layer 2)
 
@@ -305,12 +300,60 @@ Convert, keeping the tuned solver behaviour:
 
 ### Layer 4 — Input, camera, player (PlayerSystems ~2.2k lines)
 
-- `InputState` singleton component written by an `InputSystem` (first in Tick).
-- Player as a prefab: `PlayerTag`, `CharacterBody`, `PlayerMotor` (speeds, jump, slide, wall run, dash — currently
-  `MovementSettings`), `PlayerLook`, `CameraLens`, head bob / sway / trauma shake as components.
-- Systems: `PlayerMoveSystem` (FixedTick), `PlayerLookSystem`, `CameraShakeSystem`, `HeadBobSystem` (LateTick before
-  TransformSystem — add `[UpdateBefore(typeof(TransformSystem))]`).
-- The first-person viewmodel is a child entity of the camera with `RenderLayer.FirstPerson`.
+- **Steps** (one commit + review stop each):
+  - [x] 4.1 **Input singleton** (`Ecs/Input/InputComponents.cs`): `InputState` written by `EcsInputSystem` (Tick) —
+        one snapshot of the "gameplay" action map that every system reads, so nobody polls devices mid-frame.
+        `InputOverride` carries the scripted-automation overrides (and a hard `Blocked` gate that replaces
+        `PlayerInputActions.SetIsBlockingInput`, which could only silence the mirror, not the systems).
+        **Jump is latched** (`JumpQueued` / `ConsumeJump`): rendering outruns the fixed clock, so an edge that only
+        lived for its own frame would be dropped most of the time — this is the old `IsJumping` / `CanJump` pair.
+        Needed **ECS singletons**: `World.Singleton<T>()` (by reference), `GetSingleton<T>()` (non-creating snapshot),
+        `SingletonEntity<T>()`. Creating a carrier is structural, so a writer system claims its singleton in
+        `OnCreate`; `DestroyAllEntities` forgets them.
+  - [x] 4.2 **The player is an ECS character** (`RipNRage.Game/Ecs/PlayerCharacter.cs`, `PlayerLink.cs`).
+        `PlayerMotor` (the locomotion tunables + slide / wall-run / dash state) and `PlayerLook` (yaw / pitch / roll)
+        on the capsule entity (0.4 × 1.3, 80 kg, ride 0.5) with `CharacterMotor` profile Player.
+        `PlayerMoveSystem` (**FixedTick**, before `CharacterMotorSystem`) ports the deleted `FPSController`
+        locomotion — smoothing, bunny-hop speed, rage / style multipliers, slide, wall run, dash, footsteps — and
+        writes it as motor intent; `PlayerLookSystem` (Tick) integrates the look. `FPSController`,
+        `FPSCameraController` and `PlayerInputActions` are now **thin facades** over those components for the scripts
+        layers 5–8 still own; `PlayerLink` copies the entity's pose back onto the GameObject hierarchy each frame and
+        aims the camera pivot / Orientation child. `MovementSettings.ApplyTo` writes the component, live as before.
+        **`FallRespawn` is restored** on the new body (`Teleport`, the footprint probes, EDGE vs THROUGH GEOMETRY),
+        and the overlay's MOVER line is back.
+  - [ ] 4.3 **Camera and viewmodel as entities** — next. Delete the `ViewSprite` bridge
+        (`RipNRage.Game/Ecs/ViewSprite.cs` + `ViewSpriteEventSystem`): the camera becomes an entity with
+        `CameraLens`, the viewmodel (weapon / fists / muzzle flash, `RenderLayer.FirstPerson`) its child entities, and
+        the weapon scripts talk to `SpriteAnimator` directly. Re-point `RagdollSystem.Viewer`; the animation editor's
+        controller preview also runs through the bridge. Head bob / sway / trauma shake become components with
+        `CameraShakeSystem` / `HeadBobSystem` (LateTick, `[UpdateBefore(typeof(TransformSystem))]`).
+- **Two engine bugs found by putting a real body back under the player** (both pre-existing since 2.7, invisible
+  while nothing moved between fixed steps):
+  1. `SolverBody.EndStep` only wrote the owner pose for **non**-interpolated bodies, so an interpolated body's
+     `LocalTransform` — read by gameplay between steps — was stuck at its spawn point while the body flew away.
+     `EndStep` now always publishes the pose; interpolation stays a separate overlay, never the truth.
+  2. `PhysicsInterpolationSystem` overwrote any teleport written between fixed steps **and** updated `LastPos`, so
+     the sync never saw it either and the body snapped back. It now leaves an externally moved transform alone.
+  Guarded by new checks in `Layer4Checks.cs` (14 assertions, 151 total).
+- **Strafe: solved, and it was never a physics bug.** `--script strafe` steers back towards x = 0 with a *world-space*
+  correction but feeds it as *player-relative* move input. The player spawns facing −z (`info_player_start` angle
+  180), where a raw `(+1, …)` means "strafe towards −x", so the correction pushed the player further off centre every
+  frame and walked it straight off the side of the dock at x ≈ −19 — exactly the "(-18.9, 1.2, 6.7)" of the 2.0
+  baseline, on macOS and WSL alike, because it is deterministic and not a float / timing difference at all. The
+  script now rotates its sideways correction into the view's frame (the forward/back wiggle stays player-relative)
+  and **strafe passes for real**: 600 frames on the planks at y = 1.81, 0 falls. `--script fall` still walks off the
+  edge on purpose and is classified EDGE at x ≈ −18.6, which is the same dock edge seen from the other side.
+- Fixed on the way: the save failed with `A possible object cycle was detected` as soon as checkpoints fired again —
+  `Vector3.normalized` / `magnitude` (and the `Vector2` / `Quaternion` equivalents) are derived, and a serializer
+  walked `normalized.normalized…` for ever. They are `[JsonIgnore]` now. (Was listed under layer 8.)
+- **Gates run**: solution builds, 151 engine checks pass, `walk` / `fire` / `weapons` / `rage` / `saveload` /
+  `slide` / `dash` / `fall` / `strafe` complete with no errors. Bench (default threads, `--no-render`): crates 3.52,
+  ragdolls 6.23, projectiles 0.31, ground 1.80 ms/step — all PASS, all inside the layer-2/3 close-out ranges.
+  **No pixel gate this layer**: the player now falls and stands on the planks instead of hovering at the spawn point,
+  so the camera sits ~0.3 m lower than in a build where it could not move; the `look` shot differs by ~89% of pixels
+  by construction. Checked by eye that the framing is otherwise the same scene (and a yaw bug was caught that way —
+  the spawn rotation was being applied twice, once on the root transform and once in `PlayerLook`; `PlayerLink` now
+  clears the root, which owns no rotation any more).
 
 ### Layer 5 — Weapons, combat, damage (~0.8k + shared structs)
 
@@ -327,6 +370,14 @@ Convert, keeping the tuned solver behaviour:
 ### Layer 7 — Pickups, rage, style, environment (~0.4k lines)
 
 - `Pickup` + trigger events; `Rage` (sparse flags for enraged / depressed), `StyleMeter`, environment props.
+- **Already live since 4.2** (asked for alongside layer 4): trigger callbacks fire again.
+  `RipNRage.Game/Ecs/TriggerBridge.cs` reinstates the deleted `ITriggerListener` contract on top of the ECS
+  `TriggerEnterEvent` / `TriggerExitEvent`: `EcsObjects` is the entity ↔ GameObject directory the bridges share,
+  `TriggerVolume` owns a volume entity for a GameObject (`TriggerFollower` keeps a moving one on top of it — the
+  bobbing ammo pickups), and `GameTriggerBridge` notifies **both** sides of an overlap, as Unity's `OnTriggerEnter`
+  did. Wired: `trigger_checkpoint` (saves), the water volumes, and the ammo pickups — which never had an ECS trigger
+  at all and now get their prefab's r = 1.5 sphere. `AgentVisionSensor` (layer 6) and the projectiles (layer 5) still
+  wait for their layers. These listeners become `IConsumes<T>` systems and the bridge goes away in layer 9.
 
 ### Layer 8 — UI, HUD, save / load, game flow (~1.4k lines)
 

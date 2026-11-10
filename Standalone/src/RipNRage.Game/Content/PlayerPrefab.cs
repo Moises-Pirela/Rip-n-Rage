@@ -32,9 +32,6 @@ namespace RipNRage.Game.Content
             player.tag = "Player";
             player.layer = Layers.Player;
 
-            // ECS migration (layer 2): the force-driven capsule (RigidBody + CharacterBody, 80 kg, radius 0.4, height 1.3,
-            // centre 0.25 m up, riding 0.5 m above the ground) returns as an ECS character entity in layers 2.6 / 4.
-
 
             // ---- hierarchy ----
             var orientation = Child(player, "Orientation", Vector3.zero);
@@ -84,28 +81,21 @@ namespace RipNRage.Game.Content
             var bob = cameraGo.AddComponent<HeadBob>();
             bob.frequency = 15f; bob.waveLength = 0.1f; bob.swayAmount = 20f; bob.swaySpeed = 1f;
 
+            // ---- the character itself: an ECS entity (the force-driven capsule + locomotion + look) ----
+            // The entity is the body the solver moves; PlayerLink copies its pose back onto this hierarchy each frame
+            // so the scripts that are not ported yet keep reading the GameObject transform.
+            RipNRage.Game.Ecs.PlayerLink.Attach(player, cameraGo.transform, orientation.transform);
+
             // ---- player scripts ----
             var input = player.AddComponent<PlayerInputActions>();
 
             var fps = player.AddComponent<FPSController>();
-            fps.m_FootstepSounds = (AudioClip[])GameAssets.Footsteps.Clone();
-            fps.m_JumpSound = GameAssets.Jump; fps.m_LandSound = GameAssets.Land;
-            fps.m_RunstepLenghten = 0f; fps.m_StepInterval = 2f;
-            fps.bEnableBunnyHop = true; fps.crouchSpeed = 1f; fps.walkSpeed = 12f; fps.runSpeed = 16f; fps.bunnyHopSpeed = 30f; fps.jumpSpeed = 20f;
-            fps.moveBackwardsSpeedPercent = 1f; fps.moveSideSpeedPercent = 1f;
-            fps.lowLandAmount = 0.1f; fps.highLandAmount = 0.6f; fps.landTimer = 0.5f; fps.landDuration = 1f;
-            fps.gravityMultiplier = 2.5f; fps.stickToGroundForce = 5f; fps.groundLayer = 3895; fps.rayLength = 0.1f; fps.raySphereRadius = 0.1f;
-            fps.obstacleLayers = 2304; fps.rayObstacleLength = 0.1f; fps.rayObstacleSphereRadius = 0.1f;
-            fps.smoothRotateSpeed = 5f; fps.smoothInputSpeed = 5f; fps.smoothVelocitySpeed = 5f; fps.smoothFinalDirectionSpeed = 5f;
-            MovementSettings.Current.ApplyTo(fps); // tunables.cfg [movement] overrides the prefab values (and keeps doing so live)
             sway.controller = fps;
             bob.controller = fps;
 
             var camCtrl = player.AddComponent<FPSCameraController>();
             camCtrl.playerCamera = cameraGo.transform;
             camCtrl.orientation = orientation.transform;
-            camCtrl.sensitivityMultiplier = 1f; camCtrl.sensitivity = 5f;
-            camCtrl.zSmoothLerp = 0f; camCtrl.zSwayAngle = 5f; camCtrl.zSwayMultiplier = 100f; camCtrl.zSmoothSway = -50f;
 
             var state = player.AddComponent<PlayerState>();
             state.rageStates = new[] { GameAssets.NormalRage, GameAssets.EnragedRage, GameAssets.DepressedRage };

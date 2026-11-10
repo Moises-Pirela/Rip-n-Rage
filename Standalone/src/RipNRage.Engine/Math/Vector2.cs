@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace RipNRage.Engine
 {
@@ -22,9 +23,11 @@ namespace RipNRage.Engine
             set { if (i == 0) x = value; else y = value; }
         }
 
-        public float magnitude => MathF.Sqrt(x * x + y * y);
-        public float sqrMagnitude => x * x + y * y;
+        // Derived, not state: see the note on Vector3.magnitude (the "object cycle" save failure).
+        [JsonIgnore] public float magnitude => MathF.Sqrt(x * x + y * y);
+        [JsonIgnore] public float sqrMagnitude => x * x + y * y;
 
+        [JsonIgnore]
         public Vector2 normalized
         {
             get

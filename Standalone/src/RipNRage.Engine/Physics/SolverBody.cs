@@ -444,14 +444,18 @@ namespace RipNRage.Engine
             motionScale = 1f;
         }
 
-        /// <summary>End of a step: forces consumed, shape and transform updated (interpolated bodies write their transform per frame instead).</summary>
+        /// <summary>
+        /// End of a step: forces consumed, shape and owner transform updated. The owner pose always mirrors the pose
+        /// the step ended on, interpolated or not — gameplay reads it between steps and has to see where the body
+        /// actually is. Interpolation is a separate overlay on top (see PhysicsInterpolationSystem), never the truth.
+        /// </summary>
         internal void EndStep()
         {
             force = Vector3.zero; torque = Vector3.zero;
             if (sleeping && !isKinematic) return;
             UpdateShape();
             TouchBroadphase();
-            if (!interpolate || isKinematic) WriteTransform();
+            WriteTransform();
         }
 
         internal void UpdateSleep(float dt)

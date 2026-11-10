@@ -293,7 +293,17 @@ namespace RipNRage.Game
             text += $"FOV WORLD {cam?.fieldOfView:0} / VIEWMODEL {cc.viewmodelFov:0} ({(cc.viewmodelLit ? "LIT" : "UNLIT")})  CULLING {(cc.frustumCulling ? "FRUSTUM " : "")}{(cc.occlusionCulling ? $"OCCLUSION {cc.occlusionMode.ToString().ToUpperInvariant()}{(renderer.GpuOcclusion != null && cc.occlusionMode == OcclusionMode.Gpu ? $" ({renderer.GpuOcclusion.Tested} QUERIES, {renderer.GpuOcclusion.Pending} PENDING)" : "")} " : "")}{renderer.Culling}\n";
             var world = Physics.World;
             text += $"PHYSICS {world.StaticCount} STATIC ({world.CellCount} CELLS) + {world.DynamicCount} DYNAMIC COLLIDERS  {world.RigidBodyCount} RIGID BODIES ({world.Rigid.ManifoldCount} MANIFOLDS, {world.Rigid.ContactCount} CONTACTS ({world.Rigid.MatchedPoints} WARM, {world.Rigid.CachedManifolds} CACHED), {world.Rigid.JointCount} JOINTS SOLVED / {Application.Current.World.GetSystem<RipNRage.Engine.Ecs.Physics.JointSystem>()?.ActiveJoints ?? 0} ATTACHED, {world.Rigid.IslandCount} ISLANDS (MAX {world.Rigid.LargestIsland}), {world.Rigid.ThreadsUsed} THREADS, {world.Rigid.CcdSweepsThisStep} CCD, {world.Rigid.positionCorrection.ToString().ToUpperInvariant()})  {world.RaycastsLastFrame} RAYS / {world.SweepsLastFrame} SWEEPS / {world.QueriesLastFrame} QUERIES\n";
-            // ECS migration (layer 2): the MOVER line (grounded / speed / ride / slope) returns with the ECS player character (layer 4)
+            var plink = RipNRage.Game.Ecs.PlayerLink.Current;
+            if (plink != null && plink.HasMotor)
+            {
+                ref var pm = ref plink.Motor;
+                ref var cm = ref plink.Character;
+                Vector3 vel = plink.Velocity;
+                string move = pm.IsDashing ? "DASH" : pm.IsSliding ? "SLIDE" : pm.IsWallRunning ? $"WALLRUN {(pm.WallSide < 0 ? "L" : "R")}" : cm.IsGrounded ? "GROUND" : "AIR";
+                float slope = Mathf.Acos(Mathf.Clamp(cm.GroundNormal.y, -1f, 1f)) * Mathf.Rad2Deg;
+                var fall = PlayerState.Current?.GetComponent<FallRespawn>();
+                text += $"MOVER {move}  SPEED {new Vector3(vel.x, 0f, vel.z).magnitude:0.0} / {pm.CurrentSpeed:0.0} M/S  VSPEED {vel.y:0.0}  RIDE {cm.GroundDistance:0.00} / {cm.RideHeight:0.00}  SLOPE {slope:0}°  FALLS {fall?.Falls ?? 0} ({fall?.LastFallKind ?? "-"})\n";
+            }
             text += "WASD MOVE  MOUSE LOOK  LMB FIRE  RMB JAB  1-4/WHEEL WEAPONS  SPACE JUMP  F3 OVERLAY  F11 GPU SYNC  ESC PAUSE\n";
             text += "F6 QUICK SAVE  F9 QUICK LOAD  F7 LOAD CHECKPOINT  F8 RESTART LEVEL";
             return text;
@@ -581,10 +591,18 @@ namespace RipNRage.Game
                     var p = PlayerState.Current;
                     if (p == null) break;
                     // always steer back towards x = 0: with the controller's input smoothing that oscillates a few metres
-                    // either side of the centre line (the dock is 32 m wide), on the ground and through bunny hops
+                    // either side of the centre line (the dock is 32 m wide), on the ground and through bunny hops.
+                    // The correction is in world space but the move input is player-relative, so it has to be rotated
+                    // into the view's frame — the player spawns facing -z (info_player_start angle 180), where a raw
+                    // world-space (+1, ...) means "strafe towards -x" and the correction pushed the player further
+                    // off centre every frame instead of back. That, not a collision bug, is why this script walked
+                    // off the dock edge at x ≈ -19 on every platform.
                     float x = p.transform.position.x;
                     _strafeDir = x > 0f ? -1f : 1f;
-                    input.overrideMove = new Vector2(_strafeDir, _frame % 90 < 45 ? 0.4f : -0.4f);
+                    // the sideways correction is world-space, the forward/back wiggle is player-relative, so only
+                    // the first is rotated into the view's frame
+                    Vector3 localWish = Quaternion.Euler(0f, -(FPSCameraController.instance?.Yaw ?? 0f), 0f) * new Vector3(_strafeDir, 0f, 0f);
+                    input.overrideMove = new Vector2(localWish.x, localWish.z + (_frame % 90 < 45 ? 0.4f : -0.4f));
                     if (_frame % 70 == 35 && Mathf.Abs(x) < 2f) input.OnJump();
                     var fr = p.GetComponent<FallRespawn>();
                     if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {p.transform.position} falls={fr?.Falls} last={fr?.LastFallKind}");

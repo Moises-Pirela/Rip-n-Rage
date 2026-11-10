@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace RipNRage.Engine
 {
@@ -32,6 +33,8 @@ namespace RipNRage.Engine
 
         public static Quaternion Euler(Vector3 euler) => Euler(euler.x, euler.y, euler.z);
 
+        // Derived, not state: see the note on Vector3.magnitude (the "object cycle" save failure).
+        [JsonIgnore]
         public Vector3 eulerAngles
         {
             get => ToEuler(this);
@@ -86,6 +89,7 @@ namespace RipNRage.Engine
             return new Quaternion(q.x / mag, q.y / mag, q.z / mag, q.w / mag);
         }
 
+        [JsonIgnore]
         public Quaternion normalized => Normalize(this);
 
         public static Quaternion Inverse(Quaternion q)

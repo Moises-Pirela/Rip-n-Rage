@@ -1,101 +1,71 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
+using RipNRage.Game.Ecs;
 
-// Ported from Assets/_Game/Scripts/PlayerSystems/FPSCameraController.cs.
-// DOTween's DOLookAt is provided by the engine's tween extensions; Cursor is the engine's.
+// MIGRATION FACADE (layer 4; gone in layer 9). The look itself is PlayerLookSystem on the player entity: it
+// integrates the mouse / stick delta into the PlayerLook component's Yaw / Pitch / Roll, and PlayerLink aims the
+// camera pivot and the Orientation child from them. What is left here is the surface the not-yet-ported scripts
+// talk to: save / load reads and writes the view angles, the combat controller snaps the view to a grapple target,
+// and the death sequence takes the look away.
 public class FPSCameraController : MonoBehaviour
 {
     public static FPSCameraController instance;
-    
+
     [SerializeField] public Transform playerCamera;
     public Transform orientation;
 
-    [Range(0, 10)] [SerializeField] public float sensitivityMultiplier = 1;
-    [SerializeField] public float sensitivity = 5;
-    private float xRotation;
-    private float desiredX;
+    private PlayerLink _link;
+    private PlayerLink Link => _link ??= GetComponent<PlayerLink>();
+    private bool Has => Link != null && Link.Alive && Application.Current.World.Has<PlayerLook>(Link.entity);
 
-    private PlayerInputActions _inputActions;
-
-    [Space(100)] [Header("Camera animation data")] [SerializeField]
-    public float zSmoothLerp = 12;
-
-    [SerializeField] public float zSwayAngle = 1.5f;
-    [SerializeField] public float zSwayMultiplier = -50f;
-    [SerializeField] public float zSmoothSway = 20f;
-    /// <summary>Standalone addition: extra roll requested by the movement controller (wall running); smoothed here.</summary>
-    public float externalRoll;
-    private float _extRollSmooth;
-
-    protected override void Awake()
-    {
-        instance = this;
-    }
+    protected override void Awake() => instance = this;
 
     protected override void Start()
     {
-        _inputActions = GetComponent<PlayerInputActions>();
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
 
-    protected override void Update()
+    public float Yaw => Has ? Link.Look.Yaw : 0f;
+    public float Pitch => Has ? Link.Look.Pitch : 0f;
+
+    /// <summary>Mouse sensitivity (the settings page and the prefab write these).</summary>
+    public float sensitivity
     {
-        Look();
+        get => Has ? Link.Look.Sensitivity : 5f;
+        set { if (Has) Link.Look.Sensitivity = value; }
     }
 
-    private void Look()
+    public float sensitivityMultiplier
     {
-        float mouseX = _inputActions.LookInput.x * sensitivity * Time.fixedDeltaTime * sensitivityMultiplier;
-        float mouseY = _inputActions.LookInput.y * sensitivity * Time.fixedDeltaTime * sensitivityMultiplier;
-
-        var localRotation = playerCamera.transform.localRotation;
-
-        Vector3 rot = localRotation.eulerAngles;
-        desiredX = rot.y + mouseX;
-
-
-        xRotation -= mouseY;
-        xRotation = Mathf.Clamp(xRotation, -90f, 90f);
-
-        float z = localRotation.eulerAngles.z - _extRollSmooth; // the sway state without the wall-run roll added last frame
-        float x = localRotation.eulerAngles.x;
-
-        float zLerp = Mathf.LerpAngle(z, 0, Time.deltaTime * zSmoothLerp);
-
-        float zSway = Mathf.Clamp(_inputActions.MovementInput.x * zSwayMultiplier * Time.smoothDeltaTime * zSmoothSway,
-            -zSwayAngle, zSwayAngle);
-
-        zSway = Mathf.LerpAngle(z, zSway, Time.deltaTime * zSmoothLerp);
-
-        _extRollSmooth = Mathf.Lerp(_extRollSmooth, externalRoll, Time.deltaTime * 8f);
-        localRotation = Quaternion.Euler(xRotation, desiredX,
-            (_inputActions.MovementInput.x != 0 ? zSway : zLerp) + _extRollSmooth); //apply camera tilt
-
-        playerCamera.transform.localRotation = localRotation;
-
-        orientation.transform.localRotation = Quaternion.Euler(0, desiredX, 0);
+        get => Has ? Link.Look.SensitivityMultiplier : 1f;
+        set { if (Has) Link.Look.SensitivityMultiplier = value; }
     }
 
-    /// <summary>Save/load support (standalone addition): sets the view yaw/pitch directly.</summary>
+    /// <summary>Extra roll requested by the movement (wall running); smoothed by the look system.</summary>
+    public float externalRoll
+    {
+        get => Has ? Link.Look.ExternalRoll : 0f;
+        set { if (Has) Link.Look.ExternalRoll = value; }
+    }
+
+    /// <summary>Save / load support: sets the view yaw / pitch directly.</summary>
     public void SetLook(float yaw, float pitch)
     {
-        xRotation = Mathf.Clamp(pitch, -90f, 90f);
-        desiredX = yaw;
-        playerCamera.transform.localRotation = Quaternion.Euler(xRotation, desiredX, 0f);
-        orientation.transform.localRotation = Quaternion.Euler(0, desiredX, 0);
+        if (!Has) return;
+        ref var look = ref Link.Look;
+        look.Yaw = yaw;
+        look.Pitch = Mathf.Clamp(pitch, -90f, 90f);
     }
 
-    public float Yaw => playerCamera.transform.localRotation.eulerAngles.y;
-    public float Pitch => xRotation;
-
-    public void ForceLookRotation(Vector3 lookRotation)
+    /// <summary>Snaps the view towards a world point (the grapple pull).</summary>
+    public void ForceLookRotation(Vector3 lookTarget)
     {
-        playerCamera.transform.DOLookAt(lookRotation, 0.15f);
-        orientation.transform.DOLookAt(lookRotation, 0.15f);
-        //playerCamera.transform.localRotation = Quaternion.LookRotation(lookRotation);
-        //orientation.transform.localRotation = Quaternion.LookRotation(lookRotation);
+        if (!Has) return;
+        Vector3 dir = lookTarget - transform.position;
+        if (dir.sqrMagnitude < 1E-06f) return;
+        dir.Normalize();
+        ref var look = ref Link.Look;
+        look.Yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+        look.Pitch = Mathf.Clamp(-Mathf.Asin(Mathf.Clamp(dir.y, -1f, 1f)) * Mathf.Rad2Deg, -90f, 90f);
     }
-
 }

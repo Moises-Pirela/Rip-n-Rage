@@ -102,17 +102,17 @@ namespace RipNRage.Game.Content
         }
 
         /// <summary>Copies the settings into a controller.</summary>
-        public void ApplyTo(FPSController fps)
+        /// <summary>Copies the live tunables onto the player's locomotion component (every step whose Version moved).</summary>
+        public void ApplyTo(ref RipNRage.Game.Ecs.PlayerMotor p)
         {
-            if (fps == null) return;
-            fps.bEnableBunnyHop = bunnyHop; fps.walkSpeed = walkSpeed; fps.runSpeed = runSpeed; fps.bunnyHopSpeed = bunnyHopSpeed; fps.jumpSpeed = jumpSpeed;
-            fps.moveBackwardsSpeedPercent = backwardsPercent; fps.moveSideSpeedPercent = sidePercent; fps.gravityMultiplier = gravityMultiplier;
-            fps.smoothInputSpeed = smoothInput; fps.smoothVelocitySpeed = smoothVelocity; fps.smoothFinalDirectionSpeed = smoothDirection;
-            fps.enableSlide = slide; fps.slideSpeedBoost = slideBoost; fps.slideFriction = slideFriction; fps.slideMinSpeed = slideMinSpeed; fps.slideStartSpeed = slideStartSpeed;
-            fps.slideHeight = slideHeight; fps.slideCameraDrop = slideCameraDrop; fps.slideCooldown = slideCooldown; fps.slideSteer = slideSteer;
-            fps.enableWallRun = wallRun; fps.wallRunMaxTime = wallRunMaxTime; fps.wallRunGravity = wallRunGravity; fps.wallRunSpeed = wallRunSpeed; fps.wallCheckDistance = wallCheckDistance;
-            fps.wallJumpUp = wallJumpUp; fps.wallJumpAway = wallJumpAway; fps.wallRunTilt = wallRunTilt; fps.wallRunEntryBoost = wallRunEntryBoost;
-            fps.enableDash = dash; fps.dashSpeed = dashSpeed; fps.dashDuration = dashDuration; fps.dashCooldown = dashCooldown; fps.airDashes = airDashes;
+            p.EnableBunnyHop = bunnyHop; p.WalkSpeed = walkSpeed; p.RunSpeed = runSpeed; p.BunnyHopSpeed = bunnyHopSpeed; p.JumpSpeed = jumpSpeed;
+            p.BackwardsPercent = backwardsPercent; p.SidePercent = sidePercent; p.GravityMultiplier = gravityMultiplier;
+            p.SmoothInput = smoothInput; p.SmoothVelocity = smoothVelocity; p.SmoothDirection = smoothDirection;
+            p.EnableSlide = slide; p.SlideSpeedBoost = slideBoost; p.SlideFriction = slideFriction; p.SlideMinSpeed = slideMinSpeed; p.SlideStartSpeed = slideStartSpeed;
+            p.SlideHeight = slideHeight; p.SlideCameraDrop = slideCameraDrop; p.SlideCooldown = slideCooldown; p.SlideSteer = slideSteer;
+            p.EnableWallRun = wallRun; p.WallRunMaxTime = wallRunMaxTime; p.WallRunGravity = wallRunGravity; p.WallRunSpeed = wallRunSpeed; p.WallCheckDistance = wallCheckDistance;
+            p.WallJumpUp = wallJumpUp; p.WallJumpAway = wallJumpAway; p.WallRunTilt = wallRunTilt; p.WallRunEntryBoost = wallRunEntryBoost;
+            p.EnableDash = dash; p.DashSpeed = dashSpeed; p.DashDuration = dashDuration; p.DashCooldown = dashCooldown; p.AirDashes = airDashes;
         }
 
         /// <summary>Hooks the settings to the application's tunables file (initial values + live reload).</summary>

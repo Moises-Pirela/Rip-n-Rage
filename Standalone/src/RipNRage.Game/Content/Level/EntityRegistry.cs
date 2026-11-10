@@ -26,7 +26,7 @@ namespace RipNRage.Game.Content.Level
     }
 
     /// <summary>Writes a full game save ("checkpoint" slot) when the player enters the volume (once).</summary>
-    public class CheckpointAutoSave : MonoBehaviour
+    public class CheckpointAutoSave : MonoBehaviour, RipNRage.Game.Ecs.ITriggerListener
     {
         private bool _used;
         public void OnTriggerEnter(GameObject other)
@@ -190,7 +190,8 @@ namespace RipNRage.Game.Content.Level
                 spawn = e =>
                 {
                     var go = new GameObject("Checkpoint"); go.transform.position = e.origin; go.tag = "Checkpoint";
-                    RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin, Quaternion.identity, e.GetVector("size", new Vector3(4, 4, 4)), Layers.Default, trigger: true); // CheckpointAutoSave reacts again in layer 8
+                    var volume = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin, Quaternion.identity, e.GetVector("size", new Vector3(4, 4, 4)), Layers.Default, trigger: true);
+                    RipNRage.Game.Ecs.TriggerVolume.Attach(go, volume); // the overlap events reach CheckpointAutoSave
                     go.AddComponent<Checkpoint>();
                     go.AddComponent<CheckpointAutoSave>();
                     return go;
@@ -274,7 +275,8 @@ namespace RipNRage.Game.Content.Level
             if (collider) RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(w, 2f, l), Layers.Walkable);
             if (water)
             {
-                RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -50f, 0), Quaternion.identity, new Vector3(w, 100f, l), Layers.Water, trigger: true);
+                var waterVolume = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -50f, 0), Quaternion.identity, new Vector3(w, 100f, l), Layers.Water, trigger: true);
+                RipNRage.Game.Ecs.TriggerVolume.Attach(go, waterVolume);
                 go.AddComponent<EnterWaterCollision>();
             }
             return go;

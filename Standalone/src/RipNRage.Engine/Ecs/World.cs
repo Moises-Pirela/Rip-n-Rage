@@ -128,6 +128,7 @@ namespace RipNRage.Engine.Ecs
             for (int i = 0; i < _recordCount; i++)
                 if (_records[i].Alive) QueueDestroyed(new Entity(i, _records[i].Generation));
             Sync();
+            _singletons.Clear(); // the carrier entities died with the rest; the next read recreates them
         }
 
         // ------------------------------------------------------------------ components
@@ -149,6 +150,48 @@ namespace RipNRage.Engine.Ecs
             if (Has<T>(e)) { value = Get<T>(e); return true; }
             value = default; return false;
         }
+
+        // ------------------------------------------------------------------ singletons
+
+        /// <summary>
+        /// World-wide state held as a component on one hidden entity: the ECS equivalent of a static.
+        /// <see cref="Singleton{T}"/> returns it by reference so a writer system can assign fields in place;
+        /// readers that only want a snapshot use <see cref="GetSingleton{T}"/>, which never creates anything.
+        ///
+        /// <para>Creating the carrier is a structural change, so a system that writes a singleton must claim it in
+        /// <see cref="SystemBase.OnCreate"/> (which runs outside a phase) — calling <see cref="Singleton{T}"/> for a
+        /// type nobody has claimed yet from inside a running phase throws, like any other structural change.</para>
+        /// </summary>
+        public ref T Singleton<T>() where T : struct, IComponent
+        {
+            Entity e = SingletonEntity<T>();
+            return ref Get<T>(e);
+        }
+
+        /// <summary>The singleton's current value, or <c>default</c> if nothing has created it. Never structural.</summary>
+        public T GetSingleton<T>() where T : struct, IComponent =>
+            TryFindSingleton<T>(out var e) ? Get<T>(e) : default;
+
+        public bool HasSingleton<T>() where T : struct, IComponent => TryFindSingleton<T>(out _);
+
+        private bool TryFindSingleton<T>(out Entity e) where T : struct, IComponent
+        {
+            if (_singletons.TryGetValue(ComponentType<T>.Id, out e) && IsAlive(e) && Has<T>(e)) return true;
+            e = Entity.Null;
+            return false;
+        }
+
+        /// <summary>The entity carrying <typeparamref name="T"/>; created (with a default value) if there is none.</summary>
+        public Entity SingletonEntity<T>() where T : struct, IComponent
+        {
+            if (TryFindSingleton<T>(out var e)) return e;
+            e = CreateEntity();
+            AddNow(e, default(T));
+            _singletons[ComponentType<T>.Id] = e;
+            return e;
+        }
+
+        private readonly Dictionary<int, Entity> _singletons = new Dictionary<int, Entity>();
 
         /// <summary>Adds or overwrites a component immediately (not while a phase runs).</summary>
         public void Add<T>(Entity e, in T value) where T : struct, IComponent { AssertNotIterating(); AddNow(e, value); }
