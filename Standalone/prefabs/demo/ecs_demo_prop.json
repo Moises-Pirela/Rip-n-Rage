@@ -1,0 +1,10 @@
+// Base of the joint playground props: a unit box (LocalTransform.scale gives the size; joint anchors are scaled with it).
+{ "name": "ecs_demo_prop",
+  "components": {
+    "LocalTransform": { "position": [0, 2, 12] },
+    "MeshRender": { "mesh": "box", "texture": "Textures/TEX-Orange_Proto.png" },
+    "Body": { "mass": 10 },
+    "BodyVelocity": {},
+    "ColliderShape": { "kind": "Box", "size": [1, 1, 1] },
+    "SurfaceMaterial": { "staticFriction": 0.7, "dynamicFriction": 0.6, "restitution": 0.05 }
+  } }

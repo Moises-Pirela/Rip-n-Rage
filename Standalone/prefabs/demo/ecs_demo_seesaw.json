@@ -1,0 +1,7 @@
+// A plank pivoting about its centre (z axis) on a world hinge, ±25°.
+{ "name": "ecs_demo_seesaw", "base": "ecs_demo_prop",
+  "components": {
+    "LocalTransform": { "position": [2.5, 1.5, 12], "scale": [3, 0.15, 0.6] },
+    "Body": { "mass": 20 },
+    "Joint": { "kind": "Hinge", "axis": [0, 0, 1], "limits": [-25, 25] }
+  } }

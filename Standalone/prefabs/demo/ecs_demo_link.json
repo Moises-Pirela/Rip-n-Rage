@@ -1,0 +1,8 @@
+// One chain link; --ecs-demo joins a column of them with ball joints (each to the link above, the top to the world).
+{ "name": "ecs_demo_link", "base": "ecs_demo_prop",
+  "components": {
+    "LocalTransform": { "scale": [0.15, 0.6, 0.15] },
+    "MeshRender": { "texture": "Textures/TEX-Orange_Proto.png" },
+    "Body": { "mass": 3 },
+    "ColliderShape": { "kind": "Capsule", "radius": 0.5, "height": 1 }
+  } }

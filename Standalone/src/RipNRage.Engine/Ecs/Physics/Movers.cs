@@ -37,6 +37,8 @@ namespace RipNRage.Engine.Ecs.Physics
         public bool PendingStopDash;
         /// <summary>Floor on the vertical speed this step (wall-run glide); NaN = none. Consumed.</summary>
         public float PendingMinVerticalSpeed;
+        /// <summary>New capsule height (slide crouch / stand up), the bottom stays put; NaN = none. Consumed.</summary>
+        public float PendingHeight;
         // ---- state (written by the system) ----
         public bool IsGrounded, IsDashing;
         public Vector3 GroundNormal, GroundVelocity;
@@ -60,7 +62,7 @@ namespace RipNRage.Engine.Ecs.Physics
             Profile = profile, RideHeight = rideHeight, RideFrequency = rideFrequency, RideDamping = rideDamping, MaxRideAcceleration = maxRideAcceleration,
             GroundTolerance = groundTolerance, MaxSlopeAngle = maxSlopeAngle, Acceleration = acceleration, AirAcceleration = airAcceleration,
             StopDeceleration = stopDeceleration, JumpGrace = jumpGrace, GroundMask = groundMask,
-            PendingMinVerticalSpeed = float.NaN, GroundNormal = Vector3.up, GroundDistance = float.PositiveInfinity, SavedGravityScale = 1f,
+            PendingMinVerticalSpeed = float.NaN, PendingHeight = float.NaN, GroundNormal = Vector3.up, GroundDistance = float.PositiveInfinity, SavedGravityScale = 1f,
         };
     }
 
@@ -87,16 +89,39 @@ namespace RipNRage.Engine.Ecs.Physics
                     if (!chunk.Includes(i)) continue;
                     var body = _sync.BodyOf(ents[i]);
                     if (body == null || body.collider == null) continue;
+                    if (!float.IsNaN(motors[i].PendingHeight)) { SetHeight(ents[i], ref motors[i], body, motors[i].PendingHeight); motors[i].PendingHeight = float.NaN; }
                     Step(ref motors[i], body, dt);
                 }
             }
+        }
+
+        /// <summary>
+        /// Resizes the capsule keeping its bottom where it is (the slide crouch shrinks from the top): the collider,
+        /// the body's mass properties and centre of mass follow; the entity origin does not move.
+        /// </summary>
+        private void SetHeight(Entity e, ref CharacterMotor m, SolverBody b, float newHeight)
+        {
+            if (!World.Has<ColliderShape>(e) || !World.Has<Body>(e)) return;
+            ref var cs = ref World.Get<ColliderShape>(e);
+            if (cs.Kind != ShapeKind.Capsule) return;
+            float bottom = cs.Center.y - cs.Height * 0.5f;
+            cs.Height = MathF.Max(newHeight, cs.Radius * 2f);
+            cs.Center = new Vector3(cs.Center.x, bottom + cs.Height * 0.5f, cs.Center.z);
+            b.collider.ecsShape = cs;
+            Vector3 v = b.linearVelocity, w = b.angularVelocity;
+            Vector3 scale = World.Has<LocalTransform>(e) ? World.Get<LocalTransform>(e).Scale : Vector3.one;
+            b.SetupEcs(World.Get<Body>(e), cs, scale); // recomputes the capsule and the centre-of-mass offset
+            b.ReadTransform();                         // the true origin is unchanged; position (centre of mass) follows
+            b.linearVelocity = v; b.angularVelocity = w;
+            m.Configured = false;                      // SetupEcs restored the Body defaults: re-apply the character settings
+            PhysicsSyncSystem.UpdateWorldShape(b.collider, b);
         }
 
         /// <summary>A character never tumbles, sleeps, scrapes or tunnels (applied once per body).</summary>
         private static void Configure(ref CharacterMotor m, SolverBody b)
         {
             b.freezeRotation = true; b.canSleep = false; b.friction = 0.05f; b.staticFriction = 0.05f; b.restitution = 0f;
-            b.collisionDetection = CollisionDetectionMode.Continuous; b.linearDamping = 0f; b.angularDamping = 0f;
+            b.collisionDetection = CollisionDetectionMode.Continuous; b.linearDamping = 0f; b.angularDamping = 0f; b.interpolate = true;
             b.ComputeMassProperties();
             m.SavedGravityScale = b.gravityScale;
             m.Configured = true;

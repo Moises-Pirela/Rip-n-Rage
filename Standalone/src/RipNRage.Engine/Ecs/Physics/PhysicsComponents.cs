@@ -101,6 +101,11 @@ namespace RipNRage.Engine.Ecs.Physics
         public readonly int[] Triangles;
         public TriangleMesh(Vector3[] vertices, int[] triangles) { Vertices = vertices ?? Array.Empty<Vector3>(); Triangles = triangles ?? Array.Empty<int>(); }
         public static TriangleMesh FromMesh(Mesh m) => new TriangleMesh(m.vertices, m.triangles);
+        public void LocalBounds(out Vector3 min, out Vector3 max)
+        {
+            min = max = Vertices.Length > 0 ? Vertices[0] : Vector3.zero;
+            foreach (var v in Vertices) { min = Vector3.Min(min, v); max = Vector3.Max(max, v); }
+        }
     }
 
     /// <summary>Shape assets colliders reference by handle.</summary>

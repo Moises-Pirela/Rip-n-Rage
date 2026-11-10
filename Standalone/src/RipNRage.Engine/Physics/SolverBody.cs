@@ -110,10 +110,13 @@ namespace RipNRage.Engine
         internal ConvexShape shape;           // world box shape (null for spheres)
         internal Bounds worldBounds;
         internal float sleepTimer;
+        internal int rollStamp;
         internal bool sleeping;
         internal Vector3 prevPosition;
         internal Quaternion prevRotation = Quaternion.identity;
         internal bool hasPrev;
+        /// <summary>World centre of mass at the start of the last fixed step (interpolation blends from here to <see cref="worldCenterOfMass"/>).</summary>
+        public Vector3 previousCenterOfMass => prevPosition;
         internal int islandStamp;
         internal readonly List<RigidContact> contacts = new List<RigidContact>();
         public bool isSleeping => sleeping;
@@ -156,6 +159,7 @@ namespace RipNRage.Engine
             maxSpeed = cfg.MaxSpeed; maxAngularSpeed = cfg.MaxAngularSpeed;
 
             isSphere = false; isCapsule = false;
+            Vector3 meshCenter = Vector3.zero;
             float maxScale = MathF.Max(MathF.Abs(scale.x), MathF.Max(MathF.Abs(scale.y), MathF.Abs(scale.z)));
             switch (shapeCfg.Kind)
             {
@@ -173,6 +177,15 @@ namespace RipNRage.Engine
                 case Ecs.Physics.ShapeKind.Box:
                     boxHalfExtents = Vector3.Scale(shapeCfg.Size, scale) * 0.5f;
                     break;
+                case Ecs.Physics.ShapeKind.Mesh: // a mesh-bodied rigid simulates as its triangles' bounding box (exact triangles are for statics)
+                {
+                    var tm = Ecs.Physics.PhysicsAssets.Meshes.Resolve(shapeCfg.Mesh);
+                    if (tm == null || tm.Vertices.Length == 0) { boxHalfExtents = new Vector3(0.25f, 0.25f, 0.25f); break; }
+                    tm.LocalBounds(out Vector3 mn, out Vector3 mx);
+                    boxHalfExtents = Vector3.Scale((mx - mn) * 0.5f, scale);
+                    meshCenter = (mn + mx) * 0.5f;
+                    break;
+                }
                 case Ecs.Physics.ShapeKind.Convex: // a convex-bodied rigid simulates as its hull's bounding box
                     var hull = Ecs.Physics.PhysicsAssets.Hulls.Resolve(shapeCfg.Hull);
                     boxHalfExtents = hull != null ? Vector3.Scale(hull.Hull.bounds.extents, scale) : new Vector3(0.25f, 0.25f, 0.25f);
@@ -181,7 +194,7 @@ namespace RipNRage.Engine
                     boxHalfExtents = new Vector3(0.25f, 0.25f, 0.25f);
                     break;
             }
-            comOffsetLocal = Vector3.Scale(shapeCfg.Center, scale);
+            comOffsetLocal = Vector3.Scale(shapeCfg.Center + meshCenter, scale);
             boxHalfExtents = Vector3.Max(boxHalfExtents, new Vector3(0.01f, 0.01f, 0.01f));
             ComputeMassProperties();
         }
@@ -439,15 +452,6 @@ namespace RipNRage.Engine
             UpdateShape();
             TouchBroadphase();
             if (!interpolate || isKinematic) WriteTransform();
-        }
-
-        /// <summary>Per rendered frame: the pose blended between the previous and the current fixed step.</summary>
-        internal void InterpolateTransform(float alpha)
-        {
-            if (!interpolate || isKinematic || sleeping || !hasPrev) return;
-            Vector3 p = Vector3.LerpUnclamped(prevPosition, position, alpha);
-            Quaternion r = Quaternion.Slerp(prevRotation, rotation, alpha);
-            SetSourcePose(p - r * comOffsetLocal, r);
         }
 
         internal void UpdateSleep(float dt)

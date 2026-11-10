@@ -1,0 +1,8 @@
+// A door hinged on its left edge to the world, ±110°, a spring pulling it shut.
+{ "name": "ecs_demo_door", "base": "ecs_demo_prop",
+  "components": {
+    "LocalTransform": { "position": [-6, 2.15, 12], "scale": [1.2, 2.4, 0.12] },
+    "MeshRender": { "texture": "Textures/TEX-Green_Proto.png" },
+    "Body": { "mass": 25 },
+    "Joint": { "kind": "Hinge", "anchor": [-0.5, 0, 0], "axis": [0, 1, 0], "limits": [-110, 110], "springStiffness": 30, "springDamping": 3 }
+  } }

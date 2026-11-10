@@ -79,8 +79,10 @@ namespace RipNRage.Engine
                 return;
             }
             // a fresh record per dispatch (a few hundred bytes): a worker that lags behind can never see a reused one
-            var d = new Dispatch { job = job, stages = stages, counts = new int[stages], batches = new int[stages], next = new int[stages], pending = new int[stages] };
-            for (int s = 0; s < stages; s++) { d.counts[s] = counts[s]; d.batches[s] = Math.Max(1, batches[s]); d.pending[s] = counts[s]; }
+            // next / pending are hammered by every worker with interlocked ops: one cache line per stage (Pad ints),
+            // or the stages' counters share a line and every claim ping-pongs it between all cores
+            var d = new Dispatch { job = job, stages = stages, counts = new int[stages], batches = new int[stages], next = new int[stages * Pad + Pad], pending = new int[stages * Pad + Pad] };
+            for (int s = 0; s < stages; s++) { d.counts[s] = counts[s]; d.batches[s] = Math.Max(1, batches[s]); d.pending[(s + 1) * Pad] = counts[s]; }
             Dispatches++; Stages += stages;
             Volatile.Write(ref _current, d);
             if (!_go.IsSet) _go.Set();
@@ -95,6 +97,9 @@ namespace RipNRage.Engine
         }
 
         /// <summary>Runs every stage of a dispatch to completion (called by the dispatcher and by each worker).</summary>
+        /// <summary>Ints per cache line (64 B): stage s's counters live at index (s + 1) * Pad.</summary>
+        private const int Pad = 16;
+
         private static void Work(Dispatch d, int worker)
         {
             for (int s = 0; s < d.stages; s++)
@@ -102,16 +107,16 @@ namespace RipNRage.Engine
                 int count = d.counts[s], batch = d.batches[s];
                 while (true)
                 {
-                    int start = Interlocked.Add(ref d.next[s], batch) - batch;
+                    int start = Interlocked.Add(ref d.next[(s + 1) * Pad], batch) - batch;
                     if (start >= count) break;
                     int end = Math.Min(start + batch, count);
                     try { d.job.Execute(s, start, end, worker); }
                     catch (Exception e) { Interlocked.CompareExchange(ref d.error, e, null); }
-                    Interlocked.Add(ref d.pending[s], -(end - start));
+                    Interlocked.Add(ref d.pending[(s + 1) * Pad], -(end - start));
                 }
                 // barrier: the stage is complete when every handed-out chunk has run
                 var sw = new SpinWait();
-                while (Volatile.Read(ref d.pending[s]) > 0) sw.SpinOnce(-1);
+                while (Volatile.Read(ref d.pending[(s + 1) * Pad]) > 0) sw.SpinOnce(-1);
             }
         }
 
@@ -150,6 +155,13 @@ namespace RipNRage.Engine
         // ------------------------------------------------------------------ shared instance
 
         private static JobSystem _shared;
+
+        /// <summary>
+        /// Size of the process-wide pool (main thread included): one per core, at most 16. The ECS scheduler and the
+        /// rigid solver share it: two pools (they used to be 23 + 16 spinning threads on 24 cores) starved each
+        /// other's workers, and a worker descheduled while holding a chunk stalls every stage barrier.
+        /// </summary>
+        public static int DefaultThreads => Math.Clamp(Environment.ProcessorCount, 1, 16);
 
         /// <summary>The engine-wide job system with <paramref name="threads"/> threads (recreated when the count changes).</summary>
         public static JobSystem Shared(int threads)

@@ -175,7 +175,7 @@ namespace RipNRage.Benchmark
             int n = r.samples.Count;
             r.frames = n;
             if (n == 0) { _results.Add(r); return; }
-            var frame = new double[n]; var step = new double[n];
+            var frame = new double[n]; var step = new List<double>(n); double stepSum = 0;
             double fSum = 0, pSum = 0, stSum = 0, sSum = 0, rSum = 0, aSum = 0, stepsSum = 0;
             long bodies = 0, awake = 0, manifolds = 0, contacts = 0, joints = 0, kin = 0, alive = 0, queries = 0, sweeps = 0, rays = 0, islands = 0, largest = 0, draws = 0, dispatches = 0, stages = 0;
             double bSum = 0, nSum = 0, prSum = 0, iSum = 0, soSum = 0, cSum = 0, fiSum = 0; int stepFrames = 0;
@@ -183,7 +183,10 @@ namespace RipNRage.Benchmark
             for (int i = 0; i < n; i++)
             {
                 var s = r.samples[i];
-                frame[i] = s.frameMs; step[i] = s.stepMs;
+                frame[i] = s.frameMs;
+                // per-step cost only from frames that ran a fixed step: averaging in step-less frames (most of them at
+                // high frame rates) used to report a fraction of the real cost
+                if (s.fixedSteps > 0) { step.Add(s.stepMs); stepSum += s.stepMs; }
                 fSum += s.frameMs; pSum += s.physicsMs; stSum += s.stepMs; sSum += s.sceneMs; rSum += s.renderMs; aSum += s.allocBytes; stepsSum += s.fixedSteps;
                 bodies += s.rigidBodies; awake += s.awake; manifolds += s.manifolds; contacts += s.contacts; joints += s.joints; kin += s.kinematic; alive += s.alive;
                 queries += s.queries; sweeps += s.sweeps; rays += s.raycasts; islands += s.islands; largest += s.largestIsland; draws += s.drawCalls;
@@ -197,10 +200,11 @@ namespace RipNRage.Benchmark
                 r.threads = Math.Max(r.threads, s.threads);
                 if (s.alive < aliveMin) aliveMin = s.alive;
             }
-            Array.Sort(frame); Array.Sort(step);
+            Array.Sort(frame); step.Sort();
+            int ns = step.Count;
             r.frameAvg = fSum / n; r.frameP99 = frame[Math.Clamp((int)(0.99 * (n - 1)), 0, n - 1)]; r.frameMax = frame[n - 1];
             r.physicsAvg = pSum / n; r.stepsAvg = stepsSum / n;
-            r.stepAvg = stSum / n; r.stepP99 = step[Math.Clamp((int)(0.99 * (n - 1)), 0, n - 1)]; r.stepMax = step[n - 1];
+            r.stepAvg = ns > 0 ? stepSum / ns : 0; r.stepP99 = ns > 0 ? step[Math.Clamp((int)(0.99 * (ns - 1)), 0, ns - 1)] : 0; r.stepMax = ns > 0 ? step[ns - 1] : 0;
             r.sceneAvg = sSum / n; r.renderAvg = rSum / n;
             r.bodiesAvg = (int)(bodies / n); r.awakeAvg = (int)(awake / n); r.manifoldsAvg = (int)(manifolds / n); r.contactsAvg = (int)(contacts / n);
             r.jointsAvg = (int)(joints / n); r.kinematicAvg = (int)(kin / n); r.aliveAvg = (int)(alive / n); r.aliveMin = aliveMin;

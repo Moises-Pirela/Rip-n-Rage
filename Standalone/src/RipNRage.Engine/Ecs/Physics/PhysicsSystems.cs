@@ -30,7 +30,8 @@ namespace RipNRage.Engine.Ecs.Physics
     /// teleport (statics re-bake), a <see cref="BodyVelocity"/> someone wrote wins over the solver's value.
     ///
     /// Physics entities must be roots: the solver works in world space and writes <see cref="LocalTransform"/> back
-    /// directly. Mesh colliders must be static (no <see cref="Body"/>). Both are skipped with a warning otherwise.
+    /// directly (skipped with a warning otherwise). Mesh colliders are exact triangles when static; on a
+    /// <see cref="Body"/> they simulate as the mesh's bounding box (moving triangle soups have no volume to push).
     /// </summary>
     public sealed class PhysicsSyncSystem : SystemBase, IFixedTick, IOnEntityDestroyed, IOnSimEnd
     {
@@ -104,7 +105,6 @@ namespace RipNRage.Engine.Ecs.Physics
             if (World.Has<Parent>(e)) return Skip(e, "has a Parent (physics entities must be roots)");
             var shape = hasShape ? World.Get<ColliderShape>(e) : default;
             bool hasBody = World.Has<Body>(e);
-            if (hasShape && shape.Kind == ShapeKind.Mesh && hasBody) return Skip(e, "mesh colliders must be static (no Body)");
             if (hasBody && World.Has<KinematicMover>(e)) return Skip(e, "a KinematicMover must not also have a Body (use Body.Kind = Kinematic for a solver-driven kinematic body)");
             var lt = World.Get<LocalTransform>(e);
             var world = PhysicsApi.World;
@@ -332,6 +332,33 @@ namespace RipNRage.Engine.Ecs.Physics
                 if (body.contacts.Count > 0 && World.Has<ReportCollisions>(reg.Entity))
                     foreach (var c in body.contacts)
                         ctx.Post(new CollisionEvent { Self = reg.Entity, Other = c.other, Point = c.point, Normal = c.normal, Impulse = c.impulse, ApproachSpeed = c.approachSpeed });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Per rendered frame, for bodies with <see cref="Body.Interpolate"/>: <see cref="LocalTransform"/> shows the pose
+    /// blended between the last two fixed steps by <see cref="World.FixedAlpha"/>, so a body moves smoothly at any
+    /// frame rate (characters, the player). The solver keeps the true pose; the next fixed step's write-back replaces
+    /// the blend, and the sync treats the blend as written by physics, not as a teleport.
+    /// </summary>
+    [UpdateBefore(typeof(TransformSystem))]
+    public sealed class PhysicsInterpolationSystem : SystemBase, ILateTick
+    {
+        public void LateTick(SystemContext ctx)
+        {
+            var sync = World.GetSystem<PhysicsSyncSystem>();
+            if (sync == null) return;
+            float alpha = World.FixedAlpha;
+            foreach (var reg in sync.Registrations.Values)
+            {
+                var b = reg.Body;
+                if (b == null || !b.interpolate || b.isKinematic || b.sleeping || !b.hasPrev || !World.Has<LocalTransform>(reg.Entity)) continue;
+                Vector3 p = Vector3.LerpUnclamped(b.prevPosition, b.position, alpha);
+                Quaternion r = Quaternion.Slerp(b.prevRotation, b.rotation, alpha);
+                ref var lt = ref World.Get<LocalTransform>(reg.Entity);
+                lt.Position = p - r * b.comOffsetLocal; lt.Rotation = r;
+                reg.LastPos = lt.Position; reg.LastRot = lt.Rotation;
             }
         }
     }

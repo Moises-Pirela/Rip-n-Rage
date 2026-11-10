@@ -1,4 +1,4 @@
-// A simulated ECS crate (--ecs-demo drops a small stack onto the level's legacy geometry: one simulation).
+// A simulated ECS crate (--ecs-demo drops a small stack onto the dock).
 { "name": "ecs_demo_crate",
   "components": {
     "LocalTransform": { "position": [2, 3, 6], "scale": [0.6, 0.6, 0.6] },

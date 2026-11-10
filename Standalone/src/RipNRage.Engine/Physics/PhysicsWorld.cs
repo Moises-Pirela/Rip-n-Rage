@@ -336,7 +336,6 @@ namespace RipNRage.Engine
         /// </summary>
         internal void QueryBoundsConcurrent(Bounds region, QueryFilter filter, List<ColliderTable.Slot> results)
         {
-            System.Threading.Interlocked.Increment(ref _queriesConcurrent);
             int first = results.Count;
             if (_hasDynamics && _dynBounds.Intersects(region))
             {
@@ -394,6 +393,8 @@ namespace RipNRage.Engine
         }
 
         private int _queriesConcurrent;
+        /// <summary>Concurrent queries are counted per worker by the caller and added here once (no shared counter in the hot loop).</summary>
+        internal void AddConcurrentQueries(int n) => _queriesConcurrent += n;
 
         // ------------------------------------------------------------------ raycast
 
@@ -487,14 +488,21 @@ namespace RipNRage.Engine
 
         /// <summary>
         /// The plane hull of a box / convex collider. Statics bake theirs at registration; moving boxes build one from
-        /// their oriented box (an allocation per query against a moving box — kinematic movers vs crates; cache it on
-        /// the slot if that ever shows in a profile).
+        /// their oriented box and keep it until the box moves.
         /// </summary>
         internal static ConvexHull HullOf(ColliderTable.Slot e)
         {
             if (e.hull != null) return e.hull;
             var s = e.worldShape;
-            if (s.type == ShapeType.Box) return ConvexHull.FromBox(Matrix4x4.TRS(s.center, s.rotation, Vector3.one), Vector3.zero, s.halfExtents * 2f);
+            if (s.type == ShapeType.Box)
+            {
+                // cached per pose: a kinematic move sweeps the same crate many times per step
+                var cached = e.movingHull; var cs = e.movingHullShape;
+                if (cached != null && cs.center == s.center && cs.rotation == s.rotation && cs.halfExtents == s.halfExtents) return cached;
+                var h = ConvexHull.FromBox(Matrix4x4.TRS(s.center, s.rotation, Vector3.one), Vector3.zero, s.halfExtents * 2f);
+                e.movingHullShape = s; e.movingHull = h; // publish after building (main-thread callers; a race only rebuilds)
+                return h;
+            }
             return ConvexHull.FromBounds(e.worldBounds);
         }
 

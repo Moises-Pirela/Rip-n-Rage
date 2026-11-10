@@ -62,7 +62,12 @@ namespace RipNRage.Engine
         // ---- prepare ----
 
         /// <summary>Per-manifold setup for the step; <paramref name="p"/> carries the solver settings. Safe to run on several threads at once (the cache is only read).</summary>
-        public void Prepare(Manifold m, in SolverParams p)
+        /// <summary>Adds a worker's point counts after a parallel prepare (the counters are not touched from workers: a shared interlocked counter per point cost more than the prepare).</summary>
+        public void AddCounts(int total, int matched) { _total += total; _matched += matched; }
+
+        public void Prepare(Manifold m, in SolverParams p) { int t = 0, mt = 0; Prepare(m, in p, ref t, ref mt); _total += t; _matched += mt; }
+
+        public void Prepare(Manifold m, in SolverParams p, ref int total, ref int matched)
         {
             SolverBody a = m.bodyA, b = m.bodyB;
             Vector3 n = m.normal;
@@ -111,8 +116,8 @@ namespace RipNRage.Engine
                 pt.normalImpulse = pt.tangentImpulse0 = pt.tangentImpulse1 = 0f;
                 pt.maxNormalImpulse = 0f; pt.positionImpulse = 0f;
                 pt.persistent = false; pt.age = 0;
-                System.Threading.Interlocked.Increment(ref _total);
-                if (haveCache && Match(ref pt, cached)) { System.Threading.Interlocked.Increment(ref _matched); pt.persistent = true; }
+                total++;
+                if (haveCache && Match(ref pt, cached)) { matched++; pt.persistent = true; }
             }
         }
 

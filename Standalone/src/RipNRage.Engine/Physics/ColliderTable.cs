@@ -47,6 +47,8 @@ namespace RipNRage.Engine
             public ConvexShape polytope;
             /// <summary>Box / convex statics: world hull (planes) for the exact axis-aligned box trace of the kinematic solver.</summary>
             public ConvexHull hull;
+            /// <summary>Moving boxes: the plane hull built for <see cref="movingHullShape"/> (rebuilt only when the box moved).</summary>
+            public ConvexHull movingHull; public CollisionShape movingHullShape;
             /// <summary>Mesh colliders: world triangles + BVH.</summary>
             public MeshShape mesh;
             /// <summary>Tight world bounds.</summary>
@@ -70,6 +72,7 @@ namespace RipNRage.Engine
                 x0 = y0 = z0 = x1 = y1 = z1 = 0;
                 ecsShape = default; ecsMaterial = default; hasEcsMaterial = false;
                 layer = 0; isTrigger = false; worldShape = default; polytope = null; hull = null; mesh = null; worldBounds = default;
+                movingHull = null; movingHullShape = default;
             }
         }
 

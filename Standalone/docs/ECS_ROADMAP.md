@@ -31,7 +31,7 @@ then start at the first unchecked layer.
 - [x] **Layer 1 — Transforms + rendering** (`3ed7e45`): hierarchy (verified against legacy `Transform`), the renderer
   consumes `RenderFrame` draw items from producers, ECS render components + `EcsRenderProducer`, `--ecs-demo`. Pixel
   parity with the pre-ECS renderer is within run-to-run noise.
-- [ ] Layer 2 — Physics
+- [x] **Layer 2 — Physics**: ECS-only simulation, joints, characters, movers, triggers; legacy physics deleted (close-out below)
 - [ ] Layer 3 — Animation, audio, particles, destruction
 - [ ] Layer 4 — Input, camera, player
 - [ ] Layer 5 — Weapons, combat, damage
@@ -188,10 +188,15 @@ Convert, keeping the tuned solver behaviour:
         baseline: legacy single-threaded was 34–40), projectiles ≈0.01–0.04, ground 0.03–0.16. **Metric note**:
         "physics/step" averages per frame with `max(1, steps)`, so step-less frames count as 0 — at ~1000 fps
         (`--no-render`) it understates fixed-step work (now including movers); compare "ms/frame" too.
-  - [ ] 2.7 ~~Contact / trigger events; query API returns `Entity`~~ — done in 2.L; what remains: character
-        `SetHeight`, per-frame
-        interpolation for ECS bodies, dynamic mesh colliders, and caching hulls of moving boxes (`HullOf` allocates).
-  - [ ] 2.8 ECS physics demo prefabs, full gate run, strafe investigation, roadmap update.
+  - [x] 2.7 **Remaining physics features.** `CharacterMotor.PendingHeight` (slide crouch: the capsule resizes from
+        the top, mass properties and centre of mass follow, character settings re-applied). Per-frame
+        **interpolation**: `PhysicsInterpolationSystem` (LateTick, before `TransformSystem`) shows `Body.Interpolate`
+        bodies blended by the new `World.FixedAlpha` (the Application copies the scene's value); the sync treats the
+        blend as physics-written, not a teleport; characters interpolate by default. The old
+        `SolverBody.InterpolateTransform` was deleted (it wrote the blend into the true pose). **Mesh colliders on
+        bodies** simulate as the mesh's bounding box (legacy semantics; exact triangles stay static-only). Moving boxes
+        cache their plane hull per pose (`HullOf` no longer allocates per query).
+  - [x] 2.8 Demo prefabs, ragdoll performance pass, gate run — see **Layer 2 close-out** below.
 - **Baselines (2.0, `37794e8`, Linux/WSL, 16 threads, `--no-render`)** — physics ms/step avg:
   crates 1.19 (PASS), ragdolls 11.21 (**FAIL at baseline**: 25.4 ms frame, over budget — pre-existing on this
   machine), projectiles 0.48 (PASS), ground 0.15 (PASS). `--script strafe --frames 620` **also fails at baseline here**
@@ -199,6 +204,43 @@ Convert, keeping the tuned solver behaviour:
 - Ordering note: the ECS currently updates **after** the legacy scene and `Physics.Step()`. When physics moves into
   `FixedTick`, the ECS fixed step and the legacy `FixedUpdate` must stay in lockstep (same `fixedDeltaTime`, same step
   count per frame) until gameplay is ported.
+
+#### Layer 2 close-out (2.8)
+
+- **Demo**: `--ecs-demo` builds the joint playground from prefabs (`prefabs/demo/ecs_demo_{prop,door,pendulum,bungee,
+  seesaw,windmill,piston,shelf,link}.json`; base prefab + inheritance, sizes by `LocalTransform.scale`, anchors scaled
+  with it). The chain (ball joints to the link above) and the piston's `SliderPatrol` are wired in `EcsDemo` because
+  prefabs cannot reference other entities yet (layer 10).
+- **Ragdoll / solver performance pass** (each step measured interleaved against `0d84805`):
+  1. **Rolling resistance** (`RigidSolver.rollingDamping`, 3/s on spheres / capsules in contact): the contact model
+     had no rolling friction, so limbs rolled forever and no ragdoll island ever slept (3000 / 3000 awake for 15 s).
+     Now 1500–2000 of 3000 sleep between blasts. Bench figures also got the legacy SpriteRagdoll tuning (friction
+     0.7, damping 0.1 / 0.6).
+  2. **Exact box fast paths**: analytic sphere-vs-oriented-box closest point (`ConvexShape.isBox`) and capsule-over-
+     a-box-face contacts without GJK. Randomised parity test vs the generic path and a brute-force reference: 0
+     wrong; GJK itself is off in 8/4000 deep overlaps, where the fast path is the accurate one. Narrow phase ~13 → 4 ms.
+  3. **Threading** — the multithreaded solver ran 3–4× *slower* than single-threaded: (a) every stage's job counters
+     shared one cache line (now one line per stage in `JobSystem`); (b) a shared interlocked counter per broadphase
+     query and per contact point (now per worker, summed after the stage); (c) small islands were claimed one at a
+     time in build order (now longest-first, small batches); (d) **two worker pools** — the ECS world's 23 + the
+     solver's 16 spinning threads on 24 cores, so workers holding chunks were descheduled and stalled every barrier.
+     One process-wide pool now (`JobSystem.DefaultThreads`, shared by `World` and `RigidSolver`; explicit
+     `new World(n)` keeps a private pool). Measured concurrency went from 2–3 active workers of 8 to all of them.
+  - **Result, default threads (3 runs)**: ragdolls 44.5–53.0 → 4.9–5.6 ms/step (frame 222–267 → 0.6–0.7 ms; it no
+    longer spirals), crates 27.9–35.1 → 5.3–5.7 ms/step. Single-threaded: ragdolls 29–35.5 → 10.3–10.9, crates
+    13–16 → 12.2–12.8. Above ~4 threads there is no further gain on this VM (memory-bound).
+  - **Bench metric fixed**: physics/step now averages only frames that ran a fixed step (it used to average in the
+    step-less ones, which at ~1000 fps reported a fraction of the real cost). Numbers before this layer's close-out
+    are not comparable — crates had always been over budget; the old metric hid it.
+- **Gate run** (default threads, `--no-render`): crates 5.8–6.1 PASS, projectiles 0.33–0.36 PASS, ground 1.55–1.58
+  PASS; ragdolls 3.9 / 4.3 / 4.6 / 5.8 / 7.6 / 8.4 ms across six runs (budget 8: one run over — WSL noise). Game
+  scripts walk / fire / weapons / rage / saveload complete without errors; look screenshot vs `0d84805` 0.035–0.081%
+  differing pixels against a same-build floor of 0.059–0.062%; 123 engine checks.
+- **Strafe**: still passes vacuously — the player has no movement until layer 4, so the macOS / WSL edge-fall
+  investigation moves to layer 4 (it needs the player on `CharacterMotor`).
+- **Known gaps carried forward**: ragdolls from sliced sprites (layer 3); projectiles / pickups / triggers / hit
+  resolution in gameplay (layers 5–8); prefab entity references (layer 10); GJK's deep-overlap approximation for
+  capsules vs non-box polytopes (pre-existing).
 
 ### Layer 3 — Animation, audio, particles, destruction (~3.1k lines)
 

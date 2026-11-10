@@ -272,6 +272,7 @@ namespace RipNRage.Engine
                 Profiler.End();
                 Profiler.Begin("ecs");
                 World.FixedDeltaTime = Time.fixedDeltaTime;
+                World.FixedAlpha = Scene.FixedAlpha;
                 World.Update(Time.deltaTime);
                 Profiler.End();
                 Profiler.Begin("tweens");

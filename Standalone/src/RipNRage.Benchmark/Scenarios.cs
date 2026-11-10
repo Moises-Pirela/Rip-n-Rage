@@ -187,7 +187,8 @@ namespace RipNRage.Benchmark
                 int x = i % side, z = i / side;
                 Vector3 c = new Vector3((x - side * 0.5f + 0.5f) * 2.2f, 1.6f, (z - side * 0.5f + 0.5f) * 2.2f);
                 int group = -(i + 1);
-                var torso = BenchmarkScene.DynamicBody(c, Quaternion.identity, new ColliderShape { Kind = ShapeKind.Box, Size = new Vector3(0.5f, 0.7f, 0.3f) }, 30f, 0.6f, 0.05f, torsoMesh, GameAssets.OrangeProto, group);
+                var torso = BenchmarkScene.DynamicBody(c, Quaternion.identity, new ColliderShape { Kind = ShapeKind.Box, Size = new Vector3(0.5f, 0.7f, 0.3f) }, 30f, 0.7f, 0.05f, torsoMesh, GameAssets.OrangeProto, group);
+                Ragdoll(torso, 30f);
                 Part(c + new Vector3(0f, 0.55f, 0f), new ColliderShape { Kind = ShapeKind.Sphere, Radius = 0.15f }, 5f, headMesh, torso, new Vector3(0f, -0.15f, 0f), group);
                 Part(c + new Vector3(-0.35f, 0.05f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.08f, Height = 0.6f }, 4f, limbMesh, torso, new Vector3(0f, 0.3f, 0f), group);
                 Part(c + new Vector3(0.35f, 0.05f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.08f, Height = 0.6f }, 4f, limbMesh, torso, new Vector3(0f, 0.3f, 0f), group);
@@ -200,9 +201,17 @@ namespace RipNRage.Benchmark
             }
         }
 
+        /// <summary>The legacy SpriteRagdoll piece tuning: linear damping 0.1, angular damping 0.6.</summary>
+        private static void Ragdoll(Entity e, float mass)
+        {
+            var b = new BodyConfig { mass = mass, linearDamping = 0.1f, angularDamping = 0.6f }.Bake();
+            BenchmarkScene.World.Commands.Add(e, b);
+        }
+
         private void Part(Vector3 at, ColliderShape shape, float mass, Mesh mesh, Entity parent, Vector3 anchor, int group)
         {
-            var e = BenchmarkScene.DynamicBody(at, Quaternion.identity, shape, mass, 0.6f, 0.05f, mesh, GameAssets.PurpleProto, group);
+            var e = BenchmarkScene.DynamicBody(at, Quaternion.identity, shape, mass, 0.7f, 0.05f, mesh, GameAssets.PurpleProto, group);
+            Ragdoll(e, mass);
             var j = new JointConfig { kind = JointKind.Ball }.Bake();
             j.Anchor = anchor; j.Connected = parent;
             BenchmarkScene.World.Commands.Add(e, j);

@@ -1,0 +1,8 @@
+// Blades turned by a hinge motor at 90°/s.
+{ "name": "ecs_demo_windmill", "base": "ecs_demo_prop",
+  "components": {
+    "LocalTransform": { "position": [5.5, 3.5, 13], "scale": [2.6, 0.2, 0.2] },
+    "MeshRender": { "texture": "Textures/TEX-Red_Proto.png" },
+    "Body": { "mass": 12, "useGravity": false },
+    "Joint": { "kind": "Hinge", "axis": [0, 0, 1], "motorSpeed": 90, "motorForce": 400 }
+  } }

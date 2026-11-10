@@ -27,6 +27,9 @@ namespace RipNRage.Engine
         public Vector3 center;
         /// <summary>Radius of the bounding sphere around <see cref="center"/>.</summary>
         public float radius;
+        /// <summary>Set by <see cref="SetBox"/>: the shape is an oriented box (axes + half extents below), so closest points and capsule contacts are analytic.</summary>
+        public bool isBox;
+        public Vector3 boxAxisX, boxAxisY, boxAxisZ, boxHalf;
 
         // ------------------------------------------------------------------ boxes
 
@@ -68,6 +71,34 @@ namespace RipNRage.Engine
             faces[5].normal = -az; faces[5].dist = -Vector3.Dot(az, c) + halfExtents.z;
             center = c;
             radius = halfExtents.magnitude;
+            isBox = true; boxAxisX = ax; boxAxisY = ay; boxAxisZ = az; boxHalf = halfExtents;
+        }
+
+        /// <summary>Box-local coordinates of a world point.</summary>
+        public Vector3 BoxLocal(Vector3 p) { Vector3 d = p - center; return new Vector3(Vector3.Dot(d, boxAxisX), Vector3.Dot(d, boxAxisY), Vector3.Dot(d, boxAxisZ)); }
+
+        private Vector3 BoxWorld(Vector3 l) => center + boxAxisX * l.x + boxAxisY * l.y + boxAxisZ * l.z;
+
+        /// <summary>Analytic closest point on an oriented box (same contract as <see cref="ClosestPoint"/>).</summary>
+        private Vector3 BoxClosestPoint(Vector3 p, out Vector3 normal, out float distance, out bool inside)
+        {
+            Vector3 l = BoxLocal(p), h = boxHalf;
+            Vector3 q = new Vector3(Mathf.Clamp(l.x, -h.x, h.x), Mathf.Clamp(l.y, -h.y, h.y), Mathf.Clamp(l.z, -h.z, h.z));
+            inside = q == l;
+            if (!inside)
+            {
+                Vector3 wq = BoxWorld(q);
+                Vector3 dir = p - wq;
+                distance = dir.magnitude;
+                normal = distance > 1E-06f ? dir / distance : boxAxisY;
+                return wq;
+            }
+            // inside: the face we are least behind (smallest depth), like the generic path
+            float dx = h.x - MathF.Abs(l.x), dy = h.y - MathF.Abs(l.y), dz = h.z - MathF.Abs(l.z);
+            if (dx <= dy && dx <= dz) { normal = boxAxisX * (l.x >= 0f ? 1f : -1f); distance = dx; }
+            else if (dy <= dz) { normal = boxAxisY * (l.y >= 0f ? 1f : -1f); distance = dy; }
+            else { normal = boxAxisZ * (l.z >= 0f ? 1f : -1f); distance = dz; }
+            return p + normal * distance;
         }
 
         // ------------------------------------------------------------------ triangles
@@ -88,6 +119,7 @@ namespace RipNRage.Engine
 
         public void SetTriangle(Vector3 a, Vector3 b, Vector3 c)
         {
+            isBox = false;
             vertices[0] = a; vertices[1] = b; vertices[2] = c;
             Vector3 n = Vector3.Cross(b - a, c - a);
             float len = n.magnitude;
@@ -221,6 +253,7 @@ namespace RipNRage.Engine
         /// </summary>
         public Vector3 ClosestPoint(Vector3 p, out Vector3 normal, out float distance, out bool inside)
         {
+            if (isBox) return BoxClosestPoint(p, out normal, out distance, out inside);
             // inside: the face we are least behind
             float bestD = float.MinValue; int bestFace = -1;
             inside = true;

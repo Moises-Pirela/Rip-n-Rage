@@ -51,8 +51,10 @@ namespace RipNRage.Engine.Ecs
             ComponentRegistry.Scan();
             Empty = GetArchetype(default);
             Commands = new CommandBuffer(this);
-            int threads = workerThreads >= 0 ? workerThreads : Math.Max(1, Environment.ProcessorCount - 1);
-            Jobs = new JobSystem(threads);
+            // default: the process-wide pool the rigid solver uses too (never nested: physics steps inside an
+            // exclusive system on the main thread). An explicit count gets a private pool (tests).
+            if (workerThreads >= 0) { Jobs = new JobSystem(workerThreads); _ownsJobs = true; }
+            else Jobs = JobSystem.Shared(JobSystem.DefaultThreads);
         }
 
         // ------------------------------------------------------------------ entities
@@ -239,6 +241,7 @@ namespace RipNRage.Engine.Ecs
         internal void BeginIteration() => Interlocked.Increment(ref _iterating);
         internal void EndIteration() => Interlocked.Decrement(ref _iterating);
 
-        public void Dispose() => Jobs.Dispose();
+        private readonly bool _ownsJobs;
+        public void Dispose() { if (_ownsJobs) Jobs.Dispose(); }
     }
 }

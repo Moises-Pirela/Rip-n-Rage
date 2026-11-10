@@ -1,0 +1,9 @@
+// A bob on a 3 m rod from a fixed hook, started off-centre so it swings.
+{ "name": "ecs_demo_pendulum", "base": "ecs_demo_prop",
+  "components": {
+    "LocalTransform": { "position": [-1.5, 3.4, 12], "scale": [0.5, 0.5, 0.5] },
+    "MeshRender": { "texture": "Textures/TEX-Red_Proto.png" },
+    "ColliderShape": { "kind": "Sphere", "radius": 0.5 },
+    "Body": { "mass": 15 },
+    "Joint": { "kind": "Distance", "connectedAnchor": [-3.5, 5.6, 12] }
+  } }

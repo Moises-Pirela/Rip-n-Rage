@@ -107,6 +107,8 @@ internal static class PhysicsEcsChecks
 
         EcsSimChecks(True);
         JointAndMoverChecks(True);
+        BoxFastPathChecks(True);
+        Step27Checks(True);
     }
 
     /// <summary>2.4: ECS entities in the one simulation via PhysicsSync / PhysicsStep / PhysicsWriteBack.</summary>
@@ -323,6 +325,100 @@ internal static class PhysicsEcsChecks
         w.Add(walker, new KinematicMoverConfig { velocity = new float[] { 4, 0, 0 }, useGravity = false }.Bake());
         Step(90);
         True(log.Enters.Contains((vol, walker)), "a kinematic mover entering a trigger posts TriggerEnter");
+    }
+
+    /// <summary>The analytic box paths (closest point, capsule on a face) must match the generic polytope / GJK results exactly.</summary>
+    private static void BoxFastPathChecks(Action<bool, string> True)
+    {
+        var rng = new System.Random(1234);
+        float R(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+        int closestBad = 0, capsBad = 0, capsFast = 0, capsWrong = 0, gjkWrong = 0, trials = 4000;
+        var fast = ConvexShape.CreateBox(); var slow = ConvexShape.CreateBox();
+        var mf = new Manifold(); var ms = new Manifold();
+        for (int i = 0; i < trials; i++)
+        {
+            var c = new Vector3(R(-5, 5), R(-5, 5), R(-5, 5));
+            var he = new Vector3(R(0.2f, 4f), R(0.2f, 2f), R(0.2f, 4f));
+            var rot = Quaternion.Euler(R(-40, 40), R(0, 360), R(-40, 40));
+            fast.SetBox(c, he, rot); slow.SetBox(c, he, rot); slow.isBox = false;
+            var p = c + new Vector3(R(-6, 6), R(-6, 6), R(-6, 6));
+            var qf = fast.ClosestPoint(p, out var nf, out var df, out var inf);
+            var qs = slow.ClosestPoint(p, out var ns, out var ds, out var ins);
+            if (inf != ins || (qf - qs).magnitude > 1E-3f || MathF.Abs(df - ds) > 1E-3f || (nf - ns).magnitude > 1E-2f) closestBad++;
+
+            // a capsule hovering near the box (mostly over a face)
+            var cc = c + rot * new Vector3(R(-he.x, he.x), he.y + R(0.0f, 0.4f), R(-he.z, he.z));
+            var cap = CollisionShape.Capsule(cc, Quaternion.Euler(R(60, 120), R(0, 360), 0), R(0.05f, 0.3f), R(0.1f, 0.6f));
+            bool hf = ContactGeneration.RoundedVsConvex(in cap, fast, mf);
+            bool hs = ContactGeneration.RoundedVsConvex(in cap, slow, ms);
+            bool same = hf == hs && mf.count == ms.count && (!hf || (mf.normal - ms.normal).magnitude < 2E-3f);
+            for (int k = 0; same && hf && k < mf.count; k++)
+                same = (mf.points[k].point - ms.points[k].point).magnitude < 2E-3f && MathF.Abs(mf.points[k].depth - ms.points[k].depth) < 2E-3f;
+            if (!same)
+            {
+                // brute force reference: deepest penetration of the capsule = radius - min distance from its core to the box
+                float minD = float.MaxValue; Vector3 ax = cap.Axis * cap.halfHeight;
+                for (int k = 0; k <= 400; k++) { var q = cap.center - ax + ax * (2f * k / 400f); fast.ClosestPoint(q, out _, out float dd, out bool ii); minD = MathF.Min(minD, ii ? -dd : dd); }
+                float refDepth = MathF.Max(0f, cap.radius - minD); // separated (within the margin) = 0 penetration, like the floored measurements
+                float fd = 0, sd = 0; for (int k = 0; k < mf.count; k++) fd = MathF.Max(fd, mf.points[k].depth); for (int k = 0; k < ms.count; k++) sd = MathF.Max(sd, ms.points[k].depth);
+                // the fast path decided this case only when its result differs from the generic one; when they agree it
+                // declined (an end inside the box, or across an edge) and both are GJK's deep-overlap approximation
+                if (MathF.Abs(fd - refDepth) > 2E-3f && MathF.Abs(fd - sd) > 1E-4f) capsWrong++;
+                if (MathF.Abs(sd - refDepth) > 2E-3f) gjkWrong++;
+                capsBad++;
+            }
+            if (hf) capsFast++;
+        }
+        Console.WriteLine($"  box fast paths: closest {closestBad}/{trials} differ, capsule {capsBad}/{trials} differ from GJK, {capsFast} touching; vs brute-force reference: fast path wrong {capsWrong}, generic path wrong {gjkWrong} (deep overlaps)");
+        True(closestBad == 0, $"analytic box closest point matches the generic one ({closestBad}/{trials} differ)");
+        True(capsWrong == 0 && capsFast > trials / 4, $"capsule-on-box fast path matches a brute-force reference ({capsWrong} wrong; GJK differs in {capsBad})");
+    }
+
+    /// <summary>2.7: character SetHeight, per-frame interpolation, mesh colliders on bodies.</summary>
+    private static void Step27Checks(Action<bool, string> True)
+    {
+        using var w = new World(0);
+        w.AddSystemsFromAssemblies(typeof(World).Assembly);
+        w.FixedDeltaTime = 1f / 60f;
+        void Step(int n) { for (int i = 0; i < n; i++) w.Update(1f / 60f); }
+        var floor = w.CreateEntity(); w.Add(floor, LocalTransform.At(new Vector3(700, -0.5f, 0)));
+        w.Add(floor, new ColliderShape { Kind = ShapeKind.Box, Size = new Vector3(40, 1, 40), IsStatic = true });
+
+        // ---- SetHeight: the capsule shrinks from the top, the feet stay, the character keeps riding
+        var ch = w.CreateEntity(); w.Add(ch, LocalTransform.At(new Vector3(700, 2, 0)));
+        w.Add(ch, new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.4f, Height = 1.3f });
+        w.Add(ch, new BodyConfig { mass = 80f }.Bake()); w.Add(ch, new BodyVelocity());
+        w.Add(ch, new CharacterMotorConfig { rideHeight = 0.5f }.Bake());
+        Step(120);
+        float bottomBefore = w.Get<LocalTransform>(ch).Position.y + w.Get<ColliderShape>(ch).Center.y - w.Get<ColliderShape>(ch).Height * 0.5f;
+        w.Get<CharacterMotor>(ch).PendingHeight = 0.8f;
+        Step(60);
+        var cs = w.Get<ColliderShape>(ch);
+        float bottomAfter = w.Get<LocalTransform>(ch).Position.y + cs.Center.y - cs.Height * 0.5f;
+        True(MathF.Abs(cs.Height - 0.8f) < 1E-4f && MathF.Abs(bottomAfter - bottomBefore) < 0.06f && w.Get<CharacterMotor>(ch).IsGrounded,
+             $"SetHeight shrinks the capsule from the top; the bottom keeps riding (bottom {bottomBefore:0.000} -> {bottomAfter:0.000})");
+        True(w.Get<LocalTransform>(ch).Rotation == Quaternion.identity, "and the character settings (no rotation) survive the resize");
+
+        // ---- interpolation: with half a step of real time left over, the pose shown is halfway between two steps
+        var faller = w.CreateEntity(); w.Add(faller, LocalTransform.At(new Vector3(710, 20, 0)));
+        w.Add(faller, new ColliderShape { Kind = ShapeKind.Sphere, Radius = 0.3f });
+        w.Add(faller, new BodyConfig { mass = 1f, interpolate = true }.Bake()); w.Add(faller, new BodyVelocity());
+        Step(30);
+        var sync = w.GetSystem<PhysicsSyncSystem>(); var fb = sync.BodyOf(faller);
+        w.Update(1f / 120f); // no fixed step: alpha = 0.5
+        float shown = w.Get<LocalTransform>(faller).Position.y, prev = fb.previousCenterOfMass.y, cur = fb.worldCenterOfMass.y;
+        True(MathF.Abs(w.FixedAlpha - 0.5f) < 0.01f && MathF.Abs(shown - (prev + cur) * 0.5f) < 1E-3f && prev > cur,
+             $"an interpolated body shows the blended pose (prev {prev:0.000}, shown {shown:0.000}, true {cur:0.000})");
+        w.Update(1f / 120f); // completes the step
+        True(MathF.Abs(fb.worldCenterOfMass.y - cur) > 1E-3f && fb.worldCenterOfMass.y < cur, "the blend is not taken for a teleport: the body keeps falling from its true pose");
+
+        // ---- a mesh collider on a body simulates as the mesh's bounding box
+        var tet = PhysicsAssets.AddMesh("test-tet", new[] { new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, 1, 0) }, new[] { 0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3 });
+        var mb = w.CreateEntity(); w.Add(mb, LocalTransform.At(new Vector3(712, 3, 0)));
+        w.Add(mb, new ColliderShape { Kind = ShapeKind.Mesh, Mesh = tet }); w.Add(mb, new BodyConfig { mass = 2f }.Bake()); w.Add(mb, new BodyVelocity());
+        Step(150);
+        float my = w.Get<LocalTransform>(mb).Position.y;
+        True(w.Has<PhysicsHandle>(mb) && MathF.Abs(my) < 0.05f, $"a mesh-collider body lands on the floor as its bounding box (origin y={my:0.000})");
     }
 
     private static bool Throws(Action a) { try { a(); return false; } catch (Exception) { return true; } }

@@ -102,6 +102,18 @@ namespace RipNRage.Engine.Ecs
 
         public float FixedDeltaTime = 1f / 60f;
         public int MaxFixedSteps = 8;
+        /// <summary>
+        /// How far real time is past the last fixed step, as a fraction of a step (0..1): what interpolation blends by.
+        /// From the internal accumulator, or set by the host that drives the fixed steps (the Application copies the
+        /// scene's value in every frame).
+        /// </summary>
+        public float FixedAlpha
+        {
+            get => DriveFixedInternally ? (FixedDeltaTime > 0f ? Math.Clamp((float)(_fixedAccumulator / FixedDeltaTime), 0f, 1f) : 1f) : _externalAlpha;
+            set => _externalAlpha = Math.Clamp(value, 0f, 1f);
+        }
+        private float _externalAlpha = 1f;
+
         /// <summary>False when the host drives fixed steps itself through <see cref="RunFixed"/> (the Application's scene loop): Update then skips its own accumulator.</summary>
         public bool DriveFixedInternally = true;
         private double _fixedAccumulator, _time;

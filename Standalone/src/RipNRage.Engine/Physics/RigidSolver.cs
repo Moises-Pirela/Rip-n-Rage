@@ -72,6 +72,12 @@ namespace RipNRage.Engine
         public float maxBiasVelocity = 4f;
         /// <summary>Approach speed above which restitution applies.</summary>
         public float restitutionThreshold = 1f;
+        /// <summary>
+        /// Rolling resistance (1/s): spheres and capsules in contact lose this fraction of their angular velocity per
+        /// second. The contact model has no rolling friction, so without it a ball or a ragdoll limb on the floor rolls
+        /// forever and its island never sleeps. 0 = the old behaviour.
+        /// </summary>
+        public float rollingDamping = 3f;
         public FrictionModel frictionModel { get => Contacts.frictionModel; set => Contacts.frictionModel = value; }
         /// <summary>Tangential speed below which a contact sticks (static friction) rather than slides (dynamic friction).</summary>
         public float slipSpeed { get => Contacts.slipSpeed; set => Contacts.slipSpeed = MathF.Max(0f, value); }
@@ -123,13 +129,16 @@ namespace RipNRage.Engine
             public readonly Stack<Manifold> pool = new Stack<Manifold>();
             public readonly List<Manifold> manifolds = new List<Manifold>(64);
             public readonly List<SolverBody> wake = new List<SolverBody>(8);
+            // per-worker counters, summed after the stage (padding keeps workers' hot fields off each other's cache lines)
+            public int queries, preparedPoints, matchedPoints;
+            private long _pad0, _pad1, _pad2, _pad3, _pad4, _pad5, _pad6, _pad7;
         }
 
         private Worker[] _workers = Array.Empty<Worker>();
 
         private int EffectiveThreads()
         {
-            int t = threads <= 0 ? Math.Min(Environment.ProcessorCount, 16) : threads;
+            int t = threads <= 0 ? JobSystem.DefaultThreads : threads;
             return Math.Max(1, t);
         }
 
@@ -291,7 +300,13 @@ namespace RipNRage.Engine
                 }
                 else _smallIslands.Add(isl);
             }
+            // longest first: workers claim small islands in order, so the heavy ones start at once and the light ones
+            // fill the gaps at the end; in build order a late heavy island held up the stage barrier on its own
+            if (parallel && _smallIslands.Count > 1) _smallIslands.Sort(_byCostDesc);
         }
+
+        private static int IslandCost(Island i) => i.bodies.Count + 2 * (i.manifolds.Count + i.constraints.Count);
+        private static readonly Comparison<Island> _byCostDesc = (a, b) => IslandCost(b).CompareTo(IslandCost(a));
 
         // ------------------------------------------------------------------ jobs
 
@@ -341,7 +356,10 @@ namespace RipNRage.Engine
                         for (int i = start; i < end; i++) s.CollectContacts(world, s._awake[i], s._workers[worker]);
                         break;
                     case StageKind.Prepare:
-                        for (int i = start; i < end; i++) s.Contacts.Prepare(s._manifolds[i], in p);
+                    {
+                        var wk = s._workers[worker];
+                        for (int i = start; i < end; i++) s.Contacts.Prepare(s._manifolds[i], in p, ref wk.preparedPoints, ref wk.matchedPoints);
+                    }
                         break;
                     case StageKind.SmallIslandsA:
                         for (int i = start; i < end; i++) s.PhaseA(s._smallIslands[i], h, in p);
@@ -385,6 +403,9 @@ namespace RipNRage.Engine
             if (_parallel) _jobs.Run(_job, _job.counts, _job.batches, n);
             else for (int s = 0; s < n; s++) _job.Execute(s, 0, _job.counts[s], 0);
         }
+
+        /// <summary>Small islands per claim: one claim per island made every worker fight over the stage counter; a few claims per thread keep the load balanced without that.</summary>
+        private int IslandBatch(int islands) => Math.Max(1, islands / (ThreadsUsed * 32));
 
         /// <summary>Chunk size that gives every thread a few chunks of a colour.</summary>
         private int ColorBatch(int items) => Math.Max(4, items / (ThreadsUsed * 4));
@@ -461,6 +482,7 @@ namespace RipNRage.Engine
                 var w = _workers[i];
                 if (w.manifolds.Count > 0) { _manifolds.AddRange(w.manifolds); w.manifolds.Clear(); }
                 if (w.wake.Count > 0) { _pendingWake.AddRange(w.wake); w.wake.Clear(); }
+                if (w.queries > 0) { world.AddConcurrentQueries(w.queries); w.queries = 0; }
             }
             Profiler.End();
 
@@ -470,6 +492,7 @@ namespace RipNRage.Engine
             foreach (var m in _manifolds) { ContactCount += m.count; m.hertz = contactHertz; m.dampingRatio = dampingRatio; }
             _job.Clear(); _job.Add(StageKind.Prepare, _manifolds.Count, 16);
             Dispatch();
+            foreach (var w in _workers) { Contacts.AddCounts(w.preparedPoints, w.matchedPoints); w.preparedPoints = w.matchedPoints = 0; }
             Profiler.End();
 
             // 4. islands
@@ -486,7 +509,7 @@ namespace RipNRage.Engine
             {
                 // phase A: integrate velocities, warm start, biased velocity solve
                 _job.Clear();
-                _job.Add(StageKind.SmallIslandsA, _smallIslands.Count, 1);
+                _job.Add(StageKind.SmallIslandsA, _smallIslands.Count, IslandBatch(_smallIslands.Count));
                 foreach (var isl in _largeIslands)
                 {
                     _job.Add(StageKind.IntegrateVelocities, isl.bodies.Count, 64, isl);
@@ -506,7 +529,7 @@ namespace RipNRage.Engine
 
                 // phase B: integrate positions, relax, NGS
                 _job.Clear();
-                _job.Add(StageKind.SmallIslandsB, _smallIslands.Count, 1);
+                _job.Add(StageKind.SmallIslandsB, _smallIslands.Count, IslandBatch(_smallIslands.Count));
                 foreach (var isl in _largeIslands)
                 {
                     _job.Add(StageKind.IntegratePositions, isl.bodies.Count, 64, isl);
@@ -518,7 +541,7 @@ namespace RipNRage.Engine
 
             // restitution (after the substeps)
             _job.Clear();
-            _job.Add(StageKind.SmallRestitution, _smallIslands.Count, 1);
+            _job.Add(StageKind.SmallRestitution, _smallIslands.Count, IslandBatch(_smallIslands.Count));
             foreach (var isl in _largeIslands) AddColorPass(isl, Pass.Restitution);
             Dispatch();
             _jobs?.Idle();
@@ -530,6 +553,17 @@ namespace RipNRage.Engine
             constraints.RemoveAll(c => c.broken);
             foreach (var m in _manifolds) Contacts.Store(m);
             Contacts.EndStep();
+
+            if (rollingDamping > 0f)
+            {
+                float keep = MathF.Max(0f, 1f - rollingDamping * dt);
+                int stamp = ++_rollStamp;
+                foreach (var m in _manifolds)
+                {
+                    if (m.count == 0) continue;
+                    Roll(m.bodyA, keep, stamp); Roll(m.bodyB, keep, stamp);
+                }
+            }
 
             foreach (var b in _kinematic) b.EndStep();
             foreach (var isl in _islands)
@@ -555,6 +589,15 @@ namespace RipNRage.Engine
             foreach (var m in _manifolds) Report(m);
             // collision reports: PhysicsWriteBackSystem posts CollisionEvents for entities tagged ReportCollisions
             Profiler.End();
+        }
+
+        private int _rollStamp;
+
+        private static void Roll(SolverBody b, float keep, int stamp)
+        {
+            if (b == null || !b.isRounded || b.isKinematic || b.sleeping || b.rollStamp == stamp) return;
+            b.rollStamp = stamp;
+            b.angularVelocity *= keep;
         }
 
         /// <summary>A body referenced by a constraint that Prepare woke up joins the awake list for this step.</summary>
@@ -660,6 +703,7 @@ namespace RipNRage.Engine
             if (a.collider != null && a.collider.isTrigger) return; // a trigger body senses (TriggerSystem); it never makes contacts
             Bounds region = a.worldBounds.Expanded(ContactGeneration.ContactMargin + 0.01f);
             world.QueryBoundsConcurrent(region, a.Filter, candidates);
+            w.queries++;
             float wake = a.sleepThreshold * a.sleepThreshold * 4f;
             bool aMoving = a.linearVelocity.sqrMagnitude > wake || a.angularVelocity.sqrMagnitude > wake;
             foreach (var s in candidates)

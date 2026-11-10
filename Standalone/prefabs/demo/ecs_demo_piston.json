@@ -1,0 +1,8 @@
+// A block on a rail (x), motor-driven; --ecs-demo adds a SliderPatrol so it reverses at the limits.
+{ "name": "ecs_demo_piston", "base": "ecs_demo_prop",
+  "components": {
+    "LocalTransform": { "position": [1, 1.5, 16], "scale": [0.8, 0.8, 0.8] },
+    "MeshRender": { "texture": "Textures/TEX-Green_Proto.png" },
+    "Body": { "mass": 15, "useGravity": false },
+    "Joint": { "kind": "Slider", "axis": [1, 0, 0], "limits": [-1.5, 1.5], "motorSpeed": 1.5, "motorForce": 600 }
+  } }

@@ -315,6 +315,7 @@ namespace RipNRage.Engine
         {
             m.count = 0;
             if (a.type == ShapeType.Sphere) return SphereVsConvex(a.center, a.radius, b, m);
+            if (b.isBox && CapsuleOnBoxFace(in a, b, m, out bool apart)) return !apart && m.count > 0;
             CollisionShape pb = CollisionShape.Polytope(b);
             if (!ConvexDistance.Distance(in a, in pb, out DistanceResult r))
             {
@@ -330,6 +331,40 @@ namespace RipNRage.Engine
             AddRoundedEnd(m, a.center - axis, a.radius, n, sB, 2);
             if (m.count == 0) m.Add((r.pointA + r.pointB) * 0.5f, -r.distance, 3);
             return m.count > 0;
+        }
+
+        /// <summary>
+        /// Exact shortcut for a capsule whose whole core segment lies over one face of a box (the usual case: a limb or
+        /// a character on a floor slab). The segment then projects inside that face, so its closest feature is the
+        /// face plane and the contacts are the two rounded ends against it — what the GJK path computes, without the
+        /// iterations. Returns false when the segment straddles an edge (the caller falls back to GJK).
+        /// </summary>
+        private static bool CapsuleOnBoxFace(in CollisionShape a, ConvexShape b, Manifold m, out bool apart)
+        {
+            apart = false;
+            Vector3 axis = a.Axis * a.halfHeight;
+            Vector3 l0 = b.BoxLocal(a.center + axis), l1 = b.BoxLocal(a.center - axis), h = b.boxHalf;
+            // the one box axis on which both ends are outside on the same side, the other two inside
+            int face = -1; float sign = 0f;
+            for (int k = 0; k < 3; k++)
+            {
+                float hk = h[k], v0 = l0[k], v1 = l1[k];
+                bool in0 = MathF.Abs(v0) <= hk, in1 = MathF.Abs(v1) <= hk;
+                if (in0 && in1) continue;
+                if (face >= 0) return false;                          // outside on two axes: near an edge or corner
+                if (v0 > hk && v1 > hk) { face = k; sign = 1f; }
+                else if (v0 < -hk && v1 < -hk) { face = k; sign = -1f; }
+                else return false;                                    // the segment crosses the slab on that axis
+            }
+            if (face < 0) return false;                               // the core is inside the box: deep, use GJK
+            Vector3 n = (face == 0 ? b.boxAxisX : face == 1 ? b.boxAxisY : b.boxAxisZ) * sign; // out of B towards A
+            float sB = Vector3.Dot(n, b.center) + h[face];
+            float sep0 = Vector3.Dot(n, a.center + axis) - a.radius - sB, sep1 = Vector3.Dot(n, a.center - axis) - a.radius - sB;
+            if (MathF.Min(sep0, sep1) > ContactMargin) { apart = true; return true; }
+            m.normal = -n;
+            AddRoundedEnd(m, a.center + axis, a.radius, n, sB, 1);
+            AddRoundedEnd(m, a.center - axis, a.radius, n, sB, 2);
+            return true;
         }
 
         private static void AddRoundedEnd(Manifold m, Vector3 end, float radius, Vector3 n, float sB, int id)

@@ -1,0 +1,8 @@
+// A shelf welded to the world that breaks loose above 400 N (a crate dropped on it from 1 m breaks it).
+{ "name": "ecs_demo_shelf", "base": "ecs_demo_prop",
+  "components": {
+    "LocalTransform": { "position": [5, 2.2, 16.5], "scale": [1.8, 0.12, 0.8] },
+    "MeshRender": { "texture": "Textures/TEX-Purple_Proto.png" },
+    "Body": { "mass": 6 },
+    "Joint": { "kind": "Fixed", "breakForce": 400, "breakTorque": 300 }
+  } }
