@@ -33,13 +33,36 @@ then start at the first unchecked layer.
   parity with the pre-ECS renderer is within run-to-run noise.
 - [x] **Layer 2 — Physics**: ECS-only simulation, joints, characters, movers, triggers; legacy physics deleted (close-out below)
 - [x] **Layer 3 — Animation, audio, particles, destruction** (details below)
-- [ ] Layer 4 — Input, camera, player
+- [ ] Layer 4 — Input, camera, player **(next — pick up here)**
 - [ ] Layer 5 — Weapons, combat, damage
 - [ ] Layer 6 — Enemies, AI, spawning
 - [ ] Layer 7 — Pickups, rage, style, environment
 - [ ] Layer 8 — UI, HUD, save / load, game flow
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
+
+### Pick-up point for the next session (written 2026-11-10, at `0ef0b23`)
+
+Layers 0–3 are done; start **layer 4**. Everything below is already true in the tree:
+
+- The player cannot move: `FPSController` / `FallRespawn` kept only their public surface (tunables, `AddImpulse`,
+  `IsSliding`...) — the movement logic was deleted with the legacy physics; rewrite it on `CharacterMotor`
+  (`Ecs/Physics/Movers.cs`: intent in `Desired` / `Pending*`, state out; `PendingHeight` is the slide crouch).
+  The capsule + 80 kg body the player needs is described in a comment in `PlayerPrefab.Build`.
+- **Delete the `ViewSprite` bridge** (`RipNRage.Game/Ecs/ViewSprite.cs` + `ViewSpriteEventSystem`): the camera and the
+  first-person viewmodel (weapon / fists / muzzle flash, `RenderLayer.FirstPerson`) become camera-child entities; the
+  weapon scripts then talk to `SpriteAnimator` directly. The animation editor's preview also uses the bridge.
+- Hooks to re-point when the camera is an entity: `RagdollSystem.Viewer` and the `EcsRenderProducer` camera priority
+  (an ECS `CameraLens` already outranks the legacy camera).
+- Restore the overlay's MOVER line (`Program.cs`, removed in 2.L) from `CharacterMotor` state.
+- **Strafe**: `--script strafe` has passed vacuously since 2.L (no movement). With the player on `CharacterMotor` it
+  becomes meaningful again — and the pre-existing dock-edge fall (macOS + WSL, `(-18.9, 1.2, 6.7)`, see the 2.0
+  baselines) must be investigated as part of this layer.
+- `trigger_checkpoint` / water / pickups still fire nothing (`TriggerSystem` posts events, but the listeners are
+  GameObjects): wire the player's trigger events when it is an entity, or leave for layers 7–8 as planned.
+- Gates as in layer 2/3 close-outs: compare bench interleaved against the previous commit (`--threads 1` for the
+  stable numbers; the per-step metric only counts frames with a fixed step); ragdolls sit at 8.3–8.7 ms vs budget 8
+  (knobs: pieces sleep less than boxes, and legacy-faithful CCD on every piece costs ~0.85 ms serially).
 
 ### Resolved: asset handles (answered before layer 2)
 
