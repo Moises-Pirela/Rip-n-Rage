@@ -33,7 +33,7 @@ public class M1887Shotgun : HitscanWeapon
         StartCoroutine(AllowMeleeRefire_Coroutine());
         PlayerState.Current.SetViolentCombatState();
         
-        _audioSource.PlayOneShot(weaponData.fireSound);
+        RipNRage.Engine.Ecs.Audio.Sfx.Play(weaponData.fireSound);
         
         int bulletsPerShot = weaponData.weaponStats.bulletsPerShot;
 

@@ -19,7 +19,6 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     private readonly MenuList _menu = new MenuList();
     private MenuItem _loadCheckpoint;
-    private AudioSource _audio;
     private bool _open;
     private bool _done;
     private float _anim;
@@ -28,7 +27,6 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
     protected override void Awake()
     {
         IsPaused = false;
-        _audio = gameObject.AddComponent<AudioSource>();
         _menu.itemHeight = 56f;
         _menu.labelScale = 3.5f;
         _menu.Add("RESUME", Resume);
@@ -151,7 +149,7 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     private void Play(AudioClip clip)
     {
-        if (_audio != null && clip != null) _audio.PlayOneShot(clip, 0.6f);
+        if (clip != null) RipNRage.Engine.Ecs.Audio.Sfx.Play(clip, 0.6f);
     }
 
     public void DrawUi(UiBatch ui)

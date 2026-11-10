@@ -32,7 +32,7 @@ then start at the first unchecked layer.
   consumes `RenderFrame` draw items from producers, ECS render components + `EcsRenderProducer`, `--ecs-demo`. Pixel
   parity with the pre-ECS renderer is within run-to-run noise.
 - [x] **Layer 2 — Physics**: ECS-only simulation, joints, characters, movers, triggers; legacy physics deleted (close-out below)
-- [ ] Layer 3 — Animation, audio, particles, destruction
+- [x] **Layer 3 — Animation, audio, particles, destruction** (details below)
 - [ ] Layer 4 — Input, camera, player
 - [ ] Layer 5 — Weapons, combat, damage
 - [ ] Layer 6 — Enemies, AI, spawning
@@ -242,13 +242,43 @@ Convert, keeping the tuned solver behaviour:
   resolution in gameplay (layers 5–8); prefab entity references (layer 10); GJK's deep-overlap approximation for
   capsules vs non-box polytopes (pre-existing).
 
-### Layer 3 — Animation, audio, particles, destruction (~3.1k lines)
+### Layer 3 — Animation, audio, particles, destruction ✅
 
-- `SpriteAnimator` component (clip/controller reference, state, time, parameters) + `AnimationSystem` (Tick) writing
-  `SpriteRender.Sprite`; animation events become `IPostProcessEvent`s.
-- `AudioSource` / `AudioListener` components + `AudioSystem` (LateTick) driving OpenAL voices.
-- Particles: keep `ParticleWorld` simulation; spawn requests through a `SpawnEffectEvent`; effect anchors as entities.
-- `SpriteRagdoll` → spawns pieces as entities with physics components and joints (depends on layer 2).
+- **Audio** (`Ecs/Audio/AudioSystems.cs`): `PlaySoundEvent` (fire-and-forget, listener-relative) consumed by
+  `AudioSystem` (pool of 32 OpenAL voices, oldest finished reused, dropped when all busy); `Sfx.Play(clip, volume)`
+  posts one from scripts; `AudioEmitter` component = a persistent / looping voice owned by an entity (released with
+  the component or entity). Clips by handle (`AudioAssets`). The legacy `AudioSource` behaviour was **deleted**: every
+  game use was `PlayOneShot`, all 25 call sites now go through `Sfx.Play`, so sound still works everywhere.
+- **Animation** (`Ecs/Animation/AnimationSystems.cs`): `SpriteAnimator` (controller handle, state index, time, speed;
+  parameters in a fixed 8-slot block indexed by the controller's ordinal-sorted parameter names, triggers as a bit
+  mask; `SetBool / SetFloat / SetTrigger / Play` on the component by ref) + `AnimationSystem` (Tick): the legacy
+  Animator's semantics (any-state and state transitions, exit times, trigger consumption, loop-tail events, hot
+  reload by state name). Writes `SpriteRender.Sprite`, applies clip "enabled" keys to the new
+  `SpriteRender.Disabled` (separate from `Hidden`, the owner's switch), posts clip events as `AnimationEvent`s; hidden
+  animators pause. Speed 0 pauses. The legacy `Animator` behaviour was **deleted**.
+  - **Bridge** (`RipNRage.Game/Ecs/ViewSprite.cs`, delete in layer 4): the first-person weapon, fists, muzzle flash
+    and the rocket explosion are GameObject-anchored ECS sprites: `ViewSprite` owns the entity, copies the
+    GameObject's world pose each frame, maps activation to `Hidden`, exposes the Animator calls the weapon scripts
+    use, and forwards `AnimationEvent`s as SendMessage (`ViewSpriteEventSystem`). The viewmodel therefore still
+    animates and fires. The animation editor's controller preview runs through it too.
+- **Particles** (`Ecs/Effects/EffectSystems.cs`): `ParticleWorld` keeps the simulation; effects can now follow an
+  entity (`ParticleEffectInstance.Follow(Entity)`, its `LocalToWorld`); `SpawnEffectEvent` / `Vfx.Spawn(...)` spawn
+  through the ECS; `EffectEmitter` ties an effect to an entity's lifetime. Transform-following stays until GameObjects
+  go (layer 9); game VFX calls (`GameVfx`) are ported with their gameplay (layers 5–7).
+- **Sprite ragdolls** (`Ecs/Destruction/Ragdolls.cs`): `SpriteRagdolls.Spawn` slices a sprite along a skeleton view into
+  piece entities (cut-sprite `SpriteRender`, `Body`, box / capsule `ColliderShape`, `CollisionFilter` with one negative
+  group per ragdoll, ball `Joint` to the parent piece at its pivot); the blow / gib scatter are `PendingImpulse`s
+  applied once the bodies are simulated; `RagdollSystem` billboards and rolls pieces, fades them over their last
+  second and removes them; `Detach` tears a piece off; breaks and detaches post `RagdollPieceDetachedEvent`. Supporting
+  joint additions: `Joint.UseWorldAnchor` / `WorldAnchor`, `Joint.BreakImpulse`, and `JointSystem` now drops the
+  constraint when the `Joint` component is removed. Enemy death ragdolls (`EnemyDestruction`) and the skeleton
+  editor's preview (tear-off clicks via raycast → entity) are back. `RagdollSystem.Viewer` points at the legacy camera
+  until layer 4.
+- **Bench**: ragdolls are real sliced rifleman sprites again (500 → 3000 pieces); the jointed figures from 2.6 are gone.
+  Default threads: 8.3–8.7 ms/step (budget 8). Not comparable to the figures' 5 ms: different shapes, fewer sleep, and
+  CCD on (as the legacy ragdolls had) costs ~0.85 ms serially. Crates at parity with `69da737` (`--threads 1`, 5
+  interleaved runs: medians 13.6 vs 13.7). `--screenshot` / `--shot-interval` added to the bench for visual checks.
+- 14 new engine checks (137 total). Game scripts, `--ecs-demo` and the bench run without errors.
 
 ### Layer 4 — Input, camera, player (PlayerSystems ~2.2k lines)
 

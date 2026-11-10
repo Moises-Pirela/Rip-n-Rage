@@ -19,9 +19,33 @@ public class EnemyDestruction : MonoBehaviour
         if (_state != null) _state.OnDieCallback += OnDie;
     }
 
+    /// <summary>The ragdoll's piece entities (empty until the enemy died with a skeleton).</summary>
+    public System.Collections.Generic.List<RipNRage.Engine.Ecs.Entity> Pieces { get; private set; } = new System.Collections.Generic.List<RipNRage.Engine.Ecs.Entity>();
+
     private void OnDie()
     {
-        // ECS migration (layer 2): SpriteRagdoll was legacy rigid bodies + joints; it returns in layer 3 on ECS
-        // bodies and joints (2.5). Until then the enemy's own death timeline plays without a ragdoll.
+        if (Pieces.Count > 0 || _state == null || _state.data == null || string.IsNullOrEmpty(_state.data.skeleton)) return;
+        var skeleton = SkeletonLibrary.Get(_state.data.skeleton);
+        var sr = _anim != null ? _anim.SpriteRenderer : GetComponentInChildren<SpriteRenderer>();
+        if (skeleton == null || sr == null || sr.sprite == null) return;
+
+        var options = RipNRage.Engine.Ecs.Destruction.RagdollOptions.Default;
+        options.lifetime = lifetime;
+        options.lit = sr.lit; options.castsShadow = sr.castsShadow; options.color = sr.color;
+        options.material = RipNRage.Engine.Ecs.Rendering.RenderAssets.Materials.Intern(sr.material);
+        if (DamageInfo.Available)
+        {
+            options.impulse = DamageInfo.Direction * (DamageInfo.Impulse * impulseScale);
+            options.impulsePoint = DamageInfo.Point;
+            options.gib = DamageInfo.Explosive;
+            options.scatterImpulse = DamageInfo.Explosive ? Mathf.Max(4f, DamageInfo.Impulse * 0.15f) : 0f;
+        }
+        var cam = Camera.main;
+        Vector3 viewer = cam != null ? cam.transform.position : sr.transform.position + Vector3.back;
+        Pieces = RipNRage.Engine.Ecs.Destruction.SpriteRagdolls.Spawn(Application.Current.World, skeleton, sr.sprite, sr.transform.position, sr.transform.lossyScale, viewer, options);
+        if (Pieces.Count == 0) return;
+        // the pieces are the corpse now
+        sr.enabled = false;
+        if (_anim != null) _anim.enabled = false;
     }
 }

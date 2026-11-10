@@ -6,7 +6,7 @@ public class MG338 : HitscanWeapon
     [SerializeField] public AudioClip meleeClip;
     public override void Melee()
     {
-        _audioSource.PlayOneShot(meleeClip);
+        RipNRage.Engine.Ecs.Audio.Sfx.Play(meleeClip);
         weaponAnimator.gameObject.SetActive(true);
         weaponAnimator.SetBool(WeaponMelee, true);
         StartCoroutine(WaitMelee());

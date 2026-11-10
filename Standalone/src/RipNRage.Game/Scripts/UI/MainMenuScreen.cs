@@ -19,14 +19,12 @@ public class MainMenuScreen : MonoBehaviour, IUiDrawer, IUiLayer
     public float fadeInDuration = 0.9f;
 
     private readonly MenuList _menu = new MenuList();
-    private AudioSource _audio;
     private float _t;
     private bool _done;
     private string _continueSlot;
 
     protected override void Awake()
     {
-        _audio = gameObject.AddComponent<AudioSource>();
         _continueSlot = GameSaveSystem.ContinueSlot();
         bool canContinue = _continueSlot != null;
 
@@ -108,7 +106,7 @@ public class MainMenuScreen : MonoBehaviour, IUiDrawer, IUiLayer
 
     private void Play(AudioClip clip)
     {
-        if (_audio != null && clip != null) _audio.PlayOneShot(clip, 0.8f);
+        if (clip != null) RipNRage.Engine.Ecs.Audio.Sfx.Play(clip, 0.8f);
     }
 
     public void DrawUi(UiBatch ui)

@@ -54,6 +54,8 @@ namespace RipNRage.Engine.Graphics.Particles
         /// <summary>Optional transform the effect follows (rockets, trails). Stops emitting when it is destroyed.</summary>
         public Transform follow;
         public Vector3 followOffset;
+        /// <summary>Optional ECS entity the effect follows (its LocalToWorld). Stops emitting when the entity is gone.</summary>
+        public Ecs.Entity followEntity;
         /// <summary>Rotation applied on top of the followed transform's (trails use a 180° yaw so forward points backwards).</summary>
         public Quaternion followRotation = Quaternion.identity;
         /// <summary>Editor: restart automatically when finished.</summary>
@@ -84,6 +86,14 @@ namespace RipNRage.Engine.Graphics.Particles
         }
 
         /// <summary>Makes the effect track a transform (plus an offset in the transform's local space). <paramref name="backwards"/> points the effect's forward against the target's forward (exhaust trails).</summary>
+        /// <summary>Follows an ECS entity (its world pose, with <paramref name="localOffset"/> in its local space).</summary>
+        public ParticleEffectInstance Follow(Ecs.Entity target, Vector3 localOffset = default, bool backwards = false)
+        {
+            followEntity = target; followOffset = localOffset;
+            followRotation = backwards ? Quaternion.Euler(0f, 180f, 0f) : Quaternion.identity;
+            return this;
+        }
+
         public ParticleEffectInstance Follow(Transform target, Vector3 localOffset = default, bool backwards = false)
         {
             follow = target; followOffset = localOffset;
@@ -250,7 +260,19 @@ namespace RipNRage.Engine.Graphics.Particles
             var def = inst.def;
             inst.time += dt;
 
-            // follow target
+            // follow target (ECS entity)
+            if (!inst.followEntity.IsNull)
+            {
+                var w = Application.Current?.World;
+                if (w == null || !w.IsAlive(inst.followEntity) || !w.Has<Ecs.Transforms.LocalToWorld>(inst.followEntity)) { inst.followEntity = Ecs.Entity.Null; inst.emitting = false; }
+                else
+                {
+                    var ltw = w.Get<Ecs.Transforms.LocalToWorld>(inst.followEntity);
+                    inst.position = ltw.Value.MultiplyPoint3x4(inst.followOffset);
+                    inst.rotation = ltw.Rotation * inst.followRotation;
+                }
+            }
+            // follow target (legacy transform; removed with GameObjects in layer 9)
             if (inst.follow != null)
             {
                 if (inst.follow.gameObject.IsDestroyed || !inst.follow.gameObject.activeInHierarchy) { inst.follow = null; inst.emitting = false; }

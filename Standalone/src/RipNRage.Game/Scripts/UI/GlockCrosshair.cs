@@ -4,7 +4,7 @@ using RipNRage.Engine.UI;
 public class GlockCrosshair : MonoBehaviour, ICrosshair
 {
     public UiImage CrosshairImage { get; set; } = new UiImage("Crosshair");
-    public Animator CrosshairAnimator { get; set; }
+    public RipNRage.Game.Ecs.ViewSprite CrosshairAnimator { get; set; }
 
     [SerializeField] public UiImage innerCrosshairImage = new UiImage("InnerCrosshair");
 
@@ -15,7 +15,7 @@ public class GlockCrosshair : MonoBehaviour, ICrosshair
     
     protected override void Awake()
     {
-        CrosshairAnimator = GetComponent<Animator>();
+        CrosshairAnimator = GetComponent<RipNRage.Game.Ecs.ViewSprite>();
 
         CrosshairImage.rectTransform.sizeDelta = regularSize;
         innerCrosshairImage.rectTransform.sizeDelta = new Vector2(5, 5);

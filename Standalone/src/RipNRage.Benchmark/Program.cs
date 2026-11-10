@@ -45,6 +45,8 @@ namespace RipNRage.Benchmark
                     case "--no-render": options.NoRender = true; break;
                     case "--no-postfx": options.DisablePostFx = true; break;
                     case "--fixed-dt": options.FixedFrameDelta = F(); break;
+                    case "--screenshot": options.ScreenshotPath = Next(); break;
+                    case "--shot-interval": options.ScreenshotInterval = int.Parse(Next()); break;
                     case "--budget-frame": cfg.budgetFrameMs = F(); break;
                     case "--budget-physics": cfg.budgetPhysicsMs = F(); break;
                     case "--report": cfg.reportPath = Next(); break;

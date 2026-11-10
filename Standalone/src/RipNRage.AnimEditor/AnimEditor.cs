@@ -12,7 +12,7 @@ namespace RipNRage.AnimEditor
     /// <summary>
     /// Sprite animation editor: clip timeline (sprite keys, enabled keys, events), sprite palette, animator
     /// controller editing and a live preview rendered by the real <see cref="RenderPipeline"/> (viewmodel pass,
-    /// lighting, post-fx) through the same <see cref="Animator"/> the game uses.
+    /// lighting, post-fx) through the same ECS animation path (SpriteAnimator) the game uses.
     ///
     /// Data lives in <see cref="AnimationLibrary"/> (animations/*.json); everything is edited in place so a running
     /// game that watches the folder picks up saved changes immediately.
@@ -25,7 +25,7 @@ namespace RipNRage.AnimEditor
         public Transform worldAnchor;   // a few metres in front of the camera for world-layer clips
         private GameObject _previewGo;
         private SpriteRenderer _previewSr, _ghostPrev, _ghostNext;
-        private Animator _previewAnim;
+        private RipNRage.Game.Ecs.ViewSprite _previewAnim; // controller mode: the game's ECS animation path
 
         // ---- document ----
         private SpriteAnimationClip _clip;
@@ -134,7 +134,11 @@ namespace RipNRage.AnimEditor
             _previewGo = new GameObject("Preview");
             _previewSr = _previewGo.AddComponent<SpriteRenderer>();
             _previewSr.renderLayer = RenderLayer.FirstPerson;
-            _previewAnim = _previewGo.AddComponent<Animator>();
+            // controller mode plays through the ECS (SpriteAnimator), on a child so it can be shown instead of the clip sprite
+            var animGo = new GameObject("PreviewAnimated");
+            animGo.transform.SetParent(_previewGo.transform, false);
+            _previewAnim = RipNRage.Game.Ecs.ViewSprite.Attach(animGo, null, RenderLayer.FirstPerson);
+            animGo.AddComponent<EventCatcher>().editor = this;
             _previewAnim.enabled = false;
             _previewGo.AddComponent<EventCatcher>().editor = this;
             _ghostPrev = MakeGhost("GhostPrev", -2);
@@ -171,6 +175,7 @@ namespace RipNRage.AnimEditor
                 sr.billboard = world && rig.billboard;
                 sr.lit = world;
             }
+            _previewAnim.SetRender(rig.layer, world && rig.billboard, world);
             _ghostPrev.transform.localScale = _ghostNext.transform.localScale = Vector3.one;
         }
 
@@ -244,7 +249,7 @@ namespace RipNRage.AnimEditor
             {
                 _previewAnim.enabled = false;
                 _previewAnim.runtimeAnimatorController = null;
-                _previewSr.enabled = true;
+                _previewSr.enabled = true; // clip mode: the timeline drives the plain sprite
                 _playing = false; _time = 0f;
                 ApplyRig(); SampleClip();
             }
@@ -256,7 +261,7 @@ namespace RipNRage.AnimEditor
             _previewAnim.runtimeAnimatorController = _controller;
             _previewAnim.enabled = true;
             _previewAnim.speed = _previewSpeed;
-            _previewSr.enabled = true;
+            _previewSr.enabled = false; // the ECS-animated child renders instead
             _playing = true;
             ApplyRig();
         }
@@ -847,7 +852,7 @@ namespace RipNRage.AnimEditor
         }
     }
 
-    /// <summary>Receives the animation events the preview Animator dispatches (SendMessage) and shows them as flashes.</summary>
+    /// <summary>Receives the animation events the preview animation dispatches (SendMessage via the ViewSprite bridge) and shows them as flashes.</summary>
     public sealed class EventCatcher : Behaviour, GameObject.IMessageSink
     {
         public AnimEditor editor;

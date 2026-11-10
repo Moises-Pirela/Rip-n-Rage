@@ -21,7 +21,6 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     public Action onClose;
     private readonly MenuList _menu = new MenuList();
-    private AudioSource _audio;
     private float _anim;
     private bool _closed;
 
@@ -37,7 +36,6 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
     protected override void Awake()
     {
         Current = this;
-        _audio = gameObject.AddComponent<AudioSource>();
         _menu.itemWidth = 820f; _menu.itemHeight = 42f; _menu.itemGap = 6f; _menu.labelScale = 2.8f; _menu.hintScale = 1.8f;
         _menu.visibleRows = 13;
         _menu.onSelectionChanged = _ => Play(ProceduralSounds.MenuMove);
@@ -227,7 +225,7 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     private void Play(AudioClip clip)
     {
-        if (_audio != null && clip != null) _audio.PlayOneShot(clip, 0.6f);
+        if (clip != null) RipNRage.Engine.Ecs.Audio.Sfx.Play(clip, 0.6f);
     }
 
     public void DrawUi(UiBatch ui)

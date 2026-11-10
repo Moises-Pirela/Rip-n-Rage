@@ -48,6 +48,7 @@ internal static class Program
             EcsChecks.Run(True);
             TransformChecks.Run(True);
             PhysicsEcsChecks.Run(True);
+            Layer3Checks.Run(True);
             Console.WriteLine($"PASS: {_assertions} bounded engine math assertions");
             return 0;
         }

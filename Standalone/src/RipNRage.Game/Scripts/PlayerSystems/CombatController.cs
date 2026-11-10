@@ -16,11 +16,10 @@ public class CombatController : MonoBehaviour
     [SerializeField] public LayerMask layerMask;
 
     [Space(5)] [Header("Combat Animation")] 
-    [SerializeField] public Animator weaponAnimator;
-    [SerializeField] public Animator leftFistAnimator;
-    [SerializeField] public Animator rightFistAnimator;
+    [SerializeField] public RipNRage.Game.Ecs.ViewSprite weaponAnimator;
+    [SerializeField] public RipNRage.Game.Ecs.ViewSprite leftFistAnimator;
+    [SerializeField] public RipNRage.Game.Ecs.ViewSprite rightFistAnimator;
     [SerializeField] public AudioClip jabLandSound;
-    [SerializeField] public AudioSource jabSource;
     
 
     [Space(5)] [Header("Inventory")]
@@ -43,7 +42,7 @@ public class CombatController : MonoBehaviour
     public bool IsCombatDisabled => _combatDisabled;
 
     private CameraRecoil _cameraRecoil;
-    private static readonly int JabTrigger = Animator.StringToHash("Jab");
+    private static readonly int JabTrigger = RipNRage.Game.Ecs.ViewSprite.StringToHash("Jab");
 
     protected override void Awake()
     {
@@ -226,7 +225,7 @@ public class CombatController : MonoBehaviour
         if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out RaycastHit hit, 1, layerMask))
         {
             _cameraRecoil.Shake();
-            jabSource.PlayOneShot(jabLandSound);
+            RipNRage.Engine.Ecs.Audio.Sfx.Play(jabLandSound);
         }
     }
 

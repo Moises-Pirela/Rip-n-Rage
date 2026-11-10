@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using RipNRage.Engine;
+using RipNRage.Engine.Destruction;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Rendering;
@@ -160,73 +161,69 @@ namespace RipNRage.Benchmark
     // ==================================================================== 2. ragdolls
 
     /// <summary>
-    /// 500 jointed figures (torso box, head sphere, four capsule limbs on ball joints; each figure one negative
-    /// collision group) thrown onto the floor, a blast every 5 s — 3000 bodies, 2500 joints, the shape of the old
-    /// sprite-ragdoll scenario (the sliced sprite ragdolls themselves return in layer 3).
+    /// 500+ rifleman sprites sliced along skeletons/rifleman.json into jointed ECS ragdolls (cut-sprite pieces on
+    /// ball joints, piece/piece and piece/floor contacts), sliced over the first second like a massacre; a blast
+    /// every 5 s.
     /// </summary>
     public sealed class RagdollsScenario : Scenario
     {
         public override string Name => "ragdolls";
-        public override string Description => "jointed figures: 6 ECS bodies on ball joints each, piece/piece and piece/floor contacts (a blast every 5 s)";
+        public override string Description => "sprite destruction: rifleman sprites sliced into jointed ECS ragdoll pieces (a blast every 5 s)";
         public override int Target(BenchmarkConfig cfg) => cfg.Count(cfg.ragdolls);
+        private readonly List<Vector3> _spots = new List<Vector3>();
         private readonly List<Entity> _pieces = new List<Entity>();
-        private readonly BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(11);
+        private Sprite _sprite;
+        private SpriteSkeleton _skeleton;
+        private int _sliced, _ragdolls;
         private float _nextBlast = 6f;
-        private int _figures;
+        private readonly BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(11);
+        private const float S = 2.25f;
 
         public override void Build(GameObject root, BenchmarkConfig cfg)
         {
             int n = Target(cfg);
             BenchmarkScene.Arena(root, 70f, 6f);
-            var torsoMesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.5f, 0.7f, 0.3f), 1f);
-            var headMesh = Mesh.CreateBox(Vector3.zero, Vector3.one * 0.3f, 1f);
-            var limbMesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.16f, 0.6f, 0.16f), 1f);
+            _skeleton = SkeletonLibrary.Get("rifleman") ?? DefaultSkeletons.Rifleman();
+            _sprite = new DirectionalSpriteSheet(GameAssets.RiflemanIdle, 1, 4, 1f).GetSprite(0, 0);
             int side = Math.Max(2, (int)MathF.Ceiling(MathF.Sqrt(n)));
             for (int i = 0; i < n; i++)
             {
                 int x = i % side, z = i / side;
-                Vector3 c = new Vector3((x - side * 0.5f + 0.5f) * 2.2f, 1.6f, (z - side * 0.5f + 0.5f) * 2.2f);
-                int group = -(i + 1);
-                var torso = BenchmarkScene.DynamicBody(c, Quaternion.identity, new ColliderShape { Kind = ShapeKind.Box, Size = new Vector3(0.5f, 0.7f, 0.3f) }, 30f, 0.7f, 0.05f, torsoMesh, GameAssets.OrangeProto, group);
-                Ragdoll(torso, 30f);
-                Part(c + new Vector3(0f, 0.55f, 0f), new ColliderShape { Kind = ShapeKind.Sphere, Radius = 0.15f }, 5f, headMesh, torso, new Vector3(0f, -0.15f, 0f), group);
-                Part(c + new Vector3(-0.35f, 0.05f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.08f, Height = 0.6f }, 4f, limbMesh, torso, new Vector3(0f, 0.3f, 0f), group);
-                Part(c + new Vector3(0.35f, 0.05f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.08f, Height = 0.6f }, 4f, limbMesh, torso, new Vector3(0f, 0.3f, 0f), group);
-                Part(c + new Vector3(-0.13f, -0.7f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.09f, Height = 0.7f }, 8f, limbMesh, torso, new Vector3(0f, 0.35f, 0f), group);
-                Part(c + new Vector3(0.13f, -0.7f, 0f), new ColliderShape { Kind = ShapeKind.Capsule, Radius = 0.09f, Height = 0.7f }, 8f, limbMesh, torso, new Vector3(0f, 0.35f, 0f), group);
-                Vector3 dir = _rng.OnCircle(); dir.y = 0.3f;
-                BenchmarkScene.World.Commands.Add(torso, new BodyVelocity { Linear = dir.normalized * _rng.Range(1f, 3f), Angular = _rng.InUnitSphere() * 3f });
-                _pieces.Add(torso);
-                _figures++;
+                _spots.Add(new Vector3((x - side * 0.5f + 0.5f) * 2.2f, 0.5f * S, (z - side * 0.5f + 0.5f) * 2.2f));
             }
-        }
-
-        /// <summary>The legacy SpriteRagdoll piece tuning: linear damping 0.1, angular damping 0.6.</summary>
-        private static void Ragdoll(Entity e, float mass)
-        {
-            var b = new BodyConfig { mass = mass, linearDamping = 0.1f, angularDamping = 0.6f }.Bake();
-            BenchmarkScene.World.Commands.Add(e, b);
-        }
-
-        private void Part(Vector3 at, ColliderShape shape, float mass, Mesh mesh, Entity parent, Vector3 anchor, int group)
-        {
-            var e = BenchmarkScene.DynamicBody(at, Quaternion.identity, shape, mass, 0.7f, 0.05f, mesh, GameAssets.PurpleProto, group);
-            Ragdoll(e, mass);
-            var j = new JointConfig { kind = JointKind.Ball }.Bake();
-            j.Anchor = anchor; j.Connected = parent;
-            BenchmarkScene.World.Commands.Add(e, j);
-            _pieces.Add(e);
         }
 
         public override void Tick(float dt, float elapsed)
         {
-            if (elapsed < _nextBlast) return;
-            _nextBlast = elapsed + 5f;
-            Physics.AddExplosionForce(120f, new Vector3(_rng.Range(-10f, 10f), 0.3f, _rng.Range(-10f, 10f)), 12f, 0.8f);
+            // slice the "standing" enemies over the first second or so of the warm-up
+            if (_sliced < _spots.Count)
+            {
+                int perFrame = Math.Max(1, _spots.Count / 45);
+                for (int k = 0; k < perFrame && _sliced < _spots.Count; k++, _sliced++) Slice(_spots[_sliced]);
+            }
+            if (elapsed >= _nextBlast)
+            {
+                _nextBlast = elapsed + 5f;
+                Physics.AddExplosionForce(120f, new Vector3(_rng.Range(-10f, 10f), 0.3f, _rng.Range(-10f, 10f)), 12f, 0.8f);
+            }
         }
 
-        public override void Teardown() { _pieces.Clear(); _figures = 0; }
-        public override int Alive => _figures;
+        private void Slice(Vector3 at)
+        {
+            var options = RipNRage.Engine.Ecs.Destruction.RagdollOptions.Default;
+            options.lifetime = 100000f; options.fadeOut = false;
+            Vector3 dir = _rng.OnCircle(); dir.y = 0.3f;
+            options.impulse = dir.normalized * _rng.Range(30f, 90f);
+            options.impulsePoint = at + new Vector3(0f, _rng.Range(-0.5f, 0.8f), 0f);
+            var cam = Camera.main;
+            var pieces = RipNRage.Engine.Ecs.Destruction.SpriteRagdolls.Spawn(BenchmarkScene.World, _skeleton, _sprite, at, Vector3.one * (S / 5.12f),
+                cam != null ? cam.transform.position : at + Vector3.back, options);
+            foreach (var p in pieces) _pieces.Add(BenchmarkScene.Track(p));
+            if (pieces.Count > 0) _ragdolls++;
+        }
+
+        public override void Teardown() { _spots.Clear(); _pieces.Clear(); _sliced = _ragdolls = 0; }
+        public override int Alive => _ragdolls;
         public override string Extra => $"pieces {_pieces.Count}";
     }
 

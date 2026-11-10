@@ -31,7 +31,6 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
     public static string NextCause;
 
     private readonly MenuList _menu = new MenuList();
-    private AudioSource _audio;
     private float _t;
     private bool _menuReady;
     private bool _done;
@@ -51,7 +50,6 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
     {
         Current = this;
         causeText = NextCause; NextCause = null;
-        _audio = gameObject.AddComponent<AudioSource>();
         _fromCheckpoint = GameSession.CanRespawnAtCheckpoint;
         _menu.Add("RESTART", GameSession.Respawn, _fromCheckpoint ? "FROM THE LAST CHECKPOINT" : "FROM THE START OF THE LEVEL");
         _menu.Add("MAIN MENU", () => GameSession.ShowMainMenu());
@@ -95,7 +93,7 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
 
     private void Play(AudioClip clip)
     {
-        if (_audio != null && clip != null) _audio.PlayOneShot(clip, 0.8f);
+        if (clip != null) RipNRage.Engine.Ecs.Audio.Sfx.Play(clip, 0.8f);
     }
 
     public void DrawUi(UiBatch ui)

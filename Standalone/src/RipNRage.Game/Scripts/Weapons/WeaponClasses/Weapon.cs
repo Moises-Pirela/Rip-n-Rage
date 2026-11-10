@@ -6,7 +6,6 @@ using System.Collections.Generic;
 // Standalone addition: bloom — every shot widens the spread (WeaponStats.bloomPerShot, capped at spreadMax),
 // it recovers while not firing (bloomRecovery), and moving / being airborne adds moveSpread / airSpread.
 // CurrentSpread is what Fire() uses and what the crosshair shows.
-[RequireComponent(typeof(AudioSource))]
 public abstract class Weapon : MonoBehaviour
 {   
     public WeaponData weaponData;
@@ -44,25 +43,23 @@ public abstract class Weapon : MonoBehaviour
     protected bool CanFire = true;
     protected Coroutine AllowRefireCoroutine;
 
-    protected Animator weaponAnimator;
-    protected Animator leftHandAnimator;
-    protected Animator rightHandAnimator;
-    protected static readonly int IsFiring = Animator.StringToHash("IsFiring");
-    protected static readonly int WeaponMelee = Animator.StringToHash("WeaponMelee");
-    protected AudioSource _audioSource;
+    protected RipNRage.Game.Ecs.ViewSprite weaponAnimator;
+    protected RipNRage.Game.Ecs.ViewSprite leftHandAnimator;
+    protected RipNRage.Game.Ecs.ViewSprite rightHandAnimator;
+    protected static readonly int IsFiring = RipNRage.Game.Ecs.ViewSprite.StringToHash("IsFiring");
+    protected static readonly int WeaponMelee = RipNRage.Game.Ecs.ViewSprite.StringToHash("WeaponMelee");
     protected CameraRecoil _cameraRecoil;
     protected CombatController _combatController;
     protected HudController _hudController;
     
     protected override void Start()
     {
-        _audioSource = GetComponent<AudioSource>();
         _cameraRecoil = EnragedInjector<CameraRecoil>.GetInstance();
         _combatController = EnragedInjector<CombatController>.GetInstance();
         _hudController =   EnragedInjector<HudController>.GetInstance();
     }
 
-    public virtual void Equip(Animator animator, Transform transform, LayerMask layerMask, Animator leftHandAnimator, Animator rightHandAnimator = null)
+    public virtual void Equip(RipNRage.Game.Ecs.ViewSprite animator, Transform transform, LayerMask layerMask, RipNRage.Game.Ecs.ViewSprite leftHandAnimator, RipNRage.Game.Ecs.ViewSprite rightHandAnimator = null)
     {
         weaponAnimator = animator;
         _LayerMask = layerMask;

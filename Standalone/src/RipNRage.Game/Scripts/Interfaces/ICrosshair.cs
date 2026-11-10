@@ -2,7 +2,7 @@
 public interface ICrosshair
 {
     public UiImage CrosshairImage { get; set; }
-    public Animator CrosshairAnimator { get; set; }
+    public RipNRage.Game.Ecs.ViewSprite CrosshairAnimator { get; set; }
     
     public void OnShoot();
     public void OnHit();

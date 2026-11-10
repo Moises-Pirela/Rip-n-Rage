@@ -31,7 +31,6 @@ namespace RipNRage.Game.Content
         private static GameObject MakeWeapon<T>(System.Func<WeaponData> data) where T : Weapon, new()
         {
             var go = new GameObject(typeof(T).Name);
-            go.AddComponent<AudioSource>();
             var w = go.AddComponent<T>();
             w.weaponData = data();
             return go;
@@ -59,11 +58,8 @@ namespace RipNRage.Game.Content
         public static readonly Prefab RocketExplosion = new Prefab("RocketExplosion", () =>
         {
             var go = new GameObject("RocketExplosion");
-            var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = GameAssets.RocketLauncher["explosion_01"];
-            sr.billboard = true;
             go.transform.localScale = Vector3.one * 3f * 0.25f; // the 1024px explosion tiles at scale 3 cover ~30 units in Unity; keep it readable here
-            var anim = go.AddComponent<Animator>();
+            var anim = RipNRage.Game.Ecs.ViewSprite.Attach(go, GameAssets.RocketLauncher["explosion_01"], RenderLayer.World, billboard: true);
             anim.runtimeAnimatorController = GameAssets.ExplosionController;
             go.AddComponent<FadeOut>().lifetime = 0.4f;
             var light = go.AddComponent<Light>();
@@ -165,7 +161,6 @@ namespace RipNRage.Game.Content
             const float S = 2.25f;
             var go = new GameObject("AR_Grunt");
             go.layer = Layers.Enemies;
-            go.AddComponent<AudioSource>(); // attack telegraph / shot / alert sounds (standalone)
             // the body floats RideHeight above the floor (CharacterBody); the capsule covers the sprite from the hover
             // gap up to its head and the sprite holder hangs the ride height below the transform so the feet touch
             float RideHeight = CharacterProfiles.Enemy.rideHeight;

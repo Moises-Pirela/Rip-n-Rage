@@ -35,7 +35,6 @@ namespace RipNRage.Game.Content
             // ECS migration (layer 2): the force-driven capsule (RigidBody + CharacterBody, 80 kg, radius 0.4, height 1.3,
             // centre 0.25 m up, riding 0.5 m above the ground) returns as an ECS character entity in layers 2.6 / 4.
 
-            var footAudio = player.AddComponent<AudioSource>();
 
             // ---- hierarchy ----
             var orientation = Child(player, "Orientation", Vector3.zero);
@@ -62,35 +61,20 @@ namespace RipNRage.Game.Content
             worldCamera.AddComponent<CameraRecoil>().recoilCameraShake = new Vector3(0.5f, 0.5f, 1.5f);
 
             // ---- first-person sprites ----
-            var weaponSr = weapon.AddComponent<SpriteRenderer>();
-            weaponSr.sprite = GameAssets.Glock["Glock01"];
-            weaponSr.renderLayer = RenderLayer.FirstPerson;
-            var weaponAnimator = weapon.AddComponent<Animator>();
+            // the viewmodel renders and animates through the ECS (ViewSprite bridge until layer 4)
+            var weaponAnimator = RipNRage.Game.Ecs.ViewSprite.Attach(weapon, GameAssets.Glock["Glock01"], RenderLayer.FirstPerson);
             var weaponEvents = weapon.AddComponent<WeaponAnimationEvents>();
             weaponEvents.muzzleFlashObject = muzzleFlash;
-            weaponEvents.weaponAudio = weapon.AddComponent<AudioSource>();
 
-            var flashSr = muzzleFlash.AddComponent<SpriteRenderer>();
-            flashSr.sprite = GameAssets.Glock["GlockFlash"];
-            flashSr.renderLayer = RenderLayer.FirstPerson;
-            flashSr.fullBright = true;
+            RipNRage.Game.Ecs.ViewSprite.Attach(muzzleFlash, GameAssets.Glock["GlockFlash"], RenderLayer.FirstPerson, fullBright: true);
             muzzleFlash.SetActive(false);
 
-            var leftSr = leftFist.AddComponent<SpriteRenderer>();
-            leftSr.sprite = GameAssets.Fist["fist_l_01"];
-            leftSr.renderLayer = RenderLayer.FirstPerson;
-            leftSr.sortingOrder = 1;
-            var leftAnim = leftFist.AddComponent<Animator>();
+            var leftAnim = RipNRage.Game.Ecs.ViewSprite.Attach(leftFist, GameAssets.Fist["fist_l_01"], RenderLayer.FirstPerson, sortingOrder: 1);
             leftAnim.runtimeAnimatorController = GameAssets.LeftFistController;
 
-            var rightSr = rightFist.AddComponent<SpriteRenderer>();
-            rightSr.sprite = GameAssets.Fist["fist_r_01"];
-            rightSr.renderLayer = RenderLayer.FirstPerson;
-            rightSr.sortingOrder = 1;
-            var rightAnim = rightFist.AddComponent<Animator>();
+            var rightAnim = RipNRage.Game.Ecs.ViewSprite.Attach(rightFist, GameAssets.Fist["fist_r_01"], RenderLayer.FirstPerson, sortingOrder: 1);
             rightAnim.runtimeAnimatorController = GameAssets.RightFistController;
 
-            var fistAudio = fistAudioGo.AddComponent<AudioSource>();
 
             // ---- sway / bob (values from the prefab) ----
             var sway = arms.AddComponent<WeaponSway>();
@@ -144,7 +128,6 @@ namespace RipNRage.Game.Content
             combat.leftFistAnimator = leftAnim;
             combat.rightFistAnimator = rightAnim;
             combat.jabLandSound = GameAssets.MeleeHit;
-            combat.jabSource = fistAudio;
             combat.inventory = new Inventory
             {
                 allWeaponPrefabs = new List<Prefab> { Prefabs.Glock, Prefabs.M1887, Prefabs.MG338, Prefabs.RocketLauncher },

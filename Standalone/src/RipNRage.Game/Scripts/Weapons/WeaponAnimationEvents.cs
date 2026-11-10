@@ -7,7 +7,6 @@ using System.Collections.Generic;
 public class WeaponAnimationEvents : MonoBehaviour
 {
     [SerializeField] public GameObject muzzleFlashObject;
-    [SerializeField] public AudioSource weaponAudio;
 
    void OnFire()
    {

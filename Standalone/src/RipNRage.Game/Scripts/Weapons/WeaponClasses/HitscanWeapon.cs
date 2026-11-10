@@ -13,7 +13,7 @@ public abstract class HitscanWeapon : Weapon
 {
     public Transform cameraTransform;
 
-    public override void Equip(Animator animator,Transform transform, LayerMask layerMask, Animator leftHandAnimator, Animator rightHandAnimator)
+    public override void Equip(RipNRage.Game.Ecs.ViewSprite animator,Transform transform, LayerMask layerMask, RipNRage.Game.Ecs.ViewSprite leftHandAnimator, RipNRage.Game.Ecs.ViewSprite rightHandAnimator)
     {
         base.Equip(animator, transform, layerMask, leftHandAnimator, rightHandAnimator);
         
@@ -40,7 +40,7 @@ public abstract class HitscanWeapon : Weapon
         
         
         weaponAnimator.SetBool(IsFiring, true);
-        _audioSource.PlayOneShot(weaponData.fireSound);
+        RipNRage.Engine.Ecs.Audio.Sfx.Play(weaponData.fireSound);
         
         int bulletsPerShot = weaponData.weaponStats.bulletsPerShot;
         bool vfx = GameVfx.Available;

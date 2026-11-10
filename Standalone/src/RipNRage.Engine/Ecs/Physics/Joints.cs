@@ -38,6 +38,11 @@ namespace RipNRage.Engine.Ecs.Physics
         public Vector3 ConnectedAnchor;
         /// <summary>Break thresholds (N / N·m); infinity = unbreakable.</summary>
         public float BreakForce, BreakTorque;
+        /// <summary>Break when one step's impulse exceeds this (N·s; 0 = off) — a hard hit tears it even if the force averages low.</summary>
+        public float BreakImpulse;
+        /// <summary>Anchor given in world space (the pose at creation) instead of <see cref="Anchor"/>: generated rigs (ragdolls) know where the pivot is, not where it sits in a body that is not simulated yet.</summary>
+        public bool UseWorldAnchor;
+        public Vector3 WorldAnchor;
         public bool CollideConnected;
         /// <summary>Softness (0 = the solver defaults).</summary>
         public float Hertz, DampingRatio;
@@ -119,10 +124,16 @@ namespace RipNRage.Engine.Ecs.Physics
 
         public override void OnCreate() => _joints = World.Query().With<Joint>().WithReadOnly<PhysicsHandle>().Without<JointBroken>().Build();
 
+        private readonly List<Entity> _dropped = new List<Entity>();
+
         public void FixedTick(SystemContext ctx)
         {
             _sync ??= World.GetSystem<PhysicsSyncSystem>();
             if (_sync == null) return;
+            // the Joint component was removed (a piece torn off, a door unhinged by script): the constraint goes too
+            _dropped.Clear();
+            foreach (var kv in _recs) if (!World.IsAlive(kv.Key) || !World.Has<Joint>(kv.Key) || World.Has<JointBroken>(kv.Key)) _dropped.Add(kv.Key);
+            foreach (var e in _dropped) Drop(e, _recs[e]);
             _scratch.Clear();
             foreach (var chunk in _joints)
             {
@@ -168,7 +179,7 @@ namespace RipNRage.Engine.Ecs.Physics
                 if (b == null) return null; // registers next step
             }
             Vector3 scaleA = World.Has<LocalTransform>(e) ? World.Get<LocalTransform>(e).Scale : Vector3.one;
-            Vector3 wa = BodyPoint(a, scaleA, j.Anchor);
+            Vector3 wa = j.UseWorldAnchor ? j.WorldAnchor : BodyPoint(a, scaleA, j.Anchor);
             Vector3 waxis = (a.rotation * j.Axis).normalized;
             if (j.AutoConnectedAnchor)
             {
@@ -194,7 +205,7 @@ namespace RipNRage.Engine.Ecs.Physics
                 default:
                 {
                     var ball = new BallConstraint(a, b, wa);
-                    ball.localAnchorB = b != null ? Quaternion.Inverse(b.rotation) * (wb - b.position) : wb;
+                    if (!j.UseWorldAnchor) ball.localAnchorB = b != null ? Quaternion.Inverse(b.rotation) * (wb - b.position) : wb;
                     c = ball;
                     break;
                 }
@@ -217,6 +228,7 @@ namespace RipNRage.Engine.Ecs.Physics
         {
             c.breakForce = j.BreakForce > 0f ? j.BreakForce : float.PositiveInfinity;
             c.breakTorque = j.BreakTorque > 0f ? j.BreakTorque : float.PositiveInfinity;
+            c.breakImpulse = MathF.Max(0f, j.BreakImpulse);
             c.hertz = j.Hertz > 0f ? j.Hertz : Constraint.DefaultHertz;
             c.dampingRatio = j.DampingRatio > 0f ? j.DampingRatio : Constraint.DefaultDampingRatio;
             switch (c)

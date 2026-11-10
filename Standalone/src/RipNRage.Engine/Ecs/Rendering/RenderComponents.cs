@@ -23,6 +23,8 @@ namespace RipNRage.Engine.Ecs.Rendering
         public int SortingOrder;
         public RenderLayer Layer;
         public AssetHandle<Material> Material;
+        /// <summary>Switched off by the sprite's animation (clip "enabled" keys); <see cref="Hidden"/> is the owner's own switch.</summary>
+        public bool Disabled;
     }
 
     /// <summary>A textured mesh (same semantics as the legacy MeshRenderer).</summary>

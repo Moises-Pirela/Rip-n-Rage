@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 public class Glock : HitscanWeapon
 {
-    protected static readonly int MeleeTrigger = Animator.StringToHash("Grapple");
+    protected static readonly int MeleeTrigger = RipNRage.Game.Ecs.ViewSprite.StringToHash("Grapple");
     
     public override void Melee()
     {

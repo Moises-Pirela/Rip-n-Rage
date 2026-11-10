@@ -24,7 +24,6 @@ public class AIAgent : MonoBehaviour, IEnemyAI
 
     public AIState aiState;
 
-    private AudioSource _audio;
     private EnemyHitFlash _flash;
     private bool _attacking;
     private float _staggerUntil;
@@ -41,7 +40,6 @@ public class AIAgent : MonoBehaviour, IEnemyAI
         CanFire = true;
         aiState = GetComponent<AIState>();
         aiState.OnDieCallback += Die;
-        _audio = GetComponent<AudioSource>();
         _flash = GetComponent<EnemyHitFlash>();
         _lastHealth = aiState.Health;
         aiState.OnHealthChanged += OnHealthChanged;
@@ -73,7 +71,7 @@ public class AIAgent : MonoBehaviour, IEnemyAI
         _alerted = true;
         _alertUntil = Time.time + data.alertDelay;
         _flash?.Telegraph(0.3f, new Color(1f, 0.95f, 0.3f, 1f));
-        _audio?.PlayOneShot(ProceduralSounds.EnemyAlert, 0.8f);
+        RipNRage.Engine.Ecs.Audio.Sfx.Play(ProceduralSounds.EnemyAlert, 0.8f);
         GameVfx.Spawn("enemy_alert", transform.position + Vector3.up * 1.6f, Vector3.up);
     }
 
@@ -106,7 +104,7 @@ public class AIAgent : MonoBehaviour, IEnemyAI
 
         // 1. telegraph: orange pulse, glow at the muzzle, charge sound
         _flash?.Telegraph(data.attackWindup, new Color(1f, 0.55f, 0.15f, 1f));
-        _audio?.PlayOneShot(ProceduralSounds.EnemyAim, 0.7f);
+        RipNRage.Engine.Ecs.Audio.Sfx.Play(ProceduralSounds.EnemyAim, 0.7f);
         if (projectileSpawnPosition != null) GameVfx.Spawn("enemy_aim", projectileSpawnPosition.position, (TargetLocation - projectileSpawnPosition.position).normalized);
         float t = 0f;
         while (t < data.attackWindup)
@@ -123,7 +121,7 @@ public class AIAgent : MonoBehaviour, IEnemyAI
             if (aiState.HealthState == EntityHealthState.DEAD) { _attacking = false; yield break; }
             while (IsStaggered) yield return null;
             SpawnProjectile(TargetLocation);
-            _audio?.PlayOneShot(ProceduralSounds.EnemyShot, 0.9f);
+            RipNRage.Engine.Ecs.Audio.Sfx.Play(ProceduralSounds.EnemyShot, 0.9f);
             if (projectileSpawnPosition != null) GameVfx.Spawn("enemy_muzzle", projectileSpawnPosition.position, (TargetLocation - projectileSpawnPosition.position).normalized);
             if (i < shots - 1) yield return new WaitForSeconds(data.burstInterval);
         }

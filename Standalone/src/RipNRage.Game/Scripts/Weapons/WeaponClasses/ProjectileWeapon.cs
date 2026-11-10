@@ -6,7 +6,7 @@ public abstract class ProjectileWeapon : Weapon
 {
     public Transform projectileSpawn;
     public Prefab projectilePrefab;
-    public override void Equip(Animator animator,Transform transform, LayerMask layerMask, Animator leftHandAnimator, Animator rightHandAnimator)
+    public override void Equip(RipNRage.Game.Ecs.ViewSprite animator,Transform transform, LayerMask layerMask, RipNRage.Game.Ecs.ViewSprite leftHandAnimator, RipNRage.Game.Ecs.ViewSprite rightHandAnimator)
     {
         base.Equip(animator, transform, layerMask, leftHandAnimator, rightHandAnimator);
 
@@ -33,7 +33,7 @@ public abstract class ProjectileWeapon : Weapon
         
         
         weaponAnimator.SetBool(IsFiring, true);
-        _audioSource.PlayOneShot(weaponData.fireSound);
+        RipNRage.Engine.Ecs.Audio.Sfx.Play(weaponData.fireSound);
 
         // spread / bloom (standalone addition): rockets scatter a little too, less than bullets
         float spread = CurrentSpread * weaponData.weaponStats.projectileSpreadScale;

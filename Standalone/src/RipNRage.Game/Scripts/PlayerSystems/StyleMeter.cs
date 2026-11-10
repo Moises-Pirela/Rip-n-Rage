@@ -48,7 +48,6 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
 
     private PlayerState _state;
     private CombatController _combat;
-    private AudioSource _audio;
     private string _lastKillWeapon;
     private float _lastKillTime = -100f, _lastScoreTime = -100f;
     private float _visibility, _rankPop, _ammoTimer, _flash;
@@ -61,7 +60,6 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
     {
         _state = GetComponent<PlayerState>();
         _combat = GetComponent<CombatController>();
-        _audio = GetComponent<AudioSource>();
     }
 
     /// <summary>Called by weapons: a hit on an enemy, optionally a headshot, optionally the killing blow.</summary>
@@ -139,7 +137,7 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
 
     private void Play(AudioClip clip)
     {
-        if (_audio != null && clip != null) _audio.PlayOneShot(clip, 0.7f);
+        if (clip != null) RipNRage.Engine.Ecs.Audio.Sfx.Play(clip, 0.7f);
     }
 
     // ------------------------------------------------------------------ HUD

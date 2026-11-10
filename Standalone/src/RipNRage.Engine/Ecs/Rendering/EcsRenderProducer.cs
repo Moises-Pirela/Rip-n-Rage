@@ -49,7 +49,7 @@ namespace RipNRage.Engine.Ecs.Rendering
                 var sr = c.Get<SpriteRender>(); var ltw = c.Get<LocalToWorld>(); var ents = c.Entities;
                 for (int i = 0; i < c.Length; i++)
                 {
-                    if (!c.Includes(i) || sr[i].Sprite.IsNone) continue;
+                    if (!c.Includes(i) || sr[i].Sprite.IsNone || sr[i].Disabled) continue;
                     ref readonly var s = ref sr[i]; ref readonly var w = ref ltw[i];
                     var d = frame.AddSprite();
                     d.Id = IdOf(ents[i]); d.Pose = DrawPose.From(w.Value, w.Position, w.Rotation, w.Scale);

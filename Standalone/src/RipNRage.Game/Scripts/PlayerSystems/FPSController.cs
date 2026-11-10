@@ -15,7 +15,6 @@ using System.Collections;
 public class FPSController : MonoBehaviour
 {
     [Space, Header("Data")]
-    private AudioSource m_AudioSource;
     [SerializeField] public AudioClip[] m_FootstepSounds;
     [SerializeField] public AudioClip m_JumpSound;
     [SerializeField] public AudioClip m_LandSound;

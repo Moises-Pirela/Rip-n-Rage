@@ -23,7 +23,6 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
     public Action onClose;
     private readonly MenuList _menu = new MenuList();
     private readonly Dictionary<MenuItem, InputAction> _rows = new Dictionary<MenuItem, InputAction>();
-    private AudioSource _audio;
     private float _anim;
     private bool _closed;
     private float _blink;
@@ -40,7 +39,6 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
     protected override void Awake()
     {
         Current = this;
-        _audio = gameObject.AddComponent<AudioSource>();
         _menu.itemWidth = 860f; _menu.itemHeight = 40f; _menu.itemGap = 5f; _menu.labelScale = 2.6f; _menu.hintScale = 1.8f;
         _menu.visibleRows = 14;
         _menu.onSelectionChanged = _ => Play(ProceduralSounds.MenuMove);
@@ -129,7 +127,7 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     private void Play(AudioClip clip)
     {
-        if (_audio != null && clip != null) _audio.PlayOneShot(clip, 0.6f);
+        if (clip != null) RipNRage.Engine.Ecs.Audio.Sfx.Play(clip, 0.6f);
     }
 
     public void DrawUi(UiBatch ui)

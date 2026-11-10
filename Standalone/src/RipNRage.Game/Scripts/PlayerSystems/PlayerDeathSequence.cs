@@ -53,9 +53,8 @@ public class PlayerDeathSequence : MonoBehaviour
         }
 
         // 2. sound
-        var audio = GetComponent<AudioSource>();
         var clip = deathSound ?? ProceduralSounds.PlayerDeath;
-        if (audio != null && clip != null) audio.PlayOneShot(clip, 1f);
+        if (clip != null) RipNRage.Engine.Ecs.Audio.Sfx.Play(clip, 1f);
 
         // 3. the screen starts fading while the camera falls
         DeathScreen.Show();
