@@ -396,6 +396,8 @@ namespace RipNRage.Game
     {
         public string scriptName = "look";
         private int _frame;
+        /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
+        private int _killFrame;
         private float _strafeDir;
 
         protected override void Update()
@@ -455,10 +457,11 @@ namespace RipNRage.Game
                     input.overrideFiring = _frame >= 60 && _frame < 240; // many Glock hits: the grunt has 1000 hp + 1000 armour
                     // the gate: without this the script only proves the game does not crash while firing at something.
                     // Layer 5 has to turn "ALIVE 1000/1000" into a dead grunt.
+                    if (nearest != null && nearest.HealthState == EntityHealthState.DEAD && _killFrame == 0) _killFrame = _frame;
                     if (_frame == 240 || _frame == 290)
                         Debug.LogWarning(nearest == null
                             ? $"[test] frame {_frame}: no enemy in the scene"
-                            : $"[test] frame {_frame}: enemy {nearest.HealthState} health {nearest.Health:0} armour {nearest.Armor:0}");
+                            : $"[test] frame {_frame}: enemy {nearest.HealthState} health {nearest.Health:0} armour {nearest.Armor:0} killedAtFrame {_killFrame}");
                     break;
                 }
                 case "spin":

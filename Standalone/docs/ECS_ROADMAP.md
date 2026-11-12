@@ -473,6 +473,22 @@ Convert, keeping the tuned solver behaviour:
   all 13 combat scripts complete; `die` shows the full sequence (timeScale 0.2, death screen) at parity with 5.0,
   twice per run as before. `killenemy` still reports ALIVE 1000/1000 — the weapons' stubbed hit resolution is 5.3.
 
+#### 5.4a — Armour is its own component (done)
+
+- `Armor { Current, Max, Resistance }` split out of `Health`. **Absent = wears none**, which is how the data reads:
+  `RiflemanData.maxArmor` is 0, so a grunt has no `Armor` component and its 1000 hit points are the whole of it.
+  `AIState.Init` now passes `data.maxArmor` instead of the legacy `data.maxHealth` — the typo carried faithfully
+  through 5.1, corrected here by request, and **measured**: `killenemy`'s new `killedAtFrame` probe reports 97 with
+  the fix against 142 with the typo (37 vs 82 frames of Glock fire, 0.62 s vs 1.37 s — 1000 vs 2000 damage to kill).
+- The player's armour is a component with `Resistance = 1` (a hit lands wholly on it), so `DamageEvent`'s
+  resistance override and `PlayerState`'s whole `TakeDamage` override are gone — the override existed only to pass
+  that 1 and to guard `IsDead`, which `HealthSystem` already does by dropping events for `Dead` targets.
+  `EntityState.TakeDamage(float)` lost its second parameter; `InitializeArmor(max, resistance)` adds, re-fills or
+  removes the component.
+- `WeaponData.spawnableVFX` deleted: dead since the hitscan classes went in 5.3.
+- Gates: 196 engine + 43 gameplay assertions (the damage pins re-expressed as wears-armour / wears-none, including
+  "a thing with no armour carries no Armor component"); all 13 combat scripts + `die` at parity.
+
 #### 5.3 — Weapon components and hitscan (done; 5.2 was folded into 5.1 by the no-bridge decision)
 
 - **The Weapon class hierarchy is deleted** (`Weapon` / `HitscanWeapon` / `ProjectileWeapon` / `Glock` /

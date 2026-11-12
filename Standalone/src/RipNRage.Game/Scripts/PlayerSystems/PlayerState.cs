@@ -63,7 +63,7 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
         Bind(RipNRage.Game.Ecs.PlayerLink.PlayerEntity);
         _dieRan = false; // a (re)initialised player can die again
         // fixed maximums; the save data only provides the current values
-        InitializeArmor(MaxArmorValue);
+        InitializeArmor(MaxArmorValue, 1f); // the player's armour takes a hit one for one
         InitializeHealth(MaxHealthValue);
         var saved = SaveData.Current.playerStateData;
         if (saved.PlayerHealth > 0f) Health = Mathf.Min(saved.PlayerHealth, MaxHealthValue);
@@ -72,13 +72,6 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
         ResetRage();
         OnHealthChanged?.Invoke();
         OnArmorChanged?.Invoke();
-    }
-
-    public override void TakeDamage(float damage, float armorDamageResistance = 1)
-    {
-        if (IsDead) return;
-        base.TakeDamage(damage, armorDamageResistance);
-        // the damage shake happens when the blow actually lands (NotifyHit), not when it is posted
     }
 
     internal override void NotifyHit(in RipNRage.Game.Ecs.Combat.HitEvent e)

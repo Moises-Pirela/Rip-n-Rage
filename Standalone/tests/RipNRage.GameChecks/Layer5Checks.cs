@@ -73,7 +73,7 @@ internal static class Layer5Checks
                 Radius = AIState.CapsuleRadius, Height = AIState.SpriteHeight - ride, Center = new Vector3(0f, -ride * 0.5f, 0f),
             });
             w.Add(enemy, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
-            w.Add(enemy, new Health { Current = 100f, Max = 100f, ArmorResistance = 0.75f });
+            w.Add(enemy, new Health { Current = 100f, Max = 100f });
             w.Add(enemy, new Hitbox { Height = AIState.SpriteHeight, HeadFraction = AIState.HeadFraction });
             w.Update(1f / 60f); // register the collider
 
@@ -124,7 +124,7 @@ internal static class Layer5Checks
             Center = new Vector3(0f, -ride * 0.5f, 0f),
         });
         w.Add(enemy, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
-        w.Add(enemy, new Health { Current = 1000f, Max = 1000f, ArmorResistance = 0.75f });
+        w.Add(enemy, new Health { Current = 1000f, Max = 1000f });
         w.Add(enemy, new Hitbox { Height = AIState.SpriteHeight, HeadFraction = AIState.HeadFraction });
         w.Update(1f / 60f); // one step so the sync registers the collider
 
@@ -163,17 +163,17 @@ internal static class Layer5Checks
         {
             var e = w.CreateEntity();
             w.Add(e, LocalTransform.At(Vector3.zero));
-            w.Add(e, new Health { Current = health, Max = health, Armor = armor, MaxArmor = 100f, ArmorResistance = resistance });
+            w.Add(e, new Health { Current = health, Max = health });
+            if (armor > 0f) w.Add(e, new Armor { Current = armor, Max = 100f, Resistance = resistance });
             return e;
         }
-        void Hit(Entity e, float amount, float resistance = 0f) =>
-            w.Post(new DamageEvent { Target = e, Amount = amount, ArmorResistance = resistance });
+        void Hit(Entity e, float amount) => w.Post(new DamageEvent { Target = e, Amount = amount });
 
         // Armour absorbs damage * resistance and takes that much itself; the rest lands on health (the 5.0 pins).
         var d = Damageable(100f, 100f);
         Hit(d, 40f);
         w.Update(1f / 60f);
-        Equal(70f, w.Get<Health>(d).Armor, "armour absorbs damage * resistance (40 * 0.75 = 30 of 100)");
+        Equal(70f, w.Get<Armor>(d).Current, "armour absorbs damage * resistance (40 * 0.75 = 30 of 100)");
         Equal(90f, w.Get<Health>(d).Current, "and health takes only the remainder (40 - 30)");
         True(log.Hits.Count == 1 && !log.Hits[0].Killed, "the applied blow is reported as a HitEvent");
 
@@ -181,7 +181,7 @@ internal static class Layer5Checks
         d = Damageable(100f, 10f);
         Hit(d, 40f);
         w.Update(1f / 60f);
-        Equal(0f, w.Get<Health>(d).Armor, "armour thinner than the absorption is spent exactly");
+        Equal(0f, w.Get<Armor>(d).Current, "armour thinner than the absorption is spent exactly");
         Equal(70f, w.Get<Health>(d).Current, "and health takes the whole rest of the hit (40 - 10)");
 
         // No armour: the hit lands in full.
@@ -190,11 +190,11 @@ internal static class Layer5Checks
         w.Update(1f / 60f);
         Equal(75f, w.Get<Health>(d).Current, "an unarmoured hit lands in full");
 
-        // The event's resistance override (the legacy optional parameter; the player posts 1).
-        d = Damageable(100f, 100f);
-        Hit(d, 40f, resistance: 1f);
+        // Resistance 1 (the player's armour): the whole hit lands on the armour.
+        d = Damageable(100f, 100f, resistance: 1f);
+        Hit(d, 40f);
         w.Update(1f / 60f);
-        Equal(60f, w.Get<Health>(d).Armor, "resistance 1 puts the whole hit on the armour");
+        Equal(60f, w.Get<Armor>(d).Current, "resistance 1 puts the whole hit on the armour");
         Equal(100f, w.Get<Health>(d).Current, "and health is untouched while armour holds");
 
         // Death: clamped at zero, latched with Dead, reported exactly once.

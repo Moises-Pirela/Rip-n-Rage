@@ -48,10 +48,11 @@ public abstract class EntityState : MonoBehaviour
         set { if (Bound) { ref var h = ref W.Get<HealthComponent>(entity); h.Current = Mathf.Clamp(value, 0f, h.Max); } }
     }
 
+    /// <summary>Armour, or 0 when this thing wears none (no <see cref="Armor"/> component).</summary>
     public float Armor
     {
-        get => Bound ? W.Get<HealthComponent>(entity).Armor : 0f;
-        set { if (Bound) { ref var h = ref W.Get<HealthComponent>(entity); h.Armor = Mathf.Clamp(value, 0f, h.MaxArmor); } }
+        get => Bound && W.Has<Armor>(entity) ? W.Get<Armor>(entity).Current : 0f;
+        set { if (Bound && W.Has<Armor>(entity)) { ref var a = ref W.Get<Armor>(entity); a.Current = Mathf.Clamp(value, 0f, a.Max); } }
     }
 
     public Action OnHealthChanged;
@@ -65,14 +66,13 @@ public abstract class EntityState : MonoBehaviour
     /// circumstances come from the legacy <see cref="DamageInfo"/> hand-off when one is being reported — the weapons
     /// still use it until 5.3 folds it into their own events.
     /// </summary>
-    public virtual void TakeDamage(float damage, float armorDamageResistance = 0.75f)
+    public void TakeDamage(float damage)
     {
         if (!Bound) return;
         W.Post(new DamageEvent
         {
             Target = entity,
             Amount = damage,
-            ArmorResistance = armorDamageResistance,
             Point = DamageInfo.Available ? DamageInfo.Point : transform.position,
             Direction = DamageInfo.Available ? DamageInfo.Direction : Vector3.forward,
             Impulse = DamageInfo.Available ? DamageInfo.Impulse : 0f,
@@ -99,11 +99,12 @@ public abstract class EntityState : MonoBehaviour
         h.Max = maxHealth; h.Current = maxHealth;
     }
 
-    public void InitializeArmor(float maxArmor)
+    /// <summary>Gives this thing armour (or re-fills it); <paramref name="maxArmor"/> 0 means it wears none.</summary>
+    public void InitializeArmor(float maxArmor, float resistance = 0.75f)
     {
-        if (!Bound) return;
-        ref var h = ref W.Get<HealthComponent>(entity);
-        h.MaxArmor = maxArmor; h.Armor = maxArmor;
+        if (!Bound || W.IsIterating) return;
+        if (maxArmor <= 0f) { if (W.Has<Armor>(entity)) W.Remove<Armor>(entity); return; }
+        W.Add(entity, new Armor { Current = maxArmor, Max = maxArmor, Resistance = resistance });
     }
 
     // ---------------------------------------------------------------- event bridge (CombatBridgeSystem)

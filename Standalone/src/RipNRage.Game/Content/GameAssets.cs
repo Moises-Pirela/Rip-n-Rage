@@ -374,7 +374,6 @@ namespace RipNRage.Game.Content
                     spreadMax = 0.06f, bloomPerShot = 0.014f, bloomRecovery = 0.12f, moveSpread = 0.02f, airSpread = 0.04f },
                 animatorOverrideController = GlockController,
                 fireSound = GlockShot,
-                spawnableVFX = Prefabs.BulletImpact,
                 weaponPosition = new Vector3(0, 0, 0), weaponScale = 0.1f,
             };
             M1887Data = new WeaponData
@@ -386,7 +385,6 @@ namespace RipNRage.Game.Content
                     spreadMax = 0.09f, bloomPerShot = 0.02f, bloomRecovery = 0.08f, moveSpread = 0.015f, airSpread = 0.03f },
                 animatorOverrideController = M1887Controller,
                 fireSound = M1887Shot,
-                spawnableVFX = Prefabs.BulletImpact,
                 weaponPosition = new Vector3(-0.12f, 0.25f, 0), weaponScale = 0.1f,
             };
             MG338Data = new WeaponData
@@ -398,7 +396,6 @@ namespace RipNRage.Game.Content
                     spreadMax = 0.1f, bloomPerShot = 0.013f, bloomRecovery = 0.15f, moveSpread = 0.03f, airSpread = 0.05f },
                 animatorOverrideController = MG338Controller,
                 fireSound = MG338Shot,
-                spawnableVFX = Prefabs.BulletImpact,
                 weaponPosition = new Vector3(0.0132f, 0.54f, 0), weaponScale = 0.15f,
             };
             RocketLauncherData = new WeaponData
@@ -411,7 +408,6 @@ namespace RipNRage.Game.Content
                     spreadMax = 0.03f, bloomPerShot = 0.02f, bloomRecovery = 0.06f, moveSpread = 0.012f, airSpread = 0.025f, projectileSpreadScale = 1f },
                 animatorOverrideController = RocketLauncherController,
                 fireSound = RocketShot,
-                spawnableVFX = null,
                 weaponPosition = new Vector3(-0.158f, 0.365f, 0), weaponScale = 0.12f,
             };
 

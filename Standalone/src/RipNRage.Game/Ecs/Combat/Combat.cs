@@ -6,16 +6,25 @@ namespace RipNRage.Game.Ecs.Combat
     // ================================================================= components
 
     /// <summary>
-    /// Hit points and armour of anything damageable — the player, the enemies, later the props. Written only by
-    /// <see cref="HealthSystem"/> (damage) and the handful of direct givers (healing, armour pickups, save load);
-    /// everything that *deals* damage posts a <see cref="DamageEvent"/> instead of touching this.
+    /// Hit points of anything damageable — the player, the enemies, later the props. Written only by
+    /// <see cref="HealthSystem"/> (damage) and the handful of direct givers (healing, save load); everything that
+    /// *deals* damage posts a <see cref="DamageEvent"/> instead of touching this.
     /// </summary>
     public struct Health : IComponent
     {
         public float Current, Max;
-        public float Armor, MaxArmor;
-        /// <summary>Fraction of a hit the armour absorbs while it lasts (0.75 for enemies, 1 for the player).</summary>
-        public float ArmorResistance;
+    }
+
+    /// <summary>
+    /// Armour, on whatever wears it. Absent = no armour at all, which is how the data reads it: the rifleman's
+    /// <c>maxArmor</c> is 0, so a grunt simply has no <see cref="Armor"/> component and its 1000 hit points are the
+    /// whole of it. <see cref="Resistance"/> is the fraction of a hit the armour takes while it lasts (0.75 by
+    /// default, 1 for the player, whose armour eats a hit one for one).
+    /// </summary>
+    public struct Armor : IComponent
+    {
+        public float Current, Max;
+        public float Resistance;
     }
 
     /// <summary>
@@ -56,8 +65,6 @@ namespace RipNRage.Game.Ecs.Combat
     {
         public Entity Target;
         public float Amount;
-        /// <summary>Overrides the target's <see cref="Health.ArmorResistance"/> when &gt; 0 (the legacy optional parameter).</summary>
-        public float ArmorResistance;
         public Vector3 Point, Direction;
         /// <summary>Impulse the blow carries (N·s) — what the ragdoll piece is thrown with.</summary>
         public float Impulse;
@@ -90,12 +97,12 @@ namespace RipNRage.Game.Ecs.Combat
     // ================================================================= the one place damage is applied
 
     /// <summary>
-    /// Consumes every <see cref="DamageEvent"/> of the frame: the legacy armour arithmetic (armour absorbs
-    /// <c>damage * resistance</c>, but never more than it has; the rest lands on health), clamped at zero, death
+    /// Consumes every <see cref="DamageEvent"/> of the frame: the legacy armour arithmetic (an <see cref="Armor"/>
+    /// component absorbs <c>damage * resistance</c>, never more than it has; the rest lands on health), clamped at zero, death
     /// latched with <see cref="Dead"/>. Posts a <see cref="HitEvent"/> per applied blow and a <see cref="DeathEvent"/>
     /// for the one that crossed zero — both delivered in a further round of the same frame.
     /// </summary>
-    [Reads(typeof(Dead)), Writes(typeof(Health))]
+    [Reads(typeof(Dead)), Writes(typeof(Health), typeof(Armor))]
     public sealed class HealthSystem : SystemBase, IConsumes<DamageEvent>
     {
         public void Consume(SystemContext ctx, System.ReadOnlySpan<DamageEvent> events)
@@ -108,13 +115,12 @@ namespace RipNRage.Game.Ecs.Combat
                 if (h.Current <= 0f) continue; // killed earlier in this same span: the tag is not added until playback
 
                 float amount = e.Amount;
-                if (h.Armor > 0f)
+                if (w.Has<Armor>(e.Target))
                 {
-                    float resistance = e.ArmorResistance > 0f ? e.ArmorResistance : h.ArmorResistance;
-                    float absorbed = amount * resistance;
-                    if (absorbed > h.Armor) absorbed = h.Armor; // armour absorbs no more than it has
+                    ref var a = ref w.Get<Armor>(e.Target);
+                    float absorbed = Mathf.Min(amount * a.Resistance, a.Current); // armour absorbs no more than it has
                     amount -= absorbed;
-                    h.Armor = Mathf.Clamp(h.Armor - absorbed, 0f, h.MaxArmor);
+                    a.Current = Mathf.Clamp(a.Current - absorbed, 0f, a.Max);
                 }
                 h.Current = Mathf.Clamp(h.Current - amount, 0f, h.Max);
 

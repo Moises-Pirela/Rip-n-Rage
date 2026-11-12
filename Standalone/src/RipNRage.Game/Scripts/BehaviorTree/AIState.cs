@@ -42,7 +42,7 @@ public class AIState : EntityState
             Center = new Vector3(0f, -rideHeight * 0.5f, 0f),
         });
         w.Add(e, new CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
-        w.Add(e, new Health { ArmorResistance = 0.75f }); // maxima set by Init below, as the legacy flow did
+        w.Add(e, new Health()); // maxima set by Init below, as the legacy flow did
         w.Add(e, new Hitbox { Height = SpriteHeight, HeadFraction = HeadFraction });
         Bind(e);
         _lastPosition = transform.position;
@@ -52,11 +52,10 @@ public class AIState : EntityState
     public override void Init()
     {
         InitializeHealth(data.maxHealth);
-        // Faithful port of the legacy Init, armour included: it initialised armour from maxHealth, not
-        // data.maxArmor — almost certainly a typo (RiflemanData says maxArmor = 0, yet the grunt soaks 1000 armour,
-        // and the killenemy script budgets for exactly that). Kept as-is so the port changes no tuning; flagged in
-        // the roadmap as a decision to make once the weapons are back online.
-        InitializeArmor(data.maxHealth);
+        // Armour as the data writes it. The legacy Init passed maxHealth here, which gave the rifleman 1000 phantom
+        // armour on top of its 1000 hit points (RiflemanData says maxArmor = 0) and doubled what it takes to kill —
+        // a typo, kept faithfully through 5.1 and corrected now that armour is its own component: no armour, none.
+        InitializeArmor(data.maxArmor);
     }
 
     /// <summary>Standalone addition: true when a hit point lies in the top part of the capsule (head).</summary>

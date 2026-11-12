@@ -20,7 +20,6 @@ public class WeaponData : ScriptableObject
     [Header("Weapon FX")]
     public AnimatorController animatorOverrideController;
     public AudioClip fireSound;
-    public Prefab spawnableVFX;
     public Vector3 weaponPosition;
     public float weaponScale;
 }

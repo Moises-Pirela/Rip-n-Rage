@@ -91,13 +91,10 @@ namespace RipNRage.Game.Ecs
             cmd.Add(e, new PlayerTag());
             // the player's trigger overlaps (checkpoints, water, pickups) have to be reported
             cmd.Add(e, new ReportCollisions());
-            // hit points (layer 5): PlayerState.Init overwrites current health / armour from the save data;
-            // resistance 1 = the player's armour eats a hit one for one (the legacy PlayerState.TakeDamage override)
-            cmd.Add(e, new RipNRage.Game.Ecs.Combat.Health
-            {
-                Current = PlayerState.MaxHealthValue, Max = PlayerState.MaxHealthValue,
-                Armor = 0f, MaxArmor = PlayerState.MaxArmorValue, ArmorResistance = 1f,
-            });
+            // hit points and armour (layer 5); PlayerState.Init overwrites both from the save data. Resistance 1:
+            // the player's armour eats a hit one for one, as the legacy PlayerState.TakeDamage override asked for.
+            cmd.Add(e, new RipNRage.Game.Ecs.Combat.Health { Current = PlayerState.MaxHealthValue, Max = PlayerState.MaxHealthValue });
+            cmd.Add(e, new RipNRage.Game.Ecs.Combat.Armor { Current = 0f, Max = PlayerState.MaxArmorValue, Resistance = 1f });
 
             // ---- the view rig: pivot (bob + look) -> camera (lens + shake), both children of the character ----
             Vector3 pivotLocal = cameraPivot != null ? cameraPivot.localPosition : new Vector3(0f, PivotHeight, 0f);
