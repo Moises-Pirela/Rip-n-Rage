@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Engine.Graphics;
 
@@ -12,6 +13,9 @@ namespace RipNRage.Engine.Ecs.Rendering
     {
         private readonly World _world;
         private readonly Query _cameras, _sprites, _meshes, _lights;
+        // property blocks are classes: a pooled set reused every frame, grown once, so SpriteFx costs no allocations
+        private readonly List<MaterialPropertyBlock> _blocks = new List<MaterialPropertyBlock>();
+        private int _blocksUsed;
         private readonly CameraView _view = new CameraView();
         /// <summary>Draw ids from the ECS live in their own range so they never collide with other producers.</summary>
         private const long IdBase = 1L << 62;
@@ -27,8 +31,21 @@ namespace RipNRage.Engine.Ecs.Rendering
 
         private static long IdOf(Entity e) => IdBase | ((long)e.Generation << 32) | (uint)e.Index;
 
+        /// <summary>The draw's property block for a non-default <see cref="SpriteFx"/> (null when everything is zero).</summary>
+        private MaterialPropertyBlock BlockFor(in SpriteFx fx)
+        {
+            if (fx.Flash <= 0f && fx.Dissolve <= 0f) return null;
+            if (_blocksUsed == _blocks.Count) _blocks.Add(new MaterialPropertyBlock());
+            var b = _blocks[_blocksUsed++];
+            b.SetFloat("_Flash", fx.Flash);
+            b.SetColor("_FlashColor", fx.FlashColor);
+            b.SetFloat("_Dissolve", fx.Dissolve);
+            return b;
+        }
+
         public void Produce(RenderFrame frame)
         {
+            _blocksUsed = 0;
             int best = int.MinValue;
             foreach (var c in _cameras)
             {
@@ -47,6 +64,8 @@ namespace RipNRage.Engine.Ecs.Rendering
             foreach (var c in _sprites)
             {
                 var sr = c.Get<SpriteRender>(); var ltw = c.Get<LocalToWorld>(); var ents = c.Entities;
+                bool hasFx = c.Has<SpriteFx>();
+                var fx = hasFx ? c.Get<SpriteFx>() : default;
                 for (int i = 0; i < c.Length; i++)
                 {
                     if (!c.Includes(i) || sr[i].Sprite.IsNone || sr[i].Disabled) continue;
@@ -55,7 +74,8 @@ namespace RipNRage.Engine.Ecs.Rendering
                     d.Id = IdOf(ents[i]); d.Pose = DrawPose.From(w.Value, w.Position, w.Rotation, w.Scale);
                     d.sprite = RenderAssets.Sprites.Resolve(s.Sprite); d.color = s.Color; d.flipX = s.FlipX; d.flipY = s.FlipY; d.billboard = s.Billboard;
                     d.billboardRoll = s.BillboardRoll; d.lit = s.Lit; d.castsShadow = s.CastsShadow; d.fullBright = s.FullBright;
-                    d.sortingOrder = s.SortingOrder; d.renderLayer = s.Layer; d.material = RenderAssets.Materials.Resolve(s.Material); d.propertyBlock = null;
+                    d.sortingOrder = s.SortingOrder; d.renderLayer = s.Layer; d.material = RenderAssets.Materials.Resolve(s.Material);
+                    d.propertyBlock = hasFx ? BlockFor(in fx[i]) : null;
                 }
             }
 

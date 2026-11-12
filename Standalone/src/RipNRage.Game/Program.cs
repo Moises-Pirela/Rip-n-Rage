@@ -417,7 +417,9 @@ namespace RipNRage.Game
             }
             if (nearest == null) { Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} enemy none"); return; }
             bool spotted = nearest.GetComponent<AI.BehaviorTree.BehaviorTreeOwner>()?.tree?.blackboard?.playerObject != null;
-            var anim = nearest.GetComponent<AnimationStateController>()?.AnimationState;
+            var w = Application.Current.World;
+            var anim = w.Has<RipNRage.Game.Ecs.AI.EnemyVisual>(nearest.entity)
+                ? w.Get<RipNRage.Game.Ecs.AI.EnemyVisual>(nearest.entity).State : AnimationState.IDLE;
             float moved = (nearest.transform.position - _enemyHome[nearest]).magnitude;
             Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} armour {ps.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
                              $"spotted {spotted} anim {anim} ehp {nearest.Health:0}");

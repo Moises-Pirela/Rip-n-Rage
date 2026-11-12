@@ -9,9 +9,11 @@ using System.Collections.Generic;
 // character body and the steering return in layer 6, replacing the pose sync below.
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
+using RipNRage.Engine.Ecs.Rendering;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Content.Vfx;
 using RipNRage.Game.Ecs;
+using RipNRage.Game.Ecs.AI;
 using RipNRage.Game.Ecs.Combat;
 
 public class AIState : EntityState
@@ -27,27 +29,48 @@ public class AIState : EntityState
     /// <summary>Hits above this fraction of the sprite height are headshots (the old IsHeadshot).</summary>
     public const float HeadFraction = 0.76f;
 
-    private Vector3 _lastPosition;
-
     protected override void Awake()
     {
         float rideHeight = CharacterProfiles.Enemy.rideHeight;
         var w = Application.Current.World;
         // immediate creation: Awake runs in the scene phase, and Init on the next line needs the Health component live
         var e = w.CreateEntity();
-        w.Add(e, new LocalTransform { Position = transform.position, Rotation = Quaternion.identity, Scale = Vector3.one });
+        w.Add(e, new LocalTransform { Position = transform.position, Rotation = transform.rotation, Scale = Vector3.one });
         w.Add(e, new ColliderShape
         {
             Kind = ShapeKind.Capsule, Radius = CapsuleRadius, Height = SpriteHeight - rideHeight,
             Center = new Vector3(0f, -rideHeight * 0.5f, 0f),
         });
         w.Add(e, new CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
+        // the body: the force-driven capsule on its spring (6.1; it stood as a static hitbox through layer 5)
+        w.Add(e, new BodyConfig { mass = CharacterProfiles.Enemy.mass, interpolate = true, freezeRotation = true, canSleep = false }.Bake());
+        w.Add(e, new BodyVelocity());
+        w.Add(e, new CharacterMotorConfig { profile = CharacterProfileKind.Enemy, rideHeight = rideHeight }.Bake());
         w.Add(e, new Health()); // maxima set by Init below, as the legacy flow did
         w.Add(e, new Hitbox { Height = SpriteHeight, HeadFraction = HeadFraction });
+
+        // the look: an 8-sided sheet on a sprite child (feet on the ground: the old SpriteHolder offset and scale)
+        var sprite = w.CreateEntity();
+        w.Add(sprite, new LocalTransform
+        {
+            Position = new Vector3(0f, -rideHeight, 0f), Rotation = Quaternion.identity,
+            Scale = Vector3.one * (SpriteHeight / 5.12f), // 512 px tiles @100 ppu, ~2.25 units tall
+        });
+        w.Add(sprite, new Parent { Value = e });
+        w.Add(sprite, new SpriteRender { Color = Color.white, Billboard = true, Lit = true, Layer = RenderLayer.World, CastsShadow = true });
+        w.Add(sprite, new SpriteFx());
+        w.Add(e, new EnemyVisual { Kind = Enemies.KindOf(data), Sprite = sprite, DeadTime = -1f });
+
         Bind(e);
-        _lastPosition = transform.position;
         Init();
     }
+
+    /// <summary>
+    /// The entity is the enemy now; this GameObject follows it so the unported scripts (the tree, the save system,
+    /// the spawn/grapple child transforms) keep reading the right pose. The first frame hands the GameObject's pose
+    /// over instead — spawners and the save system place the GameObject after Awake built the entity.
+    /// </summary>
+    private bool _adopted;
 
     public override void Init()
     {
@@ -74,13 +97,19 @@ public class AIState : EntityState
 
     protected override void LateUpdate()
     {
-        // keep the hitbox under the body when something moves it (spawners, scripts; the AI itself is layer 6).
-        // Only on an actual move: writing a static collider's LocalTransform re-bakes it.
-        if (transform.position == _lastPosition) return;
-        _lastPosition = transform.position;
         var w = Application.Current.World;
-        if (w.IsAlive(entity) && w.Has<LocalTransform>(entity))
-            w.Get<LocalTransform>(entity).Position = _lastPosition;
+        if (!w.IsAlive(entity) || !w.Has<LocalTransform>(entity)) return;
+        if (!_adopted)
+        {
+            _adopted = true;
+            ref var lt = ref w.Get<LocalTransform>(entity);
+            lt.Position = transform.position; // a LocalTransform write is a teleport to the physics sync
+            lt.Rotation = transform.rotation;
+            return;
+        }
+        ref readonly var pose = ref w.Get<LocalTransform>(entity);
+        transform.position = pose.Position;
+        transform.rotation = pose.Rotation;
     }
 
     protected override void OnDestroy()

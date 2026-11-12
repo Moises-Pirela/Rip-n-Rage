@@ -439,6 +439,7 @@ namespace RipNRage.Game.Content
             };
 
             // Assets/_Game/ScriptableObjects/EnemyData/RiflemanData.asset
+            RipNRage.Game.Ecs.AI.Enemies.All = new EnemyData[1]; // filled below (self-reference)
             RiflemanData = new EnemyData
             {
                 name = "RiflemanData",
@@ -455,6 +456,7 @@ namespace RipNRage.Game.Content
                     DeadAnimation = new AnimationSheet { AnimationFrames = 1, Sides = 4, AnimationFramesPerSecond = 1, TextureSheet = RiflemanDead },
                 },
             };
+            RipNRage.Game.Ecs.AI.Enemies.All[0] = RiflemanData;
         }
     }
 }

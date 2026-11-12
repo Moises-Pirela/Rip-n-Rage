@@ -68,30 +68,14 @@ namespace RipNRage.Game.Content
             const float S = 2.25f;
             var go = new GameObject("AR_Grunt");
             go.layer = Layers.Enemies;
-            // the body floats RideHeight above the floor (CharacterBody); the capsule covers the sprite from the hover
-            // gap up to its head and the sprite holder hangs the ride height below the transform so the feet touch
-            float RideHeight = CharacterProfiles.Enemy.rideHeight;
-            // ECS migration (layer 2): capsule + force-driven body + steering return as an ECS character in layer 6
-
-            // 512 px tiles @100 ppu, centred on the body; scaled so the character is ~2.25 units tall.
-            var holder = new GameObject("SpriteHolder");
-            holder.transform.SetParent(go.transform, false);
-            holder.transform.localPosition = new Vector3(0f, -RideHeight, 0f);
-            holder.transform.localScale = Vector3.one * (S / 5.12f);
-            var sr = holder.AddComponent<SpriteRenderer>();
-            sr.billboard = true;
-            sr.lit = true;
-
+            // The enemy is its entity (6.1): AIState.Awake builds the body (capsule + spring + motor), the sprite
+            // child (8-sided sheet, feet on the ground) and the effects, and this GameObject follows the entity.
             var state = go.AddComponent<AIState>();
             state.data = GameAssets.RiflemanData;
-            var animCtrl = go.AddComponent<AnimationStateController>();
-            animCtrl.SpriteRenderer = sr;
             var agent = go.AddComponent<AIAgent>();
-            agent.animationStateController = animCtrl;
             agent.data = GameAssets.RiflemanData;
             var owner = go.AddComponent<BehaviorTreeOwner>();
             owner.tree = BehaviorTrees.RiflemanTree;
-            go.AddComponent<EnemyHitFlash>().target = sr; // hit flash + death dissolve (sprite shader path)
             go.AddComponent<EnemyDestruction>();          // death: the sprite is sliced into a ragdoll (skeletons/rifleman.json)
 
             var vision = new GameObject("VisionSensor");

@@ -50,6 +50,19 @@ namespace RipNRage.Engine.Ecs.Rendering
     /// <summary>Tag: skip this entity when rendering (cheap to toggle: sparse).</summary>
     [SparseComponent] public struct Hidden : IComponent { }
 
+    /// <summary>
+    /// Per-entity sprite shader parameters — the per-entity material override layer 1 deferred "until something needs
+    /// it": the enemy hit flash and attack telegraph (<see cref="Flash"/> blends the sprite towards
+    /// <see cref="FlashColor"/>; alpha 0 = white) and the death dissolve (<see cref="Dissolve"/> 0..1, read by the
+    /// sprite_dissolve shader). <see cref="EcsRenderProducer"/> turns a non-zero one into the draw's property block.
+    /// </summary>
+    public struct SpriteFx : IComponent
+    {
+        public Color FlashColor;
+        public float Flash;
+        public float Dissolve;
+    }
+
     /// <summary>The registries render handles resolve through. Configs intern under the name they baked from.</summary>
     public static class RenderAssets
     {

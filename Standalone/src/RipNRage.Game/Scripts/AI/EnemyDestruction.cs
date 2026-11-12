@@ -10,12 +10,10 @@ public class EnemyDestruction : MonoBehaviour
     public float lifetime = 0f;
 
     private AIState _state;
-    private AnimationStateController _anim;
 
     protected override void Start()
     {
         _state = GetComponent<AIState>();
-        _anim = GetComponent<AnimationStateController>();
         if (_state != null) _state.OnDieCallback += OnDie;
     }
 
@@ -26,13 +24,20 @@ public class EnemyDestruction : MonoBehaviour
     {
         if (Pieces.Count > 0 || _state == null || _state.data == null || string.IsNullOrEmpty(_state.data.skeleton)) return;
         var skeleton = SkeletonLibrary.Get(_state.data.skeleton);
-        var sr = _anim != null ? _anim.SpriteRenderer : GetComponentInChildren<SpriteRenderer>();
-        if (skeleton == null || sr == null || sr.sprite == null) return;
+        // the look lives on the entity's sprite child now (6.1)
+        var w = Application.Current.World;
+        if (!w.IsAlive(_state.entity) || !w.Has<RipNRage.Game.Ecs.AI.EnemyVisual>(_state.entity)) return;
+        var spriteEntity = w.Get<RipNRage.Game.Ecs.AI.EnemyVisual>(_state.entity).Sprite;
+        if (skeleton == null || !w.IsAlive(spriteEntity)) return;
+        var render = w.Get<RipNRage.Engine.Ecs.Rendering.SpriteRender>(spriteEntity);
+        var sprite = RipNRage.Engine.Ecs.Rendering.RenderAssets.Sprites.Resolve(render.Sprite);
+        var pose = w.Get<RipNRage.Engine.Ecs.Transforms.LocalToWorld>(spriteEntity);
+        if (sprite == null) return;
 
         var options = RipNRage.Engine.Ecs.Destruction.RagdollOptions.Default;
         options.lifetime = lifetime;
-        options.lit = sr.lit; options.castsShadow = sr.castsShadow; options.color = sr.color;
-        options.material = RipNRage.Engine.Ecs.Rendering.RenderAssets.Materials.Intern(sr.material);
+        options.lit = render.Lit; options.castsShadow = render.CastsShadow; options.color = render.Color;
+        options.material = render.Material;
         if (DamageInfo.Available)
         {
             options.impulse = DamageInfo.Direction * (DamageInfo.Impulse * impulseScale);
@@ -40,12 +45,11 @@ public class EnemyDestruction : MonoBehaviour
             options.gib = DamageInfo.Explosive;
             options.scatterImpulse = DamageInfo.Explosive ? Mathf.Max(4f, DamageInfo.Impulse * 0.15f) : 0f;
         }
-        var cam = Camera.main;
-        Vector3 viewer = cam != null ? cam.transform.position : sr.transform.position + Vector3.back;
-        Pieces = RipNRage.Engine.Ecs.Destruction.SpriteRagdolls.Spawn(Application.Current.World, skeleton, sr.sprite, sr.transform.position, sr.transform.lossyScale, viewer, options);
+        Vector3 viewer = RipNRage.Game.Ecs.PlayerCamera.Has ? RipNRage.Game.Ecs.PlayerCamera.Position : pose.Position + Vector3.back;
+        Pieces = RipNRage.Engine.Ecs.Destruction.SpriteRagdolls.Spawn(w, skeleton, sprite, pose.Position, pose.Scale, viewer, options);
         if (Pieces.Count == 0) return;
-        // the pieces are the corpse now
-        sr.enabled = false;
-        if (_anim != null) _anim.enabled = false;
+        // the pieces are the corpse now: the sprite child goes quiet (the dissolve clock still removes the enemy)
+        // this runs inside the death event dispatch: structural changes go through the buffer
+        w.Commands.Add(spriteEntity, new RipNRage.Engine.Ecs.Rendering.Hidden());
     }
 }

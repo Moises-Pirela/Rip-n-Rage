@@ -12,7 +12,6 @@ public class AIAgent : MonoBehaviour
     public bool CanFire { get; set; }
     
 
-    public AnimationStateController animationStateController;
 
 
     public Transform projectileSpawnPosition;
@@ -23,7 +22,6 @@ public class AIAgent : MonoBehaviour
 
     public AIState aiState;
 
-    private EnemyHitFlash _flash;
     private bool _attacking;
     private float _staggerUntil;
     private float _lastHealth;
@@ -35,11 +33,9 @@ public class AIAgent : MonoBehaviour
 
     protected override void Start()
     {
-        animationStateController.AnimationData = data.enemyAnimationData;
         CanFire = true;
         aiState = GetComponent<AIState>();
         aiState.OnDieCallback += Die;
-        _flash = GetComponent<EnemyHitFlash>();
         _lastHealth = aiState.Health;
         aiState.OnHealthChanged += OnHealthChanged;
     }
@@ -69,7 +65,7 @@ public class AIAgent : MonoBehaviour
         if (_alerted || aiState.HealthState == EntityHealthState.DEAD) return;
         _alerted = true;
         _alertUntil = Time.time + data.alertDelay;
-        _flash?.Telegraph(0.3f, new Color(1f, 0.95f, 0.3f, 1f));
+        RipNRage.Game.Ecs.AI.Enemies.Telegraph(Application.Current.World, aiState.entity, 0.3f, new Color(1f, 0.95f, 0.3f, 1f));
         RipNRage.Engine.Ecs.Audio.Sfx.Play(ProceduralSounds.EnemyAlert, 0.8f);
         GameVfx.Spawn("enemy_alert", transform.position + Vector3.up * 1.6f, Vector3.up);
     }
@@ -83,7 +79,7 @@ public class AIAgent : MonoBehaviour
         if (IsStaggered || _attacking) return;
         
 
-        animationStateController.AnimationState = AnimationState.MOVING;
+        SetAnim(AnimationState.MOVING);
     }
 
     public void Attack(Vector3 targetLocation)
@@ -99,10 +95,10 @@ public class AIAgent : MonoBehaviour
     private IEnumerator AttackRoutine()
     {
         _attacking = true;
-        animationStateController.AnimationState = AnimationState.ATTACKING;
+        SetAnim(AnimationState.ATTACKING);
 
         // 1. telegraph: orange pulse, glow at the muzzle, charge sound
-        _flash?.Telegraph(data.attackWindup, new Color(1f, 0.55f, 0.15f, 1f));
+        RipNRage.Game.Ecs.AI.Enemies.Telegraph(Application.Current.World, aiState.entity, data.attackWindup, new Color(1f, 0.55f, 0.15f, 1f));
         RipNRage.Engine.Ecs.Audio.Sfx.Play(ProceduralSounds.EnemyAim, 0.7f);
         if (projectileSpawnPosition != null) GameVfx.Spawn("enemy_aim", projectileSpawnPosition.position, (TargetLocation - projectileSpawnPosition.position).normalized);
         float t = 0f;
@@ -131,6 +127,9 @@ public class AIAgent : MonoBehaviour
         CanFire = true;
     }
 
+    private void SetAnim(AnimationState state) =>
+        RipNRage.Game.Ecs.AI.Enemies.SetAnim(Application.Current.World, aiState.entity, state);
+
     public void SpawnProjectile(Vector3 targetLocation)
     {
         var direction = targetLocation - projectileSpawnPosition.position;
@@ -149,7 +148,7 @@ public class AIAgent : MonoBehaviour
 
     public void Die()
     {
-        animationStateController.AnimationState = AnimationState.DYING;
+        SetAnim(AnimationState.DYING);
         StartCoroutine(SetDeadCoroutine());
     }
     public bool HasReachedLocation()
@@ -173,7 +172,7 @@ public class AIAgent : MonoBehaviour
         
         yield return new WaitForSeconds(0.25f);
         
-        animationStateController.AnimationState = AnimationState.DEAD;
+        SetAnim(AnimationState.DEAD);
 
     }
 }
