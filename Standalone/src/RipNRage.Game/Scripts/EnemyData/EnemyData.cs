@@ -23,6 +23,14 @@ public class EnemyData : ScriptableObject
     /// <summary>Seconds between spotting the player and the first reaction.</summary>
     public float alertDelay = 0.2f;
 
+    [Space(5)] [Header("State tree (the values the behaviour tree's nodes carried)")]
+    /// <summary>Seconds the enemy idles before picking the next wander point.</summary>
+    public float wanderWait = 1f;
+    /// <summary>Wander points are picked inside this radius ...</summary>
+    public float wanderRadius = 15f;
+    /// <summary>... and rejected when closer than this.</summary>
+    public float wanderMinDistance = 10f;
+
     [Space(5)] [Header("Enemy status")] 
     public float maxHealth;
     public float maxArmor;

@@ -39,7 +39,6 @@ namespace RipNRage.Game.Ecs.AI
     /// </summary>
     public struct EnemyVisual : IComponent
     {
-        public int Kind;
         public AnimationState State;
         public Entity Sprite;
         public float StateTime;
@@ -56,6 +55,7 @@ namespace RipNRage.Game.Ecs.AI
     /// and the active camera, flash / telegraph into <see cref="SpriteFx"/>, and the death dissolve — which also owns
     /// the corpse: when it completes, the enemy entity (and its following GameObject) is removed. A hit flashes via
     /// <see cref="HitEvent"/>; a death starts the clock via <see cref="DeathEvent"/>. Runs alone (writes child entities).
+    /// Which sheets: the <see cref="Enemy"/>'s definition.
     /// </summary>
     public sealed class EnemyVisualSystem : SystemBase, ITick, IConsumes<HitEvent>, IConsumes<DeathEvent>
     {
@@ -67,7 +67,7 @@ namespace RipNRage.Game.Ecs.AI
 
         public override void OnCreate()
         {
-            _q = World.Query().With<EnemyVisual>().WithReadOnly<LocalToWorld>().Build();
+            _q = World.Query().With<EnemyVisual>().WithReadOnly<Enemy>().WithReadOnly<LocalToWorld>().Build();
             _cameras = ActiveCamera.BuildQuery(World);
         }
 
@@ -78,7 +78,7 @@ namespace RipNRage.Game.Ecs.AI
 
             foreach (var chunk in _q)
             {
-                var vis = chunk.Get<EnemyVisual>(); var ltw = chunk.Get<LocalToWorld>(); var ents = chunk.Entities;
+                var vis = chunk.Get<EnemyVisual>(); var kinds = chunk.Get<Enemy>(); var ltw = chunk.Get<LocalToWorld>(); var ents = chunk.Entities;
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
@@ -103,7 +103,7 @@ namespace RipNRage.Game.Ecs.AI
                     // the sheet: frame from the state clock, row from facing vs the camera
                     if (v.State != v.LastState) { v.LastState = v.State; v.StateTime = 0f; }
                     v.StateTime += dt;
-                    var sheet = SheetFor(v.Kind, v.State);
+                    var sheet = SheetFor(kinds[i].Kind, v.State);
                     if (sheet != null)
                     {
                         bool loop = v.State == AnimationState.MOVING || v.State == AnimationState.IDLE || v.State == AnimationState.ATTACKING;

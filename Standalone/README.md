@@ -169,10 +169,10 @@ Example used for the screenshots in this document:
 * Hitscan & projectile weapons, ammo/inventory, pickups, rage/combat state, rage "post-processing"
   (colour filter + vignette like the URP volumes), HUD (portrait, radial health/armour ring,
   ammo counter/icon, crosshair with DOTween-style tweens).
-* Enemies: `AIState` / `AIAgent` / `BehaviorTreeOwner` with the **BehaviorTree2** graph rebuilt in
-  code (PlayerSpotted → InAttackRange → LookAt+Attack | MoveTo; else Wait → RandomLocation → MoveTo),
-  4-direction sprite sheets (`AnimationStateController`), vision trigger, projectiles that damage
-  the player through armour.
+* Enemies: entities with a state tree (`Ecs/AI/AiBrain.cs`: unaware = idle → wander, engaged = chase / attack
+  by range — the **BehaviorTree2** graph as a value stepped by a pure function; `AIState` / `AIAgent` are the
+  GameObject half still being ported), 8-sided sprite sheets (`EnemyVisualSystem`), vision trigger, projectiles
+  that damage the player through armour.
 * Level: the dock brush map (`dock.obj`, imported like Unity: X mirrored, 0.25 u/unit, y −3.09),
   AABB collision per brush (rotated brushes are grid-approximated), sand/water planes, sky,
   the Unity **layer table and collision matrix** from `ProjectSettings`.

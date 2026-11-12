@@ -443,8 +443,11 @@ namespace RipNRage.Game.Content
             RiflemanData = new EnemyData
             {
                 name = "RiflemanData",
-                movementSpeed = 11, attackRange = 12, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
+                // attackRange: the asset says 12, but the tree's InAttackRange node carried its own 10 and that is
+                // the value that ever decided anything (6.2 moved the node's numbers here)
+                movementSpeed = 11, attackRange = 10, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
                 attackWindup = 0.35f, burstCount = 3, burstInterval = 0.09f, staggerTime = 0.25f, alertDelay = 0.2f,
+                wanderWait = 1f, wanderRadius = 15f, wanderMinDistance = 10f, // BehaviorTree2: Wait(1), RandomLocation(r=15, min=10)
                 maxHealth = 1000, maxArmor = 0,
                 skeleton = "rifleman",
                 enemyAnimationData = new EnemyAnimationData

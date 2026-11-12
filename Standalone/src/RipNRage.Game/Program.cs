@@ -416,13 +416,14 @@ namespace RipNRage.Game
                 if (d < best) { best = d; nearest = st; }
             }
             if (nearest == null) { Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} enemy none"); return; }
-            bool spotted = nearest.GetComponent<AI.BehaviorTree.BehaviorTreeOwner>()?.tree?.blackboard?.playerObject != null;
             var w = Application.Current.World;
+            var brain = w.Has<RipNRage.Game.Ecs.AI.AiBrain>(nearest.entity) ? w.Get<RipNRage.Game.Ecs.AI.AiBrain>(nearest.entity) : default;
+            bool spotted = !brain.Target.IsNull;
             var anim = w.Has<RipNRage.Game.Ecs.AI.EnemyVisual>(nearest.entity)
                 ? w.Get<RipNRage.Game.Ecs.AI.EnemyVisual>(nearest.entity).State : AnimationState.IDLE;
             float moved = (nearest.transform.position - _enemyHome[nearest]).magnitude;
             Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} armour {ps.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
-                             $"spotted {spotted} anim {anim} ehp {nearest.Health:0}");
+                             $"spotted {spotted} state {brain.State} anim {anim} ehp {nearest.Health:0}");
         }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;

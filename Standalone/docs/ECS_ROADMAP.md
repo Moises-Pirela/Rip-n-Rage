@@ -44,10 +44,11 @@ then start at the first unchecked layer.
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
 
-### Pick-up point for the next session (written 2026-11-12, after 5.6)
+### Pick-up point for the next session (written 2026-11-12, after 5.6; layer 6 is in progress — see its step list)
 
-Layers 0–5 are done. Start at **layer 6** (enemies, AI, spawning) — with one standing direction: the behaviour trees
-are to be replaced by a **data-oriented state-tree** approach, not ported as-is. Established rules: ECS + functional,
+Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.2 are in, next is **6.3 sight**. The
+standing direction — the behaviour trees replaced by a **data-oriented state tree**, not ported as-is — is done
+(6.2). Established rules: ECS + functional,
 OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
 goes in a component until a reader exists in the same commit; definitions as shared immutable tables, state in
 components, behaviour in systems; instrument a gate before porting what it watches.
@@ -640,9 +641,63 @@ Convert, keeping the tuned solver behaviour:
 
 ### Layer 6 — Enemies, AI, spawning (~1.1k lines)
 
-- Behavior tree kept: the tree is shared data (loaded once), each enemy has `BehaviorTreeState` (blackboard + node
-  status). `BehaviorTreeSystem` ticks trees; leaf actions read/write components.
-- `EnemyData` → prefab configs. `DungeonMaster` / spawners → `SpawnerSystem` with prefab references.
+The behaviour trees are **not** ported: they become a data-oriented state tree (6.2). Definitions in `Enemies.All`
+(flat fields on `EnemyData`), state in components, behaviour in systems; the brain writes intent, never calls anyone.
+Every step is judged on the three AI probes (`peek` / `close` / `approach`: `moved`, `spotted`, `state`, `hp`) and
+`killenemy`'s `killedAtFrame 97`. **Steps** (one commit + review stop each):
+
+- [x] 6.0 **Instrumented the watch gates** and recorded the statue baseline: `moved 0.00`, `spotted False`, `hp 100`
+      throughout; `anim IDLE` at frame 60 then `MOVING` (the move node reported arrival instantly).
+- [x] 6.1 **The enemy is an entity — body and look.** `AIState`'s entity gained the force-driven capsule (`Body` 85 kg,
+      `CharacterMotor` profile Enemy) and the pose flow flipped: the GameObject follows the entity (first frame hands
+      the GO's pose over — the `PlayerLink` pattern — so spawners and the save system keep working). The look is a
+      sprite child with `SpriteRender` + the new engine `SpriteFx` (per-entity material overrides, filled from a pooled
+      property block: `_Flash` / `_FlashColor` / `_Dissolve`, so the dissolve needs no cloned material);
+      `EnemyVisual` + `EnemyVisualSystem` play the 8-sided sheets, the hit flash (`HitEvent`), the telegraph, and the
+      death dissolve — which owns the corpse (entity and GO go together). Deleted: `AnimationStateController`,
+      `EnemyHitFlash`, the `SpriteHolder` GO. `EnemyDestruction` slices the entity's sprite and hides the child through
+      the command buffer (it runs inside the death event dispatch; an immediate Add throws).
+- [x] 6.2 **The behaviour tree is a state tree** (`Ecs/AI/AiBrain.cs`). The whole of BehaviorTree2 was
+      `PlayerSpotted ? InAttackRange(10) ? [LookAt, Attack] : [MoveTo] : [Wait(1), RandomLocation(15, 10), MoveTo]`
+      — seven nodes carried by ~500 lines of node classes, clone / traverse / bind, and a blackboard per enemy. Now:
+      `Enemy { Kind }` (the identity; `EnemyVisual.Kind` moved here), `AiBrain { State, StateTime, Target, MoveTo }`,
+      `AiIntent { Move, Attack, MoveTo, FacePoint }` and `AiBrains.Step` — a pure function: **interrupts first,
+      outermost branch down** (a lost / dead target drops to `Idle`; a live one puts the brain in `Chase` or `Attack`
+      by distance — the parent branch gets the first word, which is what makes it a tree), then one `switch` over the
+      leaf (`Idle` dwells `wanderWait` → `Wander` picks a point beyond `wanderMinDistance` inside `wanderRadius` and,
+      arrival being instant until 6.4, returns to `Idle`; `Chase` moves; `Attack` aims). `AiBrainSystem` steps every
+      live enemy (a `Dead` one's brain stops, its intent reads quiet) and **writes `AiIntent`; `AIAgent.Update` acts on
+      it** — the system never reaches into the MonoBehaviour, and 6.4 becomes a deletion rather than a rewrite. The
+      node numbers moved to flat fields on `EnemyData` (`wanderWait`, `wanderRadius`, `wanderMinDistance`;
+      `attackRange` is now the tree's 10 — the asset's 12 never decided anything). `AgentVisionSensor` (still uncalled)
+      writes `AiBrain.Target`. Deleted: `BehaviorTree`, `BaseNode`, `Nodes` (incl. the dead `RepeatNode` /
+      `DebugLogNode` / `LookAtNode`), `Blackboard`, `BehaviorTreeOwner`, `BehaviorTrees`, the `AI.BehaviorTree`
+      namespace; `AIAgent` / `AIState` / `AgentVisionSensor` moved to `Scripts/AI/`. Gates: 199 engine + 87 gameplay
+      assertions (the interrupt order, the dwell, the wander point's band, a step as a function of its inputs, the
+      system reading liveness off the world); all 13 scripts + `die` at parity; the AI probes read exactly the statue
+      baseline plus the new `state Idle`; `killedAtFrame 97`, `rocket` `hp 80 armour 0 y 3.82`, `jab` 1→2→0, `glockalt`
+      refusal unchanged. (`saveload` prints no "after load" line at frame 240 — pre-existing on 6.1, the load itself
+      reports `player at (-0.00, 1.81, -15.42) hp 100 ammo 119`.)
+- [ ] 6.3 **Sight.** `Sight { Range, Fov, Target, LastSeen, LastKnownPos }` + `SightSystem`: distance → FOV → one LOS
+      raycast, amortised over a few enemies per frame — a query, not a trigger volume (the trigger path needs the
+      bridge layer 9 deletes, and a per-enemy cone is cheaper as a query than as a baked collider). The alert reaction
+      (`Enemies.Telegraph` + sting) is the system's edge-detect on acquisition. Deletes `AgentVisionSensor`, the
+      `VisionSensor` GO and `Layers.VisionSensor`. **Flip:** `spotted True` on `peek`.
+- [ ] 6.4 **Steering.** `Steering` writes `CharacterMotor.Desired` from `AiIntent.MoveTo` and turns the body to face
+      (which drives 6.1's 8-sided row). `Wander` then stays until arrived (a raycast probe replaces
+      `NavMesh.SamplePosition`). **Flip:** `moved > 0` on `approach`.
+- [ ] 6.5 **The attack is components.** `EnemyAttack { WindupLeft, ShotsLeft, BurstTimer, Cooldown }` + system
+      (telegraph → burst via `Projectiles.Launch` → recover, on scaled `ctx.DeltaTime`), `Stagger` from
+      `IConsumes<HitEvent>`, the muzzle offset as data. **`AIAgent` deleted.** **Flip:** player `hp < 100` on `close` —
+      the first enemy damage since 2.L; expect to re-baseline the scripts a hurt player changes. Keep the diff small.
+- [ ] 6.6 **The enemy is only an entity.** `EnemyData` → definition records + prefab config; `EnemyDestruction` /
+      corpse → an `IConsumes<DeathEvent>` system reading the event payload (`DamageInfo` dies); `AIState` and the
+      enemy's `EcsObjects` entry go; `GameSaveSystem` reads `Health` / `LocalTransform` off the entity; the grapple
+      point becomes a height constant.
+- [ ] 6.7 **Spawning.** `Spawner { Def, Count, Interval, Radius, ActivateRange, MaxAlive }` + `SpawnerSystem`
+      (entities, not GameObjects); `LevelEntityRef` / save round-trip kept honest by `saveload`.
+- [ ] 6.8 Close-out: full parity run, the AI probes re-recorded as the new baseline, `--threads 1` interleaved bench,
+      alloc/frame (the burst coroutine's allocations should be structurally gone), close-out section.
 
 ### Layer 7 — Pickups, rage, style, environment (~0.4k lines)
 

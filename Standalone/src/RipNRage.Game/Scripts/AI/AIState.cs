@@ -59,7 +59,12 @@ public class AIState : EntityState
         w.Add(sprite, new Parent { Value = e });
         w.Add(sprite, new SpriteRender { Color = Color.white, Billboard = true, Lit = true, Layer = RenderLayer.World, CastsShadow = true });
         w.Add(sprite, new SpriteFx());
-        w.Add(e, new EnemyVisual { Kind = Enemies.KindOf(data), Sprite = sprite, DeadTime = -1f });
+        w.Add(e, new EnemyVisual { Sprite = sprite, DeadTime = -1f });
+
+        // the mind (6.2): the state tree's leaf and intent; the vision sensor sets the target, AIAgent acts on the intent
+        w.Add(e, new Enemy { Kind = Enemies.KindOf(data) });
+        w.Add(e, new AiBrain());
+        w.Add(e, new AiIntent());
 
         Bind(e);
         Init();

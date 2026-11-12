@@ -6,7 +6,9 @@ using RipNRage.Game.Content.Vfx;
 // Standalone additions for readability: an attack is telegraphed (orange sprite pulse + aim glow + charge
 // sound for EnemyData.attackWindup), then fires a burst of EnemyData.burstCount shots with a muzzle flash and
 // a shot sound each; being hit staggers the enemy (stops, delays the shot) and spotting the player triggers an
-// alert reaction (yellow flash + sting) before the behaviour tree engages.
+// alert reaction (yellow flash + sting) before the state tree engages.
+// MIGRATION (6.2): the behaviour tree that called Move / Attack is gone; the entity's AiBrainSystem writes an
+// AiIntent and Update below acts on it. 6.5 turns the attack into components and deletes this class.
 public class AIAgent : MonoBehaviour
 {
     public bool CanFire { get; set; }
@@ -42,10 +44,15 @@ public class AIAgent : MonoBehaviour
 
     protected override void Update()
     {
-        if (aiState.HealthState == EntityHealthState.DEAD) return;;
+        if (aiState.HealthState == EntityHealthState.DEAD) return;
 
         if (IsStaggered) StopAgent();
 
+        var w = Application.Current.World;
+        if (!w.IsAlive(aiState.entity) || !w.Has<RipNRage.Game.Ecs.AI.AiIntent>(aiState.entity)) return;
+        var intent = w.Get<RipNRage.Game.Ecs.AI.AiIntent>(aiState.entity);
+        if (intent.Move) Move(intent.MoveTo);
+        if (intent.Attack) Attack(intent.FacePoint);
     }
 
     /// <summary>Hit reaction: flinch (the sprite flash is EnemyHitFlash's), stop and delay the next shot.</summary>
@@ -151,11 +158,6 @@ public class AIAgent : MonoBehaviour
         SetAnim(AnimationState.DYING);
         StartCoroutine(SetDeadCoroutine());
     }
-    public bool HasReachedLocation()
-    {
-        return true; // no steering until layer 6: the tree sees every move as done
-    }
-    
     private void StopAgent()
     {
     }

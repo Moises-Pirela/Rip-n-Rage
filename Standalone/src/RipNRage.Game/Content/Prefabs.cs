@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using AI.BehaviorTree;
 using RipNRage.Engine.Graphics.Lighting;
 
 namespace RipNRage.Game.Content
@@ -57,9 +56,9 @@ namespace RipNRage.Game.Content
         // ---------------------------------------------------------------- enemies (AR_Grunt from TestArea.unity)
 
         /// <summary>
-        /// The AR_Grunt rifleman: AIState + AIAgent + BehaviorTreeOwner,
-        /// a 4-direction sprite (AnimationStateController), a 10 m vision trigger, projectile spawn and
-        /// grapple point. The scene scaled them by 2.25; the sprite scale here keeps them ~2.2 m tall.
+        /// The AR_Grunt rifleman: AIState + AIAgent (the state tree runs on the entity: AiBrain), a 10 m vision
+        /// trigger, projectile spawn and grapple point. The scene scaled them by 2.25; the sprite scale here keeps
+        /// them ~2.2 m tall.
         /// </summary>
         public static readonly Prefab Rifleman = new Prefab("AR_Grunt", () =>
         {
@@ -74,14 +73,12 @@ namespace RipNRage.Game.Content
             state.data = GameAssets.RiflemanData;
             var agent = go.AddComponent<AIAgent>();
             agent.data = GameAssets.RiflemanData;
-            var owner = go.AddComponent<BehaviorTreeOwner>();
-            owner.tree = BehaviorTrees.RiflemanTree;
             go.AddComponent<EnemyDestruction>();          // death: the sprite is sliced into a ragdoll (skeletons/rifleman.json)
 
             var vision = new GameObject("VisionSensor");
             vision.transform.SetParent(go.transform, false);
             vision.layer = Layers.VisionSensor;
-            vision.AddComponent<AgentVisionSensor>()._treeOwner = owner;
+            vision.AddComponent<AgentVisionSensor>()._state = state;
 
             var spawn = new GameObject("ProjectileSpawnPostion");
             spawn.transform.SetParent(go.transform, false);
@@ -109,32 +106,6 @@ namespace RipNRage.Game.Content
         protected override void Update()
         {
             var p = transform.position; p.y = _baseY + Mathf.Sin(Time.time * 2f + _phase) * 0.15f; transform.position = p;
-        }
-    }
-
-    /// <summary>The behaviour trees authored with the graph editor (Assets/_AI_BehaviorTree/ScriptableObjects).</summary>
-    public static class BehaviorTrees
-    {
-        /// <summary>
-        /// BehaviorTree2.asset:
-        /// Root → PlayerSpotted ? InAttackRange(10) ? [LookAt, Attack] : [MoveTo]
-        ///                       : [Wait(1), RandomLocation(r=15, min=10), MoveTo]
-        /// </summary>
-        public static BehaviorTree RiflemanTree
-        {
-            get
-            {
-                var attack = new SequencerNode(); attack.children.AddRange(new BaseNode[] { new LookAtNode(), new AttackNode() });
-                var chase = new SequencerNode(); chase.children.Add(new MoveToNode());
-                var inRange = new InAttackRangeNode { attackRange = 10 }; inRange.children.AddRange(new BaseNode[] { attack, chase });
-                var wander = new SequencerNode();
-                wander.children.AddRange(new BaseNode[] { new WaitNode { duration = 1 }, new RandomLocationNode { radius = 15, minDistance = 10 }, new MoveToNode() });
-                var spotted = new PlayerSpottedNode(); spotted.children.AddRange(new BaseNode[] { inRange, wander });
-                var root = new RootNode { child = spotted };
-                var tree = new BehaviorTree { name = "BehaviorTree2", rootNode = root, blackboard = new Blackboard() };
-                tree.Traverse(root, n => tree.nodes.Add(n));
-                return tree;
-            }
         }
     }
 }
