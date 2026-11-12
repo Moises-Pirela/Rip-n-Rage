@@ -35,26 +35,38 @@ then start at the first unchecked layer.
 - [x] **Layer 3 — Animation, audio, particles, destruction** (details below)
 - [x] **Layer 4 — Input, camera, player**: input singleton, the player as an ECS character, the camera and the
   first-person viewmodel as entities; `ViewSprite` and the look / bob / sway / recoil behaviours deleted (close-out below)
-- [ ] Layer 5 — Weapons, combat, damage
+- [x] **Layer 5 — Weapons, combat, damage**: health / armour / hitboxes on entities, weapons and projectiles as data +
+  systems, alt-fire finishers as entities; the Weapon / Projectile class hierarchies, `Inventory`, `CameraRecoil` and
+  the no-VFX fallback branch deleted (close-out below)
 - [ ] Layer 6 — Enemies, AI, spawning
 - [ ] Layer 7 — Pickups, rage, style, environment
 - [ ] Layer 8 — UI, HUD, save / load, game flow
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
 
-### Pick-up point for the next session (written 2026-11-12, after 4.3b)
+### Pick-up point for the next session (written 2026-11-12, after 5.6)
 
-Layers 0–4 are done — the player, the camera and the viewmodel are entities. Start at **layer 5** (weapons, combat,
-damage). The 4.3b performance gate was run light by request (no interleaved bench; the step touches no physics);
-run the full interleaved bench at the layer 5 close-out.
+Layers 0–5 are done. Start at **layer 6** (enemies, AI, spawning) — with one standing direction: the behaviour trees
+are to be replaced by a **data-oriented state-tree** approach, not ported as-is. Established rules: ECS + functional,
+OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
+goes in a component until a reader exists in the same commit; definitions as shared immutable tables, state in
+components, behaviour in systems; instrument a gate before porting what it watches.
 
-Still true in the tree:
+What layer 6 inherits:
 
-- Projectiles still move by transform and hit nothing (layer 5); `AgentVisionSensor`'s trigger is uncalled (layer 6).
-- The rocket explosion is an `AnimatedSprite` placed by `EntitySpriteAnchor` (`Prefabs.cs`) — replace it end to end
-  with the layer-5 projectiles.
-- The animation editor hosts `AnimatedSprite`s **without registering the game assembly's systems** (only
-  `RipNRage.Game/Program.cs` calls `AddSystemsFromAssemblies` for the game); keep editor-facing pieces engine-side.
+- Enemies already have their combat half: a `Health` entity with the legacy capsule (`AIState` creates it), `Hitbox`
+  headshot judgement, death → `DeathEvent` → ragdoll. Layer 6 adds the body (`CharacterMotor`, profile Enemy),
+  steering, and the state tree that drives `AIAgent`'s surviving mechanics (burst fire via `Projectiles.Launch`,
+  vision via the still-uncalled `AgentVisionSensor` trigger).
+- Enemy bullets fly as entities and will hurt the player the day the AI fires — `approach` / `peek` are the
+  watch-gates; instrument player HP there before wiring the AI.
+- Bridges layer 6 can shrink or delete: `AIState`'s per-frame pose sync (goes when the enemy body is the entity),
+  `EnemyDestruction` / `EnemyHitFlash` listeners (can become `IConsumes<HitEvent>/<DeathEvent>` systems),
+  `DamageInfo` (only the facade path still reports it), and `EcsObjects` entries for enemies.
+- `killenemy` (killedAtFrame), `glockalt` (finisher refusal), `jab`, `rocket` (hp / armour / y) are the instrumented
+  combat gates; keep them honest when AI changes enemy behaviour.
+- The animation editor hosts `AnimatedSprite`s **without registering the game assembly's systems**; keep
+  editor-facing pieces engine-side. Rockets do not collide with trigger volumes (water detonation = layer 7).
 - Gates as in the layer 2/3 close-outs: compare bench interleaved against the previous commit (`--threads 1` for the
   stable numbers; the per-step metric only counts frames with a fixed step); ragdolls sit at 8.3–8.7 ms vs budget 8
   (knobs: pieces sleep less than boxes, and legacy-faithful CCD on every piece costs ~0.85 ms serially).
@@ -518,6 +530,21 @@ Convert, keeping the tuned solver behaviour:
   at y 3.82 from the motor impulse, fireball + scorch + burning launcher on screenshots; 199 engine + 50 gameplay
   assertions (bullet flight → hit → damage, range expiry, blast kill, 12% self-damage, Lifetime + child teardown);
   alloc/frame 8.3–9.9 KB vs the 5.0 baseline's 8.2–9.9; bench projectiles 0.14 ms/step (baseline 0.18).
+
+#### 5.6 — Layer close-out (done)
+
+- Full sweep green: 199 engine + 71 gameplay assertions; all 13 combat scripts + `die`, with every instrumented gate
+  at its expected value (`killenemy` killedAtFrame 97, `rocket` hp 80 armour 0 y 3.82, `jab` step 1→2→0, `glockalt`
+  step 0 / finisher none / ammo 120).
+- Bench (`--threads 1`, single runs, vs the 5.0 baseline on this machine): crates 12.17 / 11.84, ragdolls
+  19.00 / 16.77, projectiles 0.26 / 0.18, ground 1.22 / 0.81 — all inside the session's observed run-to-run band
+  (ragdolls 16.8–19.0, ground 0.72–1.22 across the layer); the Benchmark binary does not load the game assembly, so
+  the layer cannot affect it structurally.
+- Allocations steady-state: fire 7.8–10.3, m1887 / rocket / jab ≈ 8.3, walk ≈ 8.1–8.3 KB/frame, `gc 0.0/s`
+  throughout — at or below the 5.0 baseline, with the per-shot / per-jab coroutine allocations structurally gone.
+- Layer totals (`649f6a1..`): the combat OOP is deleted — 7 weapon classes, 2 projectile classes, `Inventory`,
+  `CameraRecoil`, `EntityState`'s mutators, 8 marker/dead files, the no-VFX fallback branch, five coroutines — and
+  combat is: 4 data tables' worth of definitions, 10 components, 8 systems, ~30 pure functions, 71 assertions.
 
 #### 5.5 — Alt-fire finishers as entities (done)
 
