@@ -429,11 +429,37 @@ Convert, keeping the tuned solver behaviour:
   the spawn rotation was being applied twice, once on the root transform and once in `PlayerLook`; `PlayerLink` now
   clears the root, which owns no rotation any more).
 
-### Layer 5 — Weapons, combat, damage (~0.8k + shared structs)
+### Layer 5 — Weapons, combat, damage (1,216 lines: `Scripts/Weapons/*`, `CombatController`, `EntityState`, `Inventory`, `DamageInfo`, `WeaponData` / `WeaponStats`)
 
-- `Inventory` / `Ammo` components, `Weapon` (data from a weapon config), `Spread`, fist jab combo state.
-- `DamageEvent`, `DeathEvent`, `HitEvent` (IPostProcessEvent); `HealthSystem` consumes damage.
-- Hitscan via physics queries, projectiles as entities (rocket = rigid body + trigger + explosion event).
+- `Inventory` / `Ammo` components, `Weapon` (one component + a `WeaponKind` enum, the `ColliderShape` / `Joint`
+  precedent; data from a weapon config), `Spread`, fist jab combo state.
+- `DamageEvent`, `DeathEvent`, `HitEvent` (IPostProcessEvent); `HealthSystem` consumes damage. `DamageInfo`'s static
+  hand-off folds into the `DamageEvent` payload (point / direction / impulse / explosive / radius).
+- Hitscan via physics queries, projectiles as entities (rocket = `KinematicMover` in Stop mode + `ReportCollisions`,
+  detonating on its first `CollisionEvent`).
+- **Health and hitboxes come first and whole** (agreed): every damageable — player, enemies, props — carries `Health`
+  before any weapon is ported, rather than a bridge that layer 6 would throw away.
+- Fire rate / refire run on **scaled** `Time.deltaTime` (so the death slow-motion still slows the gun, as the
+  `WaitForSeconds` coroutines it replaces did), as timers on components — no coroutines in the fire path.
+- Gameplay assertions live in **`tests/RipNRage.GameChecks`** (added in 5.0): `EngineChecks` only references the
+  engine, so game-side components cannot be reached from it. Both run in CI.
+
+#### Baselines (5.0, `0aa5f8f`, dev Mac, `--frames 300`)
+
+- **Combat is inert, and now says so**: `--script killenemy` fires a Glock point-blank at a rifleman for 180 frames
+  and the probe added to it reports `enemy ALIVE health 1000 armour 1000` at frames 240 and 290 — hit resolution has
+  been stubbed out since 2.L (`EntityState entityState = null`). Flipping that line to a dead grunt is the layer's
+  headline gate. Before the probe the script only proved the game does not crash while firing.
+- Every combat script completes with no errors: `fire`, `glockfire`, `weapons`, `m1887`, `jab`, `glockalt`, `rocket`,
+  `killenemy`, `peek`, `close`, `approach`, `rage`, `saveload`.
+- **Allocation per frame** (`--perf-log`, the hot path to hold): `fire` 9.0–10.2 KB, `m1887` 8.3–8.9 KB (8 pellets a
+  shot), `rocket` 8.2–9.9 KB, against `walk` 7.9–9.6 KB — so firing costs ~1 KB/frame on top of a ~8 KB/frame
+  baseline churn, and `gc 0.0/s` throughout. Known offenders to drop in the port: `RocketProjectile` calls
+  `Scene.Current.FindObjectsOfType<EntityState>()` per detonation (full scene scan + allocation),
+  `Physics.OverlapSphere` allocates its result list per call, and `QueryFilter.predicate` closures allocate per shot.
+- **Physics bench** (`--threads 1 --no-render`, ms/step): crates 11.84, ragdolls 16.77, projectiles 0.18, ground 0.81.
+  Only the interleaved A/B against the previous commit is meaningful here; absolute numbers are far off the Linux VM's.
+- Cleanup: the stale `tests/RipNRage.EcsChecks` (bin/obj only, no csproj, not in the solution) was deleted.
 
 ### Layer 6 — Enemies, AI, spawning (~1.1k lines)
 

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- the game's scripts live in the global namespace and are reached by their bare names here -->
+    <RootNamespace></RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/RipNRage.Game/RipNRage.Game.csproj" />
+  </ItemGroup>
+</Project>

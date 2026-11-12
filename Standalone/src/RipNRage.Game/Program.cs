@@ -453,6 +453,12 @@ namespace RipNRage.Game
                         input.overrideLook = new Vector2(Mathf.Clamp(yawErr * 10f, -60f, 60f), Mathf.Clamp((pitchNow - pitchWanted) * 10f, -60f, 60f));
                     }
                     input.overrideFiring = _frame >= 60 && _frame < 240; // many Glock hits: the grunt has 1000 hp + 1000 armour
+                    // the gate: without this the script only proves the game does not crash while firing at something.
+                    // Layer 5 has to turn "ALIVE 1000/1000" into a dead grunt.
+                    if (_frame == 240 || _frame == 290)
+                        Debug.LogWarning(nearest == null
+                            ? $"[test] frame {_frame}: no enemy in the scene"
+                            : $"[test] frame {_frame}: enemy {nearest.HealthState} health {nearest.Health:0} armour {nearest.Armor:0}");
                     break;
                 }
                 case "spin":

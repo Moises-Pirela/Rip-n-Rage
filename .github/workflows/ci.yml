@@ -40,6 +40,8 @@ jobs:
         run: dotnet build RipNRage.sln -c Release --no-restore -p:RunAnalyzers=true -p:EnableNETAnalyzers=true -p:AnalysisMode=Recommended
       - name: Execute bounded engine assertions
         run: dotnet run --project tests/RipNRage.EngineChecks/RipNRage.EngineChecks.csproj -c Release
+      - name: Execute gameplay assertions
+        run: dotnet run --project tests/RipNRage.GameChecks/RipNRage.GameChecks.csproj -c Release
 
   strafe-regression:
     name: Linux / scripted strafe invariant

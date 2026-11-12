@@ -163,6 +163,9 @@ namespace RipNRage.Engine.Ecs
 
         public T GetSystem<T>() where T : class, ISystem => _systems.Select(s => s.System).OfType<T>().FirstOrDefault();
 
+        /// <summary>The created instance of a system type, or null (the type-driven form, for tooling and tests).</summary>
+        public ISystem GetSystem(Type type) => _systems.FirstOrDefault(s => s.Type == type)?.System;
+
         // ---------------------------------------------------------------- frame
 
         public void StartSim()
