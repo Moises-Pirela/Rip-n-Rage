@@ -45,7 +45,7 @@ public class PlayerDeathSequence : MonoBehaviour
         // PlayerInputActions above already blocked the input the look integrates, so the angles are frozen too.
         RipNRage.Game.Ecs.PlayerCamera.SetExternal(true);
         StopBob();
-        EnragedInjector<CameraRecoil>.GetInstance()?.Clear();
+        RipNRage.Game.Ecs.PlayerCamera.ClearShake();
         if (cameraPivot != null) cameraPivot.DOKill(); // a grapple's ForceLookRotation tween must not fight the fall
 
         // 2. sound
@@ -98,7 +98,7 @@ public class PlayerDeathSequence : MonoBehaviour
             yield return null;
         }
         SetPivot(endPos, endRot);
-        EnragedInjector<CameraRecoil>.GetInstance()?.Clear(); // drop any leftover recoil on the camera child
+        RipNRage.Game.Ecs.PlayerCamera.ClearShake(); // drop any leftover recoil on the camera child
         Time.timeScale = slowMotion;
     }
 

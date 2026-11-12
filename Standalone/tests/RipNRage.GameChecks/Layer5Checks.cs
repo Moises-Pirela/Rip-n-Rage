@@ -32,6 +32,7 @@ internal static class Layer5Checks
         EnemyHitbox(True);
         Firing(True, Equal);
         ProjectilesInFlight(True, Equal);
+        JabCombo(True);
         GameSystems(True);
     }
 
@@ -325,6 +326,65 @@ internal static class Layer5Checks
         int n = 0;
         foreach (var c in w.Query().With<Projectile>().Build()) for (int i = 0; i < c.Length; i++) if (c.Includes(i)) n++;
         return n;
+    }
+
+    // ================================================================= the fist combo
+
+    /// <summary>Two jabs and a finisher, on timers instead of three coroutines: the gun goes away while the fists
+    /// are out, a jab cannot repeat instantly, and the combo forgets itself after 0.75 s.</summary>
+    private static void JabCombo(Action<bool, string> True)
+    {
+        var saved = Weapons.All;
+        Weapons.All = new[] { new WeaponData { name = "TestGun", weaponStats = new WeaponStats { fireRate = 0.1f } } };
+        try
+        {
+            using var w = new World(0);
+            w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(RipNRage.Game.Ecs.PlayerLink).Assembly);
+            w.FixedDeltaTime = 1f / 60f;
+
+            var eye = w.CreateEntity();
+            w.Add(eye, LocalTransform.At(new Vector3(600f, 1.1f, 0f)));
+            var gunSprite = w.CreateEntity();
+            w.Add(gunSprite, LocalTransform.Identity);
+            var left = w.CreateEntity(); w.Add(left, LocalTransform.Identity);
+            var right = w.CreateEntity(); w.Add(right, LocalTransform.Identity);
+
+            var p = w.CreateEntity();
+            w.Add(p, LocalTransform.At(new Vector3(600f, 1.1f, 0f)));
+            w.Add(p, new Weapon { Sprite = gunSprite });
+            w.Add(p, new Inventory());
+            w.Add(p, new RipNRage.Game.Ecs.PlayerViewRig { Camera = eye });
+            w.Add(p, new Melee { LeftFist = left, RightFist = right });
+            w.Update(1f / 60f);
+
+            w.Get<Melee>(p).Requested = true;
+            w.Update(1f / 60f);
+            True(w.Get<Melee>(p).Step == 1, "the first press throws the left jab");
+            True(w.Get<Weapon>(p).Holstered && w.Has<RipNRage.Engine.Ecs.Rendering.Hidden>(gunSprite),
+                "and takes the gun off screen");
+
+            // one step per press, however many times the press is set inside a single frame
+            w.Get<Melee>(p).Requested = true;
+            w.Get<Melee>(p).Requested = true;
+            w.Update(1f / 60f);
+            True(w.Get<Melee>(p).Step == 2, "the next press throws the right jab, and a press counts once per frame");
+
+            w.Get<Melee>(p).Requested = true;
+            w.Update(1f / 60f);
+            True(w.Get<Melee>(p).Step == 0 && !w.Get<Weapon>(p).Holstered,
+                "the third press ends the combo and brings the gun back");
+
+            // and a combo nobody finishes forgets itself after 0.75 s
+            w.Get<Melee>(p).Requested = true;
+            w.Update(1f / 60f);
+            True(w.Get<Melee>(p).Step == 1 && w.Get<Weapon>(p).Holstered, "a fresh jab holsters the gun again");
+            for (int i = 0; i < 50; i++) w.Update(1f / 60f);
+            True(w.Get<Melee>(p).Step == 0 && !w.Get<Weapon>(p).Holstered, "and 0.75 s later the combo has reset");
+
+            w.DestroyAllEntities();
+            w.Update(1f / 60f);
+        }
+        finally { Weapons.All = saved; }
     }
 
     // ================================================================= the game assembly's ECS systems

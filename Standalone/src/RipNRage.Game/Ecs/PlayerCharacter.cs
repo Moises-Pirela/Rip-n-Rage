@@ -384,7 +384,7 @@ namespace RipNRage.Game.Ecs
                 if (!grounded) p.AirDashesLeft--;
                 p.DashDir = dir; p.DashTimer = p.DashDuration; p.DashCooldownTimer = p.DashCooldown;
                 m.PendingDash = dir * p.DashSpeed; m.PendingDashTime = p.DashDuration; // gravity off for the burst
-                EnragedInjector<CameraRecoil>.GetInstance()?.AddTrauma(0.14f);
+                if (PlayerCamera.Has) PlayerCamera.Shake.AddTrauma(0.14f);
                 Sfx.Play(ProceduralSounds.Dash, 0.6f);
                 Content.Vfx.GameVfx.Spawn("dash", lt.Position - dir * 0.6f, -dir);
             }

@@ -9,7 +9,7 @@ namespace RipNRage.Game.Content
     ///                  FPSCameraController, PlayerState, PlayerDeathSequence, CombatController, HudController, RagePostprocess]
     ///  ├ Orientation
     ///  ├ Camera (0, 0.5, 0) [HeadBob]
-    ///  │   └ WorldCamera (fov 77) [Camera, CameraRecoil]
+    ///  │   └ WorldCamera (fov 77) [Camera]
     ///  │       ├ PlayerArms (0.017, -0.65, 2.36) [WeaponSway]
     ///  │       │    ├ Weapon (scale 0.1) [SpriteRenderer, Animator, WeaponAnimationEvents, AudioSource]
     ///  │       │    │    ├ MuzzleFlash (-0.5, 4.5, 0.05) scale 0.5 (inactive)
@@ -57,8 +57,6 @@ namespace RipNRage.Game.Content
             cam.nearClipPlane = 0.05f;
             cam.farClipPlane = 2000f;
             Camera.main = cam;
-            // facade over the camera entity's CameraShake (kick bounds from the prefab)
-            worldCamera.AddComponent<CameraRecoil>().recoilCameraShake = new Vector3(0.5f, 0.5f, 1.5f);
 
             // ---- the character itself: an ECS entity (the force-driven capsule + locomotion + look + view rig) ----
             // The entity is the body the solver moves; PlayerLink copies its pose back onto this hierarchy each frame
@@ -102,15 +100,15 @@ namespace RipNRage.Game.Content
             var world = Application.Current.World;
             world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Weapon { Sprite = vm.Weapon.Entity });
             world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Inventory());
+            world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Melee
+                { LeftFist = vm.LeftFist.Entity, RightFist = vm.RightFist.Entity });
 
             var combat = player.AddComponent<CombatController>();
             combat.cameraTransform = worldCamera.transform;
-            combat.layerMask = 6421; // prefab value: Default | Water | Enemy | Environment | Pickup-ish bits
             combat.weaponTransform = weapon.transform;
             combat.weaponAnimator = vm.Weapon;
             combat.leftFistAnimator = vm.LeftFist;
             combat.rightFistAnimator = vm.RightFist;
-            combat.jabLandSound = GameAssets.MeleeHit;
 
             // ---- muzzle flash light (not in the Unity prefab; feeds the new lighting) ----
             var muzzleLightGo = Child(player, "MuzzleLight", Vector3.zero);

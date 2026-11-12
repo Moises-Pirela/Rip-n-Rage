@@ -484,6 +484,14 @@ namespace RipNRage.Game
                     break;
                 case "jab":
                     if (_frame == 30 || _frame == 45) combat.OnAltFire(true);
+                    if (_frame == 32 || _frame == 47 || _frame == 120)
+                    {
+                        var w = Application.Current.World;
+                        var pe = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
+                        if (w.IsAlive(pe) && w.Has<RipNRage.Game.Ecs.Combat.Melee>(pe))
+                            Debug.LogWarning($"[test] frame {_frame}: combo step {w.Get<RipNRage.Game.Ecs.Combat.Melee>(pe).Step} " +
+                                             $"holstered {w.Get<RipNRage.Game.Ecs.Combat.Weapon>(pe).Holstered}");
+                    }
                     break;
                 case "m1887":
                     if (_frame == 10) combat.OnChangeWeapon2();

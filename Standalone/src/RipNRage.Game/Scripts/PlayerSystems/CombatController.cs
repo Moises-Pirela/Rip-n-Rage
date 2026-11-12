@@ -18,31 +18,24 @@ public class CombatController : MonoBehaviour
     [SerializeField] public Transform cameraTransform;
     /// <summary>The prefab's "Weapon" GameObject node: ProjectileSpawn hangs off it, so equipping keeps its transform on the weapon's data.</summary>
     [SerializeField] public Transform weaponTransform;
-    [SerializeField] public LayerMask layerMask;
 
     [Space(5)] [Header("Combat Animation")]
     [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite weaponAnimator;
     [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite leftFistAnimator;
     [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite rightFistAnimator;
-    [SerializeField] public AudioClip jabLandSound;
 
     private PlayerInputActions _playerInputActions;
-    private int _comboStepCounter;
-    private Coroutine _comboCoroutine;
-    private Coroutine _allowJabCoroutine;
-    private bool _canJab = true;
     /// <summary>Set by <see cref="DisableCombat"/> (player death): no input path may fire, jab or switch weapons any more.</summary>
     private bool _combatDisabled;
     public bool IsCombatDisabled => _combatDisabled;
 
-    private CameraRecoil _cameraRecoil;
-    private static readonly int JabTrigger = RipNRage.Engine.Ecs.Animation.AnimatedSprite.StringToHash("Jab");
 
     // ---------------------------------------------------------------- the components (the HUD / save surface)
 
     private static RipNRage.Engine.Ecs.World W => Application.Current.World;
     private ref Weapon Gun => ref W.Get<Weapon>(PlayerLink.PlayerEntity);
     private ref Inventory Inv => ref W.Get<Inventory>(PlayerLink.PlayerEntity);
+    private ref Melee Melee => ref W.Get<Melee>(PlayerLink.PlayerEntity);
 
     public int CurrentWeaponIndex => Gun.Slot;
     public WeaponData CurrentWeaponData => Weapons.All.Length > 0 ? Weapons.Data(Gun.Slot) : null;
@@ -61,7 +54,6 @@ public class CombatController : MonoBehaviour
     protected override void Start()
     {
         _playerInputActions = EnragedInjector<PlayerInputActions>.GetInstance();
-        _cameraRecoil = EnragedInjector<CameraRecoil>.GetInstance();
         LoadAmmo(SaveData.Current.inventoryData.ammo);
         EquipWeapon(0);
     }
@@ -75,10 +67,7 @@ public class CombatController : MonoBehaviour
         if (_combatDisabled) return;
         _combatDisabled = true;
         StopAllCoroutines();
-        _comboCoroutine = null;
-        _allowJabCoroutine = null;
-        _comboStepCounter = 0;
-        _canJab = false;
+        Melee = default;      // no combo may continue past death
         Gun.Holstered = true;
         if (weaponAnimator != null) weaponAnimator.SetActive(false);
         if (leftFistAnimator != null) leftFistAnimator.SetActive(false);
@@ -89,30 +78,11 @@ public class CombatController : MonoBehaviour
 
     #region Input Events
 
+    /// <summary>The automation scripts' alt-fire press; the real input is read by <see cref="MeleeSystem"/> itself.</summary>
     public void OnAltFire(bool isPressed)
     {
-        if (_combatDisabled) return;
-        if (_playerInputActions.GetIsBlockingInput()) return;
-        if (!isPressed) return;
-        if (_comboStepCounter >= 3 || !_canJab) return;
-
-        PlayerState.Current.SetViolentCombatState();
-        _comboStepCounter++;
-
-        if (_comboStepCounter < 3)
-        {
-            Jab();
-            if (_comboCoroutine != null) StopCoroutine(_comboCoroutine);
-            if (_allowJabCoroutine != null) StopCoroutine(_allowJabCoroutine);
-            _allowJabCoroutine = StartCoroutine(AllowJab_Coroutine());
-            _comboCoroutine = StartCoroutine(ResetJabCounter_Coroutine());
-        }
-        else
-        {
-            // The grapple melee needs an enemy within 1 m; the per-weapon moves went with the Weapon classes and
-            // return in 5.5 on entity hit resolution (the legacy path was already dead: its hit resolved to null).
-            OnEndMeleeCombo();
-        }
+        if (_combatDisabled || !isPressed || _playerInputActions.GetIsBlockingInput()) return;
+        Melee.Requested = true;
     }
 
     public void OnSwapWeapon(float value)
@@ -132,31 +102,6 @@ public class CombatController : MonoBehaviour
     public void OnChangeWeapon4() => ChangeWeapon(3);
 
     #endregion
-
-    public void OnEndMeleeCombo()
-    {
-        if (_combatDisabled) return; // a melee ending after death must not re-arm anything
-        _comboStepCounter = 0;
-        _canJab = true;
-        Gun.Holstered = false;
-        _playerInputActions.SetIsBlockingInput(false);
-    }
-
-    private void Jab()
-    {
-        weaponAnimator.SetActive(false);
-        Gun.Holstered = true;
-
-        if (_comboStepCounter == 1) leftFistAnimator.SetTrigger(JabTrigger);
-        else if (_comboStepCounter == 2) rightFistAnimator.SetTrigger(JabTrigger);
-
-        _canJab = false;
-        if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out RaycastHit hit, 1, layerMask))
-        {
-            _cameraRecoil.Shake();
-            RipNRage.Engine.Ecs.Audio.Sfx.Play(jabLandSound);
-        }
-    }
 
     private int _lastWeaponIndex = -1;
 
@@ -201,23 +146,4 @@ public class CombatController : MonoBehaviour
         OnAmmoChanged?.Invoke();
     }
 
-    #region Coroutines
-
-    private IEnumerator AllowJab_Coroutine()
-    {
-        yield return new WaitForSeconds(0.005f);
-        _canJab = true;
-        _allowJabCoroutine = null;
-    }
-
-    private IEnumerator ResetJabCounter_Coroutine()
-    {
-        yield return new WaitForSeconds(0.75f);
-        _comboStepCounter = 0;
-        _comboCoroutine = null;
-        weaponAnimator.SetActive(true);
-        Gun.Holstered = false;
-    }
-
-    #endregion
 }

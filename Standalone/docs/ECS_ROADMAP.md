@@ -519,6 +519,25 @@ Convert, keeping the tuned solver behaviour:
   assertions (bullet flight → hit → damage, range expiry, blast kill, 12% self-damage, Lifetime + child teardown);
   alloc/frame 8.3–9.9 KB vs the 5.0 baseline's 8.2–9.9; bench projectiles 0.14 ms/step (baseline 0.18).
 
+#### 5.4c — The fist combo is a component, and CameraRecoil is gone (done)
+
+- `Melee { Step, JabTimer, ComboTimer, Requested, LeftFist, RightFist }` + `MeleeSystem` (Tick after input, runs alone
+  for its 1 m probe) replace `CombatController`'s **three coroutines** and its `_canJab` / `_comboStepCounter` pair:
+  two jabs and a finisher on scaled timers, the gun holstered and hidden while the fists are out, the combo
+  forgetting itself after 0.75 s. The system reads `InputState.AltFirePressed` itself, so `PlayerInputActions` no
+  longer forwards alt-fire; `CombatController.OnAltFire` survives only as the scripted-automation press
+  (`Melee.Requested`), and `OnEndMeleeCombo` / `Jab` / the `jabLandSound` + `layerMask` fields are deleted.
+- **`CameraRecoil` is deleted outright** (the facade, its `EnragedInjector` registration and the prefab component):
+  after 5.3 took `ApplyRecoil` and 5.4b took `ShakeEverywhere`, only three callers remained — the jab, the player's
+  damage shake and the dash trauma — and all three now write the camera entity's `CameraShake` through
+  `PlayerCamera.Kick()` / `.Shake.AddTrauma()` / `.ClearShake()`. The kick bounds the prefab used (0.5, 0.5, 1.5)
+  live in `PlayerCamera` as the one piece of data they always were.
+- Gates: 199 engine + 57 gameplay assertions (one step per press however often it is set inside a frame, the gun
+  away and back, the 0.75 s reset); **the `jab` script is instrumented** like the others and reports
+  `combo step 1 holstered True` → `step 2` → `step 0 holstered False`, with the swinging fist and absent gun on a
+  screenshot; all 13 combat scripts + `die` at parity; alloc/frame 8.3–10.0 KB, unchanged, with the per-jab coroutine
+  allocations gone.
+
 #### 5.3 — Weapon components and hitscan (done; 5.2 was folded into 5.1 by the no-bridge decision)
 
 - **The Weapon class hierarchy is deleted** (`Weapon` / `HitscanWeapon` / `ProjectileWeapon` / `Glock` /

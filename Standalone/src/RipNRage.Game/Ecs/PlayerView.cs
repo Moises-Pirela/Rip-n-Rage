@@ -104,7 +104,6 @@ namespace RipNRage.Game.Ecs
 
     /// <summary>
     /// Where gameplay reaches the player's camera: the shake on the camera entity, and the rig's own switches.
-    /// <c>CameraRecoil</c> is the facade the unported weapon / explosion scripts still call; this is the direct path.
     /// </summary>
     public static class PlayerCamera
     {
@@ -122,6 +121,18 @@ namespace RipNRage.Game.Ecs
         public static Vector3 Position =>
             W != null && W.IsAlive(PlayerLink.CameraEntity) && W.Has<LocalToWorld>(PlayerLink.CameraEntity)
                 ? W.Get<LocalToWorld>(PlayerLink.CameraEntity).Position : Vector3.zero;
+
+        /// <summary>Kick bounds from the PlayerCharacter prefab (the deleted CameraRecoil.recoilCameraShake).</summary>
+        private static readonly Vector3 KickBounds = new Vector3(0.5f, 0.5f, 1.5f);
+
+        /// <summary>A kick with no weapon data behind it: a landed jab, a hit taken, scripted thumps.</summary>
+        public static void Kick(float strength = 15f)
+        {
+            if (Has) Shake.Kick(KickBounds.x, KickBounds.y * strength, KickBounds.z * strength);
+        }
+
+        /// <summary>Drops the kick and the trauma (the death sequence takes the camera over).</summary>
+        public static void ClearShake() { if (Has) Shake.Clear(); }
 
         /// <summary>Hands the pivot over to something else (the death sequence) or back to <see cref="PlayerViewSystem"/>.</summary>
         public static void SetExternal(bool external)

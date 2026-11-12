@@ -42,7 +42,6 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
 
     private Coroutine ResetCombatState;
     private Coroutine ResetRageState;
-    private CameraRecoil _cameraRecoil;
     private CombatController _combatController;
 
     protected override void Awake()
@@ -52,7 +51,6 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
 
     protected override void Start()
     {
-        _cameraRecoil = EnragedInjector<CameraRecoil>.GetInstance();
         _combatController = EnragedInjector<CombatController>.GetInstance();
         Init();
     }
@@ -77,7 +75,7 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
     internal override void NotifyHit(in RipNRage.Game.Ecs.Combat.HitEvent e)
     {
         base.NotifyHit(in e);
-        if (!IsDead) _cameraRecoil?.Shake(0.5f);
+        if (!IsDead) RipNRage.Game.Ecs.PlayerCamera.Kick(0.5f);
     }
 
     /// <summary>Die must run its sequence exactly once, but cannot gate on IsDead any more: the pipeline applies the

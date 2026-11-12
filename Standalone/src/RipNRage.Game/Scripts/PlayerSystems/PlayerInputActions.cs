@@ -67,7 +67,6 @@ public class PlayerInputActions : MonoBehaviour
         if (combat != null && s.Live)
         {
             var G = InputSystem.Gameplay;
-            if (s.AltFirePressed) combat.OnAltFire(true);
             if (G["weapon_1"].Pressed) combat.OnChangeWeapon1();
             if (G["weapon_2"].Pressed) combat.OnChangeWeapon2();
             if (G["weapon_3"].Pressed) combat.OnChangeWeapon3();
