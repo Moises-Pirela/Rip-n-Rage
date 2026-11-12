@@ -224,8 +224,8 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
         SaveData.Current.playerStateData.PlayerHealth = Health;
         SaveData.Current.playerStateData.PlayerArmor = Armor;
 
-        SaveData.Current.inventoryData.ammo = _combatController.inventory.ammo;
-        SaveData.Current.inventoryData.currentWeaponIndex = _combatController.inventory.currentWeaponIndex;
+        SaveData.Current.inventoryData.ammo = _combatController.AmmoArray();
+        SaveData.Current.inventoryData.currentWeaponIndex = _combatController.CurrentWeaponIndex;
         
         SaveManager.Save("Save1", SaveData.Current);
     }

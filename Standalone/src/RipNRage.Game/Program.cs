@@ -277,7 +277,7 @@ namespace RipNRage.Game
             if (ps != null)
             {
                 var combat = EnragedInjector<CombatController>.GetInstance();
-                string weapon = combat?.inventory?.equippedWeapon?.weaponData?.name ?? "-";
+                string weapon = combat?.CurrentWeaponData?.name ?? "-";
                 text += $"   HP {ps.Health:0} ARMOR {ps.Armor:0} RAGE {ps.Rage:0.00} {ps.RageState} {ps.CombatState}  WEAPON {weapon}";
             }
             text += "\n";
@@ -515,12 +515,12 @@ namespace RipNRage.Game
                     // walk, save (F6), walk more, load (F9): the player must be back at the saved spot with the saved ammo
                     input.overrideMove = (_frame < 100 || (_frame > 120 && _frame < 200)) ? new Vector2(0f, 1f) : Vector2.zero;
                     input.overrideFiring = _frame > 60 && _frame < 66;
-                    if (_frame == 110) { Input.SimulateKey(KeyCode.F6, true); Debug.LogWarning($"[test] saved at {PlayerState.Current.transform.position} ammo {combat.inventory.ammo[0]}"); }
+                    if (_frame == 110) { Input.SimulateKey(KeyCode.F6, true); Debug.LogWarning($"[test] saved at {PlayerState.Current.transform.position} ammo {combat.AmmoOf(AmmoType.LIGHT)}"); }
                     if (_frame == 111) Input.SimulateKey(KeyCode.F6, false);
                     if (_frame == 205) Debug.LogWarning($"[test] before load at {PlayerState.Current.transform.position}");
                     if (_frame == 210) Input.SimulateKey(KeyCode.F9, true);
                     if (_frame == 211) Input.SimulateKey(KeyCode.F9, false);
-                    if (_frame == 240 && PlayerState.Current != null) Debug.LogWarning($"[test] after load at {PlayerState.Current.transform.position} ammo {EnragedInjector<CombatController>.GetInstance().inventory.ammo[0]} hp {PlayerState.Current.Health}");
+                    if (_frame == 240 && PlayerState.Current != null) Debug.LogWarning($"[test] after load at {PlayerState.Current.transform.position} ammo {EnragedInjector<CombatController>.GetInstance().AmmoOf(AmmoType.LIGHT)} hp {PlayerState.Current.Health}");
                     break;
                 case "glockalt":
                     // three right clicks: jab, jab, then the Glock grapple/alt-fire melee (needs an enemy within 1 m)

@@ -13,29 +13,6 @@ namespace RipNRage.Game.Content
     {
         // ---------------------------------------------------------------- weapons (Prefabs/Weapons/*.prefab)
 
-        public static readonly Prefab Glock = new Prefab("Glock", () => MakeWeapon<Glock>(() => GameAssets.GlockData));
-        public static readonly Prefab M1887 = new Prefab("M1887", () => MakeWeapon<M1887Shotgun>(() => GameAssets.M1887Data));
-        public static readonly Prefab MG338 = new Prefab("MG338", () =>
-        {
-            var go = MakeWeapon<MG338>(() => GameAssets.MG338Data);
-            go.GetComponent<MG338>().meleeClip = GameAssets.MGPunch;
-            return go;
-        });
-        public static readonly Prefab RocketLauncher = new Prefab("RocketLauncher", () =>
-        {
-            var go = MakeWeapon<RocketLauncher>(() => GameAssets.RocketLauncherData);
-            go.GetComponent<RocketLauncher>().projectilePrefab = ProjectileRocket;
-            return go;
-        });
-
-        private static GameObject MakeWeapon<T>(System.Func<WeaponData> data) where T : Weapon, new()
-        {
-            var go = new GameObject(typeof(T).Name);
-            var w = go.AddComponent<T>();
-            w.weaponData = data();
-            return go;
-        }
-
         // ---------------------------------------------------------------- VFX
 
         /// <summary>

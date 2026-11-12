@@ -1,51 +1,57 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
+using RipNRage.Game.Ecs;
+using RipNRage.Game.Ecs.Combat;
 
 // Ported from Assets/_Game/Scripts/PlayerSystems/CombatController.cs.
-// Input System callbacks (InputValue) are now plain parameters dispatched by PlayerInputActions.
+// MIGRATION (layer 5.3): firing is WeaponFireSystem on the Weapon / Inventory components, and the Weapon class
+// hierarchy with its prefab GameObjects is gone. What remains is the GameObject-side surface: weapon switching
+// (PlayerInputActions and the automation scripts call the handlers), the fist jab combo, death, and thin
+// component-backed accessors the HUD / save system read until layer 8.
 public class CombatController : MonoBehaviour
 {
     public Action OnEquipWeapon;
     public Action OnFireWeapon;
     public Action OnAmmoChanged;
 
-    [Header("Weapon setup")] 
+    [Header("Weapon setup")]
     [SerializeField] public Transform cameraTransform;
-    [SerializeField] public Transform projectileSpawnTransform;
-    /// <summary>The prefab's "Weapon" GameObject node: no longer rendered (the weapon sprite is an entity), but
-    /// ProjectileSpawn hangs off it, so equipping keeps its transform on the weapon's data as before.</summary>
+    /// <summary>The prefab's "Weapon" GameObject node: ProjectileSpawn hangs off it, so equipping keeps its transform on the weapon's data.</summary>
     [SerializeField] public Transform weaponTransform;
     [SerializeField] public LayerMask layerMask;
 
-    [Space(5)] [Header("Combat Animation")] 
+    [Space(5)] [Header("Combat Animation")]
     [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite weaponAnimator;
     [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite leftFistAnimator;
     [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite rightFistAnimator;
     [SerializeField] public AudioClip jabLandSound;
-    
-
-    [Space(5)] [Header("Inventory")]
-    public Inventory inventory;
 
     private PlayerInputActions _playerInputActions;
     private int _comboStepCounter;
     private Coroutine _comboCoroutine;
     private Coroutine _allowJabCoroutine;
     private bool _canJab = true;
-    private bool _canFire = true;
-    public bool CanFire
-    {
-        get => _canFire;
-        set => _canFire = value;
-    }
-    private bool _isFiring = false;
     /// <summary>Set by <see cref="DisableCombat"/> (player death): no input path may fire, jab or switch weapons any more.</summary>
     private bool _combatDisabled;
     public bool IsCombatDisabled => _combatDisabled;
 
     private CameraRecoil _cameraRecoil;
     private static readonly int JabTrigger = RipNRage.Engine.Ecs.Animation.AnimatedSprite.StringToHash("Jab");
+
+    // ---------------------------------------------------------------- the components (the HUD / save surface)
+
+    private static RipNRage.Engine.Ecs.World W => Application.Current.World;
+    private ref Weapon Gun => ref W.Get<Weapon>(PlayerLink.PlayerEntity);
+    private ref Inventory Inv => ref W.Get<Inventory>(PlayerLink.PlayerEntity);
+
+    public int CurrentWeaponIndex => Gun.Slot;
+    public WeaponData CurrentWeaponData => Weapons.All.Length > 0 ? Weapons.Data(Gun.Slot) : null;
+    /// <summary>Spread as the crosshair shows it (standing values; the fire system adds movement itself).</summary>
+    public float CurrentSpread => Weapons.All.Length > 0 ? Weapons.CurrentSpread(in Gun, Vector3.zero, true) : 0f;
+    public int AmmoOf(AmmoType type) => Inv.Ammo[(int)type];
+    public int[] AmmoArray() => Weapons.AmmoArray(in Inv);
+    public void LoadAmmo(int[] ammo) => Weapons.LoadAmmo(ref Inv, ammo);
+    public bool AddAmmo(AmmoType type, int amount) => Weapons.AddAmmo(ref Inv, type, amount);
 
     protected override void Awake()
     {
@@ -56,33 +62,8 @@ public class CombatController : MonoBehaviour
     {
         _playerInputActions = EnragedInjector<PlayerInputActions>.GetInstance();
         _cameraRecoil = EnragedInjector<CameraRecoil>.GetInstance();
-
-        foreach (var weaponPrefab in inventory.allWeaponPrefabs)
-        {
-            var prefab = Instantiate(weaponPrefab, this.transform);
-            Weapon weaponClass = prefab.GetComponent<Weapon>();
-
-            if (weaponClass.weaponData.weaponStats.isUnlocked)
-            {
-                inventory.availableWeapons.Add(weaponClass);
-            }
-        }
-        
-        inventory.Init();
-        
+        LoadAmmo(SaveData.Current.inventoryData.ammo);
         EquipWeapon(0);
-        weaponAnimator.runtimeAnimatorController = inventory.equippedWeapon.weaponData.animatorOverrideController;
-    }
-
-    protected override void Update()
-    {
-        if (_combatDisabled) return;
-
-        if (_playerInputActions.IsFiring)
-        {
-            //Debug.Log("Fire");
-            Fire();
-        }
     }
 
     /// <summary>
@@ -97,8 +78,8 @@ public class CombatController : MonoBehaviour
         _comboCoroutine = null;
         _allowJabCoroutine = null;
         _comboStepCounter = 0;
-        _canFire = false;
         _canJab = false;
+        Gun.Holstered = true;
         if (weaponAnimator != null) weaponAnimator.SetActive(false);
         if (leftFistAnimator != null) leftFistAnimator.SetActive(false);
         if (rightFistAnimator != null) rightFistAnimator.SetActive(false);
@@ -108,62 +89,29 @@ public class CombatController : MonoBehaviour
 
     #region Input Events
 
-    private void Fire()
-    {
-        if (_canFire)
-        {
-            inventory.equippedWeapon.Fire();
-            OnFireWeapon?.Invoke();
-            OnAmmoChanged?.Invoke();
-        }
-    }
-
     public void OnAltFire(bool isPressed)
     {
         if (_combatDisabled) return;
         if (_playerInputActions.GetIsBlockingInput()) return;
-
         if (!isPressed) return;
-
         if (_comboStepCounter >= 3 || !_canJab) return;
-        
-        PlayerState.Current.SetViolentCombatState();
 
+        PlayerState.Current.SetViolentCombatState();
         _comboStepCounter++;
 
         if (_comboStepCounter < 3)
         {
             Jab();
-
-            if (_comboCoroutine != null)
-                StopCoroutine(_comboCoroutine);
-
-            if (_allowJabCoroutine != null)
-                StopCoroutine(_allowJabCoroutine);
-
+            if (_comboCoroutine != null) StopCoroutine(_comboCoroutine);
+            if (_allowJabCoroutine != null) StopCoroutine(_allowJabCoroutine);
             _allowJabCoroutine = StartCoroutine(AllowJab_Coroutine());
             _comboCoroutine = StartCoroutine(ResetJabCounter_Coroutine());
         }
         else
         {
-            if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out RaycastHit hit, 1, layerMask))
-            {
-                AIState enemy = null; // ECS migration (layer 2): hits name ECS entities; characters become entities in layers 4-6, so nothing resolves yet
-
-                if (enemy == null)
-                {
-                    OnEndMeleeCombo();
-                    return;
-                }
-
-                FPSCameraController.instance.ForceLookRotation(enemy.grapplePoint.position);
-                //_playerInputActions.SetIsBlockingInput(true);
-                inventory.equippedWeapon.Melee();
-            }
-            else
-            {
-                OnEndMeleeCombo();
-            }    
+            // The grapple melee needs an enemy within 1 m; the per-weapon moves went with the Weapon classes and
+            // return in 5.5 on entity hit resolution (the legacy path was already dead: its hit resolved to null).
+            OnEndMeleeCombo();
         }
     }
 
@@ -172,54 +120,32 @@ public class CombatController : MonoBehaviour
         if (_combatDisabled) return;
         if (_playerInputActions.GetIsBlockingInput()) return;
 
-        int index = Mathf.FloorToInt(value);
-        if (index == 0 && value != 0f) index = value > 0f ? 1 : -1;
-
-        if (index == 0) return;
-
-        index = Mathf.Clamp(index, -1, 1);
-
-        int newIndex = inventory.SwapWeapon(index);
-        
-        EquipWeapon(newIndex);
+        int step = value > 0f ? 1 : value < 0f ? -1 : 0;
+        if (step == 0) return;
+        int count = Weapons.All.Length;
+        EquipWeapon((Gun.Slot + step + count) % count);
     }
 
-    public void OnChangeWeapon1()
-    {
-        ChangeWeapon(0);
-    }
-
-    public void OnChangeWeapon2()
-    {
-       ChangeWeapon(1);
-    }
-
-    public void OnChangeWeapon3()
-    {
-       ChangeWeapon(2);
-    }
-
-    public void OnChangeWeapon4()
-    {
-       ChangeWeapon(3);
-    }
+    public void OnChangeWeapon1() => ChangeWeapon(0);
+    public void OnChangeWeapon2() => ChangeWeapon(1);
+    public void OnChangeWeapon3() => ChangeWeapon(2);
+    public void OnChangeWeapon4() => ChangeWeapon(3);
 
     #endregion
 
     public void OnEndMeleeCombo()
     {
-        if (_combatDisabled) return; // a weapon's melee animation ending after death must not re-arm anything
+        if (_combatDisabled) return; // a melee ending after death must not re-arm anything
         _comboStepCounter = 0;
         _canJab = true;
-        _canFire = true;
+        Gun.Holstered = false;
         _playerInputActions.SetIsBlockingInput(false);
     }
 
     private void Jab()
     {
         weaponAnimator.SetActive(false);
-
-        _canFire = false;
+        Gun.Holstered = true;
 
         if (_comboStepCounter == 1) leftFistAnimator.SetTrigger(JabTrigger);
         else if (_comboStepCounter == 2) rightFistAnimator.SetTrigger(JabTrigger);
@@ -237,43 +163,38 @@ public class CombatController : MonoBehaviour
     /// <summary>Quick swap (standalone addition): back to the weapon held before the current one.</summary>
     public void OnSwapToLastWeapon()
     {
-        if (_lastWeaponIndex < 0 || _lastWeaponIndex == inventory.currentWeaponIndex) return;
+        if (_lastWeaponIndex < 0 || _lastWeaponIndex == Gun.Slot) return;
         ChangeWeapon(_lastWeaponIndex);
     }
 
     /// <summary>Save/load support (standalone addition).</summary>
     public void EquipWeaponIndex(int index)
     {
-        if (index >= 0 && index < inventory.availableWeapons.Count) EquipWeapon(index);
+        if (index >= 0 && index < Weapons.All.Length) EquipWeapon(index);
     }
 
     private void ChangeWeapon(int index)
     {
         if (_combatDisabled) return;
         if (_playerInputActions.GetIsBlockingInput()) return;
-        if (index < 0 || index >= inventory.availableWeapons.Count) return;
+        if (index < 0 || index >= Weapons.All.Length) return;
         EquipWeapon(index);
     }
 
     private void EquipWeapon(int index)
     {
-        if (inventory.equippedWeapon != null && index != inventory.currentWeaponIndex) _lastWeaponIndex = inventory.currentWeaponIndex;
-        inventory.equippedWeapon = inventory.availableWeapons[index];
-        inventory.currentWeaponIndex = index;
+        ref var gun = ref Gun;
+        if (index != gun.Slot) _lastWeaponIndex = gun.Slot;
+        gun = new Weapon { Slot = index, Sprite = gun.Sprite }; // fresh fire state; the viewmodel entity stays
 
-        Transform neededTransform = cameraTransform;
-
-        if (inventory.equippedWeapon is ProjectileWeapon)
-            neededTransform = projectileSpawnTransform;
-        
-        inventory.equippedWeapon.Equip(weaponAnimator,neededTransform, layerMask, leftFistAnimator);
-        
-        weaponAnimator.runtimeAnimatorController = inventory.equippedWeapon.weaponData.animatorOverrideController;
-
+        var data = Weapons.Data(index);
+        weaponAnimator.runtimeAnimatorController = data.animatorOverrideController;
+        weaponAnimator.LocalPosition = data.weaponPosition;
+        weaponAnimator.LocalScale = Vector3.one * data.weaponScale;
         if (weaponTransform != null)
         {
-            weaponTransform.localPosition = inventory.equippedWeapon.weaponData.weaponPosition;
-            weaponTransform.localScale = Vector3.one * inventory.equippedWeapon.weaponData.weaponScale;
+            weaponTransform.localPosition = data.weaponPosition;
+            weaponTransform.localScale = Vector3.one * data.weaponScale;
         }
 
         OnEquipWeapon?.Invoke();
@@ -295,7 +216,7 @@ public class CombatController : MonoBehaviour
         _comboStepCounter = 0;
         _comboCoroutine = null;
         weaponAnimator.SetActive(true);
-        _canFire = true;
+        Gun.Holstered = false;
     }
 
     #endregion

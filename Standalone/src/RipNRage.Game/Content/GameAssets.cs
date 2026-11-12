@@ -404,6 +404,7 @@ namespace RipNRage.Game.Content
             RocketLauncherData = new WeaponData
             {
                 name = "RocketLauncher",
+                projectilePrefab = Prefabs.ProjectileRocket,
                 ammoType = AmmoType.EXPLOSIVE,
                 weaponRecoil = new WeaponRecoil(new Vector3(22, 3, 6), 40, 6, cameraShake: 0.5f),
                 weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.25f, damagePerShot = 1000, weaponSpread = 0.004f, isUnlocked = true,

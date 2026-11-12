@@ -128,7 +128,7 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
             {
                 _ammoTimer -= sAmmoInterval;
                 bool any = false;
-                foreach (AmmoType t in Enum.GetValues(typeof(AmmoType))) any |= _combat.inventory.AddToAmmo(t, sAmmoAmount);
+                foreach (AmmoType t in Enum.GetValues(typeof(AmmoType))) any |= _combat.AddAmmo(t, sAmmoAmount);
                 if (any) _combat.OnAmmoChanged?.Invoke();
             }
         }

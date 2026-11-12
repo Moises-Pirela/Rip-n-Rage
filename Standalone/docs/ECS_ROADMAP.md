@@ -473,6 +473,39 @@ Convert, keeping the tuned solver behaviour:
   all 13 combat scripts complete; `die` shows the full sequence (timeScale 0.2, death screen) at parity with 5.0,
   twice per run as before. `killenemy` still reports ALIVE 1000/1000 — the weapons' stubbed hit resolution is 5.3.
 
+#### 5.3 — Weapon components and hitscan (done; 5.2 was folded into 5.1 by the no-bridge decision)
+
+- **The Weapon class hierarchy is deleted** (`Weapon` / `HitscanWeapon` / `ProjectileWeapon` / `Glock` /
+  `M1887Shotgun` / `MG338` / `RocketLauncher`, the `Inventory` class, the weapon prefab GameObjects and `MakeWeapon`).
+  In its place, `Ecs/Combat/Weapons.cs`: weapon definitions are **shared immutable data** (`Weapons.All`, the
+  behaviour-tree pattern — the component holds a slot, not copies of twelve floats), state is two components
+  (`Weapon`: slot, refire timer, bloom, holstered, the viewmodel sprite entity; `Inventory`: an `[InlineArray]` ammo
+  block + last slot), and firing is **one system**. `WeaponFireSystem` (Tick, after input, runs alone): refire and
+  bloom on `ctx.DeltaTime` (= the Application's scaled delta, so the death slow-motion slows the gun exactly as the
+  deleted `WaitForSeconds` coroutines did — and a headless test world can drive it), move / air spread restored from
+  the pre-2.5 original, recoil as a direct `CameraShake` kick on the camera entity, hitscan rays that post
+  `DamageEvent`s on whatever entity the ray names (headshots judged by its `Hitbox`), impulses on loose props,
+  projectile weapons spawning their GameObject rocket until 5.4. No coroutines, no per-shot allocations.
+- Hit feedback consumes `HitEvent` in the bridge (crosshair marker, rage +0.1, style — which needs `Killed`, known
+  only at the event, never at fire time; rocket style-kills register again when projectiles post events in 5.4).
+- `CombatController` keeps only the GameObject-side surface: switching handlers (the input map and the automation
+  call them), the jab combo (now gating `Weapon.Holstered` instead of a CanFire flag), death, equip (component +
+  viewmodel + the "Weapon" GO node for ProjectileSpawn), and thin component-backed accessors
+  (`CurrentWeaponData` / `AmmoOf` / `AmmoArray` / `LoadAmmo` / `AddAmmo`) for the HUD / save / pickup readers.
+- **Gate flipped**: `killenemy` reports `enemy DEAD health 0 armour 0` at frame 240 — the first kill since 2.L — and
+  the whole loop fires: ragdoll slicing from the DeathEvent payload, ammo drain, rage to ENRAGED from the hit events
+  (red postfx + flaming portrait, caught on screenshot).
+- **Test-hygiene trap found**: the global `Physics.World` outlives a disposed ECS `World` (Dispose frees only the job
+  pool), so a check's colliders shadow the next check's at the same coordinates and rays resolve to entities of a
+  dead world. Checks now `DestroyAllEntities()` (+ one update, so the sync unregisters the slots) before disposing,
+  and keep their geometry at distinct coordinates.
+- Gates: 196 engine + 43 gameplay assertions (the fire pipeline in vitro: one ray per held-fire window, ammo spent,
+  refire holds the trigger, the kill latches once, a holstered gun never fires); all 13 combat scripts + `die` at
+  parity; alloc/frame at the 5.0 baseline (fire 9.5–10.2 vs 9.0–10.2 KB, m1887 8.3–9.2 vs 8.3–8.9, gc 0.0/s).
+- Carried to 5.4 / 5.5: rockets are still transform-moving GameObjects that damage through the facade; the grapple
+  melee (its per-weapon moves went with the classes; the legacy path was already dead — its hit resolved to null);
+  the enemy armour-from-maxHealth typo decision now that weapons are live.
+
 #### Baselines (5.0, `d5cb44f`, dev Mac, `--frames 300`)
 
 - **Combat is inert, and now says so**: `--script killenemy` fires a Glock point-blank at a rifleman for 180 frames

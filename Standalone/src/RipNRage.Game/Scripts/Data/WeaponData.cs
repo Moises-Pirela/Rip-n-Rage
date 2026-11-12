@@ -9,6 +9,8 @@ using System.Collections.Generic;
 public class WeaponData : ScriptableObject
 {
     public AmmoType ammoType;
+    /// <summary>Set = this weapon launches these instead of hitscan rays (the rocket).</summary>
+    public Prefab projectilePrefab;
     
     [Header("Weapon stats")]
     public WeaponRecoil weaponRecoil;

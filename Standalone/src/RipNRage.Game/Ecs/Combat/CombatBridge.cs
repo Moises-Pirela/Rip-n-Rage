@@ -18,6 +18,17 @@ namespace RipNRage.Game.Ecs.Combat
             {
                 var state = StateOf(e.Target);
                 if (state != null) state.NotifyHit(in e);
+
+                // the player's hit feedback (every shooter is the player until layer 6 arms the AI): the crosshair
+                // hit marker, rage, and the style meter — which needs Killed, known only here, not at fire time
+                if (state is AIState)
+                {
+                    EnragedInjector<HudController>.GetInstance()?.CurrentCrosshair?.OnHit();
+                    PlayerState.Current?.AddToRage(0.1f);
+                    var w = ctx.World;
+                    if (w.IsAlive(PlayerLink.PlayerEntity) && w.Has<Weapon>(PlayerLink.PlayerEntity))
+                        StyleMeter.Current?.RegisterHit(Weapons.Data(w.Get<Weapon>(PlayerLink.PlayerEntity).Slot).name, e.Headshot, e.Killed);
+                }
             }
         }
 

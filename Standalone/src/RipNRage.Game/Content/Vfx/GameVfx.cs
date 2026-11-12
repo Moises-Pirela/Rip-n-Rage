@@ -156,8 +156,9 @@ namespace RipNRage.Game.Content.Vfx
         }
 
         /// <summary>Approximate world-space muzzle of the first-person weapon (the viewmodel has its own projection, so it is placed relative to the camera).</summary>
-        public static Vector3 MuzzlePosition(Transform camera) =>
-            camera.position + camera.forward * 0.9f + camera.right * 0.28f - camera.up * 0.22f;
+        public static Vector3 MuzzlePosition(Transform camera) => MuzzlePosition(camera.position, camera.rotation);
+        public static Vector3 MuzzlePosition(Vector3 position, Quaternion rotation) =>
+            position + rotation * new Vector3(0.28f, -0.22f, 0.9f);
 
         // ------------------------------------------------------------------ bindings file
 

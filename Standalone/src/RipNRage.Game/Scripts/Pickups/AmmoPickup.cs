@@ -23,7 +23,7 @@ public class AmmoPickup : MonoBehaviour, RipNRage.Game.Ecs.ITriggerListener
 
     public void OnPickup()
     {
-        if (!_combatController.inventory.AddToAmmo(ammoType, ammoCount)) return;
+        if (!_combatController.AddAmmo(ammoType, ammoCount)) return;
         
         _combatController.OnAmmoChanged?.Invoke();
         Destroy(gameObject);

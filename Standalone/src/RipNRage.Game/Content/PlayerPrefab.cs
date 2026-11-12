@@ -95,20 +95,22 @@ namespace RipNRage.Game.Content
             death.cameraPivot = cameraGo.transform;
             death.worldCamera = worldCamera.transform;
 
+            // ---- weapons: definitions as shared data, state as components, firing as a system (5.3) ----
+            RipNRage.Game.Ecs.Combat.Weapons.All = new[]
+                { GameAssets.GlockData, GameAssets.M1887Data, GameAssets.MG338Data, GameAssets.RocketLauncherData };
+            RipNRage.Game.Ecs.Combat.WeaponFireSystem.ProjectileSpawn = projectileSpawn.transform;
+            var world = Application.Current.World;
+            world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Weapon { Sprite = vm.Weapon.Entity });
+            world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Inventory());
+
             var combat = player.AddComponent<CombatController>();
             combat.cameraTransform = worldCamera.transform;
-            combat.projectileSpawnTransform = projectileSpawn.transform;
             combat.layerMask = 6421; // prefab value: Default | Water | Enemy | Environment | Pickup-ish bits
             combat.weaponTransform = weapon.transform;
             combat.weaponAnimator = vm.Weapon;
             combat.leftFistAnimator = vm.LeftFist;
             combat.rightFistAnimator = vm.RightFist;
             combat.jabLandSound = GameAssets.MeleeHit;
-            combat.inventory = new Inventory
-            {
-                allWeaponPrefabs = new List<Prefab> { Prefabs.Glock, Prefabs.M1887, Prefabs.MG338, Prefabs.RocketLauncher },
-                ammoLimits = new[] { 120, 60, 120, 100, 10 },
-            };
 
             // ---- muzzle flash light (not in the Unity prefab; feeds the new lighting) ----
             var muzzleLightGo = Child(player, "MuzzleLight", Vector3.zero);

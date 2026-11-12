@@ -30,7 +30,77 @@ internal static class Layer5Checks
         Damage(True, Equal);
         Headshots(True);
         EnemyHitbox(True);
+        Firing(True, Equal);
         GameSystems(True);
+    }
+
+    // ================================================================= the fire pipeline, end to end
+
+    /// <summary>killenemy in vitro: held fire input + a Weapon component → rays → DamageEvents → a dead enemy.</summary>
+    private static void Firing(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var saved = Weapons.All;
+        Weapons.All = new[] { new WeaponData
+        {
+            name = "TestGun", ammoType = AmmoType.LIGHT,
+            weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.1f, damagePerShot = 60f, weaponSpread = 0f },
+        }};
+        try
+        {
+            using var w = new World(0);
+            w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(RipNRage.Game.Ecs.PlayerLink).Assembly);
+            w.FixedDeltaTime = 1f / 60f;
+            w.DriveFixedInternally = true;
+            var log = w.AddSystem(new CombatLog());
+
+            // a shooter: an eye entity looking down +z, and the Weapon / Inventory / rig components
+            var eye = w.CreateEntity();
+            w.Add(eye, LocalTransform.At(new Vector3(200f, 1.1f, -5f)));
+            var shooter = w.CreateEntity();
+            w.Add(shooter, LocalTransform.At(new Vector3(200f, 1.1f, -5f)));
+            w.Add(shooter, new Weapon());
+            var inv = new Inventory(); inv.Ammo[(int)AmmoType.LIGHT] = 3;
+            w.Add(shooter, inv);
+            w.Add(shooter, new RipNRage.Game.Ecs.PlayerViewRig { Camera = eye });
+
+            // the target: the enemy hitbox recipe, 100 hp, in the line of fire
+            float ride = RipNRage.Engine.CharacterProfiles.Enemy.rideHeight;
+            var enemy = w.CreateEntity();
+            w.Add(enemy, LocalTransform.At(new Vector3(200f, 1.125f, 0f)));
+            w.Add(enemy, new RipNRage.Engine.Ecs.Physics.ColliderShape
+            {
+                Kind = RipNRage.Engine.Ecs.Physics.ShapeKind.Capsule,
+                Radius = AIState.CapsuleRadius, Height = AIState.SpriteHeight - ride, Center = new Vector3(0f, -ride * 0.5f, 0f),
+            });
+            w.Add(enemy, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
+            w.Add(enemy, new Health { Current = 100f, Max = 100f, ArmorResistance = 0.75f });
+            w.Add(enemy, new Hitbox { Height = AIState.SpriteHeight, HeadFraction = AIState.HeadFraction });
+            w.Update(1f / 60f); // register the collider
+
+            RipNRage.Engine.Ecs.Input.InputOverride.Fire = true; // the automation path; the input system rewrites the singleton every tick
+            w.Update(1f / 60f);
+            Equal(40f, w.Get<Health>(enemy).Current, "one held-fire frame lands one 60-damage ray (100 - 60)");
+            True(w.Get<Inventory>(shooter).Ammo[(int)AmmoType.LIGHT] == 2, "and spends one round");
+            w.Update(1f / 60f);
+            Equal(40f, w.Get<Health>(enemy).Current, "the refire timer holds the second frame's trigger");
+
+            // let the refire window pass, keep holding: the next shot kills
+            for (int i = 0; i < 8; i++) w.Update(1f / 60f);
+            True(w.Has<Dead>(enemy) && log.Deaths.Count == 1, "holding fire through the refire window kills the target");
+            True(w.Get<Inventory>(shooter).Ammo[(int)AmmoType.LIGHT] == 1, "two rounds spent in total");
+
+            // a dead target soaks nothing and fire keeps consuming ammo into the world instead
+            for (int i = 0; i < 8; i++) w.Update(1f / 60f);
+            True(log.Deaths.Count == 1, "a dead enemy dies once");
+            w.Get<Weapon>(shooter).Holstered = true;
+            float ammoBefore = w.Get<Inventory>(shooter).Ammo[(int)AmmoType.LIGHT];
+            for (int i = 0; i < 8; i++) w.Update(1f / 60f);
+            True(w.Get<Inventory>(shooter).Ammo[(int)AmmoType.LIGHT] == (int)ammoBefore, "a holstered gun does not fire (the jab / death gate)");
+
+            w.DestroyAllEntities();
+            w.Update(1f / 60f);
+        }
+        finally { Weapons.All = saved; RipNRage.Engine.Ecs.Input.InputOverride.Clear(); }  // geometry cleaned by Dispose-scope DestroyAllEntities below
     }
 
     // ================================================================= the enemy hitbox is hittable
@@ -74,6 +144,10 @@ internal static class Layer5Checks
             "a 1.8 m hit through the real ray is a headshot");
         True(!RipNRage.Engine.Physics.Raycast(new Vector3(0f, 2.0f, -5f), Vector3.forward, out _, 100f, 1 << Layers.Enemies),
             "and 2.0 m clears the capsule top (1.9 m): the top of the sprite is not hittable, as before 2.L");
+
+        // the global physics world outlives this ECS world: take the colliders out before disposing
+        w.DestroyAllEntities();
+        w.Update(1f / 60f);
     }
 
     // ================================================================= the damage model, through the pipeline

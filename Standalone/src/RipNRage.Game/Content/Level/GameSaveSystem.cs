@@ -83,8 +83,8 @@ namespace RipNRage.Game.Content.Level
             p.yaw = camCtrl != null ? camCtrl.Yaw : 0f; p.pitch = camCtrl != null ? camCtrl.Pitch : 0f;
             p.health = player.Health; p.armor = player.Armor; p.rage = player.Rage;
             p.rageState = (int)player.RageState; p.combatState = (int)player.CombatState;
-            p.weaponIndex = combat.inventory.currentWeaponIndex;
-            p.ammo = (int[])combat.inventory.ammo.Clone();
+            p.weaponIndex = combat.CurrentWeaponIndex;
+            p.ammo = combat.AmmoArray();
 
             // level entities
             var doc = CurrentLevel.document;
@@ -127,7 +127,7 @@ namespace RipNRage.Game.Content.Level
                 File.WriteAllText(SlotPath(slot), JsonSerializer.Serialize(save, Json));
                 // keep the original checkpoint data in sync
                 SaveData.Current.playerStateData = new PlayerStateData(player.transform.position, player.transform.rotation, player.Health, player.Armor);
-                SaveData.Current.inventoryData = new InventoryData((int[])combat.inventory.ammo.Clone(), combat.inventory.currentWeaponIndex);
+                SaveData.Current.inventoryData = new InventoryData(combat.AmmoArray(), combat.CurrentWeaponIndex);
                 if (slot == "checkpoint") GameSession.CheckpointReached = true;
                 Message($"Game saved ({slot})");
                 return true;
@@ -205,7 +205,7 @@ namespace RipNRage.Game.Content.Level
         private static IEnumerator ApplyWhenReady(GameSave save)
         {
             // wait for the player (spawned by the GameManager/LevelManager coroutines)
-            while (PlayerState.Current == null || EnragedInjector<CombatController>.GetInstance()?.inventory.equippedWeapon == null) yield return null;
+            while (PlayerState.Current == null || EnragedInjector<CombatController>.GetInstance()?.CurrentWeaponData == null) yield return null;
             yield return null;
             var player = PlayerState.Current;
             var combat = EnragedInjector<CombatController>.GetInstance();
@@ -214,7 +214,7 @@ namespace RipNRage.Game.Content.Level
             FPSCameraController.instance?.SetLook(p.yaw, p.pitch);
             player.RestoreState(p.rage, (PlayerRageState)p.rageState, (PlayerCombatState)p.combatState, p.health, p.armor);
             // GameManager.Init re-reads the legacy "Save1" file during the build, so apply the inventory explicitly
-            Array.Copy(p.ammo, combat.inventory.ammo, Math.Min(p.ammo.Length, combat.inventory.ammo.Length));
+            combat.LoadAmmo(p.ammo);
             combat.EquipWeaponIndex(p.weaponIndex);
             combat.OnAmmoChanged?.Invoke();
 
@@ -255,7 +255,7 @@ namespace RipNRage.Game.Content.Level
                     if (st != null && m.health > 0f) st.Health = m.health; // applied after Awake set the defaults
                 }
             }
-            Debug.LogWarning($"Loaded: player at {player.transform.position}, hp {player.Health}, ammo {combat.inventory.ammo[0]}, weapon {combat.inventory.currentWeaponIndex}");
+            Debug.LogWarning($"Loaded: player at {player.transform.position}, hp {player.Health}, ammo {combat.AmmoOf(AmmoType.LIGHT)}, weapon {combat.CurrentWeaponIndex}");
             Message("Game loaded");
         }
 

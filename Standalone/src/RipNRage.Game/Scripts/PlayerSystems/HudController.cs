@@ -76,12 +76,10 @@ public class HudController : MonoBehaviour, IUiDrawer
 
     private void UpdateAmmo()
     {
-        if (_combatController.inventory.equippedWeapon == null) return;
-        int currentAmmoIndex = (int)_combatController.inventory.equippedWeapon.weaponData.ammoType;
-        ammoText.text = _combatController.inventory.ammo[currentAmmoIndex].ToString();
-
-       int ammoType = (int) _combatController.inventory.equippedWeapon.weaponData.ammoType;
-       ammoTypeIcon.sprite = ammoTypeIcons[ammoType];
+        var data = _combatController.CurrentWeaponData;
+        if (data == null) return;
+        ammoText.text = _combatController.AmmoOf(data.ammoType).ToString();
+        ammoTypeIcon.sprite = ammoTypeIcons[(int)data.ammoType];
     }
 
     private void UpdatePortrait()
@@ -163,7 +161,7 @@ public class HudController : MonoBehaviour, IUiDrawer
             var cross = CurrentCrosshair as GlockCrosshair;
             if (cross != null)
             {
-                cross.spread = _combatController?.inventory?.equippedWeapon != null ? _combatController.inventory.equippedWeapon.CurrentSpread : 0f;
+                cross.spread = _combatController != null ? _combatController.CurrentSpread : 0f;
                 cross.Build(c, z);
             }
         }
