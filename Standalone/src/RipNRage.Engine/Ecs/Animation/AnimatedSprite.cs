@@ -15,9 +15,13 @@ namespace RipNRage.Engine.Ecs.Animation
     /// <see cref="AnimationSystem"/> — the handle only wraps the component access behind the legacy Animator's
     /// vocabulary (controller, SetBool / SetTrigger / Play, speed, the editor's read-back).
     ///
-    /// <para>Structural work goes through the command buffer, so right after creation the components are not readable
-    /// until the next sync point; every accessor checks and degrades to a no-op / default, as the bridge it replaces
-    /// did.</para>
+    /// <para>The entity is created <b>immediately</b> when the caller is not inside a system — prefab building, the
+    /// editors, a projectile's hit effect, all of GameObject-land — so every accessor below works on the next line.
+    /// Creating it through the command buffer instead would leave it merely reserved and not
+    /// <see cref="World.IsAlive"/> until the next sync point, and the accessors, all of which check, would silently do
+    /// nothing: that is exactly how the muzzle flash stayed lit and the equipped weapon kept its build-time pose.
+    /// Constructed from inside a system (where immediate structural changes are illegal) the command buffer is used
+    /// and that caveat applies again.</para>
     /// </summary>
     public sealed class AnimatedSprite
     {
@@ -37,25 +41,36 @@ namespace RipNRage.Engine.Ecs.Animation
                               Entity parent = default, Vector3? localPosition = null, Vector3? localScale = null)
         {
             _w = world;
-            var cmd = world.Commands;
-            var e = cmd.CreateEntity();
-            cmd.Add(e, new LocalTransform
+            Entity = world.IsIterating ? world.Commands.CreateEntity() : world.CreateEntity();
+            Set(new LocalTransform
             {
                 Position = localPosition ?? Vector3.zero,
                 Rotation = Quaternion.identity,
                 Scale = localScale ?? Vector3.one,
             });
-            if (!parent.IsNull) cmd.Add(e, new Parent { Value = parent });
-            cmd.Add(e, new SpriteRender
+            if (!parent.IsNull) Set(new Parent { Value = parent });
+            Set(new SpriteRender
             {
                 Sprite = sprite != null ? RenderAssets.Sprites.Intern(sprite) : default,
                 Color = color ?? Color.white, Layer = layer, SortingOrder = sortingOrder,
                 FullBright = fullBright, Billboard = billboard, Lit = lit, CastsShadow = layer != RenderLayer.FirstPerson,
             });
-            Entity = e;
         }
 
         public bool Alive => _w.IsAlive(Entity);
+
+        /// <summary>Adds / overwrites a component: immediately when that is legal, through the command buffer inside a system.</summary>
+        private void Set<T>(in T value) where T : struct, IComponent
+        {
+            if (_w.IsIterating) _w.Commands.Add(Entity, value);
+            else _w.Add(Entity, value);
+        }
+
+        private void Unset<T>() where T : struct, IComponent
+        {
+            if (_w.IsIterating) _w.Commands.Remove<T>(Entity);
+            else if (_w.Has<T>(Entity)) _w.Remove<T>(Entity);
+        }
 
         /// <summary>Clip events of this entity, by function name (the legacy clip-event contract).</summary>
         public Action<string> OnEvent
@@ -97,9 +112,8 @@ namespace RipNRage.Engine.Ecs.Animation
         /// <summary>Shows / hides the sprite (the legacy GameObject.SetActive on the viewmodel parts).</summary>
         public void SetActive(bool active)
         {
-            if (!Alive) return;
-            if (active) _w.Commands.Remove<Hidden>(Entity);
-            else _w.Commands.Add(Entity, new Hidden());
+            if (active) Unset<Hidden>();
+            else Set(new Hidden());
         }
 
         public bool activeSelf => Alive && !_w.Has<Hidden>(Entity);
@@ -122,9 +136,9 @@ namespace RipNRage.Engine.Ecs.Animation
             {
                 if (_controller == value) return;
                 _controller = value;
-                if (value == null) { _w.Commands.Remove<SpriteAnimator>(Entity); return; }
+                if (value == null) { Unset<SpriteAnimator>(); return; }
                 var h = AnimationAssets.Controllers.Intern(value, value.name);
-                _w.Commands.Add(Entity, new SpriteAnimator { Controller = h, State = -1, PendingState = -1, Speed = 1f });
+                Set(new SpriteAnimator { Controller = h, State = -1, PendingState = -1, Speed = 1f });
             }
         }
 
@@ -155,7 +169,11 @@ namespace RipNRage.Engine.Ecs.Animation
         public void Destroy()
         {
             AnimationEventRouter.Unregister(Entity);
-            if (Alive) _w.Commands.DestroyEntity(Entity);
+            if (Alive)
+            {
+                if (_w.IsIterating) _w.Commands.DestroyEntity(Entity);
+                else _w.DestroyEntity(Entity);
+            }
             Entity = Entity.Null;
         }
     }

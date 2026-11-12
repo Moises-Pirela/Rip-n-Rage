@@ -104,14 +104,16 @@ namespace RipNRage.Game.Ecs
         public static ViewModel Build(World w)
         {
             var vm = new ViewModel();
-            var cmd = w.Commands;
 
-            // PlayerArms (0.017, -0.65, 2.36) [WeaponSway], child of the camera entity
+            // PlayerArms (0.017, -0.65, 2.36) [WeaponSway], child of the camera entity.
+            // Created immediately (prefab building is not inside a system), like the AnimatedSprites below: a
+            // command-buffered entity is not alive until the next sync point, and anything the build then sets on it
+            // through a checked accessor would be dropped.
             Vector3 armsHome = new Vector3(0.017f, -0.65f, 2.36f);
-            var arms = cmd.CreateEntity();
-            cmd.Add(arms, new LocalTransform { Position = armsHome, Rotation = Quaternion.identity, Scale = Vector3.one });
-            cmd.Add(arms, new Parent { Value = PlayerLink.CameraEntity });
-            cmd.Add(arms, new WeaponSway
+            var arms = w.CreateEntity();
+            w.Add(arms, new LocalTransform { Position = armsHome, Rotation = Quaternion.identity, Scale = Vector3.one });
+            w.Add(arms, new Parent { Value = PlayerLink.CameraEntity });
+            w.Add(arms, new WeaponSway
             {
                 SwayAmount = 0.01f, SwaySpeed = 20f, HorizontalSwayAmount = 0.01f, HorizontalSwaySpeed = 10f,
                 ZSmoothLerp = 12f, ZSwayAngle = 5f, ZSwayMultiplier = -100f, ZSmoothSway = 20f,

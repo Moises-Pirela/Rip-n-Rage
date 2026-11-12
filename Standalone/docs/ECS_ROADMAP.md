@@ -384,7 +384,21 @@ Convert, keeping the tuned solver behaviour:
             was dropped: it only ever faded a `SpriteRenderer`, which the explosion did not have (a silent no-op).
           - The animation editor's preview is an `AnimatedSprite` whose pose follows the preview node each frame in
             the editor's own Update.
-          - **Gates (light, by request)**: builds; 192 engine checks; `fire` / `weapons` / `saveload` complete with no
+          - **Bug found in review and fixed** (`AnimatedSprite`, same commit as the follow-up): the handle created its
+            entity through the **command buffer**, which only *reserves* it — `World.IsAlive` stays false until the
+            next sync point — while every accessor on the handle checks `Alive` first. So the viewmodel build's
+            `MuzzleFlash.SetActive(false)` on the line after construction was silently dropped and the muzzle flash
+            stayed lit over the gun for the whole game, which reads exactly like "the weapon is stuck on the firing
+            frame"; `Weapon.Equip`'s pose write had the same hole (harmless for the glock, whose offset is zero, but
+            not for the other three). The old `ViewSprite` never hit this because it added `Hidden` through the same
+            command buffer at creation instead of through a checked setter. Fixed by creating the entity
+            **immediately** when the caller is not inside a system (prefab building, the editors, a projectile's hit
+            effect) and falling back to the buffer only while systems run; `ViewModel.Build` creates the arms entity
+            the same way. Verified by probe: the weapon animator runs `Idle`→`Glock01`, `Fire`→`Glock01`/`Glock02`/
+            `Glock01`, back to `Idle`, with `IsFiring` toggling per shot, and the flash hidden unless a clip event
+            shows it. Note the pre-4.3b builds drew **no** viewmodel at all (the bridge's `Hidden` was never lifted),
+            so this area had no working baseline to compare against.
+          - **Gates (light, by request)**: builds; 196 engine checks; `fire` / `weapons` / `saveload` complete with no
             errors; a `fire` screenshot shows the weapon, hands and muzzle flash rendering from the entities; the
             animation editor starts clean.
 - **Two engine bugs found by putting a real body back under the player** (both pre-existing since 2.7, invisible

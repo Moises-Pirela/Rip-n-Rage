@@ -259,6 +259,20 @@ internal static class Layer4Checks
         vmSprite.LocalPosition = new Vector3(0.1f, -0.5f, 2f); // Equip moves the weapon to its data
         Step(1, 1f / 60f);
         True(vmSprite.activeSelf && vmSprite.LocalPosition.x == 0.1f, "and the equip pose is a plain local write");
+        // A handle built outside a system is usable at once — it is created immediately, not reserved in the command
+        // buffer. This is the muzzle-flash bug: the viewmodel build hid the flash on the line after creating it, the
+        // entity was not alive yet, the checked accessor dropped the call, and the flash stayed lit over the gun for
+        // the whole game (which read as "the weapon is stuck on the firing frame").
+        var flash = new RipNRage.Engine.Ecs.Animation.AnimatedSprite(w, null, RipNRage.Engine.Graphics.RenderLayer.FirstPerson,
+            parent: vmSprite.Entity, localPosition: new Vector3(-0.5f, 4.5f, 0.05f));
+        True(flash.Alive, "an AnimatedSprite is alive immediately after construction");
+        flash.SetActive(false);
+        True(!flash.activeSelf, "so hiding it on the next line takes effect (the muzzle flash starts hidden)");
+        flash.LocalPosition = new Vector3(1f, 2f, 3f);
+        True(flash.LocalPosition == new Vector3(1f, 2f, 3f), "and so does a pose written before the first sync point");
+        Step(1, 1f / 60f);
+        True(!flash.activeSelf, "and it is still hidden after the world syncs");
+
         vmSprite.Destroy();
         Step(1, 1f / 60f);
         True(!w.IsAlive(vmSprite.Entity) || vmSprite.Entity.IsNull, "Destroy removes the entity");
