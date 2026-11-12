@@ -59,9 +59,11 @@ namespace RipNRage.Game.Content
         {
             var go = new GameObject("RocketExplosion");
             go.transform.localScale = Vector3.one * 3f * 0.25f; // the 1024px explosion tiles at scale 3 cover ~30 units in Unity; keep it readable here
-            var anim = RipNRage.Game.Ecs.ViewSprite.Attach(go, GameAssets.RocketLauncher["explosion_01"], RenderLayer.World, billboard: true);
-            anim.runtimeAnimatorController = GameAssets.ExplosionController;
-            go.AddComponent<FadeOut>().lifetime = 0.4f;
+            // a world-space entity sprite; the explosion never moves, so the anchor copies the pose once at spawn
+            var anchor = go.AddComponent<EntitySpriteAnchor>();
+            anchor.sprite = new RipNRage.Engine.Ecs.Animation.AnimatedSprite(
+                Application.Current.World, GameAssets.RocketLauncher["explosion_01"], RenderLayer.World, billboard: true);
+            anchor.sprite.runtimeAnimatorController = GameAssets.ExplosionController;
             var light = go.AddComponent<Light>();
             light.type = LightType.Point; light.color = new Color(1f, 0.6f, 0.25f, 1f); light.range = 30f; light.intensity = 6f;
             go.AddComponent<FlashLight>();
@@ -217,6 +219,18 @@ namespace RipNRage.Game.Content
     }
 
     /// <summary>Fades a sprite out over its lifetime (replaces particle-system lifetime/alpha curves).</summary>
+    /// <summary>
+    /// Ties a world-space <see cref="RipNRage.Engine.Ecs.Animation.AnimatedSprite"/> to a GameObject one-shot (the
+    /// rocket explosion): the entity takes the GameObject's pose when it spawns — these effects do not move — and is
+    /// destroyed with it. Gone in layer 5, when projectiles and their effects are entities end to end.
+    /// </summary>
+    public class EntitySpriteAnchor : MonoBehaviour
+    {
+        public RipNRage.Engine.Ecs.Animation.AnimatedSprite sprite;
+        protected override void Start() => sprite?.SetPose(transform.position, transform.rotation, transform.lossyScale);
+        protected override void OnDestroy() => sprite?.Destroy();
+    }
+
     public class FadeOut : MonoBehaviour
     {
         public float lifetime = 0.5f;

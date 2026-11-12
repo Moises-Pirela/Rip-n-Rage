@@ -13,12 +13,15 @@ public class CombatController : MonoBehaviour
     [Header("Weapon setup")] 
     [SerializeField] public Transform cameraTransform;
     [SerializeField] public Transform projectileSpawnTransform;
+    /// <summary>The prefab's "Weapon" GameObject node: no longer rendered (the weapon sprite is an entity), but
+    /// ProjectileSpawn hangs off it, so equipping keeps its transform on the weapon's data as before.</summary>
+    [SerializeField] public Transform weaponTransform;
     [SerializeField] public LayerMask layerMask;
 
     [Space(5)] [Header("Combat Animation")] 
-    [SerializeField] public RipNRage.Game.Ecs.ViewSprite weaponAnimator;
-    [SerializeField] public RipNRage.Game.Ecs.ViewSprite leftFistAnimator;
-    [SerializeField] public RipNRage.Game.Ecs.ViewSprite rightFistAnimator;
+    [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite weaponAnimator;
+    [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite leftFistAnimator;
+    [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite rightFistAnimator;
     [SerializeField] public AudioClip jabLandSound;
     
 
@@ -42,7 +45,7 @@ public class CombatController : MonoBehaviour
     public bool IsCombatDisabled => _combatDisabled;
 
     private CameraRecoil _cameraRecoil;
-    private static readonly int JabTrigger = RipNRage.Game.Ecs.ViewSprite.StringToHash("Jab");
+    private static readonly int JabTrigger = RipNRage.Engine.Ecs.Animation.AnimatedSprite.StringToHash("Jab");
 
     protected override void Awake()
     {
@@ -96,9 +99,9 @@ public class CombatController : MonoBehaviour
         _comboStepCounter = 0;
         _canFire = false;
         _canJab = false;
-        if (weaponAnimator != null) weaponAnimator.gameObject.SetActive(false);
-        if (leftFistAnimator != null) leftFistAnimator.gameObject.SetActive(false);
-        if (rightFistAnimator != null) rightFistAnimator.gameObject.SetActive(false);
+        if (weaponAnimator != null) weaponAnimator.SetActive(false);
+        if (leftFistAnimator != null) leftFistAnimator.SetActive(false);
+        if (rightFistAnimator != null) rightFistAnimator.SetActive(false);
         if (cameraTransform != null) cameraTransform.DOKill();
         if (_playerInputActions != null) _playerInputActions.SetIsBlockingInput(true);
     }
@@ -214,7 +217,7 @@ public class CombatController : MonoBehaviour
 
     private void Jab()
     {
-        weaponAnimator.gameObject.SetActive(false);
+        weaponAnimator.SetActive(false);
 
         _canFire = false;
 
@@ -267,6 +270,12 @@ public class CombatController : MonoBehaviour
         
         weaponAnimator.runtimeAnimatorController = inventory.equippedWeapon.weaponData.animatorOverrideController;
 
+        if (weaponTransform != null)
+        {
+            weaponTransform.localPosition = inventory.equippedWeapon.weaponData.weaponPosition;
+            weaponTransform.localScale = Vector3.one * inventory.equippedWeapon.weaponData.weaponScale;
+        }
+
         OnEquipWeapon?.Invoke();
         OnAmmoChanged?.Invoke();
     }
@@ -285,7 +294,7 @@ public class CombatController : MonoBehaviour
         yield return new WaitForSeconds(0.75f);
         _comboStepCounter = 0;
         _comboCoroutine = null;
-        weaponAnimator.gameObject.SetActive(true);
+        weaponAnimator.SetActive(true);
         _canFire = true;
     }
 

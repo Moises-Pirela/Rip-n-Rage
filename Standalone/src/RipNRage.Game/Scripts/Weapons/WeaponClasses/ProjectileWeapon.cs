@@ -6,7 +6,7 @@ public abstract class ProjectileWeapon : Weapon
 {
     public Transform projectileSpawn;
     public Prefab projectilePrefab;
-    public override void Equip(RipNRage.Game.Ecs.ViewSprite animator,Transform transform, LayerMask layerMask, RipNRage.Game.Ecs.ViewSprite leftHandAnimator, RipNRage.Game.Ecs.ViewSprite rightHandAnimator)
+    public override void Equip(RipNRage.Engine.Ecs.Animation.AnimatedSprite animator,Transform transform, LayerMask layerMask, RipNRage.Engine.Ecs.Animation.AnimatedSprite leftHandAnimator, RipNRage.Engine.Ecs.Animation.AnimatedSprite rightHandAnimator)
     {
         base.Equip(animator, transform, layerMask, leftHandAnimator, rightHandAnimator);
 

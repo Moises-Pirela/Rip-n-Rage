@@ -7,7 +7,7 @@ public class MG338 : HitscanWeapon
     public override void Melee()
     {
         RipNRage.Engine.Ecs.Audio.Sfx.Play(meleeClip);
-        weaponAnimator.gameObject.SetActive(true);
+        weaponAnimator.SetActive(true);
         weaponAnimator.SetBool(WeaponMelee, true);
         StartCoroutine(WaitMelee());
     }

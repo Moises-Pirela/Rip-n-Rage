@@ -38,12 +38,11 @@ namespace RipNRage.Game.Content
             var cameraGo = Child(player, "Camera", new Vector3(0, 0.5f, 0));
             var worldCamera = Child(cameraGo, "WorldCamera", Vector3.zero);
             worldCamera.tag = "MainCamera";
+            // The viewmodel sprites are entities now (ViewModel.Build below); these GameObjects remain only because
+            // scripts hang off them: WeaponAnimationEvents + the ProjectileSpawn point on "Weapon".
             var arms = Child(worldCamera, "PlayerArms", new Vector3(0.017f, -0.65f, 2.36f));
             var weapon = Child(arms, "Weapon", Vector3.zero, Vector3.one * 0.1f);
-            var muzzleFlash = Child(weapon, "MuzzleFlash", new Vector3(-0.5f, 4.5f, 0.05f), Vector3.one * 0.5f);
             var projectileSpawn = Child(weapon, "ProjectileSpawn", new Vector3(1, 0, 0));
-            var leftFist = Child(arms, "LeftFist", new Vector3(-0.35f, 0.6f, -0.8f), new Vector3(0.1f, 0.1f, 0.075f));
-            var rightFist = Child(arms, "RightFist", new Vector3(0.35f, 0.6f, -0.8f), new Vector3(0.1f, 0.1f, 0.075f));
             var fistAudioGo = Child(arms, "FistAudio", Vector3.zero);
             Child(worldCamera, "Muzzle_01", new Vector3(0, 0, 2));
             Child(player, "WeaponHolder", new Vector3(0, 0.8f, 2));
@@ -61,39 +60,23 @@ namespace RipNRage.Game.Content
             // facade over the camera entity's CameraShake (kick bounds from the prefab)
             worldCamera.AddComponent<CameraRecoil>().recoilCameraShake = new Vector3(0.5f, 0.5f, 1.5f);
 
-            // ---- first-person sprites ----
-            // the viewmodel renders and animates through the ECS (ViewSprite bridge until layer 4)
-            var weaponAnimator = RipNRage.Game.Ecs.ViewSprite.Attach(weapon, GameAssets.Glock["Glock01"], RenderLayer.FirstPerson);
-            var weaponEvents = weapon.AddComponent<WeaponAnimationEvents>();
-            weaponEvents.muzzleFlashObject = muzzleFlash;
-
-            RipNRage.Game.Ecs.ViewSprite.Attach(muzzleFlash, GameAssets.Glock["GlockFlash"], RenderLayer.FirstPerson, fullBright: true);
-            muzzleFlash.SetActive(false);
-
-            var leftAnim = RipNRage.Game.Ecs.ViewSprite.Attach(leftFist, GameAssets.Fist["fist_l_01"], RenderLayer.FirstPerson, sortingOrder: 1);
-            leftAnim.runtimeAnimatorController = GameAssets.LeftFistController;
-
-            var rightAnim = RipNRage.Game.Ecs.ViewSprite.Attach(rightFist, GameAssets.Fist["fist_r_01"], RenderLayer.FirstPerson, sortingOrder: 1);
-            rightAnim.runtimeAnimatorController = GameAssets.RightFistController;
-
-
-            // ---- sway / bob (values from the prefab) ----
-            var sway = arms.AddComponent<WeaponSway>();
-            sway.swayAmount = 0.01f; sway.swaySpeed = 20f; sway.horizontalSwayAmount = 0.01f; sway.horizontalSwaySpeed = 10f;
-            sway.zSmoothLerp = 12f; sway.zSwayAngle = 5f; sway.zSwayMultiplier = -100f; sway.zSmoothSway = 20f;
-
-            // the head bob is a ViewBob component on the camera pivot entity (values below, in PlayerLink)
-
             // ---- the character itself: an ECS entity (the force-driven capsule + locomotion + look + view rig) ----
             // The entity is the body the solver moves; PlayerLink copies its pose back onto this hierarchy each frame
-            // so the scripts that are not ported yet keep reading the GameObject transform.
+            // so the scripts that are not ported yet keep reading the GameObject transform. The head bob is a ViewBob
+            // component on the camera pivot entity (values in PlayerLink).
             RipNRage.Game.Ecs.PlayerLink.Attach(player, cameraGo.transform, worldCamera.transform, orientation.transform);
+
+            // ---- first-person viewmodel: entities under the camera entity (arms + WeaponSway, weapon, flash, fists)
+            var vm = RipNRage.Game.Ecs.ViewModel.Build(Application.Current.World);
+            var weaponEvents = weapon.AddComponent<WeaponAnimationEvents>();
+            weaponEvents.muzzleFlash = vm.MuzzleFlash;
+            // the weapon's clip events keep the SendMessage contract (WeaponAnimationEvents receives them by name)
+            vm.Weapon.OnEvent = n => weapon.SendMessage(n);
 
             // ---- player scripts ----
             var input = player.AddComponent<PlayerInputActions>();
 
             var fps = player.AddComponent<FPSController>();
-            sway.controller = fps;
 
             var camCtrl = player.AddComponent<FPSCameraController>();
             camCtrl.playerCamera = cameraGo.transform;
@@ -116,9 +99,10 @@ namespace RipNRage.Game.Content
             combat.cameraTransform = worldCamera.transform;
             combat.projectileSpawnTransform = projectileSpawn.transform;
             combat.layerMask = 6421; // prefab value: Default | Water | Enemy | Environment | Pickup-ish bits
-            combat.weaponAnimator = weaponAnimator;
-            combat.leftFistAnimator = leftAnim;
-            combat.rightFistAnimator = rightAnim;
+            combat.weaponTransform = weapon.transform;
+            combat.weaponAnimator = vm.Weapon;
+            combat.leftFistAnimator = vm.LeftFist;
+            combat.rightFistAnimator = vm.RightFist;
             combat.jabLandSound = GameAssets.MeleeHit;
             combat.inventory = new Inventory
             {

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 public class Glock : HitscanWeapon
 {
-    protected static readonly int MeleeTrigger = RipNRage.Game.Ecs.ViewSprite.StringToHash("Grapple");
+    protected static readonly int MeleeTrigger = RipNRage.Engine.Ecs.Animation.AnimatedSprite.StringToHash("Grapple");
     
     public override void Melee()
     {
@@ -14,7 +14,7 @@ public class Glock : HitscanWeapon
     {
         leftHandAnimator.SetBool(MeleeTrigger, true);
         yield return new WaitForSeconds(0.25f);
-        weaponAnimator.gameObject.SetActive(true);
+        weaponAnimator.SetActive(true);
         Fire();
         yield return new WaitUntil(()=>CanFire);
         Fire();

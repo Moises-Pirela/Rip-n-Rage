@@ -243,5 +243,24 @@ internal static class Layer4Checks
         Step(1, 1f / 60f);
         True(sh.Trauma == 0f && w.Get<LocalTransform>(camera).Rotation == Quaternion.identity,
             "Clear drops the kick and the trauma at once");
+
+        // ---- 4.3b: the sprite handle the viewmodel and the animation editor use
+        var vmSprite = new RipNRage.Engine.Ecs.Animation.AnimatedSprite(w, null, RipNRage.Engine.Graphics.RenderLayer.FirstPerson,
+            parent: camera, localPosition: new Vector3(0f, -0.65f, 2.36f), localScale: Vector3.one * 0.1f);
+        Step(1, 1f / 60f);
+        True(w.IsAlive(vmSprite.Entity) && w.Has<RipNRage.Engine.Ecs.Rendering.SpriteRender>(vmSprite.Entity),
+            "an AnimatedSprite owns a live sprite entity");
+        True(Mathf.Abs(w.Get<LocalToWorld>(vmSprite.Entity).Position.y - (2.5f - 0.65f)) < 1E-03f,
+            "parented to the camera, its world pose rides the view chain");
+        vmSprite.SetActive(false);
+        Step(1, 1f / 60f);
+        True(!vmSprite.activeSelf, "SetActive(false) hides it (the jab hides the weapon)");
+        vmSprite.SetActive(true);
+        vmSprite.LocalPosition = new Vector3(0.1f, -0.5f, 2f); // Equip moves the weapon to its data
+        Step(1, 1f / 60f);
+        True(vmSprite.activeSelf && vmSprite.LocalPosition.x == 0.1f, "and the equip pose is a plain local write");
+        vmSprite.Destroy();
+        Step(1, 1f / 60f);
+        True(!w.IsAlive(vmSprite.Entity) || vmSprite.Entity.IsNull, "Destroy removes the entity");
     }
 }

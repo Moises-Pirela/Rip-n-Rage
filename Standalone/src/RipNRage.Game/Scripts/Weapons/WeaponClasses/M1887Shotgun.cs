@@ -14,7 +14,7 @@ public class M1887Shotgun : HitscanWeapon
 
     private IEnumerator BeginMelee()
     {
-        weaponAnimator.gameObject.SetActive(true);
+        weaponAnimator.SetActive(true);
         weaponAnimator.SetBool(WeaponMelee, true);
         yield return new WaitForSeconds(0.5f);
         MeleeShot();

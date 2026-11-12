@@ -33,7 +33,8 @@ then start at the first unchecked layer.
   parity with the pre-ECS renderer is within run-to-run noise.
 - [x] **Layer 2 — Physics**: ECS-only simulation, joints, characters, movers, triggers; legacy physics deleted (close-out below)
 - [x] **Layer 3 — Animation, audio, particles, destruction** (details below)
-- [ ] Layer 4 — Input, camera, player **(in progress: 4.1, 4.2, 4.3a done, 4.3b next — pick up here)**
+- [x] **Layer 4 — Input, camera, player**: input singleton, the player as an ECS character, the camera and the
+  first-person viewmodel as entities; `ViewSprite` and the look / bob / sway / recoil behaviours deleted (close-out below)
 - [ ] Layer 5 — Weapons, combat, damage
 - [ ] Layer 6 — Enemies, AI, spawning
 - [ ] Layer 7 — Pickups, rage, style, environment
@@ -41,20 +42,19 @@ then start at the first unchecked layer.
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
 
-### Pick-up point for the next session (written 2026-11-12, after 4.3a)
+### Pick-up point for the next session (written 2026-11-12, after 4.3b)
 
-Layers 0–3 and steps **4.1, 4.2, 4.3a** are done — the player moves, and the camera is an entity the frame is
-rendered from. Start at **4.3b** (details in the layer 4 section): the first-person viewmodel as child entities of
-the camera, `ViewSprite` deleted, `WeaponSway` as a component.
+Layers 0–4 are done — the player, the camera and the viewmodel are entities. Start at **layer 5** (weapons, combat,
+damage). The 4.3b performance gate was run light by request (no interleaved bench; the step touches no physics);
+run the full interleaved bench at the layer 5 close-out.
 
 Still true in the tree:
 
-- The viewmodel is still GameObject-anchored through `ViewSprite`, and so is the rocket explosion sprite
-  (`Prefabs.cs`) — that one is a world-space one-shot, not a viewmodel, so decide whether it becomes a plain
-  entity-with-`SpriteAnimator` in 4.3b or waits for layer 5 with the rest of the rocket.
-- The animation editor's controller preview goes through `ViewSprite` **and the editor never registers the game
-  assembly's systems**, so anything the bridge needs per frame has to keep working without them.
 - Projectiles still move by transform and hit nothing (layer 5); `AgentVisionSensor`'s trigger is uncalled (layer 6).
+- The rocket explosion is an `AnimatedSprite` placed by `EntitySpriteAnchor` (`Prefabs.cs`) — replace it end to end
+  with the layer-5 projectiles.
+- The animation editor hosts `AnimatedSprite`s **without registering the game assembly's systems** (only
+  `RipNRage.Game/Program.cs` calls `AddSystemsFromAssemblies` for the game); keep editor-facing pieces engine-side.
 - Gates as in the layer 2/3 close-outs: compare bench interleaved against the previous commit (`--threads 1` for the
   stable numbers; the per-step metric only counts frames with a fixed step); ragdolls sit at 8.3–8.7 ms vs budget 8
   (knobs: pieces sleep less than boxes, and legacy-faithful CCD on every piece costs ~0.85 ms serially).
@@ -359,14 +359,34 @@ Convert, keeping the tuned solver behaviour:
         camera was written in the scene phase and therefore lagged by one; at 77° fov that 0.2° is ~3 px of
         horizontal smear across the plank texture in the lower half of the frame (the flat sky is untouched, which is
         how we know it is not a pose or projection change). One frame less view latency, not a regression.
-    - [ ] 4.3b **The viewmodel is entities** — next. Delete the `ViewSprite` bridge
-          (`RipNRage.Game/Ecs/ViewSprite.cs` + `ViewSpriteEventSystem` + the `ViewSpritePoseSystem` added in 4.3a):
-          the arms / weapon / fists / muzzle flash become child entities of the camera entity
-          (`RenderLayer.FirstPerson`), `WeaponSway` becomes a component + system, and the weapon scripts talk to
-          `SpriteAnimator` directly. The animation editor's controller preview runs through the bridge too and needs
-          its replacement in the same step — note it hosts `ViewSprite`s **without registering the game assembly's
-          systems** (only `RipNRage.Game/Program.cs` calls `AddSystemsFromAssemblies` for it), which is why 4.3a kept
-          the bridge's `LateUpdate` pose copy alongside the system.
+    - [x] 4.3b **The viewmodel is entities.** The `ViewSprite` bridge is **deleted** (`ViewSprite`,
+          `ViewSpriteEventSystem`, 4.3a's `ViewSpritePoseSystem`, the `WeaponSway` behaviour). In its place:
+          - `Ecs/Animation/AnimatedSprite.cs` (engine): a handle on a sprite entity (`SpriteRender` + optional
+            `SpriteAnimator`, `Parent`-able) wrapping the component access behind the legacy Animator vocabulary
+            (controller, `SetBool` / `SetTrigger` / `Play`, `speed`, the editor's read-back, `SetActive` ↔ `Hidden`).
+            Clip events reach its `OnEvent` through `AnimationEventRouter` — an **engine** system on purpose: the
+            animation editor hosts these without the game assembly's systems, and its event flashes work again
+            (`ViewSpriteEventSystem` never ran there, so they were silently dead).
+          - `RipNRage.Game/Ecs/ViewModel.cs`: the viewmodel as entities under the camera entity — arms
+            (`WeaponSway` component, prefab numbers; `WeaponSwaySystem`, LateTick before `TransformSystem`,
+            grounded from the player's `CharacterMotor`) → weapon / fists (`RenderLayer.FirstPerson`), muzzle flash a
+            child of the weapon sprite, hidden until the clip events show it. No per-frame GameObject→entity pose
+            copy remains: the chain hangs off the camera entity itself.
+          - The weapon scripts keep their shape: fields became `AnimatedSprite`, `.gameObject.SetActive` → `.SetActive`,
+            `.transform.localPosition/Scale` → `.LocalPosition/.LocalScale`. The weapon's clip events still arrive as
+            `SendMessage` on the "Weapon" GameObject (wired `vm.Weapon.OnEvent` → `SendMessage`), so
+            `WeaponAnimationEvents` is unchanged but for its muzzle-flash field. The GO nodes "PlayerArms" / "Weapon" /
+            "ProjectileSpawn" survive only as script anchors; `CombatController` re-applies the weapon data's
+            position / scale to the GO on equip so the rocket's spawn point stays where it was. The GO "MuzzleFlash" /
+            "LeftFist" / "RightFist" nodes are gone.
+          - The rocket explosion (the one world-space `ViewSprite`) is an `AnimatedSprite` placed once by
+            `EntitySpriteAnchor` (it never moves) — replaced end to end in layer 5 with the projectiles. Its `FadeOut`
+            was dropped: it only ever faded a `SpriteRenderer`, which the explosion did not have (a silent no-op).
+          - The animation editor's preview is an `AnimatedSprite` whose pose follows the preview node each frame in
+            the editor's own Update.
+          - **Gates (light, by request)**: builds; 192 engine checks; `fire` / `weapons` / `saveload` complete with no
+            errors; a `fire` screenshot shows the weapon, hands and muzzle flash rendering from the entities; the
+            animation editor starts clean.
 - **Two engine bugs found by putting a real body back under the player** (both pre-existing since 2.7, invisible
   while nothing moved between fixed steps):
   1. `SolverBody.EndStep` only wrote the owner pose for **non**-interpolated bodies, so an interpolated body's

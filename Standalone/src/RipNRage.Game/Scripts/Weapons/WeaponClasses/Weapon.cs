@@ -43,11 +43,11 @@ public abstract class Weapon : MonoBehaviour
     protected bool CanFire = true;
     protected Coroutine AllowRefireCoroutine;
 
-    protected RipNRage.Game.Ecs.ViewSprite weaponAnimator;
-    protected RipNRage.Game.Ecs.ViewSprite leftHandAnimator;
-    protected RipNRage.Game.Ecs.ViewSprite rightHandAnimator;
-    protected static readonly int IsFiring = RipNRage.Game.Ecs.ViewSprite.StringToHash("IsFiring");
-    protected static readonly int WeaponMelee = RipNRage.Game.Ecs.ViewSprite.StringToHash("WeaponMelee");
+    protected RipNRage.Engine.Ecs.Animation.AnimatedSprite weaponAnimator;
+    protected RipNRage.Engine.Ecs.Animation.AnimatedSprite leftHandAnimator;
+    protected RipNRage.Engine.Ecs.Animation.AnimatedSprite rightHandAnimator;
+    protected static readonly int IsFiring = RipNRage.Engine.Ecs.Animation.AnimatedSprite.StringToHash("IsFiring");
+    protected static readonly int WeaponMelee = RipNRage.Engine.Ecs.Animation.AnimatedSprite.StringToHash("WeaponMelee");
     protected CameraRecoil _cameraRecoil;
     protected CombatController _combatController;
     protected HudController _hudController;
@@ -59,12 +59,12 @@ public abstract class Weapon : MonoBehaviour
         _hudController =   EnragedInjector<HudController>.GetInstance();
     }
 
-    public virtual void Equip(RipNRage.Game.Ecs.ViewSprite animator, Transform transform, LayerMask layerMask, RipNRage.Game.Ecs.ViewSprite leftHandAnimator, RipNRage.Game.Ecs.ViewSprite rightHandAnimator = null)
+    public virtual void Equip(RipNRage.Engine.Ecs.Animation.AnimatedSprite animator, Transform transform, LayerMask layerMask, RipNRage.Engine.Ecs.Animation.AnimatedSprite leftHandAnimator, RipNRage.Engine.Ecs.Animation.AnimatedSprite rightHandAnimator = null)
     {
         weaponAnimator = animator;
         _LayerMask = layerMask;
-        weaponAnimator.transform.localPosition = weaponData.weaponPosition;
-        weaponAnimator.transform.localScale = Vector3.one * weaponData.weaponScale;
+        weaponAnimator.LocalPosition = weaponData.weaponPosition;
+        weaponAnimator.LocalScale = Vector3.one * weaponData.weaponScale;
         this.leftHandAnimator = leftHandAnimator;
         this.rightHandAnimator = rightHandAnimator;
         weaponAnimator.SetBool(IsFiring, false);
@@ -77,7 +77,7 @@ public abstract class Weapon : MonoBehaviour
     {
         _combatController.OnEndMeleeCombo();
         weaponAnimator.SetBool(WeaponMelee, false);
-        weaponAnimator.gameObject.SetActive(false);
+        weaponAnimator.SetActive(false);
     }
     
     protected virtual IEnumerator AllowRefire_Coroutine()
