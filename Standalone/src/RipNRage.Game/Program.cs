@@ -396,6 +396,32 @@ namespace RipNRage.Game
     {
         public string scriptName = "look";
         private int _frame;
+        /// <summary>Where each enemy was first seen, so the probe can tell whether it has ever moved.</summary>
+        private readonly System.Collections.Generic.Dictionary<AIState, Vector3> _enemyHome = new System.Collections.Generic.Dictionary<AIState, Vector3>();
+
+        /// <summary>
+        /// The layer-6 watch line: what the nearest enemy is doing and what it has done to the player. Today every
+        /// field reads "statue" — the vision sensor lost its collider in 2.L and the steering is stubbed — so each
+        /// of these numbers is a flip layer 6 has to earn.
+        /// </summary>
+        private void AiProbe(string tag)
+        {
+            var ps = PlayerState.Current;
+            if (ps == null) return;
+            AIState nearest = null; float best = float.MaxValue;
+            foreach (var st in Scene.Current.FindObjectsOfType<AIState>())
+            {
+                if (!_enemyHome.ContainsKey(st)) _enemyHome[st] = st.transform.position;
+                float d = (st.transform.position - ps.transform.position).sqrMagnitude;
+                if (d < best) { best = d; nearest = st; }
+            }
+            if (nearest == null) { Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} enemy none"); return; }
+            bool spotted = nearest.GetComponent<AI.BehaviorTree.BehaviorTreeOwner>()?.tree?.blackboard?.playerObject != null;
+            var anim = nearest.GetComponent<AnimationStateController>()?.AnimationState;
+            float moved = (nearest.transform.position - _enemyHome[nearest]).magnitude;
+            Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} armour {ps.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
+                             $"spotted {spotted} anim {anim} ehp {nearest.Health:0}");
+        }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;
         private float _strafeDir;
@@ -503,15 +529,18 @@ namespace RipNRage.Game
                 case "peek":
                     // turn towards the nearby rifleman and watch it
                     input.overrideLook = _frame < 40 ? new Vector2(1.2f, 0f) : Vector2.zero;
+                    if (_frame == 60 || _frame == 150 || _frame == 290) AiProbe($"peek {_frame}");
                     break;
                 case "close":
                     // walk up to the rifleman standing near the spawn
                     input.overrideMove = _frame < 55 ? new Vector2(-0.25f, 1f) : Vector2.zero;
+                    if (_frame == 60 || _frame == 150 || _frame == 290) AiProbe($"close {_frame}");
                     break;
                 case "approach":
                     // run towards the first rifleman, then stand and shoot
                     input.overrideMove = _frame < 270 ? new Vector2(0f, 1f) : Vector2.zero;
                     input.overrideFiring = _frame > 300 && _frame % 30 == 0;
+                    if (_frame == 100 || _frame == 200 || _frame == 290) AiProbe($"approach {_frame}");
                     break;
                 case "rocket":
                     if (_frame == 10) combat.OnChangeWeapon4();
