@@ -33,6 +33,7 @@ internal static class Layer5Checks
         Firing(True, Equal);
         ProjectilesInFlight(True, Equal);
         JabCombo(True);
+        FinisherMoves(True, Equal);
         GameSystems(True);
     }
 
@@ -354,32 +355,104 @@ internal static class Layer5Checks
             w.Add(p, new Weapon { Sprite = gunSprite });
             w.Add(p, new Inventory());
             w.Add(p, new RipNRage.Game.Ecs.PlayerViewRig { Camera = eye });
-            w.Add(p, new Melee { LeftFist = left, RightFist = right });
+            w.Add(p, new AltFire { LeftFist = left, RightFist = right });
             w.Update(1f / 60f);
 
-            w.Get<Melee>(p).Requested = true;
+            w.Get<AltFire>(p).Requested = true;
             w.Update(1f / 60f);
-            True(w.Get<Melee>(p).Step == 1, "the first press throws the left jab");
+            True(w.Get<AltFire>(p).Step == 1, "the first press throws the left jab");
             True(w.Get<Weapon>(p).Holstered && w.Has<RipNRage.Engine.Ecs.Rendering.Hidden>(gunSprite),
                 "and takes the gun off screen");
 
             // one step per press, however many times the press is set inside a single frame
-            w.Get<Melee>(p).Requested = true;
-            w.Get<Melee>(p).Requested = true;
+            w.Get<AltFire>(p).Requested = true;
+            w.Get<AltFire>(p).Requested = true;
             w.Update(1f / 60f);
-            True(w.Get<Melee>(p).Step == 2, "the next press throws the right jab, and a press counts once per frame");
+            True(w.Get<AltFire>(p).Step == 2, "the next press throws the right jab, and a press counts once per frame");
 
-            w.Get<Melee>(p).Requested = true;
+            w.Get<AltFire>(p).Requested = true;
             w.Update(1f / 60f);
-            True(w.Get<Melee>(p).Step == 0 && !w.Get<Weapon>(p).Holstered,
+            True(w.Get<AltFire>(p).Step == 0 && !w.Get<Weapon>(p).Holstered,
                 "the third press ends the combo and brings the gun back");
 
             // and a combo nobody finishes forgets itself after 0.75 s
-            w.Get<Melee>(p).Requested = true;
+            w.Get<AltFire>(p).Requested = true;
             w.Update(1f / 60f);
-            True(w.Get<Melee>(p).Step == 1 && w.Get<Weapon>(p).Holstered, "a fresh jab holsters the gun again");
+            True(w.Get<AltFire>(p).Step == 1 && w.Get<Weapon>(p).Holstered, "a fresh jab holsters the gun again");
             for (int i = 0; i < 50; i++) w.Update(1f / 60f);
-            True(w.Get<Melee>(p).Step == 0 && !w.Get<Weapon>(p).Holstered, "and 0.75 s later the combo has reset");
+            True(w.Get<AltFire>(p).Step == 0 && !w.Get<Weapon>(p).Holstered, "and 0.75 s later the combo has reset");
+
+            w.DestroyAllEntities();
+            w.Update(1f / 60f);
+        }
+        finally { Weapons.All = saved; }
+    }
+
+    // ================================================================= the finishers
+
+    /// <summary>The third press becomes an entity parented to the player, carrying the weapon's finisher component;
+    /// its system plays the move through data (Weapon.ForcedShots), never by calling the weapon.</summary>
+    private static void FinisherMoves(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var saved = Weapons.All;
+        Weapons.All = new[]
+        {
+            new WeaponData { name = "Grappler", finisher = FinisherKind.Grapple, ammoType = AmmoType.LIGHT,
+                             weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.1f, damagePerShot = 30f } },
+            new WeaponData { name = "Basher", finisher = FinisherKind.Bash,
+                             weaponStats = new WeaponStats { fireRate = 0.1f } },
+        };
+        try
+        {
+            using var w = new World(0);
+            w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(RipNRage.Game.Ecs.PlayerLink).Assembly);
+            w.FixedDeltaTime = 1f / 60f;
+            w.DriveFixedInternally = true;
+
+            var eye = w.CreateEntity();
+            w.Add(eye, LocalTransform.At(new Vector3(800f, 1.1f, 0f)));
+            var p = w.CreateEntity();
+            w.Add(p, LocalTransform.At(new Vector3(800f, 1.1f, 0f)));
+            var inv = new Inventory(); inv.Ammo[(int)AmmoType.LIGHT] = 10;
+            w.Add(p, new Weapon());
+            w.Add(p, inv);
+            w.Add(p, new RipNRage.Game.Ecs.PlayerViewRig { Camera = eye });
+            w.Add(p, new AltFire());
+            w.Add(p, new RipNRage.Game.Ecs.PlayerLook());
+
+            // a grapple with nobody in reach spawns nothing: the combo just resets (and the glockalt gate pins this)
+            w.Update(1f / 60f);
+            for (int press = 0; press < 3; press++) { w.Get<AltFire>(p).Requested = true; w.Update(1f / 60f); }
+            True(w.Get<AltFire>(p).Finisher.IsNull && w.Get<AltFire>(p).Step == 0,
+                "a grapple with nobody in reach spawns no finisher and resets the combo");
+            Equal(10f, w.Get<Inventory>(p).Ammo[(int)AmmoType.LIGHT], "and fires nothing");
+
+            // with a victim at arm's length the grapple runs: grab, two shots through the normal path, release
+            var victim = w.CreateEntity();
+            w.Add(victim, LocalTransform.At(new Vector3(800f, 1.125f, 0.8f)));
+            w.Add(victim, new RipNRage.Engine.Ecs.Physics.ColliderShape { Kind = RipNRage.Engine.Ecs.Physics.ShapeKind.Capsule, Radius = 0.34f, Height = 1.9f });
+            w.Add(victim, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = false });
+            w.Add(victim, new Health { Current = 100f, Max = 100f });
+            w.Add(victim, new Hitbox { Height = 2.25f, HeadFraction = 0.76f });
+            w.Update(1f / 60f);
+
+            for (int press = 0; press < 3; press++) { w.Get<AltFire>(p).Requested = true; w.Update(1f / 60f); }
+            True(!w.Get<AltFire>(p).Finisher.IsNull, "with a victim in reach the third press spawns the finisher entity");
+            True(w.Get<Parent>(w.Get<AltFire>(p).Finisher).Value == p, "parented to the player");
+            for (int i = 0; i < 60 && !w.Get<AltFire>(p).Finisher.IsNull; i++) w.Update(1f / 60f);
+            True(w.Get<AltFire>(p).Finisher.IsNull && w.Get<AltFire>(p).Step == 0, "the grapple plays out and the combo resets");
+            Equal(8f, w.Get<Inventory>(p).Ammo[(int)AmmoType.LIGHT], "two rounds went through the normal fire path");
+            Equal(40f, w.Get<Health>(victim).Current, "and both landed on the grabbed victim (100 - 2 x 30)");
+            True(Mathf.Abs(Mathf.DeltaAngle(w.Get<RipNRage.Game.Ecs.PlayerLook>(p).Yaw, 0f)) < 10f,
+                "the view snapped onto the victim");
+
+            // the bash: a timer and the swing, no shots, no target needed
+            w.Get<Weapon>(p) = new Weapon { Slot = 1 };
+            for (int press = 0; press < 3; press++) { w.Get<AltFire>(p).Requested = true; w.Update(1f / 60f); }
+            True(!w.Get<AltFire>(p).Finisher.IsNull, "the bash needs no target to start");
+            for (int i = 0; i < 30 && !w.Get<AltFire>(p).Finisher.IsNull; i++) w.Update(1f / 60f);
+            True(w.Get<AltFire>(p).Finisher.IsNull && w.Get<AltFire>(p).Step == 0, "and is over in a beat");
+            Equal(8f, w.Get<Inventory>(p).Ammo[(int)AmmoType.LIGHT], "without spending a round");
 
             w.DestroyAllEntities();
             w.Update(1f / 60f);

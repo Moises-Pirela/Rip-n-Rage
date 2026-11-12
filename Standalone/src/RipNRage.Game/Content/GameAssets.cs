@@ -368,6 +368,7 @@ namespace RipNRage.Game.Content
             GlockData = new WeaponData
             {
                 name = "Glock",
+                finisher = RipNRage.Game.Ecs.Combat.FinisherKind.Grapple,
                 ammoType = AmmoType.LIGHT,
                 weaponRecoil = new WeaponRecoil(new Vector3(12, 1, 2), 12, 6, cameraShake: 0.06f),
                 weaponStats = new WeaponStats { bulletsPerShot = 2, fireRate = 0.15f, damagePerShot = 100, weaponSpread = 0.008f, isUnlocked = true, hitImpulse = 5f,
@@ -379,6 +380,7 @@ namespace RipNRage.Game.Content
             M1887Data = new WeaponData
             {
                 name = "M1887",
+                finisher = RipNRage.Game.Ecs.Combat.FinisherKind.PointBlankShot,
                 ammoType = AmmoType.SHELL,
                 weaponRecoil = new WeaponRecoil(new Vector3(18, 2, 4), 14, 5, cameraShake: 0.35f),
                 weaponStats = new WeaponStats { bulletsPerShot = 16, fireRate = 0.525f, damagePerShot = 200, weaponSpread = 0.05f, isUnlocked = true, hitImpulse = 12f,
@@ -390,6 +392,7 @@ namespace RipNRage.Game.Content
             MG338Data = new WeaponData
             {
                 name = "MG338",
+                finisher = RipNRage.Game.Ecs.Combat.FinisherKind.Bash, meleeSound = MGPunch,
                 ammoType = AmmoType.HEAVY,
                 weaponRecoil = new WeaponRecoil(new Vector3(10, 3, 2), 14, 7, cameraShake: 0.16f),
                 weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.2f, damagePerShot = 1000, weaponSpread = 0.012f, isUnlocked = true, hitImpulse = 25f,
@@ -423,6 +426,8 @@ namespace RipNRage.Game.Content
             RocketLauncherData = new WeaponData
             {
                 name = "RocketLauncher",
+                // the legacy RocketLauncher.Melee was an empty stub; every weapon gets a finisher now (per direction)
+                finisher = RipNRage.Game.Ecs.Combat.FinisherKind.Bash, meleeSound = MGPunch,
                 projectileKind = RipNRage.Game.Ecs.Combat.Projectiles.Rocket,
                 ammoType = AmmoType.EXPLOSIVE,
                 weaponRecoil = new WeaponRecoil(new Vector3(22, 3, 6), 40, 6, cameraShake: 0.5f),

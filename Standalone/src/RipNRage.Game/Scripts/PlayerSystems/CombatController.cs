@@ -35,7 +35,7 @@ public class CombatController : MonoBehaviour
     private static RipNRage.Engine.Ecs.World W => Application.Current.World;
     private ref Weapon Gun => ref W.Get<Weapon>(PlayerLink.PlayerEntity);
     private ref Inventory Inv => ref W.Get<Inventory>(PlayerLink.PlayerEntity);
-    private ref Melee Melee => ref W.Get<Melee>(PlayerLink.PlayerEntity);
+    private ref AltFire Combo => ref W.Get<AltFire>(PlayerLink.PlayerEntity);
 
     public int CurrentWeaponIndex => Gun.Slot;
     public WeaponData CurrentWeaponData => Weapons.All.Length > 0 ? Weapons.Data(Gun.Slot) : null;
@@ -67,7 +67,9 @@ public class CombatController : MonoBehaviour
         if (_combatDisabled) return;
         _combatDisabled = true;
         StopAllCoroutines();
-        Melee = default;      // no combo may continue past death
+        // no combo or finisher may continue past death (the finisher entity would keep driving the gun)
+        if (!Combo.Finisher.IsNull && W.IsAlive(Combo.Finisher) && !W.IsIterating) W.DestroyEntity(Combo.Finisher);
+        Combo = default;
         Gun.Holstered = true;
         if (weaponAnimator != null) weaponAnimator.SetActive(false);
         if (leftFistAnimator != null) leftFistAnimator.SetActive(false);
@@ -78,11 +80,11 @@ public class CombatController : MonoBehaviour
 
     #region Input Events
 
-    /// <summary>The automation scripts' alt-fire press; the real input is read by <see cref="MeleeSystem"/> itself.</summary>
+    /// <summary>The automation scripts' alt-fire press; the real input is read by <see cref="AltFireSystem"/> itself.</summary>
     public void OnAltFire(bool isPressed)
     {
         if (_combatDisabled || !isPressed || _playerInputActions.GetIsBlockingInput()) return;
-        Melee.Requested = true;
+        Combo.Requested = true;
     }
 
     public void OnSwapWeapon(float value)

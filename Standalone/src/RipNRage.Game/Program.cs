@@ -488,8 +488,8 @@ namespace RipNRage.Game
                     {
                         var w = Application.Current.World;
                         var pe = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
-                        if (w.IsAlive(pe) && w.Has<RipNRage.Game.Ecs.Combat.Melee>(pe))
-                            Debug.LogWarning($"[test] frame {_frame}: combo step {w.Get<RipNRage.Game.Ecs.Combat.Melee>(pe).Step} " +
+                        if (w.IsAlive(pe) && w.Has<RipNRage.Game.Ecs.Combat.AltFire>(pe))
+                            Debug.LogWarning($"[test] frame {_frame}: combo step {w.Get<RipNRage.Game.Ecs.Combat.AltFire>(pe).Step} " +
                                              $"holstered {w.Get<RipNRage.Game.Ecs.Combat.Weapon>(pe).Holstered}");
                     }
                     break;
@@ -535,8 +535,17 @@ namespace RipNRage.Game
                     if (_frame == 240 && PlayerState.Current != null) Debug.LogWarning($"[test] after load at {PlayerState.Current.transform.position} ammo {EnragedInjector<CombatController>.GetInstance().AmmoOf(AmmoType.LIGHT)} hp {PlayerState.Current.Health}");
                     break;
                 case "glockalt":
-                    // three right clicks: jab, jab, then the Glock grapple/alt-fire melee (needs an enemy within 1 m)
+                    // Three right clicks: jab, jab, then the Glock grapple finisher — which needs a victim within
+                    // 1 m, and this level has none in reach, so the gate pins the refusal: no finisher entity, the
+                    // combo reset, no rounds spent. The grapple itself is covered in vitro (GameChecks).
                     if (_frame == 30 || _frame == 40 || _frame == 50) combat.OnAltFire(true);
+                    if (_frame == 55)
+                    {
+                        var w = Application.Current.World;
+                        var pe = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
+                        var combo = w.Get<RipNRage.Game.Ecs.Combat.AltFire>(pe);
+                        Debug.LogWarning($"[test] after 3 presses: step {combo.Step} finisher {(combo.Finisher.IsNull ? "none" : "live")} ammo {combat.AmmoOf(AmmoType.LIGHT)}");
+                    }
                     break;
                 case "die":
                     // the death loop: walk, take lethal damage at frame 40, watch the camera fall and the

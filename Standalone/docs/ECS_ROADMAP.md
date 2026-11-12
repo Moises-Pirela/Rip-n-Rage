@@ -519,6 +519,29 @@ Convert, keeping the tuned solver behaviour:
   assertions (bullet flight → hit → damage, range expiry, blast kill, 12% self-damage, Lifetime + child teardown);
   alloc/frame 8.3–9.9 KB vs the 5.0 baseline's 8.2–9.9; bench projectiles 0.14 ms/step (baseline 0.18).
 
+#### 5.5 — Alt-fire finishers as entities (done)
+
+- `Melee` grew into **`AltFire`** — the combo component (press 1 and 2 jab, press 3 is the weapon's finisher) — and
+  the finisher in progress is itself an **entity, parented to the player** (it is the player's move; the hierarchy
+  tears it down with them, and `DisableCombat` destroys it on death). The entity carries exactly one per-weapon
+  finisher component, declared by `WeaponData.finisher`, each driven by its own system, from the moves the deleted
+  Weapon subclasses carried (recovered from git history):
+  - `GrappleFinisher` (Glock): snap the view to the grabbed victim's chest (the old grapplePoint height), the left
+    fist's Grapple hold, the gun out at 0.25 s, two point-blank shots, release a beat after the second.
+  - `PointBlankFinisher` (M1887): the swing telegraphs 0.5 s, then one shell at arm's length.
+  - `BashFinisher` (MG338, and now the rocket launcher too — its legacy Melee was an empty stub, and every weapon
+    gets a finisher per direction): the strike sound (`WeaponData.meleeSound`) and the swing, 0.2 s.
+- **No cross-system calls**: a finisher never fires the gun — it asks, through `Weapon.ForcedShots`, and
+  `WeaponFireSystem` fires those shots through the normal path (ammo, refire, recoil, hitscan), holstered or not.
+  Running dry cancels the request. Known simplification: forced shots use the weapon's normal spread (the legacy
+  M1887 melee shot was zero-spread; at arm's length the difference is centimetres).
+- A grapple with nobody within the 1 m reach spawns nothing and the combo resets — the legacy rule — and the
+  `glockalt` gate pins exactly that (no enemy is spawned, per direction): `step 0 finisher none ammo 120`. The
+  grapple itself is covered in vitro: finisher entity parented to the player, two rounds through the normal fire
+  path landing on the grabbed victim, the view snapped onto it, combo reset, entity gone.
+- Gates: 199 engine + 71 gameplay assertions; all 13 combat scripts + `die` at parity, `jab` / `rocket` /
+  `killenemy` probes unchanged.
+
 #### 5.4c — The fist combo is a component, and CameraRecoil is gone (done)
 
 - `Melee { Step, JabTimer, ComboTimer, Requested, LeftFist, RightFist }` + `MeleeSystem` (Tick after input, runs alone

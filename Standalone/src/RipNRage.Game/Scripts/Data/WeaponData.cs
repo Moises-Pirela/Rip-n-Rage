@@ -11,6 +11,10 @@ public class WeaponData : ScriptableObject
     public AmmoType ammoType;
     /// <summary>&gt;= 0 = this weapon launches that <see cref="RipNRage.Game.Ecs.Combat.Projectiles"/> kind instead of hitscan rays.</summary>
     public int projectileKind = -1;
+    /// <summary>What the third alt-fire press does (see RipNRage.Game.Ecs.Combat.FinisherKind).</summary>
+    public RipNRage.Game.Ecs.Combat.FinisherKind finisher;
+    /// <summary>The bash finisher's strike sound.</summary>
+    public AudioClip meleeSound;
     
     [Header("Weapon stats")]
     public WeaponRecoil weaponRecoil;

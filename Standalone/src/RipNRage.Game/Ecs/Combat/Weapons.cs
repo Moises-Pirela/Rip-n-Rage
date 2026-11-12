@@ -23,6 +23,9 @@ namespace RipNRage.Game.Ecs.Combat
         public float Bloom;
         /// <summary>The gun is off the trigger (jab combo, death).</summary>
         public bool Holstered;
+        /// <summary>Shots a finisher has asked for: fired through the normal path (ammo, refire, recoil) even while
+        /// holstered — the finisher requests, the fire system fires. Data in, shots out; no cross-system calls.</summary>
+        public int ForcedShots;
         /// <summary>The viewmodel sprite entity whose animator gets the IsFiring bool.</summary>
         public Entity Sprite;
         internal bool AnimFiring;
@@ -133,9 +136,11 @@ namespace RipNRage.Game.Ecs.Combat
                     }
                     w.Bloom = Mathf.MoveTowards(w.Bloom, 0f, st.bloomRecovery * dt);
 
-                    if (!input.FireHeld || w.Holstered || w.RefireTimer > 0f) continue;
-                    if (invs[i].Ammo[(int)Weapons.All[w.Slot].ammoType] <= 0) continue; // todo (legacy): no-ammo click
+                    bool forced = w.ForcedShots > 0;
+                    if ((!input.FireHeld && !forced) || (w.Holstered && !forced) || w.RefireTimer > 0f) continue;
+                    if (invs[i].Ammo[(int)Weapons.All[w.Slot].ammoType] <= 0) { w.ForcedShots = 0; continue; } // dry: a finisher gives up
 
+                    if (forced) w.ForcedShots--;
                     Fire(ctx, ents[i], ref w, ref invs[i], in rigs[i]);
                 }
             }

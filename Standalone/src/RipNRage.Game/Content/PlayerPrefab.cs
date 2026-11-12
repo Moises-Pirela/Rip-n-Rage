@@ -100,7 +100,7 @@ namespace RipNRage.Game.Content
             var world = Application.Current.World;
             world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Weapon { Sprite = vm.Weapon.Entity });
             world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Inventory());
-            world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Melee
+            world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.AltFire
                 { LeftFist = vm.LeftFist.Entity, RightFist = vm.RightFist.Entity });
 
             var combat = player.AddComponent<CombatController>();
