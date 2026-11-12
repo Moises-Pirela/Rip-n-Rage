@@ -55,15 +55,15 @@ internal static class Layer5Checks
         });
         w.Add(enemy, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
         w.Add(enemy, new Health { Current = 1000f, Max = 1000f, ArmorResistance = 0.75f });
-        w.Add(enemy, new Hitbox { Owner = enemy, Height = AIState.SpriteHeight, HeadFraction = AIState.HeadFraction });
+        w.Add(enemy, new Hitbox { Height = AIState.SpriteHeight, HeadFraction = AIState.HeadFraction });
         w.Update(1f / 60f); // one step so the sync registers the collider
 
         // chest-height ray from 5 m out, masked to the enemy layer like the weapons' 6421 mask
         bool hit = RipNRage.Engine.Physics.Raycast(new Vector3(0f, 1.1f, -5f), Vector3.forward,
             out var rayHit, 100f, 1 << Layers.Enemies);
         True(hit && rayHit.entity == enemy, "a ray on the Enemies layer stops at the capsule and names the entity");
-        True(w.Has<Hitbox>(rayHit.entity) && w.Get<Hitbox>(rayHit.entity).Owner == enemy,
-            "and the hit entity carries the Hitbox that routes the damage");
+        True(w.Has<Hitbox>(rayHit.entity) && w.Has<Health>(rayHit.entity),
+            "and the hit entity carries the Hitbox and the Health the damage lands on");
         True(!w.Get<Hitbox>(rayHit.entity).IsHeadshot(w.Get<LocalToWorld>(rayHit.entity), rayHit.point),
             "a chest hit through the real ray is not a headshot");
         // the head band is narrow: the head line sits at 1.71 m but the capsule itself tops out at 1.9 m
@@ -101,8 +101,7 @@ internal static class Layer5Checks
         w.Update(1f / 60f);
         Equal(70f, w.Get<Health>(d).Armor, "armour absorbs damage * resistance (40 * 0.75 = 30 of 100)");
         Equal(90f, w.Get<Health>(d).Current, "and health takes only the remainder (40 - 30)");
-        True(log.Hits.Count == 1 && !log.Hits[0].Killed && log.Hits[0].Amount == 40f,
-            "the applied blow is reported as a HitEvent carrying the pre-armour amount");
+        True(log.Hits.Count == 1 && !log.Hits[0].Killed, "the applied blow is reported as a HitEvent");
 
         // Armour thinner than the absorption absorbs only what it has.
         d = Damageable(100f, 10f);

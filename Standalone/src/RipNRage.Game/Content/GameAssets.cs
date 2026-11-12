@@ -368,7 +368,7 @@ namespace RipNRage.Game.Content
             GlockData = new WeaponData
             {
                 name = "Glock",
-                ammoType = AmmoType.LIGHT, weaponType = WeaponType.SINGLE,
+                ammoType = AmmoType.LIGHT,
                 weaponRecoil = new WeaponRecoil(new Vector3(12, 1, 2), 12, 6, cameraShake: 0.06f),
                 weaponStats = new WeaponStats { bulletsPerShot = 2, fireRate = 0.15f, damagePerShot = 100, weaponSpread = 0.008f, isUnlocked = true, hitImpulse = 5f,
                     spreadMax = 0.06f, bloomPerShot = 0.014f, bloomRecovery = 0.12f, moveSpread = 0.02f, airSpread = 0.04f },
@@ -380,7 +380,7 @@ namespace RipNRage.Game.Content
             M1887Data = new WeaponData
             {
                 name = "M1887",
-                ammoType = AmmoType.SHELL, weaponType = WeaponType.SINGLE,
+                ammoType = AmmoType.SHELL,
                 weaponRecoil = new WeaponRecoil(new Vector3(18, 2, 4), 14, 5, cameraShake: 0.35f),
                 weaponStats = new WeaponStats { bulletsPerShot = 16, fireRate = 0.525f, damagePerShot = 200, weaponSpread = 0.05f, isUnlocked = true, hitImpulse = 12f,
                     spreadMax = 0.09f, bloomPerShot = 0.02f, bloomRecovery = 0.08f, moveSpread = 0.015f, airSpread = 0.03f },
@@ -392,7 +392,7 @@ namespace RipNRage.Game.Content
             MG338Data = new WeaponData
             {
                 name = "MG338",
-                ammoType = AmmoType.HEAVY, weaponType = WeaponType.AUTO,
+                ammoType = AmmoType.HEAVY,
                 weaponRecoil = new WeaponRecoil(new Vector3(10, 3, 2), 14, 7, cameraShake: 0.16f),
                 weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.2f, damagePerShot = 1000, weaponSpread = 0.012f, isUnlocked = true, hitImpulse = 25f,
                     spreadMax = 0.1f, bloomPerShot = 0.013f, bloomRecovery = 0.15f, moveSpread = 0.03f, airSpread = 0.05f },
@@ -404,7 +404,7 @@ namespace RipNRage.Game.Content
             RocketLauncherData = new WeaponData
             {
                 name = "RocketLauncher",
-                ammoType = AmmoType.EXPLOSIVE, weaponType = WeaponType.SINGLE,
+                ammoType = AmmoType.EXPLOSIVE,
                 weaponRecoil = new WeaponRecoil(new Vector3(22, 3, 6), 40, 6, cameraShake: 0.5f),
                 weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.25f, damagePerShot = 1000, weaponSpread = 0.004f, isUnlocked = true,
                     spreadMax = 0.03f, bloomPerShot = 0.02f, bloomRecovery = 0.06f, moveSpread = 0.012f, airSpread = 0.025f, projectileSpreadScale = 1f },

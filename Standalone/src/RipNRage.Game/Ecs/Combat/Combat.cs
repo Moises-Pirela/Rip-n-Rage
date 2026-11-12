@@ -18,24 +18,12 @@ namespace RipNRage.Game.Ecs.Combat
         public float ArmorResistance;
     }
 
-    public sealed class HealthConfig : ComponentConfig<Health>
-    {
-        public float max = 100f, armor, maxArmor = 100f, armorResistance = 0.75f;
-        public override Health Bake() => new Health
-        {
-            Current = max, Max = max,
-            Armor = armor, MaxArmor = maxArmor,
-            ArmorResistance = armorResistance,
-        };
-    }
-
     /// <summary>
     /// Tag: this entity's health reached zero. Added by <see cref="HealthSystem"/> in the frame of the killing blow
     /// and never removed by it — death latches, unlike the legacy <c>EntityState</c>, which called <c>Die()</c> again
     /// for every further lethal hit and left the guard to its subclasses.
     /// </summary>
     [SparseComponent] public struct Dead : IComponent { }
-    public sealed class DeadConfig : ComponentConfig<Dead> { public override Dead Bake() => default; }
 
     /// <summary>
     /// Where this entity can be hurt: weapons that resolve a hit on this entity judge headshots against the capsule's
@@ -44,8 +32,6 @@ namespace RipNRage.Game.Ecs.Combat
     /// </summary>
     public struct Hitbox : IComponent
     {
-        /// <summary>The entity whose <see cref="Health"/> a hit on this collider damages (itself for a one-entity rig).</summary>
-        public Entity Owner;
         /// <summary>Full height of the figure, centred on the entity (the rifleman sprite is 2.25 m).</summary>
         public float Height;
         /// <summary>Fraction of <see cref="Height"/> below the head line (hits above it count double).</summary>
@@ -69,8 +55,6 @@ namespace RipNRage.Game.Ecs.Combat
     public struct DamageEvent : IPostProcessEvent
     {
         public Entity Target;
-        /// <summary>Who dealt it (<see cref="Entity.Null"/> = the player / the world; AI instigators come with layer 6).</summary>
-        public Entity Instigator;
         public float Amount;
         /// <summary>Overrides the target's <see cref="Health.ArmorResistance"/> when &gt; 0 (the legacy optional parameter).</summary>
         public float ArmorResistance;
@@ -85,9 +69,7 @@ namespace RipNRage.Game.Ecs.Combat
     /// <summary>A blow landed (posted by <see cref="HealthSystem"/> in the same frame): feedback — crosshair, rage, style, hit flash.</summary>
     public struct HitEvent : IPostProcessEvent
     {
-        public Entity Target, Instigator;
-        /// <summary>Damage asked for (before armour), as the style / rage bookkeeping counts it.</summary>
-        public float Amount;
+        public Entity Target;
         public Vector3 Point;
         public bool Headshot;
         /// <summary>This was the blow that emptied the health.</summary>
@@ -97,7 +79,7 @@ namespace RipNRage.Game.Ecs.Combat
     /// <summary>An entity's health reached zero (posted once, by the killing blow, with its circumstances).</summary>
     public struct DeathEvent : IPostProcessEvent
     {
-        public Entity Entity, Instigator;
+        public Entity Entity;
         public Vector3 Point, Direction;
         public float Impulse;
         public bool Explosive;
@@ -137,17 +119,13 @@ namespace RipNRage.Game.Ecs.Combat
                 h.Current = Mathf.Clamp(h.Current - amount, 0f, h.Max);
 
                 bool killed = h.Current <= 0f;
-                ctx.Post(new HitEvent
-                {
-                    Target = e.Target, Instigator = e.Instigator, Amount = e.Amount,
-                    Point = e.Point, Headshot = e.Headshot, Killed = killed,
-                });
+                ctx.Post(new HitEvent { Target = e.Target, Point = e.Point, Headshot = e.Headshot, Killed = killed });
                 if (killed)
                 {
                     ctx.Commands.Add(e.Target, new Dead());
                     ctx.Post(new DeathEvent
                     {
-                        Entity = e.Target, Instigator = e.Instigator,
+                        Entity = e.Target,
                         Point = e.Point, Direction = e.Direction, Impulse = e.Impulse,
                         Explosive = e.Explosive, ExplosionRadius = e.ExplosionRadius, Headshot = e.Headshot,
                     });

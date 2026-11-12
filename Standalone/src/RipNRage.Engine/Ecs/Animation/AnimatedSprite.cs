@@ -151,7 +151,6 @@ namespace RipNRage.Engine.Ecs.Animation
         public void SetBool(string name, bool v) { if (Animated) _w.Get<SpriteAnimator>(Entity).SetBool(name, v); }
         public void SetTrigger(string name) { if (Animated) _w.Get<SpriteAnimator>(Entity).SetTrigger(name); }
         public void SetFloat(string name, float v) { if (Animated) _w.Get<SpriteAnimator>(Entity).SetFloat(name, v); }
-        public void Play(string state) { if (Animated) _w.Get<SpriteAnimator>(Entity).Play(state); }
 
         // ---------------------------------------------------------------- read-back (the animation editor's preview)
 

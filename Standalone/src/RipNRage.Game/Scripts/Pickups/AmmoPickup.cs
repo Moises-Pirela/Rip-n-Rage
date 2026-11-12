@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 // Ported from Assets/_Game/Scripts/Pickups/AmmoPickup.cs. The trigger is an ECS Trigger entity owned by a
 // TriggerVolume; GameTriggerBridge relays its overlaps to the callbacks below.
-public class AmmoPickup : MonoBehaviour, IPickup, RipNRage.Game.Ecs.ITriggerListener
+public class AmmoPickup : MonoBehaviour, RipNRage.Game.Ecs.ITriggerListener
 {
     [SerializeField] public int ammoCount;
     [SerializeField] public AmmoType ammoType;

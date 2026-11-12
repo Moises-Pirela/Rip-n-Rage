@@ -16,7 +16,7 @@ using HealthComponent = RipNRage.Game.Ecs.Combat.Health;
 //    the old value (the weapons' synchronous "did this kill" checks are rewritten on top of HitEvent in 5.3);
 //  - death latches (the Dead tag): a second lethal blow no longer calls Die() again. The legacy base class did, and
 //    left the guard to each subclass.
-public abstract class EntityState : MonoBehaviour, IHealth, IArmor
+public abstract class EntityState : MonoBehaviour
 {
     /// <summary>The entity carrying this thing's <see cref="Health"/> (bound by the subclass).</summary>
     public Entity entity { get; private set; }
@@ -81,19 +81,6 @@ public abstract class EntityState : MonoBehaviour, IHealth, IArmor
         });
     }
 
-    /// <summary>Direct health loss with no armour involved (nothing event-worthy: a scripted drain).</summary>
-    public void TakeHealthDamage(float value)
-    {
-        if (!Bound) return;
-        ref var h = ref W.Get<HealthComponent>(entity);
-        h.Current = Mathf.Clamp(h.Current - value, 0f, h.Max);
-        OnHealthChanged?.Invoke();
-        if (h.Current <= 0f && !W.Has<Dead>(entity) && !W.IsIterating)
-        {
-            W.Add(entity, new Dead());
-            Die();
-        }
-    }
 
     public void Heal(float value)
     {
@@ -103,21 +90,7 @@ public abstract class EntityState : MonoBehaviour, IHealth, IArmor
         OnHealthChanged?.Invoke();
     }
 
-    public void TakeArmorDamage(float value)
-    {
-        if (!Bound) return;
-        ref var h = ref W.Get<HealthComponent>(entity);
-        h.Armor = Mathf.Clamp(h.Armor - value, 0f, h.MaxArmor);
-        OnArmorChanged?.Invoke();
-    }
 
-    public void ApplyArmor(float value)
-    {
-        if (!Bound) return;
-        ref var h = ref W.Get<HealthComponent>(entity);
-        h.Armor = Mathf.Clamp(h.Armor + value, 0f, h.MaxArmor);
-        OnArmorChanged?.Invoke();
-    }
 
     public void InitializeHealth(float maxHealth)
     {

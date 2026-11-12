@@ -335,22 +335,3 @@ namespace AI.BehaviorTree
     }
 }
 
-public class UpdatePlayerPositionNode : AI.BehaviorTree.ActionNode
-{
-    protected override void OnStart()
-    {
-        
-    }
-
-    protected override void OnStop()
-    {
-
-    }
-
-    protected override State OnUpdate()
-    {
-        blackboard.MoveToTarget = blackboard.playerObject.transform.position;
-        
-        return State.SUCCESS;
-    }
-}

@@ -7,7 +7,7 @@ using RipNRage.Game.Content.Vfx;
 // sound for EnemyData.attackWindup), then fires a burst of EnemyData.burstCount shots with a muzzle flash and
 // a shot sound each; being hit staggers the enemy (stops, delays the shot) and spotting the player triggers an
 // alert reaction (yellow flash + sting) before the behaviour tree engages.
-public class AIAgent : MonoBehaviour, IEnemyAI
+public class AIAgent : MonoBehaviour
 {
     public bool CanFire { get; set; }
     

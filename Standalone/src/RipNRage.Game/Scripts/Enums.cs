@@ -7,20 +7,8 @@ public enum AmmoType
     EXPLOSIVE
 }
 
-public enum WeaponType
-{
-    SINGLE,
-    AUTO
-}
 
 
-public enum ExcecutionState
-{
-    NONE,
-    RUNNING,
-    SUCCESS,
-    FAILED
-}
 public enum EntityHealthState
 {
     ALIVE,

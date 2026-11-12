@@ -13,18 +13,11 @@ using RipNRage.Engine.Graphics.Particles;
 
 public class Projectile : MonoBehaviour
 {
-    /// <summary>What a projectile can hit: level geometry, the player, enemies and the water (solids and trigger volumes alike).</summary>
-    public const int HitMask = (1 << Layers.Default) | (1 << Layers.Walkable) | (1 << Layers.Wall) | (1 << Layers.OnlyGroundCollision) |
-                               (1 << Layers.Player) | (1 << Layers.Enemies) | (1 << Layers.Water);
-
     public ProjectileStats projectileStats;
     private Transform _transform;
     private bool _consumed;
-    private bool _hasContact;
-    private Contact _contact;
 
     protected EntityState _instigator;
-    [SerializeField] protected LayerMask entityDamageLayer;
     protected ParticleEffectInstance _trail;
 
     /// <summary>True once the projectile hit something (every later overlap report is ignored).</summary>
@@ -38,13 +31,6 @@ public class Projectile : MonoBehaviour
         _transform = transform;
         Destroy(gameObject,  projectileStats.range / projectileStats.speed);
         if (!string.IsNullOrEmpty(projectileStats.trailEffect)) _trail = GameVfx.Trail(projectileStats.trailEffect, transform);
-    }
-
-    /// <summary>Which solids stop this projectile. Plain bullets pass through other enemies (the original only damaged non-AI entities).</summary>
-    protected virtual bool ShouldCollide(GameObject other)
-    {
-        if (_instigator != null && other == _instigator.gameObject) return false;
-        return !(other.GetComponent<EntityState>() is AIState);
     }
 
     protected override void OnDestroy()
@@ -114,20 +100,7 @@ public class Projectile : MonoBehaviour
         if (vfx != null) Destroy(vfx, 0.4f);
     }
 
-    public void OnTriggerExit(GameObject other) { }
-
-    protected Vector3 GetPointOfContact()
-    {
-        if (_hasContact) return _contact.point; // the sweep knows exactly where we touched
-        RaycastHit hit;
-        
-        return Physics.Raycast(transform.position, transform.forward, out hit) ? hit.point : transform.position;
-    }
-
-    /// <summary>Surface normal of the body contact when there was one (the caller's fallback otherwise).</summary>
-    protected bool TryGetContactNormal(out Vector3 normal)
-    {
-        normal = _hasContact ? _contact.normal : Vector3.zero;
-        return _hasContact;
-    }
+    /// <summary>Where the projectile ran into something: the geometry straight ahead, or its own position.</summary>
+    protected Vector3 GetPointOfContact() =>
+        Physics.Raycast(transform.position, transform.forward, out RaycastHit hit) ? hit.point : transform.position;
 }

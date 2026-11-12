@@ -43,7 +43,7 @@ public class AIState : EntityState
         });
         w.Add(e, new CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
         w.Add(e, new Health { ArmorResistance = 0.75f }); // maxima set by Init below, as the legacy flow did
-        w.Add(e, new Hitbox { Owner = e, Height = SpriteHeight, HeadFraction = HeadFraction });
+        w.Add(e, new Hitbox { Height = SpriteHeight, HeadFraction = HeadFraction });
         Bind(e);
         _lastPosition = transform.position;
         Init();

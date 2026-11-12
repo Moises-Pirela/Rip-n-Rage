@@ -9,7 +9,6 @@ using System.Collections.Generic;
 public class WeaponData : ScriptableObject
 {
     public AmmoType ammoType;
-    public WeaponType weaponType;
     
     [Header("Weapon stats")]
     public WeaponRecoil weaponRecoil;

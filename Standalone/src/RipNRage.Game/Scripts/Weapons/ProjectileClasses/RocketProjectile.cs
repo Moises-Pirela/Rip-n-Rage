@@ -7,9 +7,6 @@ using RipNRage.Game.Content.Vfx;
 
 public class RocketProjectile : Projectile
 {
-    /// <summary>A rocket detonates on anything solid, enemies included (only its shooter is skipped).</summary>
-    protected override bool ShouldCollide(GameObject other) => _instigator == null || other != _instigator.gameObject;
-
     public override void OnTriggerEnter(GameObject other)
     {
         if (HasHit) return;
@@ -24,9 +21,7 @@ public class RocketProjectile : Projectile
         if (GameVfx.Available)
         {
             Vector3 fwd = transform.forward;
-            Vector3 normal;
-            if (!TryGetContactNormal(out normal))
-                normal = Physics.Raycast(transform.position - fwd * 0.6f, fwd, out RaycastHit hit, 3f, ~((1 << Layers.Projectile) | (1 << Layers.VisionSensor))) ? hit.normal : -fwd;
+            Vector3 normal = Physics.Raycast(transform.position - fwd * 0.6f, fwd, out RaycastHit hit, 3f, ~((1 << Layers.Projectile) | (1 << Layers.VisionSensor))) ? hit.normal : -fwd;
             GameVfx.Explosion(string.IsNullOrEmpty(projectileStats.explosionEffect) ? "rocket" : projectileStats.explosionEffect, contactPoint, normal);
         }
         else vfx = projectileStats.hitVFX != null ? Instantiate(projectileStats.hitVFX, contactPoint, Quaternion.LookRotation(contactPoint.normalized)) : null;
