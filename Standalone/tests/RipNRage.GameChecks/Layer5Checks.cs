@@ -1,87 +1,184 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
+using RipNRage.Engine.Ecs.Transforms;
+using RipNRage.Game.Ecs.Combat;
+
+/// <summary>Collects the combat events of a frame so the assertions can look at them.</summary>
+[DisableAutoCreation]
+internal sealed class CombatLog : SystemBase, IConsumes<HitEvent>, IConsumes<DeathEvent>
+{
+    public readonly List<HitEvent> Hits = new List<HitEvent>();
+    public readonly List<DeathEvent> Deaths = new List<DeathEvent>();
+    public void Consume(SystemContext ctx, ReadOnlySpan<HitEvent> e) { foreach (var x in e) Hits.Add(x); }
+    public void Consume(SystemContext ctx, ReadOnlySpan<DeathEvent> e) { foreach (var x in e) Deaths.Add(x); }
+}
 
 /// <summary>
-/// Layer 5 (weapons, combat, damage). Step 5.0 pins what the port has to reproduce — the legacy damage / armour
-/// arithmetic, which is the one piece of combat maths that is not obvious — and proves the game assembly's ECS
-/// systems are discoverable and run, which nothing asserted before (the animation editor shipped for two layers
-/// without registering them, and its clip-event flashes were silently dead as a result).
+/// Layer 5 (weapons, combat, damage). 5.0 pinned the legacy damage arithmetic against the old synchronous
+/// EntityState; 5.1 moved it into HealthSystem (DamageEvent in, HitEvent / DeathEvent out), so the same numbers are
+/// asserted here through the pipeline. One behaviour changed on purpose and is pinned the new way below: death
+/// latches (the Dead tag) — the legacy base class called Die() again on every further lethal hit and left the guard
+/// to its subclasses.
 /// </summary>
 internal static class Layer5Checks
 {
-    /// <summary>A damageable with no scene dependencies: exercises EntityState's own arithmetic.</summary>
-    private sealed class Dummy : EntityState
-    {
-        public int Deaths;
-        public int HealthChanges, ArmorChanges;
-        public override void Init() { }
-        public override void Die() => Deaths++;
-    }
-
-    private static Dummy NewDummy(float health, float armor)
-    {
-        var d = new GameObject("dummy").AddComponent<Dummy>();
-        d.InitializeHealth(health);
-        d.InitializeArmor(armor);
-        d.OnHealthChanged += () => d.HealthChanges++;
-        d.OnArmorChanged += () => d.ArmorChanges++;
-        return d;
-    }
-
     public static void Run(Action<bool, string> True, Action<float, float, string> Equal)
     {
         Damage(True, Equal);
+        Headshots(True);
+        EnemyHitbox(True);
         GameSystems(True);
     }
 
-    // ================================================================= the damage model layer 5 has to preserve
+    // ================================================================= the enemy hitbox is hittable
+
+    /// <summary>The capsule recipe AIState gives its entity (the restored pre-2.L collider) stops a ray on the
+    /// Enemies layer and names the entity — what the weapons will resolve damage through in 5.3.</summary>
+    private static void EnemyHitbox(Action<bool, string> True)
+    {
+        using var w = new World(0);
+        w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(RipNRage.Game.Ecs.PlayerLink).Assembly);
+        w.FixedDeltaTime = 1f / 60f;
+        w.DriveFixedInternally = true;
+
+        float ride = RipNRage.Engine.CharacterProfiles.Enemy.rideHeight;
+        var enemy = w.CreateEntity();
+        w.Add(enemy, LocalTransform.At(new Vector3(0f, 1.125f, 0f))); // body centre: feet on y = 0
+        w.Add(enemy, new RipNRage.Engine.Ecs.Physics.ColliderShape
+        {
+            Kind = RipNRage.Engine.Ecs.Physics.ShapeKind.Capsule,
+            Radius = AIState.CapsuleRadius, Height = AIState.SpriteHeight - ride,
+            Center = new Vector3(0f, -ride * 0.5f, 0f),
+        });
+        w.Add(enemy, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
+        w.Add(enemy, new Health { Current = 1000f, Max = 1000f, ArmorResistance = 0.75f });
+        w.Add(enemy, new Hitbox { Owner = enemy, Height = AIState.SpriteHeight, HeadFraction = AIState.HeadFraction });
+        w.Update(1f / 60f); // one step so the sync registers the collider
+
+        // chest-height ray from 5 m out, masked to the enemy layer like the weapons' 6421 mask
+        bool hit = RipNRage.Engine.Physics.Raycast(new Vector3(0f, 1.1f, -5f), Vector3.forward,
+            out var rayHit, 100f, 1 << Layers.Enemies);
+        True(hit && rayHit.entity == enemy, "a ray on the Enemies layer stops at the capsule and names the entity");
+        True(w.Has<Hitbox>(rayHit.entity) && w.Get<Hitbox>(rayHit.entity).Owner == enemy,
+            "and the hit entity carries the Hitbox that routes the damage");
+        True(!w.Get<Hitbox>(rayHit.entity).IsHeadshot(w.Get<LocalToWorld>(rayHit.entity), rayHit.point),
+            "a chest hit through the real ray is not a headshot");
+        // the head band is narrow: the head line sits at 1.71 m but the capsule itself tops out at 1.9 m
+        // (sprite height minus the hover gap), so anything higher misses entirely — as it did pre-2.L
+        bool head = RipNRage.Engine.Physics.Raycast(new Vector3(0f, 1.8f, -5f), Vector3.forward,
+            out var headHit, 100f, 1 << Layers.Enemies);
+        True(head && w.Get<Hitbox>(headHit.entity).IsHeadshot(w.Get<LocalToWorld>(headHit.entity), headHit.point),
+            "a 1.8 m hit through the real ray is a headshot");
+        True(!RipNRage.Engine.Physics.Raycast(new Vector3(0f, 2.0f, -5f), Vector3.forward, out _, 100f, 1 << Layers.Enemies),
+            "and 2.0 m clears the capsule top (1.9 m): the top of the sprite is not hittable, as before 2.L");
+    }
+
+    // ================================================================= the damage model, through the pipeline
 
     private static void Damage(Action<bool, string> True, Action<float, float, string> Equal)
     {
-        // Armour absorbs `damage * resistance` and takes that much itself; the rest goes to health. The default
-        // resistance is 0.75 for everything except the player (PlayerState passes 1, so armour eats the whole hit).
-        var d = NewDummy(100f, 100f);
-        d.TakeDamage(40f);
-        Equal(70f, d.Armor, "armour absorbs damage * resistance (40 * 0.75 = 30 of 100)");
-        Equal(90f, d.Health, "and health takes only the remainder (40 - 30)");
+        using var w = new World(0);
+        w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(RipNRage.Game.Ecs.PlayerLink).Assembly);
+        w.FixedDeltaTime = 1f / 60f;
+        var log = w.AddSystem(new CombatLog());
 
-        // Armour thinner than the absorption absorbs only what it has — the clamp in the middle of TakeDamage, which
-        // reads like a no-op (`armorAbsorption -= armorDelta`) but is what stops armour going negative.
-        d = NewDummy(100f, 10f);
-        d.TakeDamage(40f);
-        Equal(0f, d.Armor, "armour thinner than the absorption is spent exactly");
-        Equal(70f, d.Health, "and health takes the whole rest of the hit (40 - 10)");
+        Entity Damageable(float health, float armor, float resistance = 0.75f)
+        {
+            var e = w.CreateEntity();
+            w.Add(e, LocalTransform.At(Vector3.zero));
+            w.Add(e, new Health { Current = health, Max = health, Armor = armor, MaxArmor = 100f, ArmorResistance = resistance });
+            return e;
+        }
+        void Hit(Entity e, float amount, float resistance = 0f) =>
+            w.Post(new DamageEvent { Target = e, Amount = amount, ArmorResistance = resistance });
+
+        // Armour absorbs damage * resistance and takes that much itself; the rest lands on health (the 5.0 pins).
+        var d = Damageable(100f, 100f);
+        Hit(d, 40f);
+        w.Update(1f / 60f);
+        Equal(70f, w.Get<Health>(d).Armor, "armour absorbs damage * resistance (40 * 0.75 = 30 of 100)");
+        Equal(90f, w.Get<Health>(d).Current, "and health takes only the remainder (40 - 30)");
+        True(log.Hits.Count == 1 && !log.Hits[0].Killed && log.Hits[0].Amount == 40f,
+            "the applied blow is reported as a HitEvent carrying the pre-armour amount");
+
+        // Armour thinner than the absorption absorbs only what it has.
+        d = Damageable(100f, 10f);
+        Hit(d, 40f);
+        w.Update(1f / 60f);
+        Equal(0f, w.Get<Health>(d).Armor, "armour thinner than the absorption is spent exactly");
+        Equal(70f, w.Get<Health>(d).Current, "and health takes the whole rest of the hit (40 - 10)");
 
         // No armour: the hit lands in full.
-        d = NewDummy(100f, 0f);
-        d.TakeDamage(25f);
-        Equal(0f, d.Armor, "no armour stays no armour");
-        Equal(75f, d.Health, "an unarmoured hit lands in full");
+        d = Damageable(100f, 0f);
+        Hit(d, 25f);
+        w.Update(1f / 60f);
+        Equal(75f, w.Get<Health>(d).Current, "an unarmoured hit lands in full");
 
-        // Resistance 1 (the player): armour eats the hit one for one.
-        d = NewDummy(100f, 100f);
-        d.TakeDamage(40f, 1f);
-        Equal(60f, d.Armor, "resistance 1 puts the whole hit on the armour");
-        Equal(100f, d.Health, "and health is untouched while armour holds");
+        // The event's resistance override (the legacy optional parameter; the player posts 1).
+        d = Damageable(100f, 100f);
+        Hit(d, 40f, resistance: 1f);
+        w.Update(1f / 60f);
+        Equal(60f, w.Get<Health>(d).Armor, "resistance 1 puts the whole hit on the armour");
+        Equal(100f, w.Get<Health>(d).Current, "and health is untouched while armour holds");
 
-        // Health is clamped at zero and death fires once, from the hit that crosses it.
-        d = NewDummy(30f, 0f);
-        d.TakeDamage(100f);
-        Equal(0f, d.Health, "health never goes below zero");
-        True(d.Deaths == 1, "the hit that empties health reports a death");
-        d.TakeDamage(100f);
-        True(d.Deaths == 2, "EntityState itself does not latch death (PlayerState / AIState guard that)");
+        // Death: clamped at zero, latched with Dead, reported exactly once.
+        log.Hits.Clear(); log.Deaths.Clear();
+        d = Damageable(30f, 0f);
+        Hit(d, 100f);
+        w.Update(1f / 60f);
+        Equal(0f, w.Get<Health>(d).Current, "health never goes below zero");
+        True(w.Has<Dead>(d), "the killing blow latches the Dead tag");
+        True(log.Deaths.Count == 1 && log.Hits.Count == 1 && log.Hits[0].Killed,
+            "one DeathEvent, and the HitEvent is marked as the kill");
+        Hit(d, 100f);
+        w.Update(1f / 60f);
+        True(log.Deaths.Count == 1 && log.Hits.Count == 1,
+            "a lethal blow on a dead target is dropped whole (death latches — deliberate change from the legacy base class)");
 
-        // Healing and armour pickups are clamped to the maxima captured at initialisation.
-        d = NewDummy(100f, 100f);
-        d.TakeDamage(50f);
-        d.Heal(1000f);
-        Equal(100f, d.Health, "healing is capped at the maximum health");
-        d.ApplyArmor(1000f);
-        Equal(100f, d.Armor, "armour is capped at the maximum armour");
-        True(d.HealthChanges > 0 && d.ArmorChanges > 0, "health and armour changes notify their listeners");
+        // Two lethal blows arriving in the same frame kill once: the span guard, before the tag exists.
+        log.Deaths.Clear();
+        d = Damageable(30f, 0f);
+        Hit(d, 100f);
+        Hit(d, 100f);
+        w.Update(1f / 60f);
+        True(log.Deaths.Count == 1, "two lethal blows in one frame report one death");
+
+        // The death carries the blow's circumstances (what the ragdoll slicer throws the piece with).
+        log.Deaths.Clear();
+        d = Damageable(10f, 0f);
+        w.Post(new DamageEvent
+        {
+            Target = d, Amount = 50f, Point = new Vector3(1, 2, 3), Direction = Vector3.right,
+            Impulse = 60f, Explosive = true, ExplosionRadius = 6f,
+        });
+        w.Update(1f / 60f);
+        True(log.Deaths.Count == 1 && log.Deaths[0].Explosive && log.Deaths[0].Impulse == 60f
+             && log.Deaths[0].Point == new Vector3(1, 2, 3),
+            "the DeathEvent carries the killing blow's point / impulse / explosion");
+
+        // Overkill healing stays clamped (direct writes go through the same component).
+        d = Damageable(100f, 0f);
+        Hit(d, 50f);
+        w.Update(1f / 60f);
+        ref var h = ref w.Get<Health>(d);
+        h.Current = Mathf.Clamp(h.Current + 1000f, 0f, h.Max);
+        Equal(100f, w.Get<Health>(d).Current, "healing is capped at the maximum health");
+    }
+
+    // ================================================================= headshots
+
+    private static void Headshots(Action<bool, string> True)
+    {
+        // the rifleman numbers: 2.25 m tall, head above 76% of that, judged from the body-centre pose
+        var hb = new Hitbox { Height = 2.25f, HeadFraction = 0.76f };
+        var pose = new LocalToWorld { Position = new Vector3(0f, 1.125f, 0f) }; // centre: feet at y = 0
+        True(hb.IsHeadshot(in pose, new Vector3(0f, 2.0f, 0f)), "a hit at 2.0 m on a 2.25 m figure is a headshot");
+        True(!hb.IsHeadshot(in pose, new Vector3(0f, 1.5f, 0f)), "a chest hit at 1.5 m is not");
+        True(!hb.IsHeadshot(in pose, new Vector3(0f, 1.71f - 0.02f, 0f)) && hb.IsHeadshot(in pose, new Vector3(0f, 1.71f + 0.02f, 0f)),
+            "the head line sits at 76% of the height (1.71 m)");
     }
 
     // ================================================================= the game assembly's ECS systems

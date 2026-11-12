@@ -444,7 +444,36 @@ Convert, keeping the tuned solver behaviour:
 - Gameplay assertions live in **`tests/RipNRage.GameChecks`** (added in 5.0): `EngineChecks` only references the
   engine, so game-side components cannot be reached from it. Both run in CI.
 
-#### Baselines (5.0, `0aa5f8f`, dev Mac, `--frames 300`)
+#### 5.1 — Health and hitboxes, whole (done)
+
+- `Ecs/Combat/Combat.cs` (game): `Health` (current / max, armour / max, resistance), `[Sparse] Dead`, `Hitbox`
+  (owner + the 2.25 m / 76% headshot judgement, runtime-only like `PhysicsHandle`), `DamageEvent` / `HitEvent` /
+  `DeathEvent`, and `HealthSystem` — the one place damage is applied: the pinned armour arithmetic, clamped, death
+  **latched** with `Dead` (deliberate change: the legacy base called `Die()` for every further lethal hit and left the
+  guard to subclasses) and reported once even for two lethal blows in one frame.
+- **Everything damageable carries `Health` now** (no bridge, by request): the player's sits on the character entity
+  (`PlayerLink`, resistance 1); each enemy's sits on an entity `AIState` creates with the **restored pre-2.L capsule**
+  (r 0.34, h 1.9, centred half the ride height down, `Layers.Enemies`) — so rays and projectiles stop at enemies again
+  and `RaycastHit.entity` names them. Armour still initialises from `maxHealth`, faithfully porting what is almost
+  certainly a legacy typo (`RiflemanData.maxArmor = 0`, yet the grunt soaks 1000 armour and the killenemy script
+  budgets for it) — **decide after 5.3** whether to fix the data.
+- `EntityState` is a facade over the component (`MIGRATION FACADE`): `TakeDamage` posts a `DamageEvent` (folding the
+  static `DamageInfo` hand-off into the payload), `HealthState` derives from `Dead`; `CombatBridgeSystem` delivers
+  `HitEvent` / `DeathEvent` back to the GameObject listeners (HUD bars, hit flash, `Die()`), re-reporting `DamageInfo`
+  around `Die()` for the ragdoll slicer. `PlayerLink.Attach` creates the whole player rig **immediately** now (the
+  AnimatedSprite doctrine), so `PlayerState.Init` can write the component in the same scene update.
+- **Found by the `die` gate**: `PlayerState.Die` began with `if (IsDead) return;` — correct when `Die` ran before the
+  state flipped, dead wrong once the pipeline applies `Dead` and zero health *before* the bridge calls it: the death
+  sequence never started. It latches on its own flag now, reset by `Init`.
+- Changed semantics, documented in the facade header: damage lands at end of frame (same-frame readers see the old
+  value — the weapons' synchronous "did this kill" checks are rewritten on `HitEvent` in 5.3; until then rocket
+  style-kills do not register), and death latches.
+- Gates: 196 engine + 35 gameplay assertions (the damage model re-pinned through the pipeline, the hitbox recipe hit
+  by real rays — including that the capsule tops out at 1.9 m so the top of the sprite is unhittable, as pre-2.L);
+  all 13 combat scripts complete; `die` shows the full sequence (timeScale 0.2, death screen) at parity with 5.0,
+  twice per run as before. `killenemy` still reports ALIVE 1000/1000 — the weapons' stubbed hit resolution is 5.3.
+
+#### Baselines (5.0, `d5cb44f`, dev Mac, `--frames 300`)
 
 - **Combat is inert, and now says so**: `--script killenemy` fires a Glock point-blank at a rifleman for 180 frames
   and the probe added to it reports `enemy ALIVE health 1000 armour 1000` at frames 240 and 290 — hit resolution has

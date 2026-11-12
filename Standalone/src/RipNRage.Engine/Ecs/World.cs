@@ -44,7 +44,8 @@ namespace RipNRage.Engine.Ecs
 
         /// <summary>Non-zero while a phase runs: the immediate structural API is disabled.</summary>
         private int _iterating;
-        internal bool IsIterating => _iterating > 0;
+        /// <summary>True while a phase or event dispatch runs: immediate structural changes would throw, use <see cref="Commands"/>.</summary>
+        public bool IsIterating => _iterating > 0;
 
         public World(int workerThreads = -1)
         {

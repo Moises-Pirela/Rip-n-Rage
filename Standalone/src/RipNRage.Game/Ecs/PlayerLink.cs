@@ -59,7 +59,11 @@ namespace RipNRage.Game.Ecs
             link.worldCamera = worldCamera;
             link.orientation = orientation;
 
-            var cmd = W.Commands;
+            // Created immediately: prefab building is not inside a system, and everything the build then does
+            // through checked accessors (PlayerState.Init on the Health component, the facades) must see a live
+            // entity — the AnimatedSprite lesson. The physics sync registers the body on its own next fixed step
+            // either way.
+            var cmd = W;
             var e = cmd.CreateEntity();
             cmd.Add(e, new LocalTransform { Position = go.transform.position, Rotation = Quaternion.identity, Scale = Vector3.one });
             cmd.Add(e, new ColliderShape { Kind = ShapeKind.Capsule, Radius = Radius, Height = Height, Center = new Vector3(0f, CentreY, 0f) });
@@ -87,6 +91,13 @@ namespace RipNRage.Game.Ecs
             cmd.Add(e, new PlayerTag());
             // the player's trigger overlaps (checkpoints, water, pickups) have to be reported
             cmd.Add(e, new ReportCollisions());
+            // hit points (layer 5): PlayerState.Init overwrites current health / armour from the save data;
+            // resistance 1 = the player's armour eats a hit one for one (the legacy PlayerState.TakeDamage override)
+            cmd.Add(e, new RipNRage.Game.Ecs.Combat.Health
+            {
+                Current = PlayerState.MaxHealthValue, Max = PlayerState.MaxHealthValue,
+                Armor = 0f, MaxArmor = PlayerState.MaxArmorValue, ArmorResistance = 1f,
+            });
 
             // ---- the view rig: pivot (bob + look) -> camera (lens + shake), both children of the character ----
             Vector3 pivotLocal = cameraPivot != null ? cameraPivot.localPosition : new Vector3(0f, PivotHeight, 0f);

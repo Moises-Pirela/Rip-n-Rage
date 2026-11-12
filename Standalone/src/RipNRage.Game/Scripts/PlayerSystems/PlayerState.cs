@@ -59,6 +59,9 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
 
     public override void Init()
     {
+        // the Health component sits on the character entity PlayerLink built; this facade reads and writes it
+        Bind(RipNRage.Game.Ecs.PlayerLink.PlayerEntity);
+        _dieRan = false; // a (re)initialised player can die again
         // fixed maximums; the save data only provides the current values
         InitializeArmor(MaxArmorValue);
         InitializeHealth(MaxHealthValue);
@@ -74,15 +77,25 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
     public override void TakeDamage(float damage, float armorDamageResistance = 1)
     {
         if (IsDead) return;
-
         base.TakeDamage(damage, armorDamageResistance);
-        
+        // the damage shake happens when the blow actually lands (NotifyHit), not when it is posted
+    }
+
+    internal override void NotifyHit(in RipNRage.Game.Ecs.Combat.HitEvent e)
+    {
+        base.NotifyHit(in e);
         if (!IsDead) _cameraRecoil?.Shake(0.5f);
     }
 
+    /// <summary>Die must run its sequence exactly once, but cannot gate on IsDead any more: the pipeline applies the
+    /// Dead tag and the zero health before the bridge delivers the DeathEvent, so IsDead is already true here (the
+    /// legacy flow called Die while HealthState still said ALIVE).</summary>
+    private bool _dieRan;
+
     public override void Die()
     {
-        if (IsDead) return;
+        if (_dieRan) return;
+        _dieRan = true;
         HealthState = EntityHealthState.DEAD;
         Health = 0f;
 
