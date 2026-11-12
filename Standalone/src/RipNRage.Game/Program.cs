@@ -509,6 +509,7 @@ namespace RipNRage.Game
                     if (_frame == 10) combat.OnChangeWeapon4();
                     input.overrideLook = _frame > 20 && _frame < 26 ? new Vector2(0f, -60f) : Vector2.zero; // aim down at the dock
                     input.overrideFiring = _frame == 40;
+                    if (_frame == 90) Debug.LogWarning($"[test] rocket aftermath: hp {PlayerState.Current?.Health:0} armour {PlayerState.Current?.Armor:0} y {PlayerState.Current?.transform.position.y:0.00}");
                     break;
                 case "rage":
                     // force the enraged state to check the rage post-processing volume

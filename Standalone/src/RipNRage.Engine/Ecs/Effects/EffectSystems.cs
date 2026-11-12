@@ -120,4 +120,32 @@ namespace RipNRage.Engine.Ecs.Effects
         public void OnEntityDestroyed(SystemContext ctx, Entity e) => Stop(e);
         public void OnSimEnd(SystemContext ctx) { foreach (var i in _emitters.Values) i?.Stop(); _emitters.Clear(); }
     }
+
+    /// <summary>A countdown on the entity: when it reaches zero the entity is destroyed (projectile range,
+    /// one-shot effects). Children parented to it go with it.</summary>
+    public struct Lifetime : IComponent
+    {
+        public float Left;
+    }
+
+    [Writes(typeof(Lifetime))]
+    public sealed class LifetimeSystem : SystemBase, ITick
+    {
+        private Query _q;
+        public override void OnCreate() => _q = World.Query().With<Lifetime>().Build();
+
+        public void Tick(SystemContext ctx)
+        {
+            foreach (var chunk in _q)
+            {
+                var life = chunk.Get<Lifetime>(); var ents = chunk.Entities;
+                for (int i = 0; i < chunk.Length; i++)
+                {
+                    if (!chunk.Includes(i)) continue;
+                    life[i].Left -= ctx.DeltaTime;
+                    if (life[i].Left <= 0f) ctx.Commands.DestroyEntity(ents[i]);
+                }
+            }
+        }
+    }
 }

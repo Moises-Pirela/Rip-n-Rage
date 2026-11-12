@@ -14,7 +14,6 @@ public class AIAgent : MonoBehaviour
 
     public AnimationStateController animationStateController;
 
-    public Prefab projectile;
 
     public Transform projectileSpawnPosition;
     
@@ -135,9 +134,10 @@ public class AIAgent : MonoBehaviour
     public void SpawnProjectile(Vector3 targetLocation)
     {
         var direction = targetLocation - projectileSpawnPosition.position;
-        GameObject projectile = Instantiate(this.projectile, projectileSpawnPosition.position, Quaternion.LookRotation(direction));
-        
-        projectile.GetComponent<Projectile>().SetupProjectile(GetComponent<AIState>());
+        var self = GetComponent<AIState>();
+        RipNRage.Game.Ecs.Combat.Projectiles.Launch(Application.Current.World,
+            RipNRage.Game.Ecs.Combat.Projectiles.EnemyBullet, projectileSpawnPosition.position, direction,
+            self != null ? self.entity : RipNRage.Engine.Ecs.Entity.Null);
     }
 
     public IEnumerator AllowRefireCoroutine()

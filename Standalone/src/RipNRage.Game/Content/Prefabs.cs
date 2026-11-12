@@ -13,84 +13,6 @@ namespace RipNRage.Game.Content
     {
         // ---------------------------------------------------------------- weapons (Prefabs/Weapons/*.prefab)
 
-        // ---------------------------------------------------------------- VFX
-
-        /// <summary>
-        /// Stand-in for the EffectCore "Bullet_GoldFire_Small_Impact" particle prefab: a small
-        /// billboarded flash sprite. HitscanWeapon destroys it after 0.5 s like the original.
-        /// </summary>
-        public static readonly Prefab BulletImpact = new Prefab("BulletImpact", () =>
-        {
-            var go = new GameObject("BulletImpact");
-            var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = GameAssets.Glock["GlockFlash"];
-            sr.billboard = true;
-            sr.color = new Color(1f, 0.85f, 0.5f, 0.9f);
-            go.transform.localScale = Vector3.one * 0.035f;
-            go.AddComponent<FadeOut>().lifetime = 0.5f;
-            return go;
-        });
-
-        /// <summary>Prefabs/Projectiles/RocketExplosion.prefab: animated explosion sprite, scale 3.</summary>
-        public static readonly Prefab RocketExplosion = new Prefab("RocketExplosion", () =>
-        {
-            var go = new GameObject("RocketExplosion");
-            go.transform.localScale = Vector3.one * 3f * 0.25f; // the 1024px explosion tiles at scale 3 cover ~30 units in Unity; keep it readable here
-            // a world-space entity sprite; the explosion never moves, so the anchor copies the pose once at spawn
-            var anchor = go.AddComponent<EntitySpriteAnchor>();
-            anchor.sprite = new RipNRage.Engine.Ecs.Animation.AnimatedSprite(
-                Application.Current.World, GameAssets.RocketLauncher["explosion_01"], RenderLayer.World, billboard: true);
-            anchor.sprite.runtimeAnimatorController = GameAssets.ExplosionController;
-            var light = go.AddComponent<Light>();
-            light.type = LightType.Point; light.color = new Color(1f, 0.6f, 0.25f, 1f); light.range = 30f; light.intensity = 6f;
-            go.AddComponent<FlashLight>();
-            return go;
-        });
-
-        // ---------------------------------------------------------------- projectiles (Prefabs/Projectiles/*.prefab)
-
-        /// <summary>Projectile_Rocket.prefab: speed 50, damage 1000, range 100; (moves by its transform until layer 5).</summary>
-        public static readonly Prefab ProjectileRocket = new Prefab("Projectile_Rocket", () =>
-        {
-            var go = new GameObject("Projectile_Rocket");
-            go.layer = Layers.Projectile;
-            // ECS migration (layer 2): no collider / swept body until projectiles are ECS entities (layer 5)
-            var p = go.AddComponent<RocketProjectile>();
-            p.projectileStats = new ProjectileStats { speed = 50, damage = 1000, range = 100, hitVFX = RocketExplosion, trailEffect = "rocket", explosionEffect = "rocket", bulletKey = "explosive", explosionImpulse = 260f, explosionRadius = 9f };
-            var vis = new GameObject("Visual");
-            vis.transform.SetParent(go.transform, false);
-            var sr = vis.AddComponent<SpriteRenderer>();
-            sr.sprite = GameAssets.Glock["GlockFlash"]; // glowing exhaust (the EffectCore rocket mesh was not ported)
-            sr.billboard = true;
-            sr.color = new Color(1f, 0.75f, 0.35f, 1f);
-            vis.transform.localScale = new Vector3(0.035f, 0.035f, 0.035f);
-            var rl = go.AddComponent<Light>();
-            rl.type = LightType.Point; rl.color = new Color(1f, 0.7f, 0.35f, 1f); rl.range = 10f; rl.intensity = 2.5f;
-            return go;
-        });
-
-        /// <summary>Projectile_StandardBullet.prefab: speed 50, damage 5, range 100 (fired by enemies).</summary>
-        public static readonly Prefab ProjectileStandardBullet = new Prefab("Projectile_StandardBullet", () =>
-        {
-            var go = new GameObject("Projectile_StandardBullet");
-            go.layer = Layers.Projectile;
-            // ECS migration (layer 2): no collider / swept body until projectiles are ECS entities (layer 5)
-            var p = go.AddComponent<Projectile>();
-            // readability + lethality (standalone): slower but twice as damaging, a bright glowing slug with a trail and its own light
-            p.projectileStats = new ProjectileStats { speed = 40, damage = 10, range = 100, hitVFX = BulletImpact, bulletKey = "enemy", trailEffect = "bullet" };
-            var vis = new GameObject("Visual");
-            vis.transform.SetParent(go.transform, false);
-            var sr = vis.AddComponent<SpriteRenderer>();
-            sr.sprite = GameAssets.Glock["GlockFlash"];
-            sr.billboard = true;
-            sr.fullBright = true;
-            sr.color = new Color(1f, 0.75f, 0.25f, 1f);
-            vis.transform.localScale = Vector3.one * 0.06f;
-            var bl = go.AddComponent<Light>();
-            bl.type = LightType.Point; bl.color = new Color(1f, 0.7f, 0.3f, 1f); bl.range = 5f; bl.intensity = 1.4f;
-            return go;
-        });
-
         // ---------------------------------------------------------------- pickups (Prefabs/PickupPrefabs/*.prefab)
 
         private static Sprite[] AmmoPickupSprites() => new[]
@@ -166,7 +88,6 @@ namespace RipNRage.Game.Content
             animCtrl.SpriteRenderer = sr;
             var agent = go.AddComponent<AIAgent>();
             agent.animationStateController = animCtrl;
-            agent.projectile = ProjectileStandardBullet;
             agent.data = GameAssets.RiflemanData;
             var owner = go.AddComponent<BehaviorTreeOwner>();
             owner.tree = BehaviorTrees.RiflemanTree;
@@ -196,31 +117,6 @@ namespace RipNRage.Game.Content
     }
 
     /// <summary>Fades a sprite out over its lifetime (replaces particle-system lifetime/alpha curves).</summary>
-    /// <summary>
-    /// Ties a world-space <see cref="RipNRage.Engine.Ecs.Animation.AnimatedSprite"/> to a GameObject one-shot (the
-    /// rocket explosion): the entity takes the GameObject's pose when it spawns — these effects do not move — and is
-    /// destroyed with it. Gone in layer 5, when projectiles and their effects are entities end to end.
-    /// </summary>
-    public class EntitySpriteAnchor : MonoBehaviour
-    {
-        public RipNRage.Engine.Ecs.Animation.AnimatedSprite sprite;
-        protected override void Start() => sprite?.SetPose(transform.position, transform.rotation, transform.lossyScale);
-        protected override void OnDestroy() => sprite?.Destroy();
-    }
-
-    public class FadeOut : MonoBehaviour
-    {
-        public float lifetime = 0.5f;
-        private float _t;
-        private SpriteRenderer _sr;
-        protected override void Awake() { _sr = GetComponent<SpriteRenderer>(); }
-        protected override void Update()
-        {
-            _t += Time.deltaTime;
-            if (_sr != null) { var c = _sr.color; c.a = Mathf.Clamp01(1f - _t / lifetime); _sr.color = c; }
-        }
-    }
-
     /// <summary>Gentle hover for pickups.</summary>
     public class Bob : MonoBehaviour
     {

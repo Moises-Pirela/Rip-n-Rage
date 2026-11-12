@@ -30,24 +30,4 @@ namespace RipNRage.Game.Content
             else _light.intensity = 0f;
         }
     }
-
-    /// <summary>Point light that decays over a lifetime (explosions).</summary>
-    public class FlashLight : MonoBehaviour
-    {
-        public float lifetime = 0.4f;
-        public float intensity = 6f;
-        private Light _light;
-        private float _t;
-
-        protected override void Awake()
-        {
-            _light = GetComponent<Light>();
-        }
-
-        protected override void Update()
-        {
-            _t += Time.deltaTime;
-            if (_light != null) _light.intensity = intensity * Mathf.Clamp01(1f - _t / lifetime);
-        }
-    }
 }

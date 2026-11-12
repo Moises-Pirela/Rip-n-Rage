@@ -9,8 +9,8 @@ using System.Collections.Generic;
 public class WeaponData : ScriptableObject
 {
     public AmmoType ammoType;
-    /// <summary>Set = this weapon launches these instead of hitscan rays (the rocket).</summary>
-    public Prefab projectilePrefab;
+    /// <summary>&gt;= 0 = this weapon launches that <see cref="RipNRage.Game.Ecs.Combat.Projectiles"/> kind instead of hitscan rays.</summary>
+    public int projectileKind = -1;
     
     [Header("Weapon stats")]
     public WeaponRecoil weaponRecoil;

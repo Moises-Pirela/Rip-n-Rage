@@ -489,6 +489,36 @@ Convert, keeping the tuned solver behaviour:
 - Gates: 196 engine + 43 gameplay assertions (the damage pins re-expressed as wears-armour / wears-none, including
   "a thing with no armour carries no Armor component"); all 13 combat scripts + `die` at parity.
 
+#### 5.4b — Projectiles are entities (done)
+
+- `Projectile.cs` / `RocketProjectile.cs` and the `ProjectileRocket` / `ProjectileStandardBullet` prefab GameObjects
+  are **deleted**, with the whole no-VFX fallback branch that turned out to be dead in practice (`RocketExplosion`,
+  `BulletImpact`, `EntitySpriteAnchor`, `FadeOut`, `FlashLight`, `ProjectileStats.hitVFX`, `GameVfx.Trail`): with the
+  VFX library present — always, in this project — `GameVfx.Explosion` particles were the entire explosion visual and
+  the animated-sprite prefab never spawned.
+- A projectile is one entity: `KinematicMover` (Stop) + sphere `ColliderShape` + `ReportCollisions` for flight that
+  cannot tunnel, `SpriteRender` + `LightSource` for the glowing slug (no child "Visual" GameObject), `EffectEmitter`
+  for the trail (layer 3 machinery, zero new code), the new engine `Lifetime` for range expiry, and
+  `Projectile { Kind, Instigator }` slotting into `Projectiles.All` — shared immutable defs, the 5.3 weapon pattern.
+  The per-class `ShouldCollide` rules became data: the enemy bullet's `CollisionMask` excludes `Enemies`.
+- `Lifetime { Left }` + `LifetimeSystem` (engine, ~20 lines): approved as the one new primitive, and smaller than
+  planned — the fade variants had no live user once the fallback prefabs died.
+- `ProjectileSystem : IConsumes<CollisionEvent>`: bullets post a `DamageEvent` on whatever they ran into; a detonating
+  kind blasts — damage and rage over **one cached overlap query** (the legacy path called
+  `Scene.FindObjectsOfType<EntityState>()` per rocket, the named 5.0 offender), impulses via the allocation-free
+  `AddExplosionForce`, trauma via `CameraShake.ShakeAt`, and the rocket jump written as `CharacterMotor.PendingImpulse`
+  (capped 40, dash-cancelling) instead of the `FPSController.AddImpulse` facade hop.
+- Launching is one pure function used by `WeaponFireSystem` and `AIAgent.SpawnProjectile` (one line; the behaviour
+  tree itself is untouched — it is to be replaced by data-oriented state trees later, per direction). Rockets no
+  longer collide with trigger volumes (water detonation returns with the water rework); enemy bullets will hurt the
+  player again the day the AI fires — `approach` / `peek` stay the watch-gates for that.
+- **Verified in numbers, not vibes**: `killenemy` unchanged (killedAtFrame 97); the new `rocket` gate line reads
+  `hp 80 armour 0 y 3.82` — the blast's 120 self-damage eaten 100 by the player's starting armour and 20 by health
+  (exactly the legacy arithmetic; "rocket jumping is not suicide" was always armour-funded) with the player airborne
+  at y 3.82 from the motor impulse, fireball + scorch + burning launcher on screenshots; 199 engine + 50 gameplay
+  assertions (bullet flight → hit → damage, range expiry, blast kill, 12% self-damage, Lifetime + child teardown);
+  alloc/frame 8.3–9.9 KB vs the 5.0 baseline's 8.2–9.9; bench projectiles 0.14 ms/step (baseline 0.18).
+
 #### 5.3 — Weapon components and hitscan (done; 5.2 was folded into 5.1 by the no-bridge decision)
 
 - **The Weapon class hierarchy is deleted** (`Weapon` / `HitscanWeapon` / `ProjectileWeapon` / `Glock` /

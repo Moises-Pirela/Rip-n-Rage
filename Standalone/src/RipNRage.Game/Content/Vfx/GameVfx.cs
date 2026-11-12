@@ -130,16 +130,6 @@ namespace RipNRage.Game.Content.Vfx
             VfxLibrary.Spawn(effect, point, normal, scale);
         }
 
-        /// <summary>Continuous effect following a projectile; call <see cref="ParticleEffectInstance.Stop"/> when it dies.</summary>
-        public static ParticleEffectInstance Trail(string kind, Transform follow)
-        {
-            if (!Available || follow == null) return null;
-            if (!Bindings.trails.TryGetValue(kind ?? "", out var effect) || string.IsNullOrEmpty(effect)) return null;
-            var inst = VfxLibrary.Spawn(effect, follow.position, -follow.forward);
-            if (inst == null) return null;
-            inst.Follow(follow, default, backwards: true);
-            return inst;
-        }
 
         public static void Death(string kind, Vector3 point)
         {

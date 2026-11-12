@@ -31,6 +31,7 @@ internal static class Layer5Checks
         Headshots(True);
         EnemyHitbox(True);
         Firing(True, Equal);
+        ProjectilesInFlight(True, Equal);
         GameSystems(True);
     }
 
@@ -252,6 +253,78 @@ internal static class Layer5Checks
         True(!hb.IsHeadshot(in pose, new Vector3(0f, 1.5f, 0f)), "a chest hit at 1.5 m is not");
         True(!hb.IsHeadshot(in pose, new Vector3(0f, 1.71f - 0.02f, 0f)) && hb.IsHeadshot(in pose, new Vector3(0f, 1.71f + 0.02f, 0f)),
             "the head line sits at 76% of the height (1.71 m)");
+    }
+
+    // ================================================================= projectiles, end to end
+
+    /// <summary>An enemy bullet crosses the room as a swept entity and lands a DamageEvent; a rocket detonates and
+    /// blasts everything with Health in the radius — the shooter's own blast at 12%.</summary>
+    private static void ProjectilesInFlight(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var saved = Projectiles.All;
+        Projectiles.All = new[]
+        {
+            new ProjectileDef { Speed = 50f, Damage = 1000f, Range = 100f, CollisionMask = Projectiles.HitMask,
+                                Explosion = "rocket", ExplosionImpulse = 260f, ExplosionRadius = 9f, Scale = 0.035f },
+            new ProjectileDef { Speed = 40f, Damage = 10f, Range = 100f, Scale = 0.06f,
+                                CollisionMask = Projectiles.HitMask & ~(1 << Layers.Enemies) },
+        };
+        try
+        {
+            using var w = new World(0);
+            w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(RipNRage.Game.Ecs.PlayerLink).Assembly);
+            w.FixedDeltaTime = 1f / 60f;
+            w.DriveFixedInternally = true;
+            var log = w.AddSystem(new CombatLog());
+
+            // a target capsule 10 m down +z (geometry at x=400: the global physics world outlives test worlds)
+            var target = w.CreateEntity();
+            w.Add(target, LocalTransform.At(new Vector3(400f, 1.125f, 10f)));
+            w.Add(target, new RipNRage.Engine.Ecs.Physics.ColliderShape { Kind = RipNRage.Engine.Ecs.Physics.ShapeKind.Capsule, Radius = 0.34f, Height = 1.9f });
+            w.Add(target, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Player, Mask = ~0, UseLayerMatrix = false });
+            w.Add(target, new Health { Current = 100f, Max = 100f });
+            w.Update(1f / 60f);
+
+            // the enemy bullet: 10 m at 40 m/s = 15 fixed steps to arrive
+            Projectiles.Launch(w, Projectiles.EnemyBullet, new Vector3(400f, 1.1f, 0f), Vector3.forward, Entity.Null);
+            for (int i = 0; i < 30 && log.Hits.Count == 0; i++) w.Update(1f / 60f);
+            True(log.Hits.Count == 1, "an enemy bullet crosses the room and lands one hit");
+            Equal(90f, w.Get<Health>(target).Current, "for its 10 damage");
+
+            // a missed bullet expires by range (100 m at 40 m/s = 2.5 s) instead of flying forever
+            Projectiles.Launch(w, Projectiles.EnemyBullet, new Vector3(400f, 50f, 0f), Vector3.up, Entity.Null);
+            int alive = 0;
+            for (int i = 0; i < 200; i++) { w.Update(1f / 60f); alive = CountProjectiles(w); if (i == 60) True(alive == 1, "a missed bullet is still flying after a second"); }
+            True(CountProjectiles(w) == 0, "and expires by range");
+
+            // the rocket: detonates on the floor near the target and the shooter; the shooter takes 12%
+            var floor = w.CreateEntity();
+            w.Add(floor, LocalTransform.At(new Vector3(400f, -0.5f, 10f)));
+            w.Add(floor, new RipNRage.Engine.Ecs.Physics.ColliderShape { Kind = RipNRage.Engine.Ecs.Physics.ShapeKind.Box, Size = new Vector3(40f, 1f, 40f), IsStatic = true });
+            var shooter = w.CreateEntity();
+            w.Add(shooter, LocalTransform.At(new Vector3(400f, 1.1f, 6f)));
+            w.Add(shooter, new RipNRage.Engine.Ecs.Physics.ColliderShape { Kind = RipNRage.Engine.Ecs.Physics.ShapeKind.Capsule, Radius = 0.34f, Height = 1.9f });
+            w.Add(shooter, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Player, Mask = ~0, UseLayerMatrix = false });
+            w.Add(shooter, new Health { Current = 1000f, Max = 1000f }); // enough to survive 12% of their own rocket
+            w.Update(1f / 60f);
+
+            log.Hits.Clear(); log.Deaths.Clear();
+            Projectiles.Launch(w, Projectiles.Rocket, new Vector3(400f, 1.1f, 7f), new Vector3(0f, -0.5f, 1f), shooter);
+            for (int i = 0; i < 30 && log.Deaths.Count == 0; i++) w.Update(1f / 60f);
+            True(w.Has<Dead>(target) && log.Deaths.Count == 1, "the rocket blast kills the exposed target");
+            Equal(880f, w.Get<Health>(shooter).Current, "while the shooter takes 12% of their own rocket (120 of 1000): rocket jumps");
+
+            w.DestroyAllEntities();
+            w.Update(1f / 60f);
+        }
+        finally { Projectiles.All = saved; }
+    }
+
+    private static int CountProjectiles(World w)
+    {
+        int n = 0;
+        foreach (var c in w.Query().With<Projectile>().Build()) for (int i = 0; i < c.Length; i++) if (c.Includes(i)) n++;
+        return n;
     }
 
     // ================================================================= the game assembly's ECS systems

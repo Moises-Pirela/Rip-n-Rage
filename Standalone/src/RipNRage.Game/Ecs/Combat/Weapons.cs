@@ -162,7 +162,7 @@ namespace RipNRage.Game.Ecs.Combat
             if (combat != null) { combat.OnFireWeapon?.Invoke(); combat.OnAmmoChanged?.Invoke(); }
             EnragedInjector<HudController>.GetInstance()?.CurrentCrosshair?.OnShoot();
 
-            if (data.projectilePrefab != null) LaunchProjectile(data, in eye, spread * st.projectileSpreadScale);
+            if (data.projectileKind >= 0) LaunchProjectile(data, in eye, spread * st.projectileSpreadScale);
             else Hitscan(ctx, data, in eye, spread);
         }
 
@@ -208,13 +208,11 @@ namespace RipNRage.Game.Ecs.Combat
             }
         }
 
-        /// <summary>Rockets are still GameObjects until 5.4; spawned here, they start flying next scene update.</summary>
-        private static void LaunchProjectile(WeaponData data, in LocalToWorld eye, float spread)
+        private void LaunchProjectile(WeaponData data, in LocalToWorld eye, float spread)
         {
             Vector3 dir = eye.Forward + eye.Right * Random.Range(-spread, spread) + eye.Up * Random.Range(-spread, spread);
             Vector3 origin = ProjectileSpawn != null ? ProjectileSpawn.position : eye.Position;
-            var go = data.projectilePrefab.Instantiate(origin, Quaternion.LookRotation(dir.normalized));
-            go.GetComponent<Projectile>().SetupProjectile(true);
+            Projectiles.Launch(World, data.projectileKind, origin, dir, PlayerLink.PlayerEntity);
         }
 
         private float Spread(Entity player, in Weapon w)

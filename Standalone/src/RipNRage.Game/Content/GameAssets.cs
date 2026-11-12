@@ -398,10 +398,32 @@ namespace RipNRage.Game.Content
                 fireSound = MG338Shot,
                 weaponPosition = new Vector3(0.0132f, 0.54f, 0), weaponScale = 0.15f,
             };
+            // the two projectiles (ECS defs; legacy numbers from the deleted Projectile_* prefabs)
+            RipNRage.Game.Ecs.Combat.Projectiles.All = new[]
+            {
+                new RipNRage.Game.Ecs.Combat.ProjectileDef // Rocket
+                {
+                    Speed = 50f, Damage = 1000f, Range = 100f,
+                    CollisionMask = RipNRage.Game.Ecs.Combat.Projectiles.HitMask,
+                    BulletKey = "explosive", Trail = "rocket", Explosion = "rocket",
+                    ExplosionImpulse = 260f, ExplosionRadius = 9f,
+                    Sprite = Glock["GlockFlash"], Color = new Color(1f, 0.75f, 0.35f, 1f), Scale = 0.035f,
+                    LightColor = new Color(1f, 0.7f, 0.35f, 1f), LightRange = 10f, LightIntensity = 2.5f,
+                },
+                new RipNRage.Game.Ecs.Combat.ProjectileDef // EnemyBullet: slower but twice as damaging, a bright glowing slug
+                {
+                    Speed = 40f, Damage = 10f, Range = 100f,
+                    CollisionMask = RipNRage.Game.Ecs.Combat.Projectiles.HitMask & ~(1 << Layers.Enemies), // passes through other enemies
+                    BulletKey = "enemy", Trail = "bullet", FullBright = true,
+                    Sprite = Glock["GlockFlash"], Color = new Color(1f, 0.75f, 0.25f, 1f), Scale = 0.06f,
+                    LightColor = new Color(1f, 0.7f, 0.3f, 1f), LightRange = 5f, LightIntensity = 1.4f,
+                },
+            };
+
             RocketLauncherData = new WeaponData
             {
                 name = "RocketLauncher",
-                projectilePrefab = Prefabs.ProjectileRocket,
+                projectileKind = RipNRage.Game.Ecs.Combat.Projectiles.Rocket,
                 ammoType = AmmoType.EXPLOSIVE,
                 weaponRecoil = new WeaponRecoil(new Vector3(22, 3, 6), 40, 6, cameraShake: 0.5f),
                 weaponStats = new WeaponStats { bulletsPerShot = 1, fireRate = 0.25f, damagePerShot = 1000, weaponSpread = 0.004f, isUnlocked = true,
