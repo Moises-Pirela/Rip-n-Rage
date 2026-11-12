@@ -1,6 +1,8 @@
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
+using RipNRage.Engine.Ecs.Rendering;
 using RipNRage.Engine.Ecs.Transforms;
+using RipNRage.Engine.Ecs.View;
 using RipNRage.Game.Content;
 
 namespace RipNRage.Game.Ecs
@@ -12,8 +14,10 @@ namespace RipNRage.Game.Ecs
     /// (combat, HUD, death sequence, save / load, the enemies' target lookups) keep reading
     /// <c>PlayerState.Current.transform.position</c> and get the right answer.
     ///
-    /// <para>It also aims the camera pivot and the "Orientation" child from <see cref="PlayerLook"/>, which is where
-    /// the view angles live now.</para>
+    /// <para>The view is entities too (<see cref="PlayerViewRig"/>: a camera pivot and its camera child, carrying the
+    /// look angles, the head bob, the lens and the shake). The GameObject "Camera" / "WorldCamera" nodes follow those
+    /// entities from here, so the scripts that still read <c>Camera.main.transform</c> or the prefab's camera
+    /// transforms keep getting the real pose.</para>
     /// </summary>
     public sealed class PlayerLink : MonoBehaviour
     {
@@ -22,15 +26,25 @@ namespace RipNRage.Game.Ecs
         public static PlayerLink Current { get; private set; }
 
         public Entity entity { get; private set; }
-        /// <summary>The "Camera" pivot: takes the look angles (and the slide's camera drop through HeadBob).</summary>
+        /// <summary>The "Camera" pivot GameObject: follows <see cref="PivotEntity"/>.</summary>
         public Transform cameraPivot;
+        /// <summary>The "WorldCamera" GameObject: follows <see cref="CameraEntity"/> (and carries the legacy Camera for unported scripts).</summary>
+        public Transform worldCamera;
         /// <summary>The "Orientation" child: yaw only, the movement basis other scripts still read.</summary>
         public Transform orientation;
+
+        /// <summary>The camera pivot entity (head bob + look angles); <see cref="Entity.Null"/> before the rig is built.</summary>
+        public static Entity PivotEntity { get; private set; } = Entity.Null;
+        /// <summary>The camera entity the frame is rendered from (lens + shake).</summary>
+        public static Entity CameraEntity { get; private set; } = Entity.Null;
 
         private static World W => Application.Current.World;
 
         /// <summary>Capsule radius 0.4 / height 1.3, centre 0.25 m up, 80 kg, riding 0.5 m clear of the ground.</summary>
         public const float Radius = 0.4f, Height = 1.3f, CentreY = 0.25f, Mass = 80f, RideHeight = 0.5f;
+
+        /// <summary>View rig values from the prefab: the "Camera" node sits 0.5 m above the body, lens fov 77.</summary>
+        public const float PivotHeight = 0.5f, FieldOfView = 77f, BobFrequency = 15f, BobWaveLength = 0.1f;
 
         /// <summary>
         /// Creates the character entity for <paramref name="go"/> at its current transform: the force-driven capsule
@@ -38,10 +52,11 @@ namespace RipNRage.Game.Ecs
         /// locomotion and look components. Structural work goes through the command buffer, so the components are
         /// not readable until the next sync point.
         /// </summary>
-        public static PlayerLink Attach(GameObject go, Transform cameraPivot, Transform orientation)
+        public static PlayerLink Attach(GameObject go, Transform cameraPivot, Transform worldCamera, Transform orientation)
         {
             var link = go.AddComponent<PlayerLink>();
             link.cameraPivot = cameraPivot;
+            link.worldCamera = worldCamera;
             link.orientation = orientation;
 
             var cmd = W.Commands;
@@ -73,8 +88,25 @@ namespace RipNRage.Game.Ecs
             // the player's trigger overlaps (checkpoints, water, pickups) have to be reported
             cmd.Add(e, new ReportCollisions());
 
+            // ---- the view rig: pivot (bob + look) -> camera (lens + shake), both children of the character ----
+            Vector3 pivotLocal = cameraPivot != null ? cameraPivot.localPosition : new Vector3(0f, PivotHeight, 0f);
+            var pivot = cmd.CreateEntity();
+            cmd.Add(pivot, new LocalTransform { Position = pivotLocal, Rotation = Quaternion.identity, Scale = Vector3.one });
+            cmd.Add(pivot, new Parent { Value = e });
+            cmd.Add(pivot, new ViewBob { Frequency = BobFrequency, WaveLength = BobWaveLength, BasePosition = pivotLocal });
+
+            var camera = cmd.CreateEntity();
+            cmd.Add(camera, new LocalTransform { Position = Vector3.zero, Rotation = Quaternion.identity, Scale = Vector3.one });
+            cmd.Add(camera, new Parent { Value = pivot });
+            cmd.Add(camera, new CameraLensConfig { fov = FieldOfView, near = 0.05f, far = 2000f }.Bake());
+            cmd.Add(camera, CameraShake.Default);
+
+            cmd.Add(e, new PlayerViewRig { Pivot = pivot, Camera = camera });
+
             link.entity = e;
             PlayerEntity = e;
+            PivotEntity = pivot;
+            CameraEntity = camera;
             Current = link;
             EcsObjects.Register(e, go); // so trigger events naming this entity reach the player's GameObject
             return link;
@@ -164,16 +196,19 @@ namespace RipNRage.Game.Ecs
             // the entity is the truth: the GameObject hierarchy follows it
             transform.position = W.Get<LocalTransform>(entity).Position;
 
-            if (!W.Has<PlayerLook>(entity)) return;
-            var look = W.Get<PlayerLook>(entity);
-            if (cameraPivot != null) cameraPivot.localRotation = Quaternion.Euler(look.Pitch, look.Yaw, look.Roll);
-            if (orientation != null) orientation.localRotation = Quaternion.Euler(0f, look.Yaw, 0f);
+            if (W.Has<PlayerLook>(entity) && orientation != null)
+                orientation.localRotation = Quaternion.Euler(0f, W.Get<PlayerLook>(entity).Yaw, 0f);
+
+            // The camera GameObjects are not copied here: the rig's pose is written later in the frame (the ECS
+            // LateTick runs after the scene), so PlayerViewFollowSystem does it at the end of the ECS frame instead
+            // and Camera.main is current rather than a frame behind.
         }
 
         protected override void OnDestroy()
         {
             EcsObjects.Unregister(entity);
-            if (Current == this) { Current = null; PlayerEntity = Entity.Null; }
+            // the rig entities are children of the character: destroying it destroys them (HierarchySystem)
+            if (Current == this) { Current = null; PlayerEntity = Entity.Null; PivotEntity = Entity.Null; CameraEntity = Entity.Null; }
             if (Alive) W.Commands.DestroyEntity(entity);
         }
     }

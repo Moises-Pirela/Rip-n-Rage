@@ -50,11 +50,15 @@ namespace RipNRage.Game.Content
             Child(player, "Feet", new Vector3(0, -0.8f, 0));
 
             // ---- camera ----
+            // The lens is on the camera *entity* now (PlayerLink builds the rig below) and the ECS camera outranks a
+            // legacy one, so this Camera only exists for the scripts that still read Camera.main; its GameObject
+            // follows the entity (PlayerViewFollowSystem). Gone in layer 9.
             var cam = worldCamera.AddComponent<Camera>();
-            cam.fieldOfView = 77f;
+            cam.fieldOfView = RipNRage.Game.Ecs.PlayerLink.FieldOfView;
             cam.nearClipPlane = 0.05f;
             cam.farClipPlane = 2000f;
             Camera.main = cam;
+            // facade over the camera entity's CameraShake (kick bounds from the prefab)
             worldCamera.AddComponent<CameraRecoil>().recoilCameraShake = new Vector3(0.5f, 0.5f, 1.5f);
 
             // ---- first-person sprites ----
@@ -78,20 +82,18 @@ namespace RipNRage.Game.Content
             sway.swayAmount = 0.01f; sway.swaySpeed = 20f; sway.horizontalSwayAmount = 0.01f; sway.horizontalSwaySpeed = 10f;
             sway.zSmoothLerp = 12f; sway.zSwayAngle = 5f; sway.zSwayMultiplier = -100f; sway.zSmoothSway = 20f;
 
-            var bob = cameraGo.AddComponent<HeadBob>();
-            bob.frequency = 15f; bob.waveLength = 0.1f; bob.swayAmount = 20f; bob.swaySpeed = 1f;
+            // the head bob is a ViewBob component on the camera pivot entity (values below, in PlayerLink)
 
-            // ---- the character itself: an ECS entity (the force-driven capsule + locomotion + look) ----
+            // ---- the character itself: an ECS entity (the force-driven capsule + locomotion + look + view rig) ----
             // The entity is the body the solver moves; PlayerLink copies its pose back onto this hierarchy each frame
             // so the scripts that are not ported yet keep reading the GameObject transform.
-            RipNRage.Game.Ecs.PlayerLink.Attach(player, cameraGo.transform, orientation.transform);
+            RipNRage.Game.Ecs.PlayerLink.Attach(player, cameraGo.transform, worldCamera.transform, orientation.transform);
 
             // ---- player scripts ----
             var input = player.AddComponent<PlayerInputActions>();
 
             var fps = player.AddComponent<FPSController>();
             sway.controller = fps;
-            bob.controller = fps;
 
             var camCtrl = player.AddComponent<FPSCameraController>();
             camCtrl.playerCamera = cameraGo.transform;

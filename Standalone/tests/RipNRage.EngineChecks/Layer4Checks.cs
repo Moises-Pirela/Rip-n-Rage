@@ -4,7 +4,9 @@ using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Input;
 using RipNRage.Engine.Ecs.Physics;
+using RipNRage.Engine.Ecs.Rendering;
 using RipNRage.Engine.Ecs.Transforms;
+using RipNRage.Engine.Ecs.View;
 
 /// <summary>A component no system claims: proves reading an absent singleton creates nothing.</summary>
 public struct UnclaimedSingleton : IComponent { public int Value; }
@@ -38,6 +40,17 @@ internal static class Layer4Checks
         True(w.HasSingleton<InputState>() && w.GetSingleton<InputState>().Move == new Vector2(0.25f, -0.5f),
             "Singleton<T>() returns a reference: writes through it are visible to the next read");
         True(w.SingletonEntity<InputState>() == w.SingletonEntity<InputState>(), "the carrier entity is stable");
+
+        // ---- a level restart must leave the claim standing. DestroyAllEntities kills the carrier with everything
+        // else; a writer system claims its singleton in OnCreate, which does not run again, so a claim dropped here
+        // was re-created from inside the next Tick — a structural change mid-phase, which threw ("--script saveload"
+        // died on the reload after a checkpoint load). The carriers come back at once instead, values at default.
+        w.Singleton<InputState>().Move = new Vector2(1f, 1f);
+        w.DestroyAllEntities();
+        True(w.HasSingleton<InputState>() && w.GetSingleton<InputState>().Move == Vector2.zero,
+            "a claimed singleton survives DestroyAllEntities as a fresh carrier");
+        w.Update(1f / 60f);
+        True(w.HasSingleton<InputState>(), "and the frame after a restart runs without a structural change");
 
         // ---- the jump latch survives frames that run no fixed step (rendering outruns the fixed clock)
         w.Singleton<InputState>().JumpQueued = true;
@@ -116,5 +129,119 @@ internal static class Layer4Checks
         w.Get<LocalTransform>(volume).Position = new Vector3(46, 1, 0);
         Step(3);
         True(log.Exits.Contains((volume, walker)), "and reports the exit when it is moved away again");
+
+        ViewRig(w, Step, True);
+    }
+
+    /// <summary>Step 4.3a: the camera rig — the lens choice, the head bob and the kick / trauma shake.</summary>
+    private static void ViewRig(World w, Action<int, float> Step, Action<bool, string> True)
+    {
+        // ---- the rig as the player builds it: body -> pivot (bob) -> camera (lens + shake)
+        var body = w.CreateEntity();
+        w.Add(body, LocalTransform.At(new Vector3(100, 2, 0)));
+
+        var pivot = w.CreateEntity();
+        w.Add(pivot, LocalTransform.At(new Vector3(0, 0.5f, 0)));
+        w.Add(pivot, new Parent { Value = body });
+        w.Add(pivot, new ViewBob { Frequency = 15f, WaveLength = 0.1f, BasePosition = new Vector3(0, 0.5f, 0) });
+
+        var camera = w.CreateEntity();
+        w.Add(camera, LocalTransform.Identity);
+        w.Add(camera, new Parent { Value = pivot });
+        w.Add(camera, new CameraLensConfig { fov = 77f, priority = 0 }.Bake());
+        var shake = CameraShake.Default;
+        shake.Seed = 3f; // fixed seed: the noise has to be reproducible here
+        w.Add(camera, shake);
+        Step(1, 1f / 60f);
+
+        // the camera's world pose is the chain, so the renderer sees the player's eye point
+        True(Mathf.Abs(w.Get<LocalToWorld>(camera).Position.y - 2.5f) < 1E-04f &&
+             Mathf.Abs(w.Get<LocalToWorld>(camera).Position.x - 100f) < 1E-04f,
+            "the camera entity's world pose is body + pivot + camera");
+
+        // ---- the active camera is the highest-priority lens (what EcsRenderProducer renders from)
+        var cameras = ActiveCamera.BuildQuery(w);
+        True(ActiveCamera.TryGet(cameras, out var pose, out var lens) && lens.FieldOfView == 77f,
+            "the active camera is found through its lens");
+        var spare = w.CreateEntity();
+        w.Add(spare, LocalTransform.At(new Vector3(-50, 9, 0)));
+        w.Add(spare, new CameraLensConfig { fov = 30f, priority = 5 }.Bake());
+        Step(1, 1f / 60f);
+        True(ActiveCamera.TryGet(cameras, out pose, out lens) && lens.FieldOfView == 30f && pose.Position.x == -50f,
+            "a higher-priority lens takes over");
+        w.DestroyEntity(spare);
+        Step(1, 1f / 60f);
+
+        // ---- head bob: only on the ground, only while moving, around the rest height + the crouch offset
+        float resting = w.Get<LocalTransform>(pivot).Position.y;
+        w.Get<ViewBob>(pivot).Active = false;
+        w.Get<ViewBob>(pivot).Moving = true;
+        Step(10, 1f / 60f);
+        True(w.Get<LocalTransform>(pivot).Position.y == resting, "the bob leaves the camera alone in mid-air");
+
+        w.Get<ViewBob>(pivot).Active = true;
+        Step(6, 1f / 60f);
+        float bobbed = w.Get<LocalTransform>(pivot).Position.y;
+        True(Mathf.Abs(bobbed - 0.5f) > 1E-03f && Mathf.Abs(bobbed - 0.5f) <= 0.1f + 1E-04f,
+            $"walking on the ground bobs the camera within the wave length (y={bobbed:0.0000})");
+
+        w.Get<ViewBob>(pivot).Moving = false;
+        Step(120, 1f / 60f);
+        True(Mathf.Abs(w.Get<LocalTransform>(pivot).Position.y - 0.5f) < 1E-03f, "standing still settles it back to rest");
+
+        w.Get<ViewBob>(pivot).HeightOffset = -0.4f; // the slide's camera drop
+        Step(120, 1f / 60f);
+        True(Mathf.Abs(w.Get<LocalTransform>(pivot).Position.y - 0.1f) < 1E-03f, "a crouch offset lowers the rest height");
+        w.Get<ViewBob>(pivot).HeightOffset = 0f;
+        Step(120, 1f / 60f);
+
+        // ---- the kick: taken up over a few steps, then decaying back to straight ahead
+        w.Get<CameraShake>(camera).Kick(3f, 0f, 0f); // pitch only, so the result is deterministic
+        Step(3, 1f / 60f);
+        float pitch = w.Get<LocalTransform>(camera).Rotation.eulerAngles.x;
+        pitch = pitch > 180f ? pitch - 360f : pitch;
+        True(pitch < -0.05f, $"a weapon kick pitches the camera up (pitch={pitch:0.000})");
+        Step(240, 1f / 60f);
+        float settled = w.Get<LocalTransform>(camera).Rotation.eulerAngles.x;
+        settled = settled > 180f ? settled - 360f : settled;
+        True(Mathf.Abs(settled) < 0.05f, $"and it returns to centre ({settled:0.000})");
+
+        // ---- trauma: shakes rotation and position, decays to nothing, and never exceeds its bounds
+        w.Get<CameraShake>(camera).AddTrauma(1f);
+        True(w.Get<CameraShake>(camera).Trauma == 1f, "trauma saturates at 1");
+        bool moved = false;
+        for (int i = 0; i < 20; i++)
+        {
+            Step(1, 1f / 60f);
+            var lt = w.Get<LocalTransform>(camera);
+            if (lt.Position.sqrMagnitude > 1E-06f) moved = true;
+            True(Mathf.Abs(lt.Position.x) <= 0.1f + 1E-04f && Mathf.Abs(lt.Position.y) <= 0.1f + 1E-04f,
+                "the shake offset stays inside maxShakeOffset");
+        }
+        True(moved, "full trauma shakes the camera position");
+        Step(240, 1f / 60f);
+        True(w.Get<CameraShake>(camera).Trauma == 0f && w.Get<LocalTransform>(camera).Position == Vector3.zero,
+            "trauma decays away and the camera returns to its base position");
+
+        // ---- a distant explosion is quieter than a close one, and one outside the radius does nothing at all
+        ref var sh = ref w.Get<CameraShake>(camera);
+        Vector3 eye = w.Get<LocalToWorld>(camera).Position;
+        sh.ShakeAt(eye, eye + new Vector3(0, 0, 2f), 10f, 1f);
+        float near = sh.Trauma;
+        sh.Trauma = 0f;
+        sh.ShakeAt(eye, eye + new Vector3(0, 0, 8f), 10f, 1f);
+        float far = sh.Trauma;
+        sh.Trauma = 0f;
+        sh.ShakeAt(eye, eye + new Vector3(0, 0, 30f), 10f, 1f);
+        True(near > far && far > 0f && sh.Trauma == 0f,
+            $"explosion trauma falls off with distance (near={near:0.00}, far={far:0.00}, outside=0)");
+
+        // ---- Clear takes the camera back for the death sequence
+        sh.AddTrauma(0.8f);
+        sh.Kick(5f, 0f, 0f);
+        sh.Clear();
+        Step(1, 1f / 60f);
+        True(sh.Trauma == 0f && w.Get<LocalTransform>(camera).Rotation == Quaternion.identity,
+            "Clear drops the kick and the trauma at once");
     }
 }

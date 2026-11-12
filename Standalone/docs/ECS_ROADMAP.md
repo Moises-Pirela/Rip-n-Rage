@@ -33,7 +33,7 @@ then start at the first unchecked layer.
   parity with the pre-ECS renderer is within run-to-run noise.
 - [x] **Layer 2 — Physics**: ECS-only simulation, joints, characters, movers, triggers; legacy physics deleted (close-out below)
 - [x] **Layer 3 — Animation, audio, particles, destruction** (details below)
-- [ ] Layer 4 — Input, camera, player **(in progress: 4.1 + 4.2 done, 4.3 next — pick up here)**
+- [ ] Layer 4 — Input, camera, player **(in progress: 4.1, 4.2, 4.3a done, 4.3b next — pick up here)**
 - [ ] Layer 5 — Weapons, combat, damage
 - [ ] Layer 6 — Enemies, AI, spawning
 - [ ] Layer 7 — Pickups, rage, style, environment
@@ -41,23 +41,31 @@ then start at the first unchecked layer.
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
 
-### Pick-up point for the next session (written 2026-11-10, after 4.2)
+### Pick-up point for the next session (written 2026-11-12, after 4.3a)
 
-Layers 0–3 and steps **4.1 + 4.2** are done — the player moves again, the gates are honest, and the trigger
-callbacks fire. Start at **4.3** (details in the layer 4 section): camera and first-person viewmodel as entities,
-`ViewSprite` deleted, head bob / sway / shake as components.
+Layers 0–3 and steps **4.1, 4.2, 4.3a** are done — the player moves, and the camera is an entity the frame is
+rendered from. Start at **4.3b** (details in the layer 4 section): the first-person viewmodel as child entities of
+the camera, `ViewSprite` deleted, `WeaponSway` as a component.
 
 Still true in the tree:
 
-- Hooks to re-point when the camera is an entity: `RagdollSystem.Viewer` and the `EcsRenderProducer` camera priority
-  (an ECS `CameraLens` already outranks the legacy camera).
-- The animation editor's controller preview goes through `ViewSprite`, so it needs a replacement in the same step.
+- The viewmodel is still GameObject-anchored through `ViewSprite`, and so is the rocket explosion sprite
+  (`Prefabs.cs`) — that one is a world-space one-shot, not a viewmodel, so decide whether it becomes a plain
+  entity-with-`SpriteAnimator` in 4.3b or waits for layer 5 with the rest of the rocket.
+- The animation editor's controller preview goes through `ViewSprite` **and the editor never registers the game
+  assembly's systems**, so anything the bridge needs per frame has to keep working without them.
 - Projectiles still move by transform and hit nothing (layer 5); `AgentVisionSensor`'s trigger is uncalled (layer 6).
 - Gates as in the layer 2/3 close-outs: compare bench interleaved against the previous commit (`--threads 1` for the
   stable numbers; the per-step metric only counts frames with a fixed step); ragdolls sit at 8.3–8.7 ms vs budget 8
   (knobs: pieces sleep less than boxes, and legacy-faithful CCD on every piece costs ~0.85 ms serially).
-- Running anything here needs `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` on this VM: there is no `libicu`, and the
-  SDK fails to start without it. `build.sh` / `run.sh` / `bench.sh` do not set it.
+- Running anything on the Linux sandbox VM needs `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`: there is no `libicu` and
+  the SDK fails to start without it. `build.sh` / `run.sh` / `bench.sh` do not set it. **On the dev Mac** the trap is
+  a different one: `/usr/local/share/dotnet` holds only a 6.0 SDK, so a bare `dotnet build` fails with NETSDK1045 —
+  `source tools/env.sh` first (it finds the 10.x SDK in `~/.dotnet`), or use the `./*.sh` scripts, which do.
+- The scripted runs do **not** stop on their own: they need `--frames N` (the gate script used for 4.3a runs 400, or
+  620 for `strafe` / `fall`), and on macOS there is no `timeout` binary to bound them with.
+- Absolute bench numbers on the Mac are much slower than the VM figures quoted below (single-threaded crates ~11.7,
+  ragdolls ~17 ms/step, both over budget **on both sides of the change**) — only the interleaved A/B is meaningful here.
 
 ### Resolved: asset handles (answered before layer 2)
 
@@ -78,7 +86,8 @@ before/after.
 | Temporary bridge | `src/RipNRage.Engine/Graphics/LegacySceneProducer.cs` — delete in layer 9 |
 | Prefabs | `Standalone/prefabs/` (`demo/` holds the layer-1 demo) |
 | ECS physics | `src/RipNRage.Engine/Ecs/Physics/` (components, configs); collider table `src/RipNRage.Engine/Physics/ColliderTable.cs` |
-| Tests | `tests/RipNRage.EngineChecks/` — `EcsChecks.cs`, `TransformChecks.cs`, `PhysicsEcsChecks.cs` (run in CI) |
+| Camera rig | `src/RipNRage.Engine/Ecs/View/CameraRig.cs` (`CameraShake`, `ViewBob`, `CameraShakeSystem`, `ActiveCamera`); the player's rig and its GameObject bridge in `src/RipNRage.Game/Ecs/PlayerView.cs` |
+| Tests | `tests/RipNRage.EngineChecks/` — `EcsChecks.cs`, `TransformChecks.cs`, `PhysicsEcsChecks.cs`, `Layer3Checks.cs`, `Layer4Checks.cs` (run in CI) |
 | World ownership | `Application.World` (created in the constructor, `Update` after scene + physics, cleared in `ResetScene`) |
 
 ## Per-layer plan
@@ -321,12 +330,43 @@ Convert, keeping the tuned solver behaviour:
         aims the camera pivot / Orientation child. `MovementSettings.ApplyTo` writes the component, live as before.
         **`FallRespawn` is restored** on the new body (`Teleport`, the footprint probes, EDGE vs THROUGH GEOMETRY),
         and the overlay's MOVER line is back.
-  - [ ] 4.3 **Camera and viewmodel as entities** — next. Delete the `ViewSprite` bridge
-        (`RipNRage.Game/Ecs/ViewSprite.cs` + `ViewSpriteEventSystem`): the camera becomes an entity with
-        `CameraLens`, the viewmodel (weapon / fists / muzzle flash, `RenderLayer.FirstPerson`) its child entities, and
-        the weapon scripts talk to `SpriteAnimator` directly. Re-point `RagdollSystem.Viewer`; the animation editor's
-        controller preview also runs through the bridge. Head bob / sway / trauma shake become components with
-        `CameraShakeSystem` / `HeadBobSystem` (LateTick, `[UpdateBefore(typeof(TransformSystem))]`).
+  - 4.3 **Camera and viewmodel as entities**, split in two (by request):
+    - [x] 4.3a **The camera is an entity.** `Ecs/View/CameraRig.cs` (engine): `CameraShake` (the weapon kick +
+          the trauma shake, numbers from the deleted `CameraRecoil` behaviour) and `ViewBob` (the head bob) applied
+          by `CameraShakeSystem` in **LateTick, `[UpdateBefore(typeof(TransformSystem))]`** — so the renderer sees the
+          shaken pose and nothing simulates against it. Both own the local pose of the node they sit on, so they go on
+          **different entities**: `PlayerLink` now builds the prefab's view chain as entities parented to the character
+          — character → pivot (`ViewBob`, the look angles) → camera (`CameraLens` fov 77, `CameraShake`) — and
+          `PlayerViewSystem` (game) drives it from `PlayerLook` / `PlayerMotor` / `CharacterMotor`. The `HeadBob`
+          behaviour is **deleted**; `CameraRecoil` is a facade over the component (`PlayerCamera.Shake`), as
+          `FPSCameraController` is over `PlayerLook`. `RagdollSystem.Viewer` reads the active ECS camera
+          (`ActiveCamera`, the same highest-priority choice `EcsRenderProducer` makes) and falls back to `Camera.main`
+          for the editors' preview rigs. `PlayerDeathSequence` takes the pivot over through
+          `PlayerViewRig.External` and animates the entity. The GameObject "Camera" / "WorldCamera" nodes now
+          **follow** their entities (`PlayerViewFollowSystem`, at the end of the ECS frame) for the unported scripts;
+          the legacy `Camera` stays only for `Camera.main` readers. Layer 9 deletes both.
+      - **Engine bug found and fixed** (pre-existing since 4.1, A/B-confirmed on `649f6a1`): a level restart
+        (`DestroyAllEntities`) dropped the singleton claims, and a writer system claims its singleton in `OnCreate`,
+        which does not run again — so the next read came from inside `EcsInputSystem.Tick` and creating the carrier
+        there is a structural change. `--script saveload` died on the reload after a checkpoint load
+        (`structural change while systems run`). Carriers are now re-created immediately, values back at default.
+      - **Gates**: builds; 187 engine checks (was 151 — 34 for the rig, 2 for the singleton fix); `walk` / `fire` /
+        `weapons` / `rage` / `saveload` / `slide` / `dash` / `fall` / `strafe` all complete with no errors (the
+        baseline fails `saveload`, see above). **The `look` shot differs by 9.2% of pixels against a 0.057% floor,
+        and that is the point of the step**: the camera *position* is identical to four decimals (probed:
+        `(0.0000, 2.3057, 8.0000)` in both), but the yaw is 185.800° against the legacy 185.600° — exactly one frame
+        of the script's turn. The ECS camera renders the look angles produced in the same frame, where the GameObject
+        camera was written in the scene phase and therefore lagged by one; at 77° fov that 0.2° is ~3 px of
+        horizontal smear across the plank texture in the lower half of the frame (the flat sky is untouched, which is
+        how we know it is not a pose or projection change). One frame less view latency, not a regression.
+    - [ ] 4.3b **The viewmodel is entities** — next. Delete the `ViewSprite` bridge
+          (`RipNRage.Game/Ecs/ViewSprite.cs` + `ViewSpriteEventSystem` + the `ViewSpritePoseSystem` added in 4.3a):
+          the arms / weapon / fists / muzzle flash become child entities of the camera entity
+          (`RenderLayer.FirstPerson`), `WeaponSway` becomes a component + system, and the weapon scripts talk to
+          `SpriteAnimator` directly. The animation editor's controller preview runs through the bridge too and needs
+          its replacement in the same step — note it hosts `ViewSprite`s **without registering the game assembly's
+          systems** (only `RipNRage.Game/Program.cs` calls `AddSystemsFromAssemblies` for it), which is why 4.3a kept
+          the bridge's `LateUpdate` pose copy alongside the system.
 - **Two engine bugs found by putting a real body back under the player** (both pre-existing since 2.7, invisible
   while nothing moved between fixed steps):
   1. `SolverBody.EndStep` only wrote the owner pose for **non**-interpolated bodies, so an interpolated body's

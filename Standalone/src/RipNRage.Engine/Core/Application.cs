@@ -126,8 +126,12 @@ namespace RipNRage.Engine
             // One fixed clock: the scene's fixed loop runs the ECS FixedTick, whose PhysicsStepSystem steps the one
             // simulation (sync -> step -> write-back). Scene no longer calls Physics.FixedStep itself here.
             World.DriveFixedInternally = false;
-            // ragdoll pieces billboard towards the active camera (the legacy one until the camera moves to the ECS in layer 4)
-            Ecs.Destruction.RagdollSystem.Viewer = () => Graphics.Camera.main != null ? Graphics.Camera.main.transform.position : Vector3.zero;
+            // Ragdoll pieces billboard towards the active camera: the ECS camera the frame is actually rendered from,
+            // falling back to a legacy Camera.main while a scene has no camera entity (the editors' preview rigs).
+            var cameraQuery = Ecs.View.ActiveCamera.BuildQuery(World);
+            Ecs.Destruction.RagdollSystem.Viewer = () =>
+                Ecs.View.ActiveCamera.TryGet(cameraQuery, out var pose, out _) ? pose.Position
+                : Graphics.Camera.main != null ? Graphics.Camera.main.transform.position : Vector3.zero;
             Scene.FixedPhysicsStep = dt => World.RunFixed(dt);
             Renderer.Producers.Add(new Ecs.Rendering.EcsRenderProducer(World)); // first: an ECS camera wins over a legacy one
             // ECS migration: the GameObject scene still feeds the renderer until gameplay is ported (see LegacySceneProducer)

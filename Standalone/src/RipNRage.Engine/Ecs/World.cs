@@ -128,7 +128,20 @@ namespace RipNRage.Engine.Ecs
             for (int i = 0; i < _recordCount; i++)
                 if (_records[i].Alive) QueueDestroyed(new Entity(i, _records[i].Generation));
             Sync();
-            _singletons.Clear(); // the carrier entities died with the rest; the next read recreates them
+
+            // The carrier entities died with the rest. Claimed singletons are re-created here, at once and with their
+            // values back at default, rather than left to the next read: a writer system claims its singleton in
+            // OnCreate, which does not run again after a reset, so the next read would come from inside a running
+            // phase (EcsInputSystem.Tick) and creating a carrier there is a structural change — it threw.
+            var claimed = _singletons.Count == 0 ? null : new List<int>(_singletons.Keys);
+            _singletons.Clear();
+            if (claimed == null) return;
+            foreach (int id in claimed)
+            {
+                var e = CreateEntity();
+                _singletonClaims[id](this, e);
+                _singletons[id] = e;
+            }
         }
 
         // ------------------------------------------------------------------ components
@@ -188,10 +201,13 @@ namespace RipNRage.Engine.Ecs
             e = CreateEntity();
             AddNow(e, default(T));
             _singletons[ComponentType<T>.Id] = e;
+            // remembered so DestroyAllEntities can put the carrier back without knowing the type
+            _singletonClaims[ComponentType<T>.Id] = static (w, carrier) => w.AddNow(carrier, default(T));
             return e;
         }
 
         private readonly Dictionary<int, Entity> _singletons = new Dictionary<int, Entity>();
+        private readonly Dictionary<int, Action<World, Entity>> _singletonClaims = new Dictionary<int, Action<World, Entity>>();
 
         /// <summary>Adds or overwrites a component immediately (not while a phase runs).</summary>
         public void Add<T>(Entity e, in T value) where T : struct, IComponent { AssertNotIterating(); AddNow(e, value); }

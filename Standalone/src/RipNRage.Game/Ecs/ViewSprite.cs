@@ -89,7 +89,16 @@ namespace RipNRage.Game.Ecs
         protected override void OnEnable() { if (W.IsAlive(entity)) W.Commands.Remove<Hidden>(entity); }
         protected override void OnDisable() { if (W.IsAlive(entity)) W.Commands.Add(entity, new Hidden()); }
 
-        protected override void LateUpdate()
+        /// <summary>
+        /// Copies the GameObject's world pose onto the entity, from LateUpdate and again from
+        /// <see cref="ViewSpritePoseSystem"/> inside the ECS frame. The second copy is the one that counts in the
+        /// game: the viewmodel hangs off the camera GameObject, which only takes the camera entity's pose late in the
+        /// frame, so the LateUpdate copy alone would show the weapon a frame behind the view. It is still done here
+        /// because the animation editor hosts ViewSprites without registering the game's systems.
+        /// </summary>
+        protected override void LateUpdate() => CopyPose();
+
+        internal void CopyPose()
         {
             var w = W;
             if (!w.IsAlive(entity) || !w.Has<LocalTransform>(entity)) return;
@@ -101,6 +110,21 @@ namespace RipNRage.Game.Ecs
         {
             ByEntity.Remove(entity);
             if (W.IsAlive(entity)) W.Commands.DestroyEntity(entity);
+        }
+    }
+
+    /// <summary>
+    /// Hands every ViewSprite's GameObject pose to its entity, after the camera rig has been mirrored onto the
+    /// GameObject hierarchy (<see cref="PlayerViewFollowSystem"/>) and before the transforms are built — so the
+    /// first-person sprites sit on this frame's view, not the previous one. Gone with the bridge in step 4.3b.
+    /// </summary>
+    [UpdateAfter(typeof(PlayerViewFollowSystem)), UpdateBefore(typeof(RipNRage.Engine.Ecs.Transforms.TransformSystem))]
+    public sealed class ViewSpritePoseSystem : SystemBase, ILateTick
+    {
+        public void LateTick(SystemContext ctx)
+        {
+            foreach (var v in ViewSprite.ByEntity.Values)
+                if (v != null && !v.IsDestroyed) v.CopyPose();
         }
     }
 
