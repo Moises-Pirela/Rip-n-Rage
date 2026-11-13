@@ -13,9 +13,9 @@ namespace RipNRage.Game.Ecs.AI
 
     /// <summary>
     /// The leaves of the state tree. Unaware: <see cref="Idle"/> (dwell) → <see cref="Wander"/> (pick a point, go).
-    /// Engaged: <see cref="Chase"/> (out of range) / <see cref="Attack"/> (in range). Which half the enemy is in is
-    /// decided every tick from whether it has a live <see cref="AiBrain.Target"/> — the parent branch gets the first
-    /// word, which is what makes this a tree rather than a flat machine.
+    /// Engaged: <see cref="Chase"/> (the last known position) / <see cref="Attack"/> (in sight and in range). Which
+    /// half the enemy is in is decided every tick from whether its <see cref="Perception"/> holds a target — the parent
+    /// branch gets the first word, which is what makes this a tree rather than a flat machine.
     /// </summary>
     public enum AiState : byte { Idle, Wander, Chase, Attack }
 
@@ -27,8 +27,6 @@ namespace RipNRage.Game.Ecs.AI
     {
         public AiState State;
         public float StateTime;
-        /// <summary>The entity being hunted (<see cref="Entity.Null"/> = unaware). Set by the vision sensor.</summary>
-        public Entity Target;
         public Vector3 MoveTo;
     }
 
@@ -48,26 +46,24 @@ namespace RipNRage.Game.Ecs.AI
     public static class AiBrains
     {
         /// <summary>
-        /// One tick. Interrupts first, outermost branch down: a lost or dead target drops the enemy back to
-        /// <see cref="AiState.Idle"/>, a live one puts it in <see cref="AiState.Chase"/> or <see cref="AiState.Attack"/>
-        /// by distance; then the current leaf runs. <paramref name="targetPos"/> is read only when
-        /// <paramref name="targetAlive"/>.
+        /// One tick. Interrupts first, outermost branch down: no target drops the enemy back to
+        /// <see cref="AiState.Idle"/>; one in sight and in range puts it in <see cref="AiState.Attack"/>, any other in
+        /// <see cref="AiState.Chase"/> towards where it was last seen or heard; then the current leaf runs.
         /// </summary>
-        public static void Step(ref AiBrain b, ref AiIntent intent, EnemyData def, Vector3 self, bool targetAlive, Vector3 targetPos, float dt)
+        public static void Step(ref AiBrain b, ref AiIntent intent, EnemyData def, Vector3 self, in Perception p, float dt)
         {
             intent = default;
             b.StateTime += dt;
 
             // the branch conditions (the tree's selectors), parent before child
-            if (!targetAlive)
+            if (p.Target.IsNull)
             {
-                b.Target = Entity.Null;
                 if (b.State == AiState.Chase || b.State == AiState.Attack) Enter(ref b, AiState.Idle);
             }
             else
             {
-                b.MoveTo = targetPos; // the spotted node wrote the target's position into the blackboard every tick
-                var want = Vector3.Distance(self, targetPos) <= def.attackRange ? AiState.Attack : AiState.Chase;
+                b.MoveTo = p.LastKnown;
+                var want = p.Seen && Vector3.Distance(self, p.LastKnown) <= def.attackRange ? AiState.Attack : AiState.Chase;
                 if (b.State != want) Enter(ref b, want);
             }
 
@@ -102,29 +98,26 @@ namespace RipNRage.Game.Ecs.AI
     }
 
     /// <summary>Steps every live enemy's brain. A dead enemy's brain stops and its intent reads quiet.</summary>
-    [Reads(typeof(Enemy), typeof(LocalToWorld), typeof(Dead)), Writes(typeof(AiBrain), typeof(AiIntent))]
+    [Reads(typeof(Enemy), typeof(Perception), typeof(LocalToWorld), typeof(Dead)), Writes(typeof(AiBrain), typeof(AiIntent))]
     public sealed class AiBrainSystem : SystemBase, ITick
     {
         private Query _q;
 
         public override void OnCreate() =>
-            _q = World.Query().With<AiBrain>().With<AiIntent>().WithReadOnly<Enemy>().WithReadOnly<LocalToWorld>().Build();
+            _q = World.Query().With<AiBrain>().With<AiIntent>().WithReadOnly<Enemy>().WithReadOnly<Perception>().WithReadOnly<LocalToWorld>().Build();
 
         public void Tick(SystemContext ctx)
         {
             float dt = ctx.DeltaTime;
             foreach (var chunk in _q)
             {
-                var brains = chunk.Get<AiBrain>(); var intents = chunk.Get<AiIntent>();
+                var brains = chunk.Get<AiBrain>(); var intents = chunk.Get<AiIntent>(); var ps = chunk.Get<Perception>();
                 var kinds = chunk.Get<Enemy>(); var ltw = chunk.Get<LocalToWorld>(); var ents = chunk.Entities;
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
                     if (World.Has<Dead>(ents[i])) { intents[i] = default; continue; }
-                    ref var b = ref brains[i];
-                    bool alive = World.IsAlive(b.Target) && !World.Has<Dead>(b.Target) && World.Has<LocalToWorld>(b.Target);
-                    var targetPos = alive ? World.Get<LocalToWorld>(b.Target).Position : default;
-                    AiBrains.Step(ref b, ref intents[i], Enemies.All[kinds[i].Kind], ltw[i].Position, alive, targetPos, dt);
+                    AiBrains.Step(ref brains[i], ref intents[i], Enemies.All[kinds[i].Kind], ltw[i].Position, in ps[i], dt);
                 }
             }
         }

@@ -418,12 +418,13 @@ namespace RipNRage.Game
             if (nearest == null) { Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} enemy none"); return; }
             var w = Application.Current.World;
             var brain = w.Has<RipNRage.Game.Ecs.AI.AiBrain>(nearest.entity) ? w.Get<RipNRage.Game.Ecs.AI.AiBrain>(nearest.entity) : default;
-            bool spotted = !brain.Target.IsNull;
+            var sense = w.Has<RipNRage.Game.Ecs.AI.Perception>(nearest.entity) ? w.Get<RipNRage.Game.Ecs.AI.Perception>(nearest.entity) : default;
+            bool spotted = !sense.Target.IsNull;
             var anim = w.Has<RipNRage.Game.Ecs.AI.EnemyVisual>(nearest.entity)
                 ? w.Get<RipNRage.Game.Ecs.AI.EnemyVisual>(nearest.entity).State : AnimationState.IDLE;
             float moved = (nearest.transform.position - _enemyHome[nearest]).magnitude;
             Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} armour {ps.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
-                             $"spotted {spotted} state {brain.State} anim {anim} ehp {nearest.Health:0}");
+                             $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {nearest.Health:0}");
         }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;
@@ -543,7 +544,8 @@ namespace RipNRage.Game
                     // run towards the first rifleman, then stand and shoot
                     input.overrideMove = _frame < 270 ? new Vector2(0f, 1f) : Vector2.zero;
                     input.overrideFiring = _frame > 300 && _frame % 30 == 0;
-                    if (_frame == 100 || _frame == 200 || _frame == 290) AiProbe($"approach {_frame}");
+                    // 345: fifteen frames after the first shot (330) — its sound reaches an enemy 11 m away in eight (run with --frames 400)
+                    if (_frame == 100 || _frame == 200 || _frame == 290 || _frame == 345) AiProbe($"approach {_frame}");
                     break;
                 case "rocket":
                     if (_frame == 10) combat.OnChangeWeapon4();

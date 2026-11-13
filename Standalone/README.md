@@ -169,10 +169,13 @@ Example used for the screenshots in this document:
 * Hitscan & projectile weapons, ammo/inventory, pickups, rage/combat state, rage "post-processing"
   (colour filter + vignette like the URP volumes), HUD (portrait, radial health/armour ring,
   ammo counter/icon, crosshair with DOTween-style tweens).
-* Enemies: entities with a state tree (`Ecs/AI/AiBrain.cs`: unaware = idle → wander, engaged = chase / attack
-  by range — the **BehaviorTree2** graph as a value stepped by a pure function; `AIState` / `AIAgent` are the
-  GameObject half still being ported), 8-sided sprite sheets (`EnemyVisualSystem`), vision trigger, projectiles
-  that damage the player through armour.
+* Enemies: entities with senses and a state tree. Sight is range → cone → line of sight with a memory; sound is
+  an entity (`Noise`) whose front crosses the level at 80 m/s, muffled by walls — shots, blasts and footsteps make
+  one, and an enemy's shot tells the others whom it is shooting at (`Ecs/AI/Perception.cs`). The brain
+  (`Ecs/AI/AiBrain.cs`: unaware = idle → wander, engaged = chase the last known position / attack what it sees in
+  range) is the **BehaviorTree2** graph as a value stepped by a pure function; `AIState` / `AIAgent` are the
+  GameObject half still being ported. 8-sided sprite sheets (`EnemyVisualSystem`), projectiles that damage the
+  player through armour.
 * Level: the dock brush map (`dock.obj`, imported like Unity: X mirrored, 0.25 u/unit, y −3.09),
   AABB collision per brush (rotated brushes are grid-approximated), sand/water planes, sky,
   the Unity **layer table and collision matrix** from `ProjectSettings`.

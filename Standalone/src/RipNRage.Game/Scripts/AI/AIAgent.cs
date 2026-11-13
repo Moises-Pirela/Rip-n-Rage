@@ -50,6 +50,7 @@ public class AIAgent : MonoBehaviour
 
         var w = Application.Current.World;
         if (!w.IsAlive(aiState.entity) || !w.Has<RipNRage.Game.Ecs.AI.AiIntent>(aiState.entity)) return;
+        if (!_alerted && !w.Get<RipNRage.Game.Ecs.AI.Perception>(aiState.entity).Target.IsNull) OnAlert(); // the senses found someone
         var intent = w.Get<RipNRage.Game.Ecs.AI.AiIntent>(aiState.entity);
         if (intent.Move) Move(intent.MoveTo);
         if (intent.Attack) Attack(intent.FacePoint);
@@ -66,7 +67,7 @@ public class AIAgent : MonoBehaviour
         _lastHealth = aiState.Health;
     }
 
-    /// <summary>The vision sensor saw the player: a short, readable reaction before the tree starts chasing / shooting.</summary>
+    /// <summary>The senses found the player: a short, readable reaction before the tree starts chasing / shooting.</summary>
     public void OnAlert()
     {
         if (_alerted || aiState.HealthState == EntityHealthState.DEAD) return;
@@ -141,9 +142,10 @@ public class AIAgent : MonoBehaviour
     {
         var direction = targetLocation - projectileSpawnPosition.position;
         var self = GetComponent<AIState>();
-        RipNRage.Game.Ecs.Combat.Projectiles.Launch(Application.Current.World,
-            RipNRage.Game.Ecs.Combat.Projectiles.EnemyBullet, projectileSpawnPosition.position, direction,
-            self != null ? self.entity : RipNRage.Engine.Ecs.Entity.Null);
+        var w = Application.Current.World;
+        var shooter = self != null ? self.entity : RipNRage.Engine.Ecs.Entity.Null;
+        RipNRage.Game.Ecs.Combat.Projectiles.Launch(w, RipNRage.Game.Ecs.Combat.Projectiles.EnemyBullet, projectileSpawnPosition.position, direction, shooter);
+        RipNRage.Game.Ecs.AI.Noises.Emit(w.Commands, projectileSpawnPosition.position, shooter, data.noise); // the others hear it
     }
 
     public IEnumerator AllowRefireCoroutine()

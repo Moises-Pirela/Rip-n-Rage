@@ -7,7 +7,9 @@ namespace RipNRage.Engine.Ecs.Transforms
     /// Roots (no parent) are independent and run as a parallel chunk job; children are resolved after, parents
     /// first, each at most once per pass (a frame stamp memoises the walk up the chain).
     /// Runs in LateTick, after gameplay has moved things and before the frame is rendered.
-    /// <para>Also guarantees every entity with a LocalTransform has a LocalToWorld (added on creation).</para>
+    /// <para>Also guarantees every entity with a LocalTransform has a LocalToWorld (added on creation, seeded from
+    /// the local pose — exact for a root, and a child is resolved properly in the same frame's pass — so a system
+    /// that reads a fresh entity's world pose during Tick never sees it standing at the origin).</para>
     /// </summary>
     [Reads(typeof(LocalTransform), typeof(Parent)), Writes(typeof(LocalToWorld))]
     public sealed class TransformSystem : SystemBase, ILateTick, IOnEntityCreated
@@ -26,8 +28,11 @@ namespace RipNRage.Engine.Ecs.Transforms
         public void OnEntityCreated(SystemContext ctx, Entity e)
         {
             if (ctx.World.Has<LocalTransform>(e) && !ctx.World.Has<LocalToWorld>(e))
-                ctx.Commands.Add(e, new LocalToWorld { Value = Matrix4x4.identity, Rotation = Quaternion.identity, Scale = Vector3.one });
+                ctx.Commands.Add(e, Seed(in ctx.World.Get<LocalTransform>(e)));
         }
+
+        private static LocalToWorld Seed(in LocalTransform l) =>
+            new LocalToWorld { Value = l.Matrix, Position = l.Position, Rotation = l.Rotation, Scale = l.Scale };
 
         private struct RootJob : IChunkJob
         {
@@ -50,7 +55,12 @@ namespace RipNRage.Engine.Ecs.Transforms
         {
             _pass++;
             // entities created with a transform but no world pose yet (outside the creation event path)
-            if (ctx != null) foreach (var c in _missing) foreach (var e in c.Entities) ctx.Commands.Add(e, new LocalToWorld { Value = Matrix4x4.identity, Rotation = Quaternion.identity, Scale = Vector3.one });
+            if (ctx != null)
+                foreach (var c in _missing)
+                {
+                    var local = c.Get<LocalTransform>(); var ents = c.Entities;
+                    for (int i = 0; i < c.Length; i++) ctx.Commands.Add(ents[i], Seed(in local[i]));
+                }
 
             var job = new RootJob { Pass = _pass };
             _roots.ScheduleParallel(ref job, 1024);

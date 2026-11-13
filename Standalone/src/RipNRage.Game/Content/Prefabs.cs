@@ -56,8 +56,8 @@ namespace RipNRage.Game.Content
         // ---------------------------------------------------------------- enemies (AR_Grunt from TestArea.unity)
 
         /// <summary>
-        /// The AR_Grunt rifleman: AIState + AIAgent (the state tree runs on the entity: AiBrain), a 10 m vision
-        /// trigger, projectile spawn and grapple point. The scene scaled them by 2.25; the sprite scale here keeps
+        /// The AR_Grunt rifleman: AIState + AIAgent (the senses and the state tree run on the entity: Perception,
+        /// AiBrain), projectile spawn and grapple point. The scene scaled them by 2.25; the sprite scale here keeps
         /// them ~2.2 m tall.
         /// </summary>
         public static readonly Prefab Rifleman = new Prefab("AR_Grunt", () =>
@@ -74,11 +74,6 @@ namespace RipNRage.Game.Content
             var agent = go.AddComponent<AIAgent>();
             agent.data = GameAssets.RiflemanData;
             go.AddComponent<EnemyDestruction>();          // death: the sprite is sliced into a ragdoll (skeletons/rifleman.json)
-
-            var vision = new GameObject("VisionSensor");
-            vision.transform.SetParent(go.transform, false);
-            vision.layer = Layers.VisionSensor;
-            vision.AddComponent<AgentVisionSensor>()._state = state;
 
             var spawn = new GameObject("ProjectileSpawnPostion");
             spawn.transform.SetParent(go.transform, false);

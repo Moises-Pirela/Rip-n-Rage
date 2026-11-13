@@ -162,6 +162,7 @@ namespace RipNRage.Game.Ecs.Combat
             if (World.Has<CameraShake>(rig.Camera)) Kick(ref World.Get<CameraShake>(rig.Camera), data.weaponRecoil);
 
             RipNRage.Engine.Ecs.Audio.Sfx.Play(data.fireSound);
+            AI.Noises.Emit(ctx.Commands, eye.Position, player, data.noise); // the enemies hear it
             PlayerState.Current?.SetViolentCombatState();
             var combat = EnragedInjector<CombatController>.GetInstance();
             if (combat != null) { combat.OnFireWeapon?.Invoke(); combat.OnAmmoChanged?.Invoke(); }

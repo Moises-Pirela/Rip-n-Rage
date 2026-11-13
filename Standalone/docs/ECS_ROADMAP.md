@@ -46,7 +46,7 @@ then start at the first unchecked layer.
 
 ### Pick-up point for the next session (written 2026-11-12, after 5.6; layer 6 is in progress — see its step list)
 
-Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.2 are in, next is **6.3 sight**. The
+Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.3 are in, next is **6.4 steering**. The
 standing direction — the behaviour trees replaced by a **data-oriented state tree**, not ported as-is — is done
 (6.2). Established rules: ECS + functional,
 OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
@@ -643,8 +643,8 @@ Convert, keeping the tuned solver behaviour:
 
 The behaviour trees are **not** ported: they become a data-oriented state tree (6.2). Definitions in `Enemies.All`
 (flat fields on `EnemyData`), state in components, behaviour in systems; the brain writes intent, never calls anyone.
-Every step is judged on the three AI probes (`peek` / `close` / `approach`: `moved`, `spotted`, `state`, `hp`) and
-`killenemy`'s `killedAtFrame 97`. **Steps** (one commit + review stop each):
+Every step is judged on the three AI probes (`peek` / `close` / `approach`: `moved`, `spotted`, `seen`, `state`,
+`hp`; `approach` needs `--frames 400` for its hearing probe) and `killenemy`'s `killedAtFrame 97`. **Steps** (one commit + review stop each):
 
 - [x] 6.0 **Instrumented the watch gates** and recorded the statue baseline: `moved 0.00`, `spotted False`, `hp 100`
       throughout; `anim IDLE` at frame 60 then `MOVING` (the move node reported arrival instantly).
@@ -678,14 +678,35 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
       baseline plus the new `state Idle`; `killedAtFrame 97`, `rocket` `hp 80 armour 0 y 3.82`, `jab` 1→2→0, `glockalt`
       refusal unchanged. (`saveload` prints no "after load" line at frame 240 — pre-existing on 6.1, the load itself
       reports `player at (-0.00, 1.81, -15.42) hp 100 ammo 119`.)
-- [ ] 6.3 **Sight.** `Sight { Range, Fov, Target, LastSeen, LastKnownPos }` + `SightSystem`: distance → FOV → one LOS
-      raycast, amortised over a few enemies per frame — a query, not a trigger volume (the trigger path needs the
-      bridge layer 9 deletes, and a per-enemy cone is cheaper as a query than as a baked collider). The alert reaction
-      (`Enemies.Telegraph` + sting) is the system's edge-detect on acquisition. Deletes `AgentVisionSensor`, the
-      `VisionSensor` GO and `Layers.VisionSensor`. **Flip:** `spotted True` on `peek`.
+- [x] 6.3 **Perception: sight and sound** (`Ecs/AI/Perception.cs`). `Perception { Target, LastKnown, Seen, SinceSeen }`
+      on the enemy, written by two systems, read by the brain (`AiBrain.Target` moved here; the brain now chases
+      `LastKnown` and attacks only when `Seen` and in range). **Sight** is a query, not a trigger volume: range → cone
+      about the body's facing → one line-of-sight ray against the level (`sightRange` 10 = the old sphere, `sightFov`
+      180 and `memory` 5 s are new, flat on `EnemyData`); a dead target is dropped at once, an unseen one after the
+      memory. **Sound is an entity**: `Noise { Origin, Source, Loudness, Radius }` — `HearingSystem` advances the front
+      at `Noises.Speed` (80 m/s) every tick and tells the listeners it crosses that tick; a wall between
+      (`Noises.WallMask` raycast) halves how far it carries; the entity destroys itself once the front passes its
+      loudness. A noise made by the player turns the listener on the player; one made by an enemy passes on *that
+      enemy's* target (they are shooting at someone), so an alert spreads. Emitters: the player's shots
+      (`WeaponData.noise` 30), the rocket blast (`ProjectileDef.Noise` 60), enemy shots (`EnemyData.noise` 30) and
+      footsteps (`Noises.Footstep` 8). `AIAgent` reads the acquisition edge off `Perception` for the alert reaction.
+      Deleted: `AgentVisionSensor` and the `VisionSensor` GO (`Layers.VisionSensor` stays: it is an index in the Unity
+      layer table). **Engine fix found by the gate**: `TransformSystem` added a fresh entity's `LocalToWorld` at
+      identity and computed it a LateTick later, so for one Tick every new entity stood at the world origin — 8 m
+      from the player start, inside sight range: `peek` / `close` read `spotted True` with nothing in sight, forgotten
+      exactly at the 5 s memory. It is now seeded from the `LocalTransform` on creation. **Flips**: `approach 100` →
+      `spotted True seen True state Attack anim ATTACKING` (the surviving `AIAgent` burst fires off the intent; the
+      player at 11 m/s is not hit), `approach 200` → remembered (`Chase`), and the new probe `approach 345` (fifteen
+      frames after the first shot, `--frames 400`) → `spotted True seen False state Chase` at 10.9 m: heard, not seen.
+      `peek` / `close` stay at the statue baseline. Gates: 199 engine + 108 gameplay assertions (range, cone edge, a
+      wall, memory at 4 s vs 6 s; the front at 13 m vs 22 m, spent at 30 m, 40 m never hears, muffled 30 vs 50
+      through a wall, the shooter's target passed on and the shooter deaf to itself; the brain on a heard-only target
+      chases the sound and does not shoot); all 13 scripts + `die` at parity, `killedAtFrame 97`, `rocket` / `jab` /
+      `glockalt` unchanged.
 - [ ] 6.4 **Steering.** `Steering` writes `CharacterMotor.Desired` from `AiIntent.MoveTo` and turns the body to face
-      (which drives 6.1's 8-sided row). `Wander` then stays until arrived (a raycast probe replaces
-      `NavMesh.SamplePosition`). **Flip:** `moved > 0` on `approach`.
+      (which drives 6.1's 8-sided row — and the sight cone, which until then looks where the enemy was spawned
+      facing). `Wander` then stays until arrived (a raycast probe replaces `NavMesh.SamplePosition`). **Flip:**
+      `moved > 0` on `approach`.
 - [ ] 6.5 **The attack is components.** `EnemyAttack { WindupLeft, ShotsLeft, BurstTimer, Cooldown }` + system
       (telegraph → burst via `Projectiles.Launch` → recover, on scaled `ctx.DeltaTime`), `Stagger` from
       `IConsumes<HitEvent>`, the muzzle offset as data. **`AIAgent` deleted.** **Flip:** player `hp < 100` on `close` —

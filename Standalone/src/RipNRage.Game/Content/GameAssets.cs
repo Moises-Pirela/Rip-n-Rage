@@ -409,7 +409,7 @@ namespace RipNRage.Game.Content
                     Speed = 50f, Damage = 1000f, Range = 100f,
                     CollisionMask = RipNRage.Game.Ecs.Combat.Projectiles.HitMask,
                     BulletKey = "explosive", Trail = "rocket", Explosion = "rocket",
-                    ExplosionImpulse = 260f, ExplosionRadius = 9f,
+                    ExplosionImpulse = 260f, ExplosionRadius = 9f, Noise = 60f,
                     Sprite = Glock["GlockFlash"], Color = new Color(1f, 0.75f, 0.35f, 1f), Scale = 0.035f,
                     LightColor = new Color(1f, 0.7f, 0.35f, 1f), LightRange = 10f, LightIntensity = 2.5f,
                 },
@@ -448,6 +448,8 @@ namespace RipNRage.Game.Content
                 movementSpeed = 11, attackRange = 10, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
                 attackWindup = 0.35f, burstCount = 3, burstInterval = 0.09f, staggerTime = 0.25f, alertDelay = 0.2f,
                 wanderWait = 1f, wanderRadius = 15f, wanderMinDistance = 10f, // BehaviorTree2: Wait(1), RandomLocation(r=15, min=10)
+                // senses (6.3): the vision trigger was a 10 m sphere — all round; the cone and the memory are new
+                sightRange = 10f, sightFov = 180f, memory = 5f, noise = 30f,
                 maxHealth = 1000, maxArmor = 0,
                 skeleton = "rifleman",
                 enemyAnimationData = new EnemyAnimationData

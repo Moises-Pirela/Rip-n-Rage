@@ -31,6 +31,16 @@ public class EnemyData : ScriptableObject
     /// <summary>... and rejected when closer than this.</summary>
     public float wanderMinDistance = 10f;
 
+    [Space(5)] [Header("Senses")]
+    /// <summary>Metres the enemy sees (the old vision trigger's sphere).</summary>
+    public float sightRange = 10f;
+    /// <summary>Full field of view, degrees, about the body's facing.</summary>
+    public float sightFov = 180f;
+    /// <summary>Seconds a target stays known after it was last seen or heard.</summary>
+    public float memory = 5f;
+    /// <summary>Metres the enemy's own shot carries to other ears.</summary>
+    public float noise = 30f;
+
     [Space(5)] [Header("Enemy status")] 
     public float maxHealth;
     public float maxArmor;

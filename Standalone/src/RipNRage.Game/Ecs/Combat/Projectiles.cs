@@ -32,6 +32,8 @@ namespace RipNRage.Game.Ecs.Combat
         /// <summary>vfx bindings "explosions" key: set = this detonates (blast damage + impulses) instead of hitting one thing.</summary>
         public string Explosion;
         public float ExplosionImpulse, ExplosionRadius;
+        /// <summary>Metres the blast is heard (6.3).</summary>
+        public float Noise;
         // the glowing slug: a billboard sprite and its light, on the projectile entity itself
         public Sprite Sprite;
         public Color Color;
@@ -134,6 +136,7 @@ namespace RipNRage.Game.Ecs.Combat
             var w = ctx.World;
             Vector3 point = e.Point;
             GameVfx.Explosion(def.Explosion, point, e.Normal);
+            AI.Noises.Emit(ctx.Commands, point, instigator, def.Noise);
 
             // the near miss everyone feels: camera trauma with distance falloff, and bodies thrown by the blast
             if (PlayerCamera.Has) PlayerCamera.Shake.ShakeAt(PlayerCamera.Position, point, 22f, 1f);

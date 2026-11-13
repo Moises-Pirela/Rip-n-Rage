@@ -24,6 +24,8 @@ public class WeaponData : ScriptableObject
     [Header("Weapon FX")]
     public AnimatorController animatorOverrideController;
     public AudioClip fireSound;
+    /// <summary>Metres a shot is heard by the enemies (6.3).</summary>
+    public float noise = 30f;
     public Vector3 weaponPosition;
     public float weaponScale;
 }

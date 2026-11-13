@@ -218,7 +218,7 @@ namespace RipNRage.Game.Ecs
             }
 
             // ---- footsteps ----
-            ProgressStepCycle(ref p, velocity, grounded, dt);
+            if (ProgressStepCycle(ref p, velocity, grounded, dt)) AI.Noises.Emit(ctx.Commands, lt.Position, e, AI.Noises.Footstep);
 
             // ---- hand the wanted velocity to the motor ----
             m.Desired = new Vector3(p.FinalMove.x, 0f, p.FinalMove.z);
@@ -227,14 +227,17 @@ namespace RipNRage.Game.Ecs
             p.PreviouslyGrounded = grounded;
         }
 
-        private static void ProgressStepCycle(ref PlayerMotor p, Vector3 velocity, bool grounded, float dt)
+        /// <summary>True on the tick a footstep lands.</summary>
+        private static bool ProgressStepCycle(ref PlayerMotor p, Vector3 velocity, bool grounded, float dt)
         {
-            if (velocity.sqrMagnitude <= 0f) return;
-            if (p.SmoothInputVector.sqrMagnitude <= 1E-04f) return;
+            if (velocity.sqrMagnitude <= 0f) return false;
+            if (p.SmoothInputVector.sqrMagnitude <= 1E-04f) return false;
             p.StepCycle += velocity.magnitude * dt;
-            if (p.StepCycle <= p.NextStep) return;
+            if (p.StepCycle <= p.NextStep) return false;
             p.NextStep = p.StepCycle + 2f; // m_StepInterval from the prefab
-            if (grounded) Sfx.Play(GameAssets.RandomFootstep());
+            if (!grounded) return false;
+            Sfx.Play(GameAssets.RandomFootstep());
+            return true;
         }
 
         // ---------------------------------------------------------------- slide
