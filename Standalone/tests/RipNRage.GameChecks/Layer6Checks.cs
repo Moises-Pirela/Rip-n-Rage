@@ -2,6 +2,7 @@ using System;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
+using RipNRage.Engine.Ecs.Rendering;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Ecs.AI;
 using RipNRage.Game.Ecs.Combat;
@@ -13,7 +14,9 @@ using RipNRage.Game.Ecs.Combat;
 /// 6.3: the senses — sight as range → cone → line of sight with a memory, and sound as a <see cref="Noise"/> entity
 /// whose front crosses the level at <see cref="Noises.Speed"/> and is muffled by walls. 6.4: steering — the intent
 /// into the motor and the <see cref="Heading"/>, arrival, the ledge guard, a wander that gives up. 6.5: the attack
-/// is an entity parented to the enemy — alert, telegraph, burst, recovery — and a hit staggers.
+/// is an entity parented to the enemy — alert, telegraph, burst, recovery — and a hit staggers. 6.6: the enemy is
+/// only an entity — Enemies.Spawn builds the whole archetype as a function, and death runs on the event payload
+/// with no GameObject anywhere.
 /// </summary>
 internal static class Layer6Checks
 {
@@ -36,6 +39,8 @@ internal static class Layer6Checks
             Hearing(True);
             Steer(True, Equal);
             Attacks(True, Equal);
+            Spawned(True, Equal);
+            Dies(True);
         }
         finally { Enemies.All = saved; Projectiles.All = savedProjectiles; }
     }
@@ -376,6 +381,64 @@ internal static class Layer6Checks
         int afterDeath = shots.Count();
         Tick(w, 30);
         True(shots.Count() == afterDeath, "and a corpse fires nothing");
+        Close(w);
+    }
+
+    /// <summary>6.6: spawning is a function — definitions in, one whole entity out, no GameObject and no factory.</summary>
+    private static void Spawned(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var def = Enemies.All[0];
+        def.maxHealth = 120f; def.maxArmor = 0f;
+        var w = NewWorld();
+        var floor = new Vector3(100f, 2f, -30f);
+        var e = Enemies.Spawn(w, 0, floor, 90f);
+
+        float ride = CharacterProfiles.Enemy.rideHeight;
+        var pos = w.Get<LocalTransform>(e).Position;
+        True(pos == floor + Vector3.up * (0.5f * Enemies.Height + ride), "the feet are on the floor: the body centre floats half a height plus the ride above it");
+        Equal(90f, w.Get<Heading>(e).Yaw, "it faces the asked yaw");
+        True(w.Has<Body>(e) && w.Has<CharacterMotor>(e) && w.Has<ColliderShape>(e), "the body: capsule, spring, motor");
+        True(w.Has<Enemy>(e) && w.Has<Perception>(e) && w.Has<AiBrain>(e) && w.Has<AiIntent>(e) && w.Has<EnemyWeapon>(e), "the mind, the senses and the gun");
+        Equal(def.maxHealth, w.Get<Health>(e).Current, "health filled from the definition");
+        True(!w.Has<Armor>(e), "no armour in the definition, none on the entity");
+        True(w.Has<Hitbox>(e) && w.Get<Hitbox>(e).HeadFraction == Enemies.HeadFraction, "the hitbox carries the headshot line");
+        var sprite = w.Get<EnemyVisual>(e).Sprite;
+        True(w.IsAlive(sprite) && w.Get<Parent>(sprite).Value == e && w.Get<SpriteRender>(sprite).Billboard, "the look is a billboard sprite child");
+        var r = w.Get<LevelRef>(e);
+        True(r.Index == -1 && r.SpawnerIndex == -1, "born of no level slot and no spawner until someone stamps one");
+
+        def.maxArmor = 40f;
+        var armoured = Enemies.Spawn(w, 0, floor, 0f);
+        Equal(40f, w.Get<Armor>(armoured).Current, "a definition with armour puts it on");
+        def.maxArmor = 0f;
+
+        // the ad-hoc query (probes, saves) sees them — and is cached per world, not per call
+        var list = new System.Collections.Generic.List<Entity>();
+        Enemies.Collect(w, list);
+        True(list.Count == 2 && list.Contains(e) && list.Contains(armoured), "Collect finds every enemy in this world");
+        var w2 = NewWorld();
+        Enemies.Collect(w2, list);
+        True(list.Count == 0, "a different world has its own query: empty");
+        Close(w2);
+        Enemies.Collect(w, list);
+        True(list.Count == 2, "and back on the first world the cache follows");
+        Close(w);
+    }
+
+    /// <summary>6.6: a lethal blow runs the whole death on events — no GameObject half to destroy.</summary>
+    private static void Dies(Action<bool, string> True)
+    {
+        var def = Enemies.All[0];
+        def.maxHealth = 50f;
+        var w = NewWorld();
+        var e = Enemies.Spawn(w, 0, new Vector3(200f, 2f, 0f), 0f);
+        var sprite = w.Get<EnemyVisual>(e).Sprite;
+        w.Post(new DamageEvent { Target = e, Amount = 999f, Point = w.Get<LocalTransform>(e).Position, Direction = Vector3.forward });
+        Tick(w, 2);
+        True(w.Has<Dead>(e) && w.Get<EnemyVisual>(e).DeadTime >= 0f, "the blow lands: dead, and the corpse clock runs");
+        True(w.Get<EnemyVisual>(e).State == AnimationState.DYING || w.Get<EnemyVisual>(e).State == AnimationState.DEAD, "the sheet plays the death");
+        Tick(w, 270); // the 2.5 s dissolve delay + 1.6 s dissolve
+        True(!w.IsAlive(e) && !w.IsAlive(sprite), "the dissolve done, the entity and its sprite child are gone — nothing else to clean up");
         Close(w);
     }
 }

@@ -4,6 +4,7 @@ using System.Linq;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Transforms;
+using RipNRage.Game.Ecs.AI;
 using RipNRage.Game.Ecs.Combat;
 
 /// <summary>Collects the combat events of a frame so the assertions can look at them.</summary>
@@ -73,11 +74,11 @@ internal static class Layer5Checks
             w.Add(enemy, new RipNRage.Engine.Ecs.Physics.ColliderShape
             {
                 Kind = RipNRage.Engine.Ecs.Physics.ShapeKind.Capsule,
-                Radius = AIState.CapsuleRadius, Height = AIState.SpriteHeight - ride, Center = new Vector3(0f, -ride * 0.5f, 0f),
+                Radius = Enemies.CapsuleRadius, Height = Enemies.Height - ride, Center = new Vector3(0f, -ride * 0.5f, 0f),
             });
             w.Add(enemy, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
             w.Add(enemy, new Health { Current = 100f, Max = 100f });
-            w.Add(enemy, new Hitbox { Height = AIState.SpriteHeight, HeadFraction = AIState.HeadFraction });
+            w.Add(enemy, new Hitbox { Height = Enemies.Height, HeadFraction = Enemies.HeadFraction });
             w.Update(1f / 60f); // register the collider
 
             RipNRage.Engine.Ecs.Input.InputOverride.Fire = true; // the automation path; the input system rewrites the singleton every tick
@@ -108,7 +109,7 @@ internal static class Layer5Checks
 
     // ================================================================= the enemy hitbox is hittable
 
-    /// <summary>The capsule recipe AIState gives its entity (the restored pre-2.L collider) stops a ray on the
+    /// <summary>The capsule recipe Enemies.Spawn gives its entity (the restored pre-2.L collider) stops a ray on the
     /// Enemies layer and names the entity — what the weapons will resolve damage through in 5.3.</summary>
     private static void EnemyHitbox(Action<bool, string> True)
     {
@@ -123,12 +124,12 @@ internal static class Layer5Checks
         w.Add(enemy, new RipNRage.Engine.Ecs.Physics.ColliderShape
         {
             Kind = RipNRage.Engine.Ecs.Physics.ShapeKind.Capsule,
-            Radius = AIState.CapsuleRadius, Height = AIState.SpriteHeight - ride,
+            Radius = Enemies.CapsuleRadius, Height = Enemies.Height - ride,
             Center = new Vector3(0f, -ride * 0.5f, 0f),
         });
         w.Add(enemy, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
         w.Add(enemy, new Health { Current = 1000f, Max = 1000f });
-        w.Add(enemy, new Hitbox { Height = AIState.SpriteHeight, HeadFraction = AIState.HeadFraction });
+        w.Add(enemy, new Hitbox { Height = Enemies.Height, HeadFraction = Enemies.HeadFraction });
         w.Update(1f / 60f); // one step so the sync registers the collider
 
         // chest-height ray from 5 m out, masked to the enemy layer like the weapons' 6421 mask

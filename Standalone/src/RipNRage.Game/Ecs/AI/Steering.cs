@@ -96,7 +96,7 @@ namespace RipNRage.Game.Ecs.AI
                     }
                     var def = Enemies.All[kinds[i].Kind];
                     Vector3 self = ltw[i].Position;
-                    float reach = 0.5f * AIState.SpriteHeight + m.RideHeight + Steering.Drop; // centre → feet → a drop below
+                    float reach = 0.5f * Enemies.Height + m.RideHeight + Steering.Drop; // centre → feet → a drop below
                     bool ground = !intents[i].Move || Steering.GroundAhead(self, intents[i].MoveTo - self, reach);
                     Steering.Step(ref m, ref headings[i], in intents[i], def, self, ground, dt);
 

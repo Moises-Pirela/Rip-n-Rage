@@ -46,8 +46,9 @@ then start at the first unchecked layer.
 
 ### Pick-up point for the next session (written 2026-11-12, after 5.6; layer 6 is in progress — see its step list)
 
-Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.5 are in, next is **6.6 the enemy as
-only an entity**. The
+Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.6 are in, next is **6.7 spawning**
+(`Spawner` component + `SpawnerSystem` replacing the `MonsterSpawner` MonoBehaviour — the entity plumbing it needs,
+`spawnEntity` / `LevelRef`, landed in 6.6). The
 standing direction — the behaviour trees replaced by a **data-oriented state tree**, not ported as-is — is done
 (6.2). Established rules: ECS + functional,
 OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
@@ -747,10 +748,30 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
       staggered walk stops and resumes); all 13 scripts + `die` at parity with 6.4 — `close` 290 `armour 40`,
       `killedAtFrame 97`, `rocket` / `jab` / `glockalt` unchanged — with one intended change: the sheet reads IDLE
       between bursts instead of staying ATTACKING.
-- [ ] 6.6 **The enemy is only an entity.** `EnemyData` → definition records + prefab config; `EnemyDestruction` /
-      corpse → an `IConsumes<DeathEvent>` system reading the event payload (`DamageInfo` dies); `AIState` and the
-      enemy's `EcsObjects` entry go; `GameSaveSystem` reads `Health` / `LocalTransform` off the entity; the grapple
-      point becomes a height constant.
+- [x] 6.6 **The enemy is only an entity** (`Ecs/AI/Enemies.cs`, `EnemyData.cs`, `EnemyDeath.cs`). Spawning is a
+      function — `Enemies.Spawn(world, kind, floorPosition, yaw)` builds the whole archetype (body, health, look,
+      senses, mind, gun), no factory — and `EnemyData` is a plain record in `Ecs/AI` (`name` keys the death VFX, the
+      new `classname` names the save entry; the capsule constants moved onto `Enemies`). The level pipeline hands
+      back entities: `EntityDefinition.spawnEntity` + a `LevelRef { Index, SpawnerIndex }` component stamped by the
+      loader / spawner / save load; `MonsterSpawner` tracks a `List<Entity>` until 6.7 replaces it. Death is
+      `EnemyDeathSystem` (`IConsumes<DeathEvent>`): the kind’s VFX and the ragdoll slice read the event payload.
+      **Deleted**: `AIState` (and with it the enemy’s `EcsObjects` entry, the first-frame pose hand-off — enemies
+      now spawn where they stand — and the `GrapplePoint` nothing read), `EnemyDestruction`, `DamageInfo`,
+      `Prefabs.Rifleman`, `Scripts/EnemyData/`. `CombatBridge` keys the player’s hit feedback on `Has<Enemy>`;
+      `GameSaveSystem` reads monsters off the world (slots keyed by `LevelRef.Index`, a dead slot destroys the
+      entity, dynamic monsters respawn through `spawnEntity`); the probes and `killenemy` query the world
+      (`Enemies.Collect`; ad-hoc queries are cached per world — `Build()` registers with the world for good).
+      Gates: 199 engine + 164 gameplay assertions (the spawn archetype, the per-world query cache, a lethal blow
+      running death → dissolve → removal with no GameObject anywhere). **The scripts were compared under
+      `--fixed-dt 0.016667`** — wall-clock dt on the dev Mac swamps every number (`killedAtFrame` moves 136–150 run
+      to run at the same commit; under fixed dt it is exactly the recorded **97** on both builds): walk / fire /
+      weapons / rage / saveload / jab / rocket / glockalt / killenemy / style / die byte-identical to 6.5.
+      `peek` / `close` / `approach` keep every capability (wander, sight, chase, the `approach 365` heard-not-seen
+      flip) but walk different paths: the baseline teleported each enemy from the prefab origin to its spawn point a
+      frame after birth, so the physics history — and with it the wander dice — differ; the `close 290` armour-40
+      hit was one of those dice (re-record at 6.8). `saveload` writes the four dock monsters from the world and
+      restores them (the missing frame-240 "after load" line predates 6.1 and is unchanged); look screenshot 0.183%
+      vs a 0.180% same-build floor; frame 4.4 ms median vs 4.7 (3 interleaved runs).
 - [ ] 6.7 **Spawning.** `Spawner { Def, Count, Interval, Radius, ActivateRange, MaxAlive }` + `SpawnerSystem`
       (entities, not GameObjects); `LevelEntityRef` / save round-trip kept honest by `saveload`.
 - [ ] 6.8 Close-out: full parity run, the AI probes re-recorded as the new baseline, `--threads 1` interleaved bench,

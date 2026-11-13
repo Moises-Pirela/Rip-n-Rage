@@ -3,6 +3,10 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using RipNRage.Engine.Ecs;
+using RipNRage.Engine.Ecs.Transforms;
+using RipNRage.Game.Ecs.AI;
+using RipNRage.Game.Ecs.Combat;
 using RipNRage.Level;
 
 namespace RipNRage.Game.Content.Level
@@ -89,19 +93,30 @@ namespace RipNRage.Game.Content.Level
             // level entities
             var doc = CurrentLevel.document;
             var byIndex = new Dictionary<int, GameObject>();
-            var dynamic = new List<MonsterSave>();
             foreach (var go in Scene.Current.GameObjects)
             {
                 if (go.IsDestroyed) continue;
                 var r = go.GetComponent<LevelEntityRef>();
-                if (r == null) continue;
-                if (r.index >= 0) byIndex[r.index] = go;
-                else
+                if (r != null && r.index >= 0) byIndex[r.index] = go;
+            }
+            // monsters are entities (6.6): level-placed ones keyed by their LevelRef, runtime ones saved dynamic
+            var w = Application.Current.World;
+            var monstersByIndex = new Dictionary<int, Entity>();
+            var dynamic = new List<MonsterSave>();
+            var enemies = new List<Entity>();
+            Enemies.Collect(w, enemies);
+            foreach (var en in enemies)
+            {
+                var r = w.Get<LevelRef>(en);
+                if (r.Index >= 0) { monstersByIndex[r.Index] = en; continue; }
+                if (w.Has<Dead>(en)) continue;
+                var pos = w.Get<LocalTransform>(en).Position;
+                dynamic.Add(new MonsterSave
                 {
-                    var st = go.GetComponent<AIState>();
-                    if (st != null && st.HealthState != EntityHealthState.DEAD)
-                        dynamic.Add(new MonsterSave { classname = r.classname, x = go.transform.position.x, y = go.transform.position.y, z = go.transform.position.z, yaw = go.transform.eulerAngles.y, health = st.Health, spawnerIndex = r.spawnerIndex });
-                }
+                    classname = Enemies.All[w.Get<Enemy>(en).Kind].classname,
+                    x = pos.x, y = pos.y, z = pos.z, yaw = w.Get<Heading>(en).Yaw,
+                    health = w.Get<Health>(en).Current, spawnerIndex = r.SpawnerIndex,
+                });
             }
             for (int i = 0; i < doc.entities.Count; i++)
             {
@@ -110,9 +125,13 @@ namespace RipNRage.Game.Content.Level
                 byIndex.TryGetValue(i, out var go);
                 if (e.classname.StartsWith("monster_", StringComparison.OrdinalIgnoreCase) && !e.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase))
                 {
-                    var st = go?.GetComponent<AIState>();
-                    es.alive = go != null && st != null && st.HealthState != EntityHealthState.DEAD;
-                    if (es.alive) { es.x = go.transform.position.x; es.y = go.transform.position.y; es.z = go.transform.position.z; es.health = st.Health; }
+                    es.alive = monstersByIndex.TryGetValue(i, out var en) && !w.Has<Dead>(en);
+                    if (es.alive)
+                    {
+                        var pos = w.Get<LocalTransform>(en).Position;
+                        es.x = pos.x; es.y = pos.y; es.z = pos.z;
+                        es.health = w.Get<Health>(en).Current;
+                    }
                 }
                 else if (e.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase)) es.taken = go == null;
                 else if (e.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase)) es.spawned = go?.GetComponent<MonsterSpawner>()?.Spawned ?? 0;
@@ -228,31 +247,41 @@ namespace RipNRage.Game.Content.Level
                     var r = go.GetComponent<LevelEntityRef>();
                     if (r != null && r.index >= 0) byIndex[r.index] = go;
                 }
+                // the freshly rebuilt level spawned every level-placed monster alive at its origin
+                var w = Application.Current.World;
+                var monstersByIndex = new Dictionary<int, Entity>();
+                var enemies = new List<Entity>();
+                Enemies.Collect(w, enemies);
+                foreach (var en in enemies)
+                {
+                    var r = w.Get<LevelRef>(en);
+                    if (r.Index >= 0) monstersByIndex[r.Index] = en;
+                }
                 foreach (var es in save.entities)
                 {
+                    if (es.classname.StartsWith("monster_", StringComparison.OrdinalIgnoreCase) && !es.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!monstersByIndex.TryGetValue(es.index, out var en) || !w.IsAlive(en)) continue;
+                        if (!es.alive) { w.DestroyEntity(en); continue; } // the sprite child follows through the hierarchy
+                        w.Get<LocalTransform>(en).Position = new Vector3(es.x, es.y, es.z); // a teleport to the physics sync
+                        if (es.health > 0f) { ref var h = ref w.Get<Health>(en); h.Current = Mathf.Min(es.health, h.Max); }
+                        continue;
+                    }
                     if (!byIndex.TryGetValue(es.index, out var go)) continue;
                     if (es.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase)) { if (es.taken) GameObject.Destroy(go); }
                     else if (es.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase)) { var sp = go.GetComponent<MonsterSpawner>(); if (sp != null) sp.Spawned = es.spawned; }
-                    else if (es.classname.StartsWith("monster_", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (!es.alive) { GameObject.Destroy(go); continue; }
-                        go.transform.position = new Vector3(es.x, es.y, es.z);
-                        var st = go.GetComponent<AIState>();
-                        if (st != null && es.health > 0f) st.Health = es.health;
-                    }
                 }
                 foreach (var m in save.dynamicMonsters)
                 {
                     var def = EntityRegistry.Get(m.classname);
-                    if (def?.spawn == null) continue;
+                    if (def?.spawnEntity == null) continue;
                     var e = new MapEntity { classname = m.classname, origin = new Vector3(m.x, m.y, m.z) };
                     e.angle = m.yaw;
-                    var go = def.spawn(e);
-                    if (go == null) continue;
-                    go.transform.position = new Vector3(m.x, m.y, m.z);
-                    var r = go.AddComponent<LevelEntityRef>(); r.classname = m.classname; r.spawnerIndex = m.spawnerIndex;
-                    var st = go.GetComponent<AIState>();
-                    if (st != null && m.health > 0f) st.Health = m.health; // applied after Awake set the defaults
+                    var en = def.spawnEntity(e);
+                    if (!w.IsAlive(en)) continue;
+                    w.Get<LocalTransform>(en).Position = new Vector3(m.x, m.y, m.z); // the saved pose is the body centre
+                    w.Get<LevelRef>(en).SpawnerIndex = m.spawnerIndex;
+                    if (m.health > 0f) { ref var h = ref w.Get<Health>(en); h.Current = Mathf.Min(m.health, h.Max); }
                 }
             }
             Debug.LogWarning($"Loaded: player at {player.transform.position}, hp {player.Health}, ammo {combat.AmmoOf(AmmoType.LIGHT)}, weapon {combat.CurrentWeaponIndex}");

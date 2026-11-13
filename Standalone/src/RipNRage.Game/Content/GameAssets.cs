@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using RipNRage.Game.Ecs.AI;
 
 namespace RipNRage.Game.Content
 {
@@ -439,10 +440,11 @@ namespace RipNRage.Game.Content
             };
 
             // Assets/_Game/ScriptableObjects/EnemyData/RiflemanData.asset
-            RipNRage.Game.Ecs.AI.Enemies.All = new EnemyData[1]; // filled below (self-reference)
+            Enemies.All = new EnemyData[1]; // filled below (self-reference)
             RiflemanData = new EnemyData
             {
                 name = "RiflemanData",
+                classname = "monster_rifleman",
                 // attackRange: the asset says 12, but the tree's InAttackRange node carried its own 10 and that is
                 // the value that ever decided anything (6.2 moved the node's numbers here)
                 movementSpeed = 11, attackRange = 10, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
@@ -463,7 +465,7 @@ namespace RipNRage.Game.Content
                     DeadAnimation = new AnimationSheet { AnimationFrames = 1, Sides = 4, AnimationFramesPerSecond = 1, TextureSheet = RiflemanDead },
                 },
             };
-            RipNRage.Game.Ecs.AI.Enemies.All[0] = RiflemanData;
+            Enemies.All[0] = RiflemanData;
         }
     }
 }

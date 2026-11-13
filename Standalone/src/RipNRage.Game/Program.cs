@@ -1,7 +1,11 @@
 using RipNRage.Engine.UI;
 using RipNRage.Engine.UI.Clay;
 using System;
+using RipNRage.Engine.Ecs;
+using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Content;
+using RipNRage.Game.Ecs.AI;
+using RipNRage.Game.Ecs.Combat;
 
 namespace RipNRage.Game
 {
@@ -397,34 +401,36 @@ namespace RipNRage.Game
         public string scriptName = "look";
         private int _frame;
         /// <summary>Where each enemy was first seen, so the probe can tell whether it has ever moved.</summary>
-        private readonly System.Collections.Generic.Dictionary<AIState, Vector3> _enemyHome = new System.Collections.Generic.Dictionary<AIState, Vector3>();
+        private readonly System.Collections.Generic.Dictionary<Entity, Vector3> _enemyHome = new System.Collections.Generic.Dictionary<Entity, Vector3>();
+        private readonly System.Collections.Generic.List<Entity> _enemies = new System.Collections.Generic.List<Entity>();
 
         /// <summary>
-        /// The layer-6 watch line: what the nearest enemy is doing and what it has done to the player. Today every
-        /// field reads "statue" — the vision sensor lost its collider in 2.L and the steering is stubbed — so each
-        /// of these numbers is a flip layer 6 has to earn.
+        /// The layer-6 watch line: what the nearest enemy is doing and what it has done to the player, read
+        /// straight off the world (the enemy is only an entity since 6.6).
         /// </summary>
         private void AiProbe(string tag)
         {
             var ps = PlayerState.Current;
             if (ps == null) return;
-            AIState nearest = null; float best = float.MaxValue;
-            foreach (var st in Scene.Current.FindObjectsOfType<AIState>())
-            {
-                if (!_enemyHome.ContainsKey(st)) _enemyHome[st] = st.transform.position;
-                float d = (st.transform.position - ps.transform.position).sqrMagnitude;
-                if (d < best) { best = d; nearest = st; }
-            }
-            if (nearest == null) { Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} enemy none"); return; }
             var w = Application.Current.World;
-            var brain = w.Has<RipNRage.Game.Ecs.AI.AiBrain>(nearest.entity) ? w.Get<RipNRage.Game.Ecs.AI.AiBrain>(nearest.entity) : default;
-            var sense = w.Has<RipNRage.Game.Ecs.AI.Perception>(nearest.entity) ? w.Get<RipNRage.Game.Ecs.AI.Perception>(nearest.entity) : default;
+            Enemies.Collect(w, _enemies);
+            var nearest = Entity.Null; float best = float.MaxValue;
+            foreach (var en in _enemies)
+            {
+                var pos = w.Get<LocalTransform>(en).Position;
+                if (!_enemyHome.ContainsKey(en)) _enemyHome[en] = pos;
+                float d = (pos - ps.transform.position).sqrMagnitude;
+                if (d < best) { best = d; nearest = en; }
+            }
+            if (nearest.IsNull) { Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} enemy none"); return; }
+            var brain = w.Has<AiBrain>(nearest) ? w.Get<AiBrain>(nearest) : default;
+            var sense = w.Has<Perception>(nearest) ? w.Get<Perception>(nearest) : default;
             bool spotted = !sense.Target.IsNull;
-            var anim = w.Has<RipNRage.Game.Ecs.AI.EnemyVisual>(nearest.entity)
-                ? w.Get<RipNRage.Game.Ecs.AI.EnemyVisual>(nearest.entity).State : AnimationState.IDLE;
-            float moved = (nearest.transform.position - _enemyHome[nearest]).magnitude;
+            var anim = w.Has<EnemyVisual>(nearest) ? w.Get<EnemyVisual>(nearest).State : AnimationState.IDLE;
+            float moved = (w.Get<LocalTransform>(nearest).Position - _enemyHome[nearest]).magnitude;
+            float ehp = w.Has<Health>(nearest) ? w.Get<Health>(nearest).Current : 0f;
             Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} armour {ps.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
-                             $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {nearest.Health:0}");
+                             $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0}");
         }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;
@@ -466,18 +472,20 @@ namespace RipNRage.Game
                 case "killenemy":
                 {
                     // spawn a rifleman close by, aim at it, kill it with the MG, then watch the hit flash + dissolve
-                    if (_frame == 2) RipNRage.Game.Content.Prefabs.SpawnRifleman(new Vector3(-1.5f, 0.91f, -6f), Quaternion.Euler(0, 0, 0));
+                    var world = Application.Current.World;
+                    if (_frame == 2) Enemies.Spawn(world, Enemies.KindOf(GameAssets.RiflemanData), new Vector3(-1.5f, 0.91f, -6f), 0f);
                     if (_frame == 5) combat.OnChangeWeapon1();
                     var cam = Camera.main.transform;
-                    AIState nearest = null; float best = float.MaxValue;
-                    foreach (var st in Scene.Current.FindObjectsOfType<AIState>())
+                    Enemies.Collect(world, _enemies);
+                    var nearest = Entity.Null; float best = float.MaxValue;
+                    foreach (var en in _enemies)
                     {
-                        float d = (st.transform.position - cam.position).sqrMagnitude;
-                        if (d < best) { best = d; nearest = st; }
+                        float d = (world.Get<LocalTransform>(en).Position - cam.position).sqrMagnitude;
+                        if (d < best) { best = d; nearest = en; }
                     }
-                    if (nearest != null)
+                    if (!nearest.IsNull)
                     {
-                        Vector3 to = nearest.transform.position + Vector3.up * 0.3f - cam.position;
+                        Vector3 to = world.Get<LocalTransform>(nearest).Position + Vector3.up * 0.3f - cam.position;
                         float yawErr = Vector3.SignedAngle(new Vector3(cam.forward.x, 0, cam.forward.z), new Vector3(to.x, 0, to.z), Vector3.up);
                         float pitchNow = -Mathf.Asin(Mathf.Clamp(cam.forward.y, -1f, 1f)) * Mathf.Rad2Deg;
                         float pitchWanted = -Mathf.Asin(Mathf.Clamp(to.normalized.y, -1f, 1f)) * Mathf.Rad2Deg;
@@ -487,11 +495,13 @@ namespace RipNRage.Game
                     input.overrideFiring = _frame >= 60 && _frame < 240; // many Glock hits: the grunt has 1000 hp + 1000 armour
                     // the gate: without this the script only proves the game does not crash while firing at something.
                     // Layer 5 has to turn "ALIVE 1000/1000" into a dead grunt.
-                    if (nearest != null && nearest.HealthState == EntityHealthState.DEAD && _killFrame == 0) _killFrame = _frame;
+                    bool dead = !nearest.IsNull && (world.Has<Dead>(nearest) || world.Get<Health>(nearest).Current <= 0f);
+                    if (dead && _killFrame == 0) _killFrame = _frame;
                     if (_frame == 240 || _frame == 290)
-                        Debug.LogWarning(nearest == null
+                        Debug.LogWarning(nearest.IsNull
                             ? $"[test] frame {_frame}: no enemy in the scene"
-                            : $"[test] frame {_frame}: enemy {nearest.HealthState} health {nearest.Health:0} armour {nearest.Armor:0} killedAtFrame {_killFrame}");
+                            : $"[test] frame {_frame}: enemy {(dead ? EntityHealthState.DEAD : EntityHealthState.ALIVE)} health {world.Get<Health>(nearest).Current:0} " +
+                              $"armour {(world.Has<Armor>(nearest) ? world.Get<Armor>(nearest).Current : 0f):0} killedAtFrame {_killFrame}");
                     break;
                 }
                 case "spin":
@@ -628,7 +638,8 @@ namespace RipNRage.Game
                 case "style":
                 {
                     // spawn a grunt in front, kill it with the Glock, spawn another, kill it with the MG: the meter should reach B and show
-                    if (_frame == 2 || _frame == 130) RipNRage.Game.Content.Prefabs.SpawnRifleman(Camera.main.transform.position + Camera.main.transform.forward * 6f - Vector3.up * 1.3f, Quaternion.identity);
+                    if (_frame == 2 || _frame == 130) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
+                        Camera.main.transform.position + Camera.main.transform.forward * 6f - Vector3.up * 1.3f, 0f);
                     if (_frame == 5) combat.OnChangeWeapon1();
                     if (_frame == 135) combat.OnChangeWeapon3();
                     input.overrideFiring = (_frame > 20 && _frame < 120) || (_frame > 140 && _frame < 200);

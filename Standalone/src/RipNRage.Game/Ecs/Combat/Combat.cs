@@ -36,7 +36,7 @@ namespace RipNRage.Game.Ecs.Combat
 
     /// <summary>
     /// Where this entity can be hurt: weapons that resolve a hit on this entity judge headshots against the capsule's
-    /// top part, exactly as the legacy <c>AIState.IsHeadshot</c> did against the 2.25 m sprite. Runtime-only (it names
+    /// top part, exactly as the legacy <c>AIState.IsHeadshot</c> did against the 2.25 m sprite (6.6: the recipe lives in <c>Enemies</c>). Runtime-only (it names
     /// an entity), like <c>PhysicsHandle</c>: configs cannot reference runtime entities.
     /// </summary>
     public struct Hitbox : IComponent

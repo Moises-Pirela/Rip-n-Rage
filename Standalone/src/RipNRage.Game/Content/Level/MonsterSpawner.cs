@@ -24,7 +24,8 @@ namespace RipNRage.Game.Content.Level
         public int levelIndex = -1;
         private float _timer;
         private bool _active;
-        private readonly System.Collections.Generic.List<GameObject> _alive = new System.Collections.Generic.List<GameObject>();
+        /// <summary>The monsters this spawner made that still stand (entities since 6.6).</summary>
+        private readonly System.Collections.Generic.List<RipNRage.Engine.Ecs.Entity> _alive = new System.Collections.Generic.List<RipNRage.Engine.Ecs.Entity>();
 
         public static GameObject Create(MapEntity e)
         {
@@ -55,17 +56,22 @@ namespace RipNRage.Game.Content.Level
                 if (!_active) return;
                 _timer = 0f; // first monster spawns right away
             }
-            _alive.RemoveAll(g => !RipNRage.Engine.EngineObject.IsAlive(g));
+            var w = Application.Current.World;
+            _alive.RemoveAll(en => !w.IsAlive(en));
             _timer -= Time.deltaTime;
             if (_timer > 0f || _alive.Count >= maxAlive) return;
             _timer = interval;
             var def = EntityRegistry.Get(monster);
-            if (def?.spawn == null) { Debug.LogWarning("monster_spawner: unknown monster " + monster); _spawned = count; return; }
+            if (def?.spawnEntity == null) { Debug.LogWarning("monster_spawner: unknown monster " + monster); _spawned = count; return; }
             Vector2 r = new Vector2(Random.Range(-1f, 1f), Random.Range(-1f, 1f)) * radius;
             var e = new MapEntity { classname = monster, origin = transform.position + new Vector3(r.x, 0f, r.y) };
             e.angle = angle;
-            var go = def.spawn(e);
-            if (go != null) { _alive.Add(go); go.AddComponent<LevelEntityRef>().spawnerIndex = levelIndex; }
+            var ent = def.spawnEntity(e);
+            if (w.IsAlive(ent))
+            {
+                _alive.Add(ent);
+                if (w.Has<RipNRage.Game.Ecs.AI.LevelRef>(ent)) w.Get<RipNRage.Game.Ecs.AI.LevelRef>(ent).SpawnerIndex = levelIndex;
+            }
             _spawned++;
         }
     }

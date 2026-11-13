@@ -17,6 +17,9 @@ namespace RipNRage.Game.Content.Level
         /// <summary>Editable numeric properties (name, step) the editor exposes with +/- keys.</summary>
         public List<(string key, float step)> numericProps = new List<(string, float)>();
         public Func<MapEntity, GameObject> spawn;
+        /// <summary>Game spawn for classes that are only an entity (monsters since 6.6); the loader stamps the
+        /// <see cref="RipNRage.Game.Ecs.AI.LevelRef"/>. When set, <see cref="spawn"/> is editor-preview only.</summary>
+        public Func<MapEntity, RipNRage.Engine.Ecs.Entity> spawnEntity;
         /// <summary>Visual-only instance for the editor (no AI / triggers). Null = spawn is used.</summary>
         public Func<MapEntity, GameObject> preview;
         /// <summary>Half-size of the selection box around the origin (editor picking).</summary>
@@ -71,7 +74,8 @@ namespace RipNRage.Game.Content.Level
                 classname = "monster_rifleman", description = "AR grunt (rifleman)",
                 gizmoColor = new Color(1f, 0.3f, 0.3f, 1f), pickExtents = new Vector3(0.5f, 1.1f, 0.5f),
                 defaults = { ["angle"] = "180" },
-                spawn = e => Prefabs.SpawnRifleman(e.origin, Quaternion.Euler(0, e.angle, 0)),
+                spawnEntity = e => RipNRage.Game.Ecs.AI.Enemies.Spawn(
+                    Application.Current.World, RipNRage.Game.Ecs.AI.Enemies.KindOf(GameAssets.RiflemanData), e.origin, e.angle),
                 preview = e =>
                 {
                     var go = new GameObject("monster_rifleman");

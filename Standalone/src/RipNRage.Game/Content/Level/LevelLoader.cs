@@ -65,6 +65,14 @@ namespace RipNRage.Game.Content.Level
                         if (def.deferred != (pass == 1)) continue;
                         try
                         {
+                            if (!preview && def.spawnEntity != null)
+                            {
+                                var w = Application.Current.World;
+                                var ent = def.spawnEntity(e);
+                                if (w.IsAlive(ent) && w.Has<RipNRage.Game.Ecs.AI.LevelRef>(ent))
+                                    w.Get<RipNRage.Game.Ecs.AI.LevelRef>(ent).Index = index;
+                                continue;
+                            }
                             var go = preview ? (def.preview ?? def.spawn)?.Invoke(e) : def.spawn?.Invoke(e);
                             if (go != null)
                             {

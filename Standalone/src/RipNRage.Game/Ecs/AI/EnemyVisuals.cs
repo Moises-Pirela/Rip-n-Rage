@@ -9,28 +9,6 @@ using RipNRage.Game.Ecs.Combat;
 
 namespace RipNRage.Game.Ecs.AI
 {
-    /// <summary>The enemy definitions, by kind — shared immutable data, the weapons / projectiles pattern.</summary>
-    public static class Enemies
-    {
-        public static EnemyData[] All = System.Array.Empty<EnemyData>();
-
-        public static int KindOf(EnemyData data) => System.Array.IndexOf(All, data);
-
-        /// <summary>Pulses the enemy's sprite in <paramref name="color"/> (attack wind-up, alert).</summary>
-        public static void Telegraph(World w, Entity enemy, float duration, Color color)
-        {
-            if (!w.IsAlive(enemy) || !w.Has<EnemyVisual>(enemy)) return;
-            ref var v = ref w.Get<EnemyVisual>(enemy);
-            v.TelegraphLeft = v.TelegraphDuration = Mathf.Max(0.01f, duration);
-            v.TelegraphColor = color;
-        }
-
-        public static void SetAnim(World w, Entity enemy, AnimationState state)
-        {
-            if (w.IsAlive(enemy) && w.Has<EnemyVisual>(enemy)) w.Get<EnemyVisual>(enemy).State = state;
-        }
-    }
-
     /// <summary>
     /// The enemy's look, on its entity: which 8-sided sheet is playing (by <see cref="State"/>), plus the hit flash,
     /// the telegraph pulse and the death dissolve that the legacy AnimationStateController / EnemyHitFlash pair drove
@@ -136,13 +114,8 @@ namespace RipNRage.Game.Ecs.AI
             }
         }
 
-        /// <summary>The enemy and its GameObject half go together (the GO still carries the unported scripts).</summary>
-        private static void RemoveCorpse(SystemContext ctx, Entity enemy)
-        {
-            var go = EcsObjects.Of(enemy);
-            if (go != null) GameObject.Destroy(go);
+        private static void RemoveCorpse(SystemContext ctx, Entity enemy) =>
             ctx.Commands.DestroyEntity(enemy); // the sprite child follows through the hierarchy
-        }
 
         private DirectionalSpriteSheet SheetFor(int kind, AnimationState state)
         {

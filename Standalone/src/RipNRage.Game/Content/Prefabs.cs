@@ -53,37 +53,6 @@ namespace RipNRage.Game.Content
         public static readonly Prefab EnergyAmmoPickup = new Prefab("EnergyAmmoPickup", () => MakeAmmoPickup("EnergyAmmoPickup", AmmoType.ENERGY, 250));
         public static readonly Prefab ExplosiveAmmoPickup = new Prefab("ExplosiveAmmoPickup", () => MakeAmmoPickup("ExplosiveAmmoPickup", AmmoType.EXPLOSIVE, 3));
 
-        // ---------------------------------------------------------------- enemies (AR_Grunt from TestArea.unity)
-
-        /// <summary>
-        /// The AR_Grunt rifleman: an entity with senses, a state tree, a body and a gun (Perception, AiBrain,
-        /// Heading, CharacterMotor, EnemyWeapon), and this GameObject for the half still being ported (AIState's
-        /// health and save hooks, the ragdoll, the grapple point). The scene scaled them by 2.25; the sprite scale
-        /// here keeps them ~2.2 m tall.
-        /// </summary>
-        public static readonly Prefab Rifleman = new Prefab("AR_Grunt", () =>
-        {
-            // The scene object is uniformly scaled by 2.25 with its origin at the body centre;
-            // the local offsets below are the scene values multiplied by that scale.
-            const float S = 2.25f;
-            var go = new GameObject("AR_Grunt");
-            go.layer = Layers.Enemies;
-            // The enemy is its entity (6.1): AIState.Awake builds the body (capsule + spring + motor), the sprite
-            // child (8-sided sheet, feet on the ground) and the effects, and this GameObject follows the entity.
-            var state = go.AddComponent<AIState>();
-            state.data = GameAssets.RiflemanData;
-            go.AddComponent<EnemyDestruction>();          // death: the sprite is sliced into a ragdoll (skeletons/rifleman.json)
-
-            var grapple = new GameObject("GrapplePoint");
-            grapple.transform.SetParent(go.transform, false);
-            grapple.transform.localPosition = new Vector3(-0.0279f, 0.19f, 0) * S;
-            state.grapplePoint = grapple.transform;
-            return go;
-        });
-
-        /// <summary>Spawns a rifleman with its feet on <paramref name="floorPosition"/> (the body floats its ride height above the floor).</summary>
-        public static GameObject SpawnRifleman(Vector3 floorPosition, Quaternion rotation) =>
-            Rifleman.Instantiate(floorPosition + Vector3.up * (0.5f * 2.25f + CharacterProfiles.Enemy.rideHeight), rotation);
     }
 
     /// <summary>Fades a sprite out over its lifetime (replaces particle-system lifetime/alpha curves).</summary>

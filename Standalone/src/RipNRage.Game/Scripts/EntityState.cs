@@ -61,11 +61,8 @@ public abstract class EntityState : MonoBehaviour
     public abstract void Init();
     public abstract void Die();
 
-    /// <summary>
-    /// Posts the blow as a <see cref="DamageEvent"/> (applied by HealthSystem at the end of the frame). The
-    /// circumstances come from the legacy <see cref="DamageInfo"/> hand-off when one is being reported — the weapons
-    /// still use it until 5.3 folds it into their own events.
-    /// </summary>
+    /// <summary>Posts the blow as a <see cref="DamageEvent"/> (applied by HealthSystem at the end of the frame),
+    /// with no circumstances: scripted damage from nowhere in particular (the weapons post their own events).</summary>
     public void TakeDamage(float damage)
     {
         if (!Bound) return;
@@ -73,11 +70,8 @@ public abstract class EntityState : MonoBehaviour
         {
             Target = entity,
             Amount = damage,
-            Point = DamageInfo.Available ? DamageInfo.Point : transform.position,
-            Direction = DamageInfo.Available ? DamageInfo.Direction : Vector3.forward,
-            Impulse = DamageInfo.Available ? DamageInfo.Impulse : 0f,
-            Explosive = DamageInfo.Available && DamageInfo.Explosive,
-            ExplosionRadius = DamageInfo.Available ? DamageInfo.ExplosionRadius : 0f,
+            Point = transform.position,
+            Direction = Vector3.forward,
         });
     }
 
@@ -116,14 +110,8 @@ public abstract class EntityState : MonoBehaviour
         OnArmorChanged?.Invoke();
     }
 
-    /// <summary>The blow that emptied the health. Re-reports the circumstances so the death effects that still read
-    /// <see cref="DamageInfo"/> (the ragdoll slicer) see the same hand-off TakeDamage used to make synchronously.</summary>
-    internal void NotifyDied(in DeathEvent e)
-    {
-        if (e.Impulse > 0f || e.Explosive) DamageInfo.Report(e.Point, e.Direction, e.Impulse, e.Explosive, e.ExplosionRadius);
-        try { Die(); }
-        finally { DamageInfo.Clear(); }
-    }
+    /// <summary>The blow that emptied the health.</summary>
+    internal void NotifyDied(in DeathEvent e) => Die();
 
     protected override void OnDestroy() => EcsObjects.Unregister(entity);
 }

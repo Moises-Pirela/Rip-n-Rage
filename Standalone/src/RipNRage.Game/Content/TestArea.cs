@@ -263,11 +263,13 @@ namespace RipNRage.Game.Content
 
         private static void BuildEnemies()
         {
+            var w = Application.Current.World;
+            int kind = RipNRage.Game.Ecs.AI.Enemies.KindOf(GameAssets.RiflemanData);
             float y = DockOffset.y + 16f * MapScale;
-            Prefabs.SpawnRifleman(new Vector3(-5f, y, -16f), Quaternion.Euler(0, 0, 0));
-            Prefabs.SpawnRifleman(new Vector3(2f, y, -75f), Quaternion.Euler(0, 180, 0));
-            Prefabs.SpawnRifleman(new Vector3(-6f, y, -110f), Quaternion.Euler(0, 180, 0));
-            Prefabs.SpawnRifleman(new Vector3(60f, y, -105f), Quaternion.Euler(0, 90, 0));
+            RipNRage.Game.Ecs.AI.Enemies.Spawn(w, kind, new Vector3(-5f, y, -16f), 0f);
+            RipNRage.Game.Ecs.AI.Enemies.Spawn(w, kind, new Vector3(2f, y, -75f), 180f);
+            RipNRage.Game.Ecs.AI.Enemies.Spawn(w, kind, new Vector3(-6f, y, -110f), 180f);
+            RipNRage.Game.Ecs.AI.Enemies.Spawn(w, kind, new Vector3(60f, y, -105f), 90f);
         }
     }
 }
