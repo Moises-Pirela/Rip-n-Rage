@@ -64,8 +64,9 @@ public class AIState : EntityState
         // the mind (6.2) and the senses (6.3): sight and hearing write Perception, the state tree reads it and writes
         // the intent, AIAgent acts on the intent
         w.Add(e, new Enemy { Kind = Enemies.KindOf(data) });
+        w.Add(e, new Heading { Yaw = transform.rotation.eulerAngles.y }); // the body never turns (6.4): facing is data
         w.Add(e, new Perception());
-        w.Add(e, new AiBrain());
+        w.Add(e, new AiBrain { Rng = (uint)(e.Index + 1) * 2654435761u }); // seeded by the entity: the same run every time
         w.Add(e, new AiIntent());
 
         Bind(e);
@@ -111,12 +112,12 @@ public class AIState : EntityState
             _adopted = true;
             ref var lt = ref w.Get<LocalTransform>(entity);
             lt.Position = transform.position; // a LocalTransform write is a teleport to the physics sync
-            lt.Rotation = transform.rotation;
+            w.Get<Heading>(entity).Yaw = transform.rotation.eulerAngles.y;
             return;
         }
         ref readonly var pose = ref w.Get<LocalTransform>(entity);
         transform.position = pose.Position;
-        transform.rotation = pose.Rotation;
+        transform.rotation = Quaternion.Euler(0f, w.Get<Heading>(entity).Yaw, 0f);
     }
 
     protected override void OnDestroy()

@@ -46,7 +46,7 @@ then start at the first unchecked layer.
 
 ### Pick-up point for the next session (written 2026-11-12, after 5.6; layer 6 is in progress — see its step list)
 
-Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.3 are in, next is **6.4 steering**. The
+Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.4 are in, next is **6.5 the attack**. The
 standing direction — the behaviour trees replaced by a **data-oriented state tree**, not ported as-is — is done
 (6.2). Established rules: ECS + functional,
 OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
@@ -703,14 +703,33 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
       through a wall, the shooter's target passed on and the shooter deaf to itself; the brain on a heard-only target
       chases the sound and does not shoot); all 13 scripts + `die` at parity, `killedAtFrame 97`, `rocket` / `jab` /
       `glockalt` unchanged.
-- [ ] 6.4 **Steering.** `Steering` writes `CharacterMotor.Desired` from `AiIntent.MoveTo` and turns the body to face
-      (which drives 6.1's 8-sided row — and the sight cone, which until then looks where the enemy was spawned
-      facing). `Wander` then stays until arrived (a raycast probe replaces `NavMesh.SamplePosition`). **Flip:**
-      `moved > 0` on `approach`.
+- [x] 6.4 **Steering** (`Ecs/AI/Steering.cs`). No `Steering` component after all: the intent is the state. **Facing is
+      data** — `Heading { Yaw }` — because the physics sync reads any `LocalTransform` rotation write as a teleport,
+      and the body never needs to turn (symmetric capsule, billboard sprite); steering turns the heading at
+      `turnSpeed`, and the sprite row (`EnemyVisualSystem`), the sight cone (`SightSystem`) and the following
+      GameObject (`AIState.LateUpdate`) read it. `Steering.Step` is a pure function (intent in; `CharacterMotor.Desired`
+      at `movementSpeed` — the legacy nav agent's live value, 11 m/s — and the yaw out); `SteeringSystem` (after the
+      brain, runs alone) adds the **ledge guard** — one ray down a step ahead against `Noises.WallMask`, no ground →
+      brake — brakes a `Dead` body, and sets the sheet to MOVING / IDLE (never over an attack or a death the GameObject
+      half plays; `AIAgent` hands the sheet back after its burst). The brain gained **arrival** (`arriveDistance` 5 =
+      the old `HasReachedLocation`'s 5 m, flat on `EnemyData`): `Wander` holds its point until arrived or a 3 s
+      timeout (a point the ledge guard refuses costs an idle), `Chase` stands once within reach of the last known
+      position. `AiBrain.Rng` (xorshift, seeded by the entity): wander picks **do not touch the shared `Random`**,
+      which is time-seeded — found when two `approach` runs disagreed; the AI gates are now the same run every time
+      (sub-decimetre physics noise aside). `AIAgent.Move` deleted. **Flips**: `moved` 6–20 m on all three scripts;
+      `peek` wanders unaware; **`close` 290: `hp 100 armour 40`** — the wandering enemy walked into sight range and
+      its legacy burst landed: the first enemy damage since 2.L, a step earlier than planned (6.5 was to flip it);
+      `approach` 100 → sees and attacks at 4 m, 200 → lost, walked to where they were and stands (`Chase`, IDLE),
+      290 / 365 → re-acquired when the player came back to shoot. Gates: 199 engine + 126 gameplay assertions
+      (the motor at 11 m/s east, 60° of turn per tick at 3600°/s, braked with no ground ahead, an attack turning at
+      the turn speed, a quiet intent standing; wander holds its point, gives up at 3 s, ends within 5 m; the cone
+      follows the heading; in a world: held with no floor, walking and MOVING with one, braked dead); all 13 scripts
+      + `die` at parity, `killedAtFrame 97`, `rocket` / `jab` / `glockalt` unchanged.
 - [ ] 6.5 **The attack is components.** `EnemyAttack { WindupLeft, ShotsLeft, BurstTimer, Cooldown }` + system
       (telegraph → burst via `Projectiles.Launch` → recover, on scaled `ctx.DeltaTime`), `Stagger` from
-      `IConsumes<HitEvent>`, the muzzle offset as data. **`AIAgent` deleted.** **Flip:** player `hp < 100` on `close` —
-      the first enemy damage since 2.L; expect to re-baseline the scripts a hurt player changes. Keep the diff small.
+      `IConsumes<HitEvent>` (which also brakes the body — the legacy `StopAgent` has been empty since 2.L, so a hit
+      does not stop an enemy today), the muzzle offset as data turned by the `Heading`. **`AIAgent` deleted.** Enemy
+      damage is live since 6.4: pin `close`'s `armour 40` and watch the scripts a hurt player changes.
 - [ ] 6.6 **The enemy is only an entity.** `EnemyData` → definition records + prefab config; `EnemyDestruction` /
       corpse → an `IConsumes<DeathEvent>` system reading the event payload (`DamageInfo` dies); `AIState` and the
       enemy's `EcsObjects` entry go; `GameSaveSystem` reads `Health` / `LocalTransform` off the entity; the grapple

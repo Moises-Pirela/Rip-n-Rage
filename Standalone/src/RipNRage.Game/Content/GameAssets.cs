@@ -448,6 +448,7 @@ namespace RipNRage.Game.Content
                 movementSpeed = 11, attackRange = 10, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
                 attackWindup = 0.35f, burstCount = 3, burstInterval = 0.09f, staggerTime = 0.25f, alertDelay = 0.2f,
                 wanderWait = 1f, wanderRadius = 15f, wanderMinDistance = 10f, // BehaviorTree2: Wait(1), RandomLocation(r=15, min=10)
+                arriveDistance = 5f, // AIAgent.HasReachedLocation: remainingDistance <= 5
                 // senses (6.3): the vision trigger was a 10 m sphere — all round; the cone and the memory are new
                 sightRange = 10f, sightFov = 180f, memory = 5f, noise = 30f,
                 maxHealth = 1000, maxArmor = 0,

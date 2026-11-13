@@ -30,6 +30,8 @@ public class EnemyData : ScriptableObject
     public float wanderRadius = 15f;
     /// <summary>... and rejected when closer than this.</summary>
     public float wanderMinDistance = 10f;
+    /// <summary>A move point counts as reached within this (the old agent's 5 m).</summary>
+    public float arriveDistance = 5f;
 
     [Space(5)] [Header("Senses")]
     /// <summary>Metres the enemy sees (the old vision trigger's sphere).</summary>

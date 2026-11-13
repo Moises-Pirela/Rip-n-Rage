@@ -544,8 +544,8 @@ namespace RipNRage.Game
                     // run towards the first rifleman, then stand and shoot
                     input.overrideMove = _frame < 270 ? new Vector2(0f, 1f) : Vector2.zero;
                     input.overrideFiring = _frame > 300 && _frame % 30 == 0;
-                    // 345: fifteen frames after the first shot (330) — its sound reaches an enemy 11 m away in eight (run with --frames 400)
-                    if (_frame == 100 || _frame == 200 || _frame == 290 || _frame == 345) AiProbe($"approach {_frame}");
+                    // 365: the first shot is at 330 and its sound carries 30 m in 23 frames (run with --frames 400)
+                    if (_frame == 100 || _frame == 200 || _frame == 290 || _frame == 365) AiProbe($"approach {_frame}");
                     break;
                 case "rocket":
                     if (_frame == 10) combat.OnChangeWeapon4();

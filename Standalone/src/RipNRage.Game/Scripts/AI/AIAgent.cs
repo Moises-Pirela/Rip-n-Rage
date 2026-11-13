@@ -7,8 +7,9 @@ using RipNRage.Game.Content.Vfx;
 // sound for EnemyData.attackWindup), then fires a burst of EnemyData.burstCount shots with a muzzle flash and
 // a shot sound each; being hit staggers the enemy (stops, delays the shot) and spotting the player triggers an
 // alert reaction (yellow flash + sting) before the state tree engages.
-// MIGRATION (6.2): the behaviour tree that called Move / Attack is gone; the entity's AiBrainSystem writes an
-// AiIntent and Update below acts on it. 6.5 turns the attack into components and deletes this class.
+// MIGRATION (6.2 / 6.4): the behaviour tree that called Move / Attack is gone; the entity's AiBrainSystem writes an
+// AiIntent, SteeringSystem walks and turns the body on it, and Update below acts on the attack half. 6.5 turns the
+// attack into components and deletes this class.
 public class AIAgent : MonoBehaviour
 {
     public bool CanFire { get; set; }
@@ -52,8 +53,7 @@ public class AIAgent : MonoBehaviour
         if (!w.IsAlive(aiState.entity) || !w.Has<RipNRage.Game.Ecs.AI.AiIntent>(aiState.entity)) return;
         if (!_alerted && !w.Get<RipNRage.Game.Ecs.AI.Perception>(aiState.entity).Target.IsNull) OnAlert(); // the senses found someone
         var intent = w.Get<RipNRage.Game.Ecs.AI.AiIntent>(aiState.entity);
-        if (intent.Move) Move(intent.MoveTo);
-        if (intent.Attack) Attack(intent.FacePoint);
+        if (intent.Attack) Attack(intent.FacePoint); // movement is SteeringSystem's (6.4)
     }
 
     /// <summary>Hit reaction: flinch (the sprite flash is EnemyHitFlash's), stop and delay the next shot.</summary>
@@ -80,15 +80,6 @@ public class AIAgent : MonoBehaviour
 
     /// <summary>True once the alert reaction has played out (the tree waits for this before attacking).</summary>
     public bool ReadyToEngage => !_alerted || Time.time >= _alertUntil;
-
-    public void Move(Vector3 targetLocation)
-    {
-        this.TargetLocation = targetLocation;
-        if (IsStaggered || _attacking) return;
-        
-
-        SetAnim(AnimationState.MOVING);
-    }
 
     public void Attack(Vector3 targetLocation)
     {
@@ -133,6 +124,7 @@ public class AIAgent : MonoBehaviour
         yield return new WaitForSeconds(data.fireRate);
         _attacking = false;
         CanFire = true;
+        SetAnim(AnimationState.IDLE); // hands the sheet back to the steering (walking / standing)
     }
 
     private void SetAnim(AnimationState state) =>

@@ -76,7 +76,7 @@ namespace RipNRage.Game.Ecs.AI
 
         public override void OnCreate()
         {
-            _eyes = World.Query().With<Perception>().WithReadOnly<Enemy>().WithReadOnly<LocalToWorld>().Without<Dead>().Build();
+            _eyes = World.Query().With<Perception>().WithReadOnly<Enemy>().WithReadOnly<Heading>().WithReadOnly<LocalToWorld>().Without<Dead>().Build();
             _players = World.Query().With<PlayerTag>().WithReadOnly<LocalToWorld>().Without<Dead>().Build();
         }
 
@@ -85,7 +85,7 @@ namespace RipNRage.Game.Ecs.AI
             float dt = ctx.DeltaTime;
             foreach (var chunk in _eyes)
             {
-                var ps = chunk.Get<Perception>(); var kinds = chunk.Get<Enemy>(); var ltw = chunk.Get<LocalToWorld>(); var ents = chunk.Entities;
+                var ps = chunk.Get<Perception>(); var kinds = chunk.Get<Enemy>(); var heads = chunk.Get<Heading>(); var ltw = chunk.Get<LocalToWorld>();
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
@@ -101,7 +101,7 @@ namespace RipNRage.Game.Ecs.AI
                         for (int j = 0; j < pc.Length; j++)
                         {
                             if (!pc.Includes(j)) continue;
-                            if (!CanSee(in ltw[i], ents[i], pl[j].Position, def)) continue;
+                            if (!CanSee(ltw[i].Position, heads[i].Forward, pl[j].Position, def)) continue;
                             p.Target = pe[j]; p.LastKnown = pl[j].Position; p.Seen = true; p.SinceSeen = 0f;
                         }
                     }
@@ -114,14 +114,14 @@ namespace RipNRage.Game.Ecs.AI
         }
 
         /// <summary>Range → cone about the facing (flattened) → nothing of the level between the eyes and the target.</summary>
-        public static bool CanSee(in LocalToWorld self, Entity selfEntity, Vector3 target, EnemyData def)
+        public static bool CanSee(Vector3 self, Vector3 forward, Vector3 target, EnemyData def)
         {
-            Vector3 to = target - self.Position;
+            Vector3 to = target - self;
             if (to.sqrMagnitude > def.sightRange * def.sightRange) return false;
-            Vector3 flat = new Vector3(to.x, 0f, to.z), fwd = self.Forward; fwd.y = 0f;
-            if (flat.sqrMagnitude > 1e-6f && fwd.sqrMagnitude > 1e-6f
-                && Vector3.Angle(fwd, flat) > def.sightFov * 0.5f) return false;
-            return Noises.Clear(self.Position + Vector3.up * EyeHeight, target);
+            Vector3 flat = new Vector3(to.x, 0f, to.z); forward.y = 0f;
+            if (flat.sqrMagnitude > 1e-6f && forward.sqrMagnitude > 1e-6f
+                && Vector3.Angle(forward, flat) > def.sightFov * 0.5f) return false;
+            return Noises.Clear(self + Vector3.up * EyeHeight, target);
         }
     }
 

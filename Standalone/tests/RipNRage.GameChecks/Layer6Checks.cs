@@ -1,6 +1,7 @@
 using System;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
+using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Ecs.AI;
 using RipNRage.Game.Ecs.Combat;
@@ -10,7 +11,8 @@ using RipNRage.Game.Ecs.Combat;
 /// pure functions, writing an <see cref="AiIntent"/>. The checks pin the tree's shape: the interrupt order (the
 /// target branch is decided before the leaf runs), the wander dwell, and that a tick is a function of its inputs.
 /// 6.3: the senses — sight as range → cone → line of sight with a memory, and sound as a <see cref="Noise"/> entity
-/// whose front crosses the level at <see cref="Noises.Speed"/> and is muffled by walls.
+/// whose front crosses the level at <see cref="Noises.Speed"/> and is muffled by walls. 6.4: steering — the intent
+/// into the motor and the <see cref="Heading"/>, arrival, the ledge guard, a wander that gives up.
 /// </summary>
 internal static class Layer6Checks
 {
@@ -24,6 +26,7 @@ internal static class Layer6Checks
             BrainSystem(True);
             Sight(True);
             Hearing(True);
+            Steer(True, Equal);
         }
         finally { Enemies.All = saved; }
     }
@@ -45,10 +48,18 @@ internal static class Layer6Checks
             AiBrains.Step(ref b, ref intent, def, self, in nobody, 1f / 60f);
             if (intent.Move) { moves++; point = intent.MoveTo; }
         }
-        True(moves == 1, "after the dwell the brain wanders: exactly one move intent");
+        True(moves == 1 && b.State == AiState.Wander, "after the dwell the brain wanders: a move intent towards its point");
         float d = Vector3.Distance(point, self);
-        True(d > def.wanderMinDistance && d <= def.wanderRadius, $"the wander point is {d:0.0} m away: beyond the minimum, inside the radius");
-        True(b.State == AiState.Idle && b.StateTime == 0f, "arrival is instant for now: back to idle with the clock reset");
+        True(d > def.wanderMinDistance && d <= def.wanderRadius && point.y == self.y, $"the wander point is {d:0.0} m away on the ground plane: beyond the minimum, inside the radius");
+        AiBrains.Step(ref b, ref intent, def, self, in nobody, 1f / 60f);
+        True(intent.Move && intent.MoveTo == point, "the wander holds its point from tick to tick");
+        // standing still (nothing moves the body in vitro), the wander gives up after its timeout
+        for (int i = 0; i < 3 * 60; i++) AiBrains.Step(ref b, ref intent, def, self, in nobody, 1f / 60f);
+        True(b.State == AiState.Idle && !intent.Move, "a wander that gets nowhere in three seconds is given up");
+        // and one that arrives ends at once
+        b = new AiBrain { State = AiState.Wander, StateTime = 0.5f, MoveTo = self + new Vector3(0f, 0f, 12f) };
+        AiBrains.Step(ref b, ref intent, def, self + new Vector3(0f, 0f, 8f), in nobody, 1f / 60f);
+        True(b.State == AiState.Idle && !intent.Move, "within the 5 m arrive distance of its point the wander is done");
 
         // engaged: the target branch outranks the leaf
         var target = new Entity(7, 1);
@@ -65,7 +76,10 @@ internal static class Layer6Checks
         True(b.State == AiState.Chase, "the target backing out of range drops to chase again");
         var heardNear = new Perception { Target = target, LastKnown = near, Seen = false };
         AiBrains.Step(ref b, ref intent, def, self, in heardNear, 1f / 60f);
-        True(b.State == AiState.Chase && intent.MoveTo == near, "a target only heard 5 m away is chased to where it was heard, not shot at");
+        True(b.State == AiState.Chase && !intent.Move && !intent.Attack, "a target only heard 5 m away: chase, but already within arrive distance — stand and look, do not shoot");
+        var heardFar = new Perception { Target = target, LastKnown = far, Seen = false };
+        AiBrains.Step(ref b, ref intent, def, self, in heardFar, 1f / 60f);
+        True(b.State == AiState.Chase && intent.Move && intent.MoveTo == far, "heard 20 m away: walk to where it was heard");
 
         // the target is lost (dead, gone, or forgotten): back to the unaware half, quietly
         AiBrains.Step(ref b, ref intent, def, self, in nobody, 1f / 60f);
@@ -95,6 +109,7 @@ internal static class Layer6Checks
         var e = w.CreateEntity();
         w.Add(e, LocalTransform.At(at, facing));
         w.Add(e, new Enemy { Kind = 0 });
+        w.Add(e, new Heading { Yaw = facing.eulerAngles.y });
         w.Add(e, new Perception());
         w.Add(e, new AiBrain());
         w.Add(e, new AiIntent());
@@ -158,6 +173,11 @@ internal static class Layer6Checks
         w.Get<LocalTransform>(player).Position = self + new Vector3(0f, 0f, -6f);
         Tick(w, 2);
         True(!w.Get<Perception>(enemy).Seen, "6 m behind is outside the 180° cone");
+        w.Get<Heading>(enemy).Yaw = 180f;
+        Tick(w, 1);
+        True(w.Get<Perception>(enemy).Seen, "the cone follows the heading: turned round, the same spot is in sight");
+        w.Get<Heading>(enemy).Yaw = 0f;
+        Tick(w, 1);
 
         w.Get<LocalTransform>(player).Position = self + new Vector3(6f, 0f, 0.5f);
         Tick(w, 2);
@@ -225,6 +245,59 @@ internal static class Layer6Checks
         True(w.Get<Perception>(far).Target == player && w.Get<Perception>(far).LastKnown == origin + new Vector3(0f, 0f, 20f),
              "the ear 20 m from the shooter turns on the shooter's target, towards the shot");
         True(w.Get<Perception>(near).Target == player, "the shooter does not hear itself into a new target");
+        Close(w);
+    }
+
+    /// <summary>The intent into the motor and the heading; the ledge guard; a dead body braked.</summary>
+    private static void Steer(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var def = Enemies.All[0];
+        def.movementSpeed = 11f; def.turnSpeed = 3600f;
+        var self = new Vector3(700f, 1f, 0f);
+        var motor = new CharacterMotor(); var heading = new Heading { Yaw = 0f };
+
+        var go = new AiIntent { Move = true, MoveTo = self + new Vector3(10f, 0f, 0f) };
+        Steering.Step(ref motor, ref heading, in go, def, self, groundAhead: true, 1f / 60f);
+        True(motor.Desired == new Vector3(11f, 0f, 0f), "a move intent east: the motor wants 11 m/s east");
+        Equal(60f, heading.Yaw, "and the heading swings east at the turn speed: 3600°/s is 60° this tick");
+        Steering.Step(ref motor, ref heading, in go, def, self, groundAhead: true, 1f / 60f);
+        Equal(90f, heading.Yaw, "and faces east the next");
+
+        Steering.Step(ref motor, ref heading, in go, def, self, groundAhead: false, 1f / 60f);
+        True(motor.Desired == Vector3.zero, "no ground ahead: the motor brakes");
+        Equal(90f, heading.Yaw, "and the heading still looks where it wanted to go");
+
+        def.turnSpeed = 900f;
+        var aim = new AiIntent { Attack = true, FacePoint = self + new Vector3(0f, 0f, -5f) };
+        Steering.Step(ref motor, ref heading, in aim, def, self, groundAhead: true, 1f / 60f);
+        True(motor.Desired == Vector3.zero, "an attack intent stands still");
+        Equal(105f, heading.Yaw, "and turns towards the aim at the turn speed: 15° this tick");
+        for (int i = 0; i < 10; i++) Steering.Step(ref motor, ref heading, in aim, def, self, groundAhead: true, 1f / 60f);
+        Equal(180f, heading.Yaw, "until it faces it");
+
+        var quiet = new AiIntent();
+        Steering.Step(ref motor, ref heading, in quiet, def, self, groundAhead: true, 1f / 60f);
+        True(motor.Desired == Vector3.zero, "no intent: stand");
+        Equal(180f, heading.Yaw, "and keep facing");
+
+        // in a world: the body is braked the tick its owner dies, and the sheet follows the motion
+        var w = NewWorld();
+        var enemy = Grunt(w, self, Quaternion.identity);
+        w.Add(enemy, new CharacterMotorConfig { profile = CharacterProfileKind.Enemy, rideHeight = 0.35f }.Bake());
+        w.Add(enemy, new EnemyVisual { DeadTime = -1f });
+        var quarry = Player(w, self + new Vector3(0f, 0f, 30f), tagged: false); // alive, out of sight: remembered, chased
+        w.Get<AiBrain>(enemy) = new AiBrain { State = AiState.Chase, MoveTo = self + new Vector3(0f, 0f, 30f) };
+        w.Get<Perception>(enemy) = new Perception { Target = quarry, LastKnown = self + new Vector3(0f, 0f, 30f) };
+        Tick(w, 2);
+        True(w.Get<CharacterMotor>(enemy).Desired == Vector3.zero, "no ground under the test world: the ledge guard holds the body");
+        var floor = PhysicsEntities.StaticBox(w, self + new Vector3(0f, -1.6f, 15f), Quaternion.identity, new Vector3(10f, 0.2f, 40f), Layers.Walkable);
+        Tick(w, 3);
+        True(w.Get<CharacterMotor>(enemy).Desired == new Vector3(0f, 0f, 11f) && w.Get<EnemyVisual>(enemy).State == AnimationState.MOVING,
+             "a floor laid down: the body walks north and the sheet shows it");
+        w.Add(enemy, new Dead());
+        Tick(w, 1);
+        True(w.Get<CharacterMotor>(enemy).Desired == Vector3.zero, "dead: braked");
+        w.DestroyEntity(floor);
         Close(w);
     }
 }

@@ -28,6 +28,9 @@ namespace RipNRage.Game.Ecs.AI
         public AiState State;
         public float StateTime;
         public Vector3 MoveTo;
+        /// <summary>This brain's own dice (xorshift state; 0 reseeds itself): wander picks do not touch the shared
+        /// <c>Random</c>, so a scripted run plays out the same way every time.</summary>
+        public uint Rng;
     }
 
     /// <summary>
@@ -45,6 +48,24 @@ namespace RipNRage.Game.Ecs.AI
     /// <summary>The state tree as pure functions over the brain: data in, the next state and intent out.</summary>
     public static class AiBrains
     {
+        /// <summary>Seconds a wander may take before the point is given up (a step off the dock the ledge guard refused).</summary>
+        public const float WanderTimeout = 3f;
+
+        /// <summary>The next roll in [0, 1) from the brain's own generator (xorshift32).</summary>
+        public static float Roll(ref uint state)
+        {
+            if (state == 0) state = 2463534242u;
+            state ^= state << 13; state ^= state >> 17; state ^= state << 5;
+            return (state >> 8) * (1f / 16777216f);
+        }
+
+        /// <summary>Within the definition's arrive distance, on the ground plane.</summary>
+        public static bool Arrived(Vector3 self, Vector3 point, EnemyData def)
+        {
+            Vector3 d = point - self; d.y = 0f;
+            return d.sqrMagnitude <= def.arriveDistance * def.arriveDistance;
+        }
+
         /// <summary>
         /// One tick. Interrupts first, outermost branch down: no target drops the enemy back to
         /// <see cref="AiState.Idle"/>; one in sight and in range puts it in <see cref="AiState.Attack"/>, any other in
@@ -53,6 +74,7 @@ namespace RipNRage.Game.Ecs.AI
         public static void Step(ref AiBrain b, ref AiIntent intent, EnemyData def, Vector3 self, in Perception p, float dt)
         {
             intent = default;
+            bool entered = b.StateTime == 0f;
             b.StateTime += dt;
 
             // the branch conditions (the tree's selectors), parent before child
@@ -74,14 +96,19 @@ namespace RipNRage.Game.Ecs.AI
                     if (b.StateTime > def.wanderWait) Enter(ref b, AiState.Wander);
                     break;
                 case AiState.Wander:
-                    // a point too close is rejected and the pick retried next tick, as the random-location node did
-                    var point = self + Random.insideUnitSphere * def.wanderRadius;
-                    if (Vector3.Distance(point, self) <= def.wanderMinDistance) break;
-                    b.MoveTo = point;
-                    intent.Move = true; intent.MoveTo = point;
-                    Enter(ref b, AiState.Idle); // arrival is instant until 6.4 steers the body
+                    if (entered)
+                    {
+                        // a point too close is rejected and the pick retried next tick, as the random-location node did
+                        float angle = Roll(ref b.Rng) * 2f * Mathf.PI, dist = Roll(ref b.Rng) * def.wanderRadius;
+                        var point = self + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * dist;
+                        if (dist <= def.wanderMinDistance) { b.StateTime = 0f; break; }
+                        b.MoveTo = point;
+                    }
+                    if (Arrived(self, b.MoveTo, def) || b.StateTime > WanderTimeout) { Enter(ref b, AiState.Idle); break; }
+                    intent.Move = true; intent.MoveTo = b.MoveTo;
                     break;
                 case AiState.Chase:
+                    if (Arrived(self, b.MoveTo, def)) break; // close enough to where they were: stand and look
                     intent.Move = true; intent.MoveTo = b.MoveTo;
                     break;
                 case AiState.Attack:

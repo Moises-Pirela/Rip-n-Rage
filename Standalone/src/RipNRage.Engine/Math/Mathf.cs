@@ -85,6 +85,13 @@ namespace RipNRage.Engine
 
         public static float InverseLerp(float a, float b, float value) => a != b ? Clamp01((value - a) / (b - a)) : 0f;
 
+        public static float MoveTowardsAngle(float current, float target, float maxDelta)
+        {
+            float delta = DeltaAngle(current, target);
+            if (-maxDelta < delta && delta < maxDelta) return target;
+            return MoveTowards(current, current + delta, maxDelta);
+        }
+
         public static float DeltaAngle(float current, float target)
         {
             float delta = Repeat(target - current, 360f);
