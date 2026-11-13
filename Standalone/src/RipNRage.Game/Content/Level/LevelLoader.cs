@@ -83,7 +83,6 @@ namespace RipNRage.Game.Content.Level
                                 if (!preview)
                                 {
                                     var r = go.AddComponent<LevelEntityRef>(); r.index = index; r.classname = e.classname;
-                                    var sp = go.GetComponent<MonsterSpawner>(); if (sp != null) sp.levelIndex = index;
                                 }
                             }
                         }

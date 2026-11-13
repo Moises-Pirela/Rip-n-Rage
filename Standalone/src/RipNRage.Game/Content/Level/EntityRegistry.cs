@@ -119,7 +119,23 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = new Color(1f, 0.5f, 0.1f, 1f), pickExtents = new Vector3(0.8f, 0.3f, 0.8f),
                 defaults = { ["monster"] = "monster_rifleman", ["count"] = "3", ["interval"] = "5", ["radius"] = "2", ["activate_range"] = "25", ["max_alive"] = "4", ["angle"] = "180" },
                 numericProps = { ("count", 1f), ("interval", 0.5f) },
-                spawn = e => MonsterSpawner.Create(e),
+                spawnEntity = e =>
+                {
+                    var w = Application.Current.World;
+                    string monster = e.Get("monster", "monster_rifleman");
+                    int kind = RipNRage.Game.Ecs.AI.Enemies.KindByClassname(monster);
+                    if (kind < 0) Debug.LogWarning("monster_spawner: unknown monster " + monster);
+                    var ent = w.CreateEntity();
+                    w.Add(ent, new RipNRage.Engine.Ecs.Transforms.LocalTransform { Position = e.origin, Rotation = Quaternion.identity, Scale = Vector3.one });
+                    w.Add(ent, new RipNRage.Game.Ecs.AI.Spawner
+                    {
+                        Kind = kind, Count = e.GetInt("count", 3), Interval = e.GetFloat("interval", 5f),
+                        Radius = e.GetFloat("radius", 2f), ActivateRange = e.GetFloat("activate_range", 0f),
+                        MaxAlive = e.GetInt("max_alive", 4), Yaw = e.angle,
+                    });
+                    w.Add(ent, new RipNRage.Game.Ecs.AI.LevelRef { Index = -1, SpawnerIndex = -1 });
+                    return ent;
+                },
                 preview = e =>
                 {
                     var go = new GameObject("monster_spawner"); go.transform.position = e.origin;

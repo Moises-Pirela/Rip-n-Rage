@@ -16,7 +16,8 @@ using RipNRage.Game.Ecs.Combat;
 /// into the motor and the <see cref="Heading"/>, arrival, the ledge guard, a wander that gives up. 6.5: the attack
 /// is an entity parented to the enemy — alert, telegraph, burst, recovery — and a hit staggers. 6.6: the enemy is
 /// only an entity — Enemies.Spawn builds the whole archetype as a function, and death runs on the event payload
-/// with no GameObject anywhere.
+/// with no GameObject anywhere. 6.7: the wave spawner is a component stepped by a system — woken by the player,
+/// one monster per interval through the command buffer, never over MaxAlive standing.
 /// </summary>
 internal static class Layer6Checks
 {
@@ -41,6 +42,7 @@ internal static class Layer6Checks
             Attacks(True, Equal);
             Spawned(True, Equal);
             Dies(True);
+            Spawns(True, Equal);
         }
         finally { Enemies.All = saved; Projectiles.All = savedProjectiles; }
     }
@@ -439,6 +441,63 @@ internal static class Layer6Checks
         True(w.Get<EnemyVisual>(e).State == AnimationState.DYING || w.Get<EnemyVisual>(e).State == AnimationState.DEAD, "the sheet plays the death");
         Tick(w, 270); // the 2.5 s dissolve delay + 1.6 s dissolve
         True(!w.IsAlive(e) && !w.IsAlive(sprite), "the dissolve done, the entity and its sprite child are gone — nothing else to clean up");
+        Close(w);
+    }
+
+    /// <summary>6.7: the wave spawner as data — woken by the player, one monster per interval, capped at MaxAlive.</summary>
+    private static void Spawns(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var def = Enemies.All[0];
+        def.maxHealth = 10f; def.maxArmor = 0f;
+        // blind, slow-witted and stiff-necked: the monsters must not engage the waking player mid-check
+        def.sightRange = 1f; def.turnSpeed = 0f; def.wanderWait = 1000f;
+        var w = NewWorld();
+        var origin = new Vector3(400f, 1f, 0f);
+        var sp = w.CreateEntity();
+        w.Add(sp, LocalTransform.At(origin));
+        w.Add(sp, new Spawner { Kind = 0, Count = 3, Interval = 0.5f, Radius = 2f, ActivateRange = 20f, MaxAlive = 2, Yaw = 45f });
+        w.Add(sp, new LevelRef { Index = 7, SpawnerIndex = -1 });
+        var monsters = new System.Collections.Generic.List<Entity>();
+
+        Tick(w, 30);
+        Enemies.Collect(w, monsters);
+        True(monsters.Count == 0, "no player within the activate range: the spawner sleeps");
+
+        Player(w, origin + new Vector3(10f, 0f, 0f));
+        Tick(w, 2); // wake, spawn through the buffer, materialise
+        Enemies.Collect(w, monsters);
+        True(monsters.Count == 1, "the player inside the range wakes it: the first monster at once");
+        var m = monsters[0];
+        var at = w.Get<LocalTransform>(m).Position;
+        True(Mathf.Abs(at.x - origin.x) <= 2f && Mathf.Abs(at.z - origin.z) <= 2f, "scattered inside the radius");
+        Equal(45f, w.Get<Heading>(m).Yaw, "facing the spawner's angle");
+        var lr = w.Get<LevelRef>(m);
+        True(lr.Index == -1 && lr.SpawnerIndex == 7, "the monster knows its spawner, not a level slot");
+
+        Tick(w, 10);
+        Enemies.Collect(w, monsters);
+        True(monsters.Count == 1, "a sixth of a second in: the interval holds the second back");
+        Tick(w, 25);
+        Enemies.Collect(w, monsters);
+        True(monsters.Count == 2, "past the half-second interval: the second");
+        Equal(2f, w.Get<Spawner>(sp).Spawned, "two spawned so far");
+
+        Tick(w, 60);
+        Enemies.Collect(w, monsters);
+        True(monsters.Count == 2 && w.Get<Spawner>(sp).Spawned == 2, "two standing is the cap: the third waits");
+        w.DestroyEntity(monsters[0]);
+        Tick(w, 2);
+        Enemies.Collect(w, monsters);
+        True(monsters.Count == 2 && w.Get<Spawner>(sp).Spawned == 3, "a monster down past the interval: the freed slot is refilled at once");
+        Tick(w, 120);
+        Enemies.Collect(w, monsters);
+        True(monsters.Count == 2 && w.Get<Spawner>(sp).Spawned == 3, "the count is spent: no more, ever");
+
+        // the twins: the buffered recipe (what the system uses) builds the same enemy as the immediate one
+        var a = Enemies.Spawn(w, 0, origin, 0f);
+        var b = Enemies.Spawn(w.Commands, 0, origin, 0f, -1);
+        Tick(w, 1);
+        True(w.IsAlive(b) && w.SignatureOf(a).Equals(w.SignatureOf(b)), "the buffered spawn twin builds the same archetype as the immediate one");
         Close(w);
     }
 }

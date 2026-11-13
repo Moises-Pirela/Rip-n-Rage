@@ -46,9 +46,9 @@ then start at the first unchecked layer.
 
 ### Pick-up point for the next session (written 2026-11-12, after 5.6; layer 6 is in progress — see its step list)
 
-Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.6 are in, next is **6.7 spawning**
-(`Spawner` component + `SpawnerSystem` replacing the `MonsterSpawner` MonoBehaviour — the entity plumbing it needs,
-`spawnEntity` / `LevelRef`, landed in 6.6). The
+Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.7 are in, next is **6.8 close-out**
+(full parity run, the AI probes re-recorded as the new baseline — remember: **compare scripts under
+`--fixed-dt 0.016667`**, wall-clock dt on the Mac swamps them — `--threads 1` interleaved bench, alloc/frame). The
 standing direction — the behaviour trees replaced by a **data-oriented state tree**, not ported as-is — is done
 (6.2). Established rules: ECS + functional,
 OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
@@ -772,8 +772,24 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
       hit was one of those dice (re-record at 6.8). `saveload` writes the four dock monsters from the world and
       restores them (the missing frame-240 "after load" line predates 6.1 and is unchanged); look screenshot 0.183%
       vs a 0.180% same-build floor; frame 4.4 ms median vs 4.7 (3 interleaved runs).
-- [ ] 6.7 **Spawning.** `Spawner { Def, Count, Interval, Radius, ActivateRange, MaxAlive }` + `SpawnerSystem`
-      (entities, not GameObjects); `LevelEntityRef` / save round-trip kept honest by `saveload`.
+- [x] 6.7 **Spawning** (`Ecs/AI/Spawners.cs`). `Spawner { Kind, Count, Interval, Radius, ActivateRange, MaxAlive,
+      Yaw }` + its running half (`Spawned`, `Timer`, `Active`, scatter dice — xorshift seeded by the entity, not the
+      shared `Random`) on one entity the registry builds (`monster_spawner.spawnEntity`); `SpawnerSystem` wakes on
+      the player's approach and spawns one monster per interval through the command buffer, capped at `MaxAlive`
+      standing — counted off `LevelRef.SpawnerIndex`, which is also how a save knows a spawner's monsters.
+      `Enemies.Spawn` gained a **buffered twin** (`CommandBuffer` overload; the immediate API is disabled while a
+      phase runs) kept honest by a check comparing the archetypes the two build. `MonsterSpawner` (MonoBehaviour) is
+      deleted; the save system round-trips `Spawned` through the world. **Scheduling lesson, found by the style
+      gate**: unconstrained, the scheduler seated the new system early in the Tick graph, adding a sync point that
+      delayed every buffered projectile by one playback — the style script's edge-of-window kill lost its last
+      bullet. `[UpdateAfter(EnemyAttackSystem)]` restores the old layout (and reads right: new monsters are an
+      end-of-frame affair). Gates: 199 engine + 177 gameplay assertions (sleeps until the player is in range, first
+      monster at once, interval pacing, the cap refilled the tick a slot frees, the count spent, scatter inside the
+      radius, the monster stamped with its spawner, the twin archetype parity); all 15 scripts byte-identical to 6.6
+      under `--fixed-dt 0.016667`; dock.map has no spawner, so the level pipeline was smoke-tested on a scratch copy
+      with one added — spawner at level index 12 saved `spawned 2` with both runtime monsters as dynamic entries
+      carrying `spawnerIndex 12`, loaded clean; frame 4.9 ms median vs 4.6 (3 interleaved runs, inside this Mac's
+      noise band — 6.6 measured the same spread the other way).
 - [ ] 6.8 Close-out: full parity run, the AI probes re-recorded as the new baseline, `--threads 1` interleaved bench,
       alloc/frame (the burst coroutine's allocations should be structurally gone), close-out section.
 

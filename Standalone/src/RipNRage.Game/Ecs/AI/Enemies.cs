@@ -24,6 +24,14 @@ namespace RipNRage.Game.Ecs.AI
 
         public static int KindOf(EnemyData data) => System.Array.IndexOf(All, data);
 
+        /// <summary>The kind whose definition claims <paramref name="classname"/> (-1 = unknown).</summary>
+        public static int KindByClassname(string classname)
+        {
+            for (int i = 0; i < All.Length; i++)
+                if (string.Equals(All[i].classname, classname, System.StringComparison.OrdinalIgnoreCase)) return i;
+            return -1;
+        }
+
         /// <summary>The legacy capsule, from the pre-2.L prefab: radius 0.15 * 2.25, height 2.25 minus the hover gap,
         /// centred half the ride height below the body-centre transform.</summary>
         public const float Height = 2.25f, CapsuleRadius = 0.15f * Height;
@@ -76,6 +84,54 @@ namespace RipNRage.Game.Ecs.AI
             w.Add(e, new AiIntent());
             w.Add(e, new EnemyWeapon());
             w.Add(e, new LevelRef { Index = -1, SpawnerIndex = -1 });
+            return e;
+        }
+
+        /// <summary>
+        /// The buffered twin of <see cref="Spawn(World,int,Vector3,float)"/>, for systems (the immediate structural
+        /// API is disabled while a phase runs): the enemy materialises whole at the next sync point, stamped with
+        /// <paramref name="spawnerIndex"/>. Keep the recipe in lockstep with the twin — a gameplay check compares
+        /// the archetypes they build.
+        /// </summary>
+        public static Entity Spawn(CommandBuffer cmd, int kind, Vector3 floorPosition, float yaw, int spawnerIndex)
+        {
+            var def = All[kind];
+            float rideHeight = CharacterProfiles.Enemy.rideHeight;
+            var position = floorPosition + Vector3.up * (0.5f * Height + rideHeight);
+
+            var e = cmd.CreateEntity();
+            cmd.Add(e, new LocalTransform { Position = position, Rotation = Quaternion.Euler(0f, yaw, 0f), Scale = Vector3.one });
+            cmd.Add(e, new ColliderShape
+            {
+                Kind = ShapeKind.Capsule, Radius = CapsuleRadius, Height = Height - rideHeight,
+                Center = new Vector3(0f, -rideHeight * 0.5f, 0f),
+            });
+            cmd.Add(e, new CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = true });
+            cmd.Add(e, new BodyConfig { mass = CharacterProfiles.Enemy.mass, interpolate = true, freezeRotation = true, canSleep = false }.Bake());
+            cmd.Add(e, new BodyVelocity());
+            cmd.Add(e, new CharacterMotorConfig { profile = CharacterProfileKind.Enemy, rideHeight = rideHeight }.Bake());
+            cmd.Add(e, new Health { Current = def.maxHealth, Max = def.maxHealth });
+            if (def.maxArmor > 0f) cmd.Add(e, new Armor { Current = def.maxArmor, Max = def.maxArmor, Resistance = 0.75f });
+            cmd.Add(e, new Hitbox { Height = Height, HeadFraction = HeadFraction });
+
+            var sprite = cmd.CreateEntity();
+            cmd.Add(sprite, new LocalTransform
+            {
+                Position = new Vector3(0f, -rideHeight, 0f), Rotation = Quaternion.identity,
+                Scale = Vector3.one * (Height / 5.12f),
+            });
+            cmd.Add(sprite, new Parent { Value = e });
+            cmd.Add(sprite, new SpriteRender { Color = Color.white, Billboard = true, Lit = true, Layer = RenderLayer.World, CastsShadow = true });
+            cmd.Add(sprite, new SpriteFx());
+            cmd.Add(e, new EnemyVisual { Sprite = sprite, DeadTime = -1f });
+
+            cmd.Add(e, new Enemy { Kind = kind });
+            cmd.Add(e, new Heading { Yaw = yaw });
+            cmd.Add(e, new Perception());
+            cmd.Add(e, new AiBrain { Rng = (uint)(e.Index + 1) * 2654435761u });
+            cmd.Add(e, new AiIntent());
+            cmd.Add(e, new EnemyWeapon());
+            cmd.Add(e, new LevelRef { Index = -1, SpawnerIndex = spawnerIndex });
             return e;
         }
 

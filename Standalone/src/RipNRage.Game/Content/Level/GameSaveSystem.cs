@@ -118,6 +118,14 @@ namespace RipNRage.Game.Content.Level
                     health = w.Get<Health>(en).Current, spawnerIndex = r.SpawnerIndex,
                 });
             }
+            var spawnersByIndex = new Dictionary<int, Entity>();
+            var spawners = new List<Entity>();
+            Spawners.Collect(w, spawners);
+            foreach (var sp in spawners)
+            {
+                int idx = w.Get<LevelRef>(sp).Index;
+                if (idx >= 0) spawnersByIndex[idx] = sp;
+            }
             for (int i = 0; i < doc.entities.Count; i++)
             {
                 var e = doc.entities[i];
@@ -134,7 +142,7 @@ namespace RipNRage.Game.Content.Level
                     }
                 }
                 else if (e.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase)) es.taken = go == null;
-                else if (e.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase)) es.spawned = go?.GetComponent<MonsterSpawner>()?.Spawned ?? 0;
+                else if (e.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase)) es.spawned = spawnersByIndex.TryGetValue(i, out var sp) ? w.Get<Spawner>(sp).Spawned : 0;
                 else continue;
                 save.entities.Add(es);
             }
@@ -257,6 +265,14 @@ namespace RipNRage.Game.Content.Level
                     var r = w.Get<LevelRef>(en);
                     if (r.Index >= 0) monstersByIndex[r.Index] = en;
                 }
+                var spawnersByIndex = new Dictionary<int, Entity>();
+                var spawnerEnts = new List<Entity>();
+                Spawners.Collect(w, spawnerEnts);
+                foreach (var sp in spawnerEnts)
+                {
+                    int idx = w.Get<LevelRef>(sp).Index;
+                    if (idx >= 0) spawnersByIndex[idx] = sp;
+                }
                 foreach (var es in save.entities)
                 {
                     if (es.classname.StartsWith("monster_", StringComparison.OrdinalIgnoreCase) && !es.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase))
@@ -267,9 +283,13 @@ namespace RipNRage.Game.Content.Level
                         if (es.health > 0f) { ref var h = ref w.Get<Health>(en); h.Current = Mathf.Min(es.health, h.Max); }
                         continue;
                     }
+                    if (es.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (spawnersByIndex.TryGetValue(es.index, out var sp)) w.Get<Spawner>(sp).Spawned = es.spawned;
+                        continue;
+                    }
                     if (!byIndex.TryGetValue(es.index, out var go)) continue;
                     if (es.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase)) { if (es.taken) GameObject.Destroy(go); }
-                    else if (es.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase)) { var sp = go.GetComponent<MonsterSpawner>(); if (sp != null) sp.Spawned = es.spawned; }
                 }
                 foreach (var m in save.dynamicMonsters)
                 {
