@@ -56,9 +56,10 @@ namespace RipNRage.Game.Content
         // ---------------------------------------------------------------- enemies (AR_Grunt from TestArea.unity)
 
         /// <summary>
-        /// The AR_Grunt rifleman: AIState + AIAgent (the senses and the state tree run on the entity: Perception,
-        /// AiBrain), projectile spawn and grapple point. The scene scaled them by 2.25; the sprite scale here keeps
-        /// them ~2.2 m tall.
+        /// The AR_Grunt rifleman: an entity with senses, a state tree, a body and a gun (Perception, AiBrain,
+        /// Heading, CharacterMotor, EnemyWeapon), and this GameObject for the half still being ported (AIState's
+        /// health and save hooks, the ragdoll, the grapple point). The scene scaled them by 2.25; the sprite scale
+        /// here keeps them ~2.2 m tall.
         /// </summary>
         public static readonly Prefab Rifleman = new Prefab("AR_Grunt", () =>
         {
@@ -71,14 +72,7 @@ namespace RipNRage.Game.Content
             // child (8-sided sheet, feet on the ground) and the effects, and this GameObject follows the entity.
             var state = go.AddComponent<AIState>();
             state.data = GameAssets.RiflemanData;
-            var agent = go.AddComponent<AIAgent>();
-            agent.data = GameAssets.RiflemanData;
             go.AddComponent<EnemyDestruction>();          // death: the sprite is sliced into a ragdoll (skeletons/rifleman.json)
-
-            var spawn = new GameObject("ProjectileSpawnPostion");
-            spawn.transform.SetParent(go.transform, false);
-            spawn.transform.localPosition = new Vector3(0, 0.1f, 0.2f) * S;
-            agent.projectileSpawnPosition = spawn.transform;
 
             var grapple = new GameObject("GrapplePoint");
             grapple.transform.SetParent(go.transform, false);

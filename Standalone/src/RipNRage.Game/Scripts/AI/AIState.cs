@@ -61,13 +61,14 @@ public class AIState : EntityState
         w.Add(sprite, new SpriteFx());
         w.Add(e, new EnemyVisual { Sprite = sprite, DeadTime = -1f });
 
-        // the mind (6.2) and the senses (6.3): sight and hearing write Perception, the state tree reads it and writes
-        // the intent, AIAgent acts on the intent
+        // the mind (6.2), the senses (6.3), the body (6.4) and the gun (6.5): sight and hearing write Perception,
+        // the state tree reads it and writes AiIntent, and the steering and attack systems act on that
         w.Add(e, new Enemy { Kind = Enemies.KindOf(data) });
         w.Add(e, new Heading { Yaw = transform.rotation.eulerAngles.y }); // the body never turns (6.4): facing is data
         w.Add(e, new Perception());
         w.Add(e, new AiBrain { Rng = (uint)(e.Index + 1) * 2654435761u }); // seeded by the entity: the same run every time
         w.Add(e, new AiIntent());
+        w.Add(e, new EnemyWeapon());
 
         Bind(e);
         Init();

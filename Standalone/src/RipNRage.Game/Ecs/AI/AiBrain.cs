@@ -35,7 +35,8 @@ namespace RipNRage.Game.Ecs.AI
 
     /// <summary>
     /// What the brain wants this tick — rewritten whole every tick, so a quiet brain reads as all-false. The body
-    /// side (today <c>AIAgent</c>, in 6.4 / 6.5 the steering and attack systems) acts on it; the brain never calls anyone.
+    /// body side acts on it — <see cref="SteeringSystem"/> walks and turns, <see cref="EnemyAttackSystem"/> shoots —
+    /// and the brain never calls anyone.
     /// </summary>
     public struct AiIntent : IComponent
     {

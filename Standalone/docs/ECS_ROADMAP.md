@@ -46,7 +46,8 @@ then start at the first unchecked layer.
 
 ### Pick-up point for the next session (written 2026-11-12, after 5.6; layer 6 is in progress — see its step list)
 
-Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.4 are in, next is **6.5 the attack**. The
+Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.5 are in, next is **6.6 the enemy as
+only an entity**. The
 standing direction — the behaviour trees replaced by a **data-oriented state tree**, not ported as-is — is done
 (6.2). Established rules: ECS + functional,
 OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
@@ -725,11 +726,27 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
       the turn speed, a quiet intent standing; wander holds its point, gives up at 3 s, ends within 5 m; the cone
       follows the heading; in a world: held with no floor, walking and MOVING with one, braked dead); all 13 scripts
       + `die` at parity, `killedAtFrame 97`, `rocket` / `jab` / `glockalt` unchanged.
-- [ ] 6.5 **The attack is components.** `EnemyAttack { WindupLeft, ShotsLeft, BurstTimer, Cooldown }` + system
-      (telegraph → burst via `Projectiles.Launch` → recover, on scaled `ctx.DeltaTime`), `Stagger` from
-      `IConsumes<HitEvent>` (which also brakes the body — the legacy `StopAgent` has been empty since 2.L, so a hit
-      does not stop an enemy today), the muzzle offset as data turned by the `Heading`. **`AIAgent` deleted.** Enemy
-      damage is live since 6.4: pin `close`'s `armour 40` and watch the scripts a hurt player changes.
+- [x] 6.5 **The attack is an entity; `AIAgent` is deleted** (`Ecs/AI/EnemyAttack.cs`). An attack in progress is an
+      **entity parented to the enemy** (5.5's finisher pattern: their move, and the hierarchy tears it down with
+      them) carrying `EnemyAttack { WindupLeft, ShotsLeft, BurstTimer, Aim }` — re-aimed from the intent every tick,
+      as the legacy kept aiming mid-attack. The enemy keeps `EnemyWeapon { Refire, StaggerLeft, AlertLeft, Alerted,
+      Attack }`: the gun between attacks. One `EnemyAttackSystem` (after the steering, runs alone) does engagement —
+      the clocks, the alert reaction on the acquisition edge (yellow pulse, sting, `enemy_alert`, then `alertDelay`
+      before engaging), the decision to spawn an attack with its telegraph (orange pulse, `EnemyAim`, `enemy_aim` at
+      the muzzle) — and then each attack entity's wind-up → one shot per `burstInterval` → recovery (`Refire =
+      fireRate`, the sheet handed back to the steering). The muzzle is data (`EnemyData.muzzleOffset`, the prefab's
+      child offset scene-scaled) turned by the `Heading`, so the `ProjectileSpawnPostion` GameObject is gone.
+      `IConsumes<HitEvent>` sets `StaggerLeft`, which **brakes the body in the steering and freezes the wind-up** —
+      the legacy `StopAgent` had been empty since 2.L, so a hit stops an enemy again for the first time since. The
+      death timeline moved to the look (`EnemyVisualSystem`: DYING on the `DeathEvent`, the dead pose 0.25 s later),
+      and death cancels the attack in progress. **Five coroutines and the last enemy MonoBehaviour behaviour are
+      gone**: `AIAgent` (178 lines) is deleted; `AIState` keeps only health, the save hooks and the pose follow.
+      Gates: 199 engine + 147 gameplay assertions (the alert beat fires nothing, the attack is an entity parented to
+      the enemy, a hit staggers for the definition's time and freezes the wind-up, the burst is three shots from the
+      muzzle offset, the recovery is the fire rate, death cancels and a corpse fires nothing; in the steering, a
+      staggered walk stops and resumes); all 13 scripts + `die` at parity with 6.4 — `close` 290 `armour 40`,
+      `killedAtFrame 97`, `rocket` / `jab` / `glockalt` unchanged — with one intended change: the sheet reads IDLE
+      between bursts instead of staying ATTACKING.
 - [ ] 6.6 **The enemy is only an entity.** `EnemyData` → definition records + prefab config; `EnemyDestruction` /
       corpse → an `IConsumes<DeathEvent>` system reading the event payload (`DamageInfo` dies); `AIState` and the
       enemy's `EcsObjects` entry go; `GameSaveSystem` reads `Health` / `LocalTransform` off the entity; the grapple

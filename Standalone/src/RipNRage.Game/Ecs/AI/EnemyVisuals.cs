@@ -52,14 +52,17 @@ namespace RipNRage.Game.Ecs.AI
 
     /// <summary>
     /// Plays the sheets and the effects: frame from the state clock, row from the angle between the enemy's
-    /// <see cref="Heading"/> and the active camera, flash / telegraph into <see cref="SpriteFx"/>, and the death dissolve — which also owns
-    /// the corpse: when it completes, the enemy entity (and its following GameObject) is removed. A hit flashes via
+    /// <see cref="Heading"/> and the active camera, flash / telegraph into <see cref="SpriteFx"/>, and the death timeline — the dying
+    /// sheet, the dead pose a quarter-second later, the dissolve — which also owns the corpse: when it completes,
+    /// the enemy entity (and its following GameObject) is removed. A hit flashes via
     /// <see cref="HitEvent"/>; a death starts the clock via <see cref="DeathEvent"/>. Runs alone (writes child entities).
     /// Which sheets: the <see cref="Enemy"/>'s definition.
     /// </summary>
     public sealed class EnemyVisualSystem : SystemBase, ITick, IConsumes<HitEvent>, IConsumes<DeathEvent>
     {
         private const float FlashDuration = 0.12f, DissolveDelay = 2.5f, DissolveDuration = 1.6f;
+        /// <summary>Seconds of the death animation before the body holds its dead pose (the legacy SetDeadCoroutine).</summary>
+        private const float DeathPose = 0.25f;
 
         private readonly Dictionary<Texture2D, DirectionalSpriteSheet> _sheets = new Dictionary<Texture2D, DirectionalSpriteSheet>();
         private Query _q, _cameras;
@@ -88,6 +91,7 @@ namespace RipNRage.Game.Ecs.AI
                     if (v.DeadTime >= 0f)
                     {
                         v.DeadTime += dt;
+                        if (v.State == AnimationState.DYING && v.DeadTime >= DeathPose) v.State = AnimationState.DEAD;
                         float t = (v.DeadTime - DissolveDelay) / DissolveDuration;
                         if (t >= 1f) { RemoveCorpse(ctx, ents[i]); continue; }
                         if (t >= 0f && World.IsAlive(v.Sprite))
@@ -168,7 +172,11 @@ namespace RipNRage.Game.Ecs.AI
         {
             foreach (ref readonly var e in events)
                 if (World.IsAlive(e.Entity) && World.Has<EnemyVisual>(e.Entity))
-                    World.Get<EnemyVisual>(e.Entity).DeadTime = 0f;
+                {
+                    ref var v = ref World.Get<EnemyVisual>(e.Entity);
+                    v.DeadTime = 0f;
+                    v.State = AnimationState.DYING; // the death timeline is the look's, not a coroutine's (6.5)
+                }
         }
     }
 }

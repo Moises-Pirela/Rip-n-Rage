@@ -12,14 +12,22 @@ using RipNRage.Game.Ecs.Combat;
 /// target branch is decided before the leaf runs), the wander dwell, and that a tick is a function of its inputs.
 /// 6.3: the senses — sight as range → cone → line of sight with a memory, and sound as a <see cref="Noise"/> entity
 /// whose front crosses the level at <see cref="Noises.Speed"/> and is muffled by walls. 6.4: steering — the intent
-/// into the motor and the <see cref="Heading"/>, arrival, the ledge guard, a wander that gives up.
+/// into the motor and the <see cref="Heading"/>, arrival, the ledge guard, a wander that gives up. 6.5: the attack
+/// is an entity parented to the enemy — alert, telegraph, burst, recovery — and a hit staggers.
 /// </summary>
 internal static class Layer6Checks
 {
     public static void Run(Action<bool, string> True, Action<float, float, string> Equal)
     {
         var saved = Enemies.All;
+        var savedProjectiles = Projectiles.All;
         Enemies.All = new[] { new EnemyData { name = "TestGrunt", attackRange = 10f, wanderWait = 1f, wanderRadius = 15f, wanderMinDistance = 10f } };
+        // the grunts carry a gun now, so every world here can fire: the bullet they fire must exist
+        Projectiles.All = new[]
+        {
+            new ProjectileDef { Speed = 50f, Damage = 1000f, Range = 100f, CollisionMask = Projectiles.HitMask, Scale = 0.035f },
+            new ProjectileDef { Speed = 40f, Damage = 10f, Range = 100f, Scale = 0.06f, CollisionMask = Projectiles.HitMask & ~(1 << Layers.Enemies) },
+        };
         try
         {
             StateTree(True, Equal);
@@ -27,8 +35,9 @@ internal static class Layer6Checks
             Sight(True);
             Hearing(True);
             Steer(True, Equal);
+            Attacks(True, Equal);
         }
-        finally { Enemies.All = saved; }
+        finally { Enemies.All = saved; Projectiles.All = savedProjectiles; }
     }
 
     /// <summary>The pure step, driven by hand.</summary>
@@ -113,6 +122,7 @@ internal static class Layer6Checks
         w.Add(e, new Perception());
         w.Add(e, new AiBrain());
         w.Add(e, new AiIntent());
+        w.Add(e, new EnemyWeapon());
         return e;
     }
 
@@ -294,10 +304,78 @@ internal static class Layer6Checks
         Tick(w, 3);
         True(w.Get<CharacterMotor>(enemy).Desired == new Vector3(0f, 0f, 11f) && w.Get<EnemyVisual>(enemy).State == AnimationState.MOVING,
              "a floor laid down: the body walks north and the sheet shows it");
+        w.Get<EnemyWeapon>(enemy).StaggerLeft = 0.25f; // a hit landed (6.5)
+        Tick(w, 1);
+        True(w.Get<CharacterMotor>(enemy).Desired == Vector3.zero, "staggered: the walk stops where it stands");
+        w.Get<EnemyWeapon>(enemy).StaggerLeft = 0f;
+        Tick(w, 1);
+        True(w.Get<CharacterMotor>(enemy).Desired == new Vector3(0f, 0f, 11f), "the stagger over, it walks on");
         w.Add(enemy, new Dead());
         Tick(w, 1);
         True(w.Get<CharacterMotor>(enemy).Desired == Vector3.zero, "dead: braked");
         w.DestroyEntity(floor);
+        Close(w);
+    }
+
+    /// <summary>The attack as an entity: the alert beat, the telegraph, the burst, the recovery — and what a hit does to it.</summary>
+    private static void Attacks(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var def = Enemies.All[0];
+        def.attackWindup = 0.2f; def.burstCount = 3; def.burstInterval = 0.1f; def.fireRate = 1f;
+        def.alertDelay = 0.2f; def.staggerTime = 0.25f; def.muzzleOffset = new Vector3(0f, 0.2f, 0.5f);
+        var w = NewWorld();
+        var self = new Vector3(800f, 1f, 0f);
+        var enemy = Grunt(w, self, Quaternion.identity);
+        w.Add(enemy, new EnemyVisual { DeadTime = -1f });
+        w.Add(enemy, new Health { Current = 1000f, Max = 1000f });
+        Player(w, self + new Vector3(0f, 0f, 6f)); // 6 m ahead: seen, inside the attack range
+        var shots = w.Query().With<Projectile>().Build();
+        Tick(w, 2);
+
+        var gun = w.Get<EnemyWeapon>(enemy);
+        True(gun.Alerted && gun.AlertLeft > 0f, "noticing someone alerts the enemy, with a beat before it engages");
+        True(gun.Attack.IsNull && shots.Count() == 0, "nothing is fired during the alert beat");
+
+        Tick(w, 14); // the 0.2 s beat
+        var attack = w.Get<EnemyWeapon>(enemy).Attack;
+        True(w.IsAlive(attack) && w.Has<EnemyAttack>(attack), "after the beat the attack in progress is an entity");
+        True(w.Get<Parent>(attack).Value == enemy, "parented to the enemy whose move it is");
+        True(w.Get<EnemyVisual>(enemy).State == AnimationState.ATTACKING, "the sheet shows the attack");
+        True(shots.Count() == 0, "the wind-up has fired nothing yet");
+
+        // a hit during the wind-up: the enemy is held and the shot waits
+        w.Post(new HitEvent { Target = enemy, Point = self });
+        Tick(w, 1);
+        Equal(def.staggerTime, w.Get<EnemyWeapon>(enemy).StaggerLeft, "the hit staggers the enemy for the definition's time");
+        float windup = w.Get<EnemyAttack>(attack).WindupLeft;
+        Tick(w, 6);
+        Equal(windup, w.Get<EnemyAttack>(attack).WindupLeft, "the wind-up does not advance while staggered");
+
+        // the stagger runs out, then the wind-up, then the first shot leaves (caught the tick it appears)
+        for (int i = 0; i < 60 && shots.Count() == 0; i++) Tick(w, 1);
+        True(shots.Count() == 1, "the stagger and the wind-up done, one shot leaves");
+        Vector3 muzzle = default;
+        foreach (var c in shots) { var lt = c.Get<LocalTransform>(); for (int i = 0; i < c.Length; i++) muzzle = lt[i].Position; }
+        True(Vector3.Distance(muzzle, self + def.muzzleOffset) < 0.75f, "fired from the definition's muzzle offset, turned by the heading");
+
+        Tick(w, 14); // two more at 0.1 s apart
+        True(shots.Count() == 3, "the burst is the definition's three shots");
+        True(!w.IsAlive(attack) && w.Get<EnemyWeapon>(enemy).Attack.IsNull, "the burst over, the attack entity is gone");
+        Equal(def.fireRate, w.Get<EnemyWeapon>(enemy).Refire, "and the gun recovers for the definition's fire rate");
+        True(w.Get<EnemyVisual>(enemy).State != AnimationState.ATTACKING, "the sheet goes back to the steering");
+        Tick(w, 30);
+        True(shots.Count() == 3, "nothing more leaves during the recovery");
+
+        // death cancels the attack in progress
+        Tick(w, 45);
+        attack = w.Get<EnemyWeapon>(enemy).Attack;
+        True(w.IsAlive(attack), "the recovery over, it attacks again");
+        w.Add(enemy, new Dead());
+        Tick(w, 2);
+        True(!w.IsAlive(attack) && w.Get<EnemyWeapon>(enemy).Attack.IsNull, "death cancels the attack in progress");
+        int afterDeath = shots.Count();
+        Tick(w, 30);
+        True(shots.Count() == afterDeath, "and a corpse fires nothing");
         Close(w);
     }
 }

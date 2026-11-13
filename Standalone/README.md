@@ -175,7 +175,8 @@ Example used for the screenshots in this document:
   (`Ecs/AI/AiBrain.cs`: unaware = idle → wander, engaged = chase the last known position / attack what it sees in
   range) is the **BehaviorTree2** graph as a value stepped by a pure function; steering (`Ecs/AI/Steering.cs`)
   walks the force-driven capsule on the intent with a ledge guard and turns a `Heading` (facing is data — the body
-  never rotates). `AIState` / `AIAgent` are the GameObject half still being ported. 8-sided sprite sheets
+  never rotates). An attack in progress is itself an entity parented to the enemy (telegraph, burst, recovery;
+  a hit staggers it), and `AIState` is the GameObject half still being ported. 8-sided sprite sheets
   (`EnemyVisualSystem`), projectiles that damage the player through armour.
 * Level: the dock brush map (`dock.obj`, imported like Unity: X mirrored, 0.25 u/unit, y −3.09),
   AABB collision per brush (rotated brushes are grid-approximated), sand/water planes, sky,

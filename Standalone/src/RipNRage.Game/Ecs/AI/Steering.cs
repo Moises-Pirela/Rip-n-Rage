@@ -88,6 +88,12 @@ namespace RipNRage.Game.Ecs.AI
                     if (!chunk.Includes(i)) continue;
                     ref var m = ref motors[i];
                     if (World.Has<Dead>(ents[i])) { m.Desired = Vector3.zero; continue; }
+                    // a hit holds them for the definition's stagger (the legacy StopAgent, which has done nothing since 2.L)
+                    if (World.Has<EnemyWeapon>(ents[i]) && World.Get<EnemyWeapon>(ents[i]).StaggerLeft > 0f)
+                    {
+                        m.Desired = Vector3.zero;
+                        continue;
+                    }
                     var def = Enemies.All[kinds[i].Kind];
                     Vector3 self = ltw[i].Position;
                     float reach = 0.5f * AIState.SpriteHeight + m.RideHeight + Steering.Drop; // centre → feet → a drop below

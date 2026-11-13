@@ -451,6 +451,7 @@ namespace RipNRage.Game.Content
                 arriveDistance = 5f, // AIAgent.HasReachedLocation: remainingDistance <= 5
                 // senses (6.3): the vision trigger was a 10 m sphere — all round; the cone and the memory are new
                 sightRange = 10f, sightFov = 180f, memory = 5f, noise = 30f,
+                muzzleOffset = new Vector3(0f, 0.1f, 0.2f) * 2.25f, // the prefab's ProjectileSpawnPostion, scene-scaled
                 maxHealth = 1000, maxArmor = 0,
                 skeleton = "rifleman",
                 enemyAnimationData = new EnemyAnimationData

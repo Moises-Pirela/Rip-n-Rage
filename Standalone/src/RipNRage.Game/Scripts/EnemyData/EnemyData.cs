@@ -42,6 +42,8 @@ public class EnemyData : ScriptableObject
     public float memory = 5f;
     /// <summary>Metres the enemy's own shot carries to other ears.</summary>
     public float noise = 30f;
+    /// <summary>Where the barrel is, in the enemy's own frame (turned by its Heading): the old ProjectileSpawnPostion child.</summary>
+    public Vector3 muzzleOffset = new Vector3(0f, 0.225f, 0.45f);
 
     [Space(5)] [Header("Enemy status")] 
     public float maxHealth;
