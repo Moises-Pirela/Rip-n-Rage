@@ -2,14 +2,13 @@ using System;
 using System.Collections;
 
 // Ported from Assets/_Game/Scripts/PlayerSystems/PlayerState.cs.
-// OnTriggerEnter is delivered through the engine's ITriggerListener instead of Unity's magic method.
 // Standalone additions: Die() is implemented (death sequence + death screen, see PlayerDeathSequence),
 // damage is ignored once dead, Init() keeps the maximum health/armour fixed at 100 (the original used
 // the saved value as the maximum, so healing after a checkpoint load capped at the saved health),
 // Current returns null once the player object was destroyed (level restart), and the per-frame
 // Debug.Log calls in Update were removed (they built two strings every frame).
 [System.Serializable]
-public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
+public class PlayerState : EntityState
 {
     public const float MaxHealthValue = 100f;
     public const float MaxArmorValue = 100f;
@@ -26,18 +25,13 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
     }
 
     public bool IsDead => HealthState == EntityHealthState.DEAD;
-    private CombatController _combatController;
 
     protected override void Awake()
     {
         _current = this;
     }
 
-    protected override void Start()
-    {
-        _combatController = EnragedInjector<CombatController>.GetInstance();
-        Init();
-    }
+    protected override void Start() => Init();
 
     public override void Init()
     {
@@ -92,23 +86,4 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
         OnHealthChanged?.Invoke(); OnArmorChanged?.Invoke();
     }
 
-    public void OnTriggerEnter(GameObject other)
-    {
-        if (!other.CompareTag("Checkpoint")) return;
-        
-        //Save data
-
-        SaveData.Current.playerStateData.playerPosition = transform.position;
-        SaveData.Current.playerStateData.playerRotation = transform.rotation;
-        
-        SaveData.Current.playerStateData.PlayerHealth = Health;
-        SaveData.Current.playerStateData.PlayerArmor = Armor;
-
-        SaveData.Current.inventoryData.ammo = _combatController.AmmoArray();
-        SaveData.Current.inventoryData.currentWeaponIndex = _combatController.CurrentWeaponIndex;
-        
-        SaveManager.Save("Save1", SaveData.Current);
-    }
-
-    public void OnTriggerExit(GameObject other) { }
 }

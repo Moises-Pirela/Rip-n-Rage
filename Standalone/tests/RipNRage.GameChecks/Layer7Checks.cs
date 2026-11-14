@@ -1,5 +1,6 @@
 using System;
 using RipNRage.Engine;
+using RipNRage.Engine.Graphics;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Rendering;
@@ -46,6 +47,7 @@ internal static class Layer7Checks
         StateEffects(True, Equal);
         Feedback(True, Equal);
         PickupsAreEntities(True, Equal);
+        Environment(True, Equal);
     }
 
     private const float Dt = 1f / 60f;
@@ -621,6 +623,74 @@ internal static class Layer7Checks
             for (int i = 0; i < chunk.Length; i++)
                 if (chunk.Includes(i) && chunk.Get<Parent>()[i].Value == parent) return chunk.Entities[i];
         return Entity.Null;
+    }
+
+
+    // ---------------------------------------------------------------- 7.6: water, checkpoints, the sky
+
+    private static void Environment(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        // ---- water: a box the view is tested against, no physics involved ----
+        var box = new WaterVolume { Min = new Vector3(-10f, -100f, -10f), Max = new Vector3(10f, 0f, 10f) };
+        True(box.Contains(new Vector3(0f, -1f, 0f)) && !box.Contains(new Vector3(0f, 0.5f, 0f)) && !box.Contains(new Vector3(20f, -1f, 0f)),
+             "a point is in the water below the surface and inside the footprint, nowhere else");
+
+        bool sky = RenderSettings.drawSky;
+        try
+        {
+            var w = NewWorld();
+            Waters.Spawn(w, new Vector3(0f, 0f, 0f), new Vector3(20f, 100f, 20f));
+            var cam = w.CreateEntity();
+            w.Add(cam, LocalTransform.At(new Vector3(0f, 3f, 0f)));
+            w.Add(cam, new CameraLens());
+            RenderSettings.drawSky = true;
+            Tick(w, 2);
+            True(RenderSettings.drawSky, "a view above the water keeps the sky");
+            w.Get<LocalTransform>(cam).Position = new Vector3(0f, -2f, 0f);
+            Tick(w, 2);
+            True(!RenderSettings.drawSky && w.GetSingleton<Underwater>().Under, "under the surface: the sky goes");
+            w.Get<LocalTransform>(cam).Position = new Vector3(0f, 3f, 0f);
+            Tick(w, 2);
+            True(RenderSettings.drawSky, "surfacing puts the sky back");
+
+            // the sky is put back as it was found, not forced on
+            RenderSettings.drawSky = false;
+            w.Get<LocalTransform>(cam).Position = new Vector3(0f, -2f, 0f);
+            Tick(w, 2);
+            w.Get<LocalTransform>(cam).Position = new Vector3(0f, 3f, 0f);
+            Tick(w, 2);
+            True(!RenderSettings.drawSky, "a level with no sky gets no sky back on surfacing");
+            Close(w);
+        }
+        finally { RenderSettings.drawSky = sky; }
+
+        // ---- checkpoints: once, and only for the player ----
+        {
+            var w = NewWorld();
+            var cp = Checkpoints.Spawn(w, new Vector3(0f, 0f, 5f), new Vector3(4f, 4f, 4f));
+            True(w.Has<Checkpoint>(cp) && w.Has<RipNRage.Engine.Ecs.Physics.Trigger>(cp), "a checkpoint is a trigger entity");
+            var enemy = Enemy(w, new Vector3(0f, 0f, 5f));
+            w.Post(new RipNRage.Engine.Ecs.Physics.TriggerEnterEvent { Trigger = cp, Other = enemy });
+            Tick(w, 2);
+            True(!w.Get<Checkpoint>(cp).Used, "an enemy walking through saves nothing");
+            Close(w);
+            // (the player's save itself needs a level and a player GameObject: the saveload script covers it)
+        }
+
+        // ---- the sky turns on sim time ----
+        {
+            float rot = RenderSettings.skyboxRotation;
+            try
+            {
+                var w = NewWorld();
+                Sky.Spin(w, 1.2f);
+                Tick(w, 60);
+                Equal(1.2f, w.GetSingleton<SkySpin>().Angle, "a second of sim time turns the sky 1.2°");
+                Equal(1.2f, RenderSettings.skyboxRotation, "and the renderer is told");
+                Close(w);
+            }
+            finally { RenderSettings.skyboxRotation = rot; }
+        }
     }
 
     /// <summary>Forces a state with a full meter: a state entered with an empty meter ends on the next tick.</summary>

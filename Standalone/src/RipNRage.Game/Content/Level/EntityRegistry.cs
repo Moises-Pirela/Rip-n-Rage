@@ -28,19 +28,6 @@ namespace RipNRage.Game.Content.Level
         public bool deferred;
     }
 
-    /// <summary>Writes a full game save ("checkpoint" slot) when the player enters the volume (once).</summary>
-    public class CheckpointAutoSave : MonoBehaviour, RipNRage.Game.Ecs.ITriggerListener
-    {
-        private bool _used;
-        public void OnTriggerEnter(GameObject other)
-        {
-            if (_used || !other.CompareTag("Player")) return;
-            _used = true;
-            GameSaveSystem.Save("checkpoint");
-        }
-        public void OnTriggerExit(GameObject other) { }
-    }
-
     /// <summary>All entity classes the level files can use (Quake-style classnames).</summary>
     public static class EntityRegistry
     {
@@ -207,15 +194,7 @@ namespace RipNRage.Game.Content.Level
                 classname = "trigger_checkpoint", description = "Checkpoint volume (size w h l): saves the game",
                 gizmoColor = new Color(0.4f, 1f, 1f, 1f), pickExtents = new Vector3(1f, 1f, 1f),
                 defaults = { ["size"] = "4 4 4" },
-                spawn = e =>
-                {
-                    var go = new GameObject("Checkpoint"); go.transform.position = e.origin; go.tag = "Checkpoint";
-                    var volume = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin, Quaternion.identity, e.GetVector("size", new Vector3(4, 4, 4)), Layers.Default, trigger: true);
-                    RipNRage.Game.Ecs.TriggerVolume.Attach(go, volume); // the overlap events reach CheckpointAutoSave
-                    go.AddComponent<Checkpoint>();
-                    go.AddComponent<CheckpointAutoSave>();
-                    return go;
-                },
+                spawnEntity = e => RipNRage.Game.Ecs.Checkpoints.Spawn(Application.Current.World, e.origin, e.GetVector("size", new Vector3(4, 4, 4))),
                 preview = e => { var go = new GameObject("Checkpoint"); go.transform.position = e.origin; return go; },
             });
         }
@@ -277,8 +256,13 @@ namespace RipNRage.Game.Content.Level
 
         private static GameObject Plane(MapEntity e, string name, Material material, Texture2D texture, Color color, float uvScale, bool transparent, bool collider, bool water)
         {
-            var size = e.GetVector("size", new Vector3(200, 0, 200));
-            float w = size.x, l = size.y != 0 && size.z == 0 ? size.y : size.z; // "w l" or "w 0 l"
+            // "w l" (what the maps write) or "w h l". MapEntity.GetVector wants three numbers and falls back to its
+            // default otherwise — which is how dock.map's 1732 x 1000 water and sand were built 200 x 200 (found in
+            // 7.6: the water volume did not reach where the player goes in)
+            var parts = e.Get("size", "200 200").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            float Num(int i) => i < parts.Length && float.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0f;
+            float w = Num(0), l = parts.Length >= 3 ? Num(2) : Num(1);
+            if (w <= 0f) w = 200f;
             if (l <= 0f) l = w;
             var go = new GameObject(name);
             go.transform.position = e.origin;
@@ -287,12 +271,7 @@ namespace RipNRage.Game.Content.Level
             mr.mesh = Mesh.CreatePlane(Vector3.zero, w, l, uvScale);
             mr.texture = texture; mr.color = color; mr.transparent = transparent; mr.castsShadow = false; mr.material = material;
             if (collider) RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(w, 2f, l), Layers.Walkable);
-            if (water)
-            {
-                var waterVolume = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -50f, 0), Quaternion.identity, new Vector3(w, 100f, l), Layers.Water, trigger: true);
-                RipNRage.Game.Ecs.TriggerVolume.Attach(go, waterVolume);
-                go.AddComponent<EnterWaterCollision>();
-            }
+            if (water) RipNRage.Game.Ecs.Waters.Spawn(Application.Current.World, e.origin, new Vector3(w, 100f, l)); // the view under it hides the sky
             return go;
         }
     }

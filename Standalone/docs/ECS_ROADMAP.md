@@ -1112,8 +1112,28 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
       trigger still, paid once on a doubled overlap, refused when full, the player only, the sprite going with it);
       `ScheduleChecks` re-pinned — 18 Tick batches (`BobSystem` after `SpawnerSystem`); every combat script and
       `pickup` / `water` byte-identical (**shells 64 → 80, pickups 4 → 3**, as the 7.0 baseline); repeatable.
-- [ ] 7.6 **Environment volumes** (water, checkpoint — delete the duplicate `SaveManager "Save1"` path — sky
-      rotation; delete `TriggerBridge.cs`).
+- [x] 7.6 **Environment volumes; the trigger bridge is gone** (`Ecs/Environment.cs`, `Ecs/EcsObjects.cs`).
+      **Water** is a `WaterVolume { Min, Max }` box the view is tested against — no trigger: what goes under is the
+      camera, an entity with no body, which is exactly why the old trigger never fired after layer 4.
+      `UnderwaterSystem` (LateTick, after the transforms, `[Exclusive]` for `RenderSettings`) hides the sky on the way
+      down and puts back *what it found* on the way up (a level without a sky does not get one). **Getting the gate
+      to pass found a level bug**: `MapEntity.GetVector` wants three numbers, `dock.map` writes `"size" "1732 1000"`,
+      and the fallback default silently built the dock's water **and the sand floor under it** at 200 × 200 — the box
+      did not reach where the player goes in (and the dock has floated over a grey void on both sides). `Plane()` now
+      reads `"w l"` or `"w h l"`. **Checkpoints** are trigger entities (`Checkpoint { Used }`), `CheckpointSystem`
+      saves once, the player only; the **duplicate save is gone** — the old volume woke two listeners, the real one
+      and a leftover `PlayerState.OnTriggerEnter` writing a legacy "Save1" through `SaveManager`. **The sky turns**
+      from a `SkySpin` singleton on sim time (`SkySpinSystem`). **Deleted**: `TriggerBridge.cs` (`ITriggerListener`,
+      `TriggerVolume`, `TriggerFollower`, `GameTriggerBridge`; `EcsObjects` moved to its own file — the combat bridge
+      still uses it — and lost a `Clear()` nothing ever called), `EnterWaterCollision`, `SkyboxRotator`,
+      `CheckpointAutoSave`, the `Checkpoint` MonoBehaviour, `SaveManager`, `PlayerState`'s trigger half. Gates: 295
+      gameplay assertions (11 new: the box test, sky gone under and restored as found, a checkpoint as a trigger
+      entity that ignores enemies, a second of sim time turning the sky 1.2°); `ScheduleChecks` re-pinned — 19 Tick
+      batches (`SkySpinSystem`), LateTick gains `UnderwaterSystem`. **`water` probe flips**: `sky True` above,
+      **`sky False under True` from frame 180 (y −1.43)** — the 7.0 baseline was `sky True` all the way to y −7.2.
+      Every other script byte-identical (`saveload` unchanged: the checkpoint was never on its path). **`look`
+      screenshot: 2.8% of pixels changed against a 0.000% same-build floor — all of it the water and sand now drawn
+      at the size the map asks for** (inspected: blue water on both sides of the dock where there was grey).
 - [ ] 7.7 **Surfaces come back** (optional for the layer, as before).
 - [ ] 7.8 Close-out.
 

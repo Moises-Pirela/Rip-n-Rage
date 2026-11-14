@@ -504,13 +504,19 @@ namespace RipNRage.Game
                     input.overrideLook = _frame > 270 && _frame < 310 ? new Vector2(-36f, 1.0f) : Vector2.zero;
                     break;
                 case "water":
-                    // look over the railing at the water, then walk off the edge into it: the water volume hides
-                    // the sky while the camera is under it (EnterWaterCollision, a trigger-bridge listener — 7.6
-                    // ports it). The probe is the gate for that port.
+                    // look over the railing at the water, then walk off the edge into it: the sky goes while the
+                    // view is under (7.6; the 7.0 baseline recorded "sky True" all the way down — the old trigger
+                    // waited for a camera GameObject that has been an entity since layer 4)
                     input.overrideMove = _frame < 45 ? new Vector2(1f, 0f) : _frame > 100 ? new Vector2(1f, 0f) : Vector2.zero;
                     input.overrideLook = _frame > 45 && _frame < 76 ? new Vector2(30f, -6f) : Vector2.zero;
                     if (_frame % 15 == 0 && _frame >= 90)
-                        Debug.LogWarning($"[test] frame {_frame} y {Camera.main.transform.position.y:0.00} sky {RenderSettings.drawSky}");
+                    {
+                        var ww = Application.Current.World;
+                        int volumes = 0;
+                        foreach (var ch in ww.Query().WithReadOnly<RipNRage.Game.Ecs.WaterVolume>().Build()) volumes += ch.Length;
+                        Debug.LogWarning($"[test] frame {_frame} y {Camera.main.transform.position.y:0.00} sky {RenderSettings.drawSky}"
+                                         + $" under {ww.GetSingleton<RipNRage.Game.Ecs.Underwater>().Under} water volumes {volumes}");
+                    }
                     break;
                 case "pickup":
                 {

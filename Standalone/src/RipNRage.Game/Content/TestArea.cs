@@ -43,7 +43,7 @@ namespace RipNRage.Game.Content
             {
                 var level = LevelLoader.Load(levelPath);
                 Debug.LogWarning($"Level: {levelPath} ({level.document.Brushes.Count} brushes, {level.document.entities.Count} entities)");
-                new GameObject("SkyRotator").AddComponent<SkyboxRotator>();
+                RipNRage.Game.Ecs.Sky.Spin(World, 1.2f);
                 FallRespawn.KillY = level.killY;
                 FallRespawn.SpawnPosition = level.playerStart;
                 FallRespawn.SpawnRotation = level.playerRotation;
@@ -84,8 +84,7 @@ namespace RipNRage.Game.Content
             mr.color = Color.white;
             BuildDockCollision(mr.mesh);
 
-            // SkyRotator
-            new GameObject("SkyRotator").AddComponent<SkyboxRotator>();
+            RipNRage.Game.Ecs.Sky.Spin(World, 1.2f); // the old SkyboxRotator's 1.2°/s
 
             // WaterPlane (x 474.6, y -0.5) scale 173.21 x 100 of Unity's 10x10 plane, SandPlane 15 below.
             var water = new GameObject("WaterPlane");
@@ -99,10 +98,8 @@ namespace RipNRage.Game.Content
             waterMr.transparent = true;
             waterMr.castsShadow = false;
             waterMr.material = Materials.Water; // animated water shader (shaders/water.glsl)
-            // the water volume is an ECS trigger; TriggerVolume relays its overlaps to EnterWaterCollision
-            var waterVolume = EcsPhysics.PhysicsEntities.StaticBox(World, water.transform.position + new Vector3(0, -50f, 0), Quaternion.identity, new Vector3(1732.1f, 100f, 1000f), Layers.Water, trigger: true);
-            RipNRage.Game.Ecs.TriggerVolume.Attach(water, waterVolume);
-            water.AddComponent<EnterWaterCollision>();
+            // the water: a box the view is tested against (the camera is an entity, not a body a trigger could see)
+            RipNRage.Game.Ecs.Waters.Spawn(World, water.transform.position, new Vector3(1732.1f, 100f, 1000f));
 
             var sand = new GameObject("SandPlane");
             sand.transform.SetParent(water.transform, false);
