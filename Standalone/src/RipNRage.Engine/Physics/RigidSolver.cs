@@ -129,6 +129,8 @@ namespace RipNRage.Engine
             public readonly Stack<Manifold> pool = new Stack<Manifold>();
             public readonly List<Manifold> manifolds = new List<Manifold>(64);
             public readonly List<SolverBody> wake = new List<SolverBody>(8);
+            /// <summary>The narrow-phase item being processed (stamped on the manifolds it commits).</summary>
+            public int item;
             // per-worker counters, summed after the stage (padding keeps workers' hot fields off each other's cache lines)
             public int queries, preparedPoints, matchedPoints;
             private long _pad0, _pad1, _pad2, _pad3, _pad4, _pad5, _pad6, _pad7;
@@ -353,7 +355,10 @@ namespace RipNRage.Engine
                 switch (st.kind)
                 {
                     case StageKind.Narrowphase:
-                        for (int i = start; i < end; i++) s.CollectContacts(world, s._awake[i], s._workers[worker]);
+                    {
+                        var wk = s._workers[worker];
+                        for (int i = start; i < end; i++) { wk.item = i; s.CollectContacts(world, s._awake[i], wk); }
+                    }
                         break;
                     case StageKind.Prepare:
                     {
@@ -477,13 +482,16 @@ namespace RipNRage.Engine
             _job.Clear(); _job.Add(StageKind.Narrowphase, _awake.Count, 4);
             Dispatch();
             _manifolds.Clear(); _pendingWake.Clear();
+            MergeManifoldsInItemOrder();
             for (int i = 0; i < _workers.Length; i++)
             {
                 var w = _workers[i];
-                if (w.manifolds.Count > 0) { _manifolds.AddRange(w.manifolds); w.manifolds.Clear(); }
+                w.manifolds.Clear();
                 if (w.wake.Count > 0) { _pendingWake.AddRange(w.wake); w.wake.Clear(); }
                 if (w.queries > 0) { world.AddConcurrentQueries(w.queries); w.queries = 0; }
             }
+            // the woken bodies join _awake in this order, which is next step's item order: make it worker-independent
+            if (_pendingWake.Count > 1) _pendingWake.Sort(ById);
             Profiler.End();
 
             // 3. contact preparation (effective masses, warm-start matching): per manifold
@@ -696,6 +704,39 @@ namespace RipNRage.Engine
             return m;
         }
 
+        private static readonly Comparison<SolverBody> ById = (x, y) => x.id.CompareTo(y.id);
+        private int[] _heads = Array.Empty<int>();
+
+        /// <summary>
+        /// Concatenates the workers' manifold lists in narrow-phase item order — the order a single thread would
+        /// have produced — so the contact list, and everything built on it (islands, solve order, float results),
+        /// does not depend on which worker claimed which batch. Each worker's list is already sorted by item and no
+        /// item is split across workers, so this is a plain k-way merge on the head items.
+        /// </summary>
+        private void MergeManifoldsInItemOrder()
+        {
+            int n = _workers.Length;
+            if (_heads.Length < n) _heads = new int[n];
+            Array.Clear(_heads, 0, n);
+            while (true)
+            {
+                int best = -1, bestItem = int.MaxValue;
+                for (int w = 0; w < n; w++)
+                {
+                    var list = _workers[w].manifolds;
+                    if (_heads[w] >= list.Count) continue;
+                    int item = list[_heads[w]].item;
+                    if (item < bestItem) { bestItem = item; best = w; }
+                }
+                if (best < 0) return;
+                var src = _workers[best].manifolds;
+                int h = _heads[best];
+                // take the whole run of this item from that worker (it owns the item entirely)
+                while (h < src.Count && src[h].item == bestItem) _manifolds.Add(src[h++]);
+                _heads[best] = h;
+            }
+        }
+
         private void CollectContacts(PhysicsWorld world, SolverBody a, Worker w)
         {
             var candidates = w.candidates;
@@ -786,7 +827,7 @@ namespace RipNRage.Engine
             m.bodyA = a; m.bodyB = b; m.colliderA = a.collider; m.colliderB = s;
             m.normal = scratch.normal; m.count = scratch.count;
             for (int i = 0; i < m.count; i++) m.points[i] = scratch.points[i];
-            m.key = key;
+            m.key = key; m.item = w.item;
             Surface(a.collider, a, out float musA, out float mudA, out float restA, out CombineMode fcA, out CombineMode rcA);
             Surface(s, b, out float musB, out float mudB, out float restB, out CombineMode fcB, out CombineMode rcB);
             CombineMode fc = PhysicsMaterial.Pick(fcA, fcB), rc = PhysicsMaterial.Pick(rcA, rcB);

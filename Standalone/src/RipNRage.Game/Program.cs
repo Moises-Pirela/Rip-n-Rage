@@ -33,6 +33,8 @@ namespace RipNRage.Game
     ///   --shaders dir          folder with the .glsl shader files (default: "shaders" found in cwd/exe dir/parents)
     ///   --level file.map       play a level file (default: levels/dock.map if found; --no-level = built-in arena)
     ///   --export-dock out.map  write the built-in dock arena as a .map file and exit
+    ///   --threads N            rigid solver worker threads (0 = one per core, 1 = single-threaded: repeatable runs)
+    ///   --seed N               seed the shared Random (scripted runs default to 12345; 0 = time-seeded)
     ///   --load slot            load a saved game (slots live in <persistentDataPath>/saves; "quick", "checkpoint", ...)
     ///   --menu / --no-menu     start on the title screen / straight in the level (default: the title screen, unless an
     ///                          automation option — --script, --frames, --load — is given)
@@ -51,6 +53,8 @@ namespace RipNRage.Game
         {
             var options = new ApplicationOptions();
             string script = null;
+            int? seed = null;
+            int threads = -1;
             string level = null;
             bool noLevel = false;
             string exportDock = null, exportAnims = null;
@@ -92,6 +96,8 @@ namespace RipNRage.Game
                     case "--shot-interval": options.ScreenshotInterval = int.Parse(Next()); break;
                     case "--fixed-dt": options.FixedFrameDelta = float.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                     case "--script": script = Next(); break;
+                    case "--seed": seed = int.Parse(Next()); break;
+                    case "--threads": threads = int.Parse(Next()); break;
                     case "--tunables": options.TunablesPath = Next(); break;
                     case "--shaders": options.ShaderDir = Next(); break;
                     case "--level": level = Next(); break;
@@ -131,7 +137,17 @@ namespace RipNRage.Game
                 // saved display choices (graphics.json) — not for automation runs, which must stay windowed and sized
                 bool automation = script != null || options.MaxFrames > 0 || gpuInfoOnly || exportDock != null || exportAnims != null;
                 if (!automation && !displayFromCli) RipNRage.Game.Content.GraphicsSettings.ApplyStartupDisplay(options);
+                // Scripted runs roll fixed dice: the shared Random (weapon spread, death roll, pickup bob) is time-seeded
+                // otherwise, and a gate compared across builds is then a coin flip at every edge (found when a kill at
+                // the end of a firing window came and went between identical runs). --seed N picks the seed, --seed 0
+                // keeps the clock.
+                if (seed == null && script != null) seed = 12345;
+                if (seed is int fixedSeed && fixedSeed != 0) RipNRage.Engine.Random.InitState(fixedSeed);
                 using var app = new Application(options);
+                if (seed is int s && s != 0) Debug.LogWarning($"Random seeded: {s} (scripted runs are deterministic; --seed N overrides, --seed 0 keeps the clock)");
+                // the rigid solver's worker count, as the bench takes it: 1 makes a scripted run bit-for-bit repeatable
+                // (the parallel solver still carries an order dependence beyond the contact merge — see the roadmap)
+                if (threads >= 0) { RipNRage.Engine.Physics.World.Rigid.threads = threads; RipNRage.Engine.PhysicsSettings.Current.threads = threads; Debug.LogWarning($"Rigid solver threads: {threads}"); }
                 if (gpuInfoOnly)
                 {
                     Console.WriteLine(RipNRage.Engine.Platform.GpuInfo.Summary);

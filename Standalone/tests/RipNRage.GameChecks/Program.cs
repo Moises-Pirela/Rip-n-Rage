@@ -24,6 +24,7 @@ internal static class Program
     {
         try
         {
+            ScheduleChecks.Run(True);
             Layer5Checks.Run(True, Equal);
             Layer6Checks.Run(True, Equal);
             Console.WriteLine($"PASS: {_assertions} gameplay assertions");

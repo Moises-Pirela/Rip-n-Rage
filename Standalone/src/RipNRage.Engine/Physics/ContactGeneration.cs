@@ -52,6 +52,7 @@ namespace RipNRage.Engine
         internal float biasRate, massScale, impulseScale;
         internal long key;
         internal int owner;            // worker pool the manifold came from
+        internal int item;             // narrow-phase item (awake-body index) that generated it: the merge order
         internal int island = -1;      // island index in the current step
 
         public void Reset()

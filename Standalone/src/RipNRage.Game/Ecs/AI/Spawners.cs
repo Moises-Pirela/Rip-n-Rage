@@ -38,9 +38,9 @@ namespace RipNRage.Game.Ecs.AI
     /// <see cref="LevelRef.SpawnerIndex"/> — that is both the standing count and how a save knows them. Replaces the
     /// MonsterSpawner MonoBehaviour.
     /// </summary>
-    // After the frame's combat: new monsters are an end-of-frame affair. The constraint also keeps the scheduler
-    // from seating this system early in the graph, where its extra sync point delayed every buffered projectile by
-    // one playback (found by the style gate: the kill at the firing window's edge lost its last bullet).
+    // After the frame's combat: new monsters are an end-of-frame affair. (6.7 first credited this constraint with
+    // fixing a style-gate regression; the investigation after showed the schedule was identical either way and the
+    // regression was the time-seeded Random — see the schedule check and --seed. The ordering stays for its intent.)
     [UpdateAfter(typeof(EnemyAttackSystem))]
     public sealed class SpawnerSystem : SystemBase, ITick
     {

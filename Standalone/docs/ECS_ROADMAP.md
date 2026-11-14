@@ -48,7 +48,8 @@ then start at the first unchecked layer.
 
 Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.7 are in, next is **6.8 close-out**
 (full parity run, the AI probes re-recorded as the new baseline — remember: **compare scripts under
-`--fixed-dt 0.016667`**, wall-clock dt on the Mac swamps them — `--threads 1` interleaved bench, alloc/frame). The
+`--fixed-dt 0.016667 --threads 1`** (the default seed is implied; wall-clock dt, the time-seeded `Random` and the
+parallel solver each make an unpinned run a coin flip — see 6.7b) — `--threads 1` interleaved bench, alloc/frame). The
 standing direction — the behaviour trees replaced by a **data-oriented state tree**, not ported as-is — is done
 (6.2). Established rules: ECS + functional,
 OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
@@ -779,17 +780,39 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
       standing — counted off `LevelRef.SpawnerIndex`, which is also how a save knows a spawner's monsters.
       `Enemies.Spawn` gained a **buffered twin** (`CommandBuffer` overload; the immediate API is disabled while a
       phase runs) kept honest by a check comparing the archetypes the two build. `MonsterSpawner` (MonoBehaviour) is
-      deleted; the save system round-trips `Spawned` through the world. **Scheduling lesson, found by the style
-      gate**: unconstrained, the scheduler seated the new system early in the Tick graph, adding a sync point that
-      delayed every buffered projectile by one playback — the style script's edge-of-window kill lost its last
-      bullet. `[UpdateAfter(EnemyAttackSystem)]` restores the old layout (and reads right: new monsters are an
-      end-of-frame affair). Gates: 199 engine + 177 gameplay assertions (sleeps until the player is in range, first
+      deleted; the save system round-trips `Spawned` through the world. The step first blamed a style-gate
+      regression on the scheduler and "fixed" it with `[UpdateAfter(EnemyAttackSystem)]` — **that diagnosis was
+      wrong**; see *6.7b* below. The ordering stays for its intent (new monsters after the frame's combat). Gates: 199 engine + 177 gameplay assertions (sleeps until the player is in range, first
       monster at once, interval pacing, the cap refilled the tick a slot frees, the count spent, scatter inside the
       radius, the monster stamped with its spawner, the twin archetype parity); all 15 scripts byte-identical to 6.6
       under `--fixed-dt 0.016667`; dock.map has no spawner, so the level pipeline was smoke-tested on a scratch copy
       with one added — spawner at level index 12 saved `spawned 2` with both runtime monsters as dynamic entries
       carrying `spawnerIndex 12`, loaded clean; frame 4.9 ms median vs 4.6 (3 interleaved runs, inside this Mac's
       noise band — 6.6 measured the same spread the other way).
+- [x] 6.7b **Determinism and the schedule — the investigation and its fixes.** Re-examined the 6.7 "scheduler
+      trap": `DescribeBatches` showed the Tick layout is **18 batches of one system each with or without the
+      attribute** (nearly every system declares no `[Reads]`/`[Writes]`, so each is `Exclusive` and the schedule is
+      fully serial; the attribute only moved `SpawnerSystem` from slot 8 to slot 10 — no sync point was added).
+      The style gate was simply **not deterministic**: same build, fixed dt, three runs, three outcomes. The dice
+      were the shared time-seeded `Random` in the weapon spread (`Weapons.cs`); nobody called `InitState`. Matrix:
+      seeded → 3/3 identical; solver single-threaded only → still differs; seeded, attribute vs none → identical.
+      **Fixes**: (1) `--seed N` — scripted runs seed `Random` with 12345 by default (`--seed 0` keeps the clock);
+      (2) `--threads N` in the game, as the bench has it: the parallel rigid solver still carries an order
+      dependence (`approach` differs run to run at default threads, is stable at 1), so **the gate rule is now
+      `--fixed-dt 0.016667 --threads 1`** (seed implied) — every one of the 15 scripts is bit-for-bit repeatable
+      under it; (3) the narrow phase now concatenates the workers' manifolds in **item order** (`Manifold.item`,
+      k-way merge) and sorts woken bodies by id, so the contact list and the islands no longer depend on which
+      worker claimed which batch — closes one solver order source (the residual one is elsewhere in the parallel
+      stages: a later pass with the bench; no measurable cost — ragdolls narrowphase 2.0–2.9 ms either way, inside
+      this Mac's spread); (4) **`ScheduleChecks`** pins the Tick / FixedTick / LateTick batch layout as a golden list
+      — any system added, renamed or re-attributed fails the gameplay checks with both layouts printed, and the
+      intended change is made in the same commit, in the open. **Scheduler facts to keep in mind** (recorded, not
+      yet changed): a system with no `[Reads]`/`[Writes]` is `Exclusive`; the `QueryBuilder` already records what a
+      system reads and writes but the scheduler ignores it; order among unconstrained systems is **alphabetical by
+      type name** (`Engine.*` before `Game.*`, `AI.*` before `Combat.*`); command buffers play back after each
+      *batch*, so the day two systems share a batch they stop seeing each other's output within the frame —
+      deriving Reads/Writes from queries, explicit groups instead of the name tiebreak, and a deliberate sync-point
+      policy are design work for layer 9/10, and the golden check is what makes any step towards them visible.
 - [ ] 6.8 Close-out: full parity run, the AI probes re-recorded as the new baseline, `--threads 1` interleaved bench,
       alloc/frame (the burst coroutine's allocations should be structurally gone), close-out section.
 
