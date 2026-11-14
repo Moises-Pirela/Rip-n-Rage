@@ -932,6 +932,24 @@ deleted at the end of this layer**, not in layer 9. Clocks are sim-time accumula
 - [ ] 7.7 Close-out: full sweep, re-recorded baselines, interleaved bench, alloc, close-out section, `PlayerState`
       line count (it should be health / armour / death only, for layer 8).
 
+**Rage pre-tuning (2026-11-14, applied to the legacy code before 7.0, so 7.1 ports the tuned rules):**
+the "small fixes" from the review brainstorm, constants on `PlayerState` / `StyleMeter`:
+(1) **one pause clock** — `StyleMeter.SinceLastAction` = time since the last style score *or* rage gain; rage only
+drains in a fight after `StyleMeter.DecayDelay` (2.5 s) on it, and the style decay reads the same clock;
+(2) **climb out of DEPRESSED** — a player kill ends it at once (rage 0.5) and the style meter pays a comeback
+multiplier step (`NotifyKill` runs after `RegisterHit`); (3) **ENRAGED holds** — the value no longer drains during
+it, hits extend it 0.25 s each (capped at 5 s left) and it ends at 0.7, not 0.5; (4) **speed cap** — rage × S-rank
+speed capped at ×1.5 in `PlayerCharacter`; (5) **passive drift** — out of combat rage drifts down 0.02/s to a 0.25
+floor (it cannot depress). Enraged / depressed are timers, not coroutines, which also fixes a restored ENRAGED /
+DEPRESSED never ending. Instrumentation added: `rage` and `style` log rage every 30 frames, `saveload` every 20,
+and `style` spawns a third grunt at frame 700 to exercise the climb-out. Evidence (900 frames): `style` — ENRAGED
+now holds 1.00 through frame 330 (was draining to 0.20); the frame-700 kill ends DEPRESSED and pays ×2 (246 pts vs
+126 at ×1, still DEPRESSED, on HEAD). **Not fixed and the next thing to decide**: `VIOLENT` lasts 30 s after any
+shot, so rage drains after a fight is over — `style` still ends DEPRESSED once the room is clear (frame ~600 vs
+~480), and `saveload` reaches it from six shots at nothing. Everything else in the sweep byte-identical; `saveload`'s
+second save moves 0.39 m (the drift starts rage 0.02 lower, so DEPRESSED arrives a few frames earlier). The
+player death at frame ~760 of the 900-frame `style` happens on HEAD too — a scenario artifact.
+
 **Decided at review (2026-11-14)**: rage is **retuned in this layer** — today it fights the style meter (design
 being brainstormed; 7.1 ports it with the new rules as a pure `Rages.Step`, 7.0 records the old behaviour first so
 the change is visible). The style meter's HUD **waits for layer 8**; 7.3 ports only its state and rules.

@@ -183,9 +183,8 @@ namespace RipNRage.Game.Ecs
             float speed = p.EnableBunnyHop ? (grounded ? p.RunSpeed : p.BunnyHopSpeed) : p.RunSpeed;
             if (Math.Abs(input.Move.y - (-1f)) < 1f) speed *= p.BackwardsPercent;
             if (input.Move.x != 0f && input.Move.y == 0f) speed *= p.SidePercent;
-            if (PlayerState.Current != null && PlayerState.Current.CurrentRageState != null)
-                speed *= PlayerState.Current.CurrentRageState.movementSpeedModifier;
-            speed *= StyleMeter.SpeedMultiplier; // S rank: faster
+            float rageSpeed = PlayerState.Current?.CurrentRageState?.movementSpeedModifier ?? 1f;
+            speed *= Math.Min(rageSpeed * StyleMeter.SpeedMultiplier, StyleMeter.MaxSpeedMultiplier); // rage × S rank, capped
 
             // ---- smoothing (input, speed, direction) ----
             Vector2 rawInput = input.Move.normalized;

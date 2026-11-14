@@ -423,6 +423,12 @@ namespace RipNRage.Game
         private int _frame;
         /// <summary>Where each enemy was first seen, so the probe can tell whether it has ever moved.</summary>
         private readonly System.Collections.Generic.Dictionary<Entity, Vector3> _enemyHome = new System.Collections.Generic.Dictionary<Entity, Vector3>();
+        private void LogRage()
+        {
+            var ps = PlayerState.Current;
+            Debug.LogWarning($"[test] frame {_frame} rage {ps.Rage:0.00} {ps.RageState} {ps.CombatState} speed x{ps.CurrentRageState?.movementSpeedModifier ?? 1f:0.00}");
+        }
+
         private readonly System.Collections.Generic.List<Entity> _enemies = new System.Collections.Generic.List<Entity>();
 
         /// <summary>
@@ -587,6 +593,7 @@ namespace RipNRage.Game
                 case "rage":
                     // force the enraged state to check the rage post-processing volume
                     if (_frame == 20) { PlayerState.Current.SetViolentCombatState(); PlayerState.Current.AddToRage(1f); }
+                    if (_frame % 30 == 0 && PlayerState.Current != null) LogRage();
                     break;
                 case "saveload":
                     // walk, save (F6), walk more, load (F9): the player must be back at the saved spot with the saved ammo
@@ -597,6 +604,7 @@ namespace RipNRage.Game
                     if (_frame == 205) Debug.LogWarning($"[test] before load at {PlayerState.Current.transform.position}");
                     if (_frame == 210) Input.SimulateKey(KeyCode.F9, true);
                     if (_frame == 211) Input.SimulateKey(KeyCode.F9, false);
+                    if (_frame % 20 == 0 && PlayerState.Current != null) LogRage();
                     if (_frame == 240 && PlayerState.Current != null) Debug.LogWarning($"[test] after load at {PlayerState.Current.transform.position} ammo {EnragedInjector<CombatController>.GetInstance().AmmoOf(AmmoType.LIGHT)} hp {PlayerState.Current.Health}");
                     break;
                 case "glockalt":
@@ -659,13 +667,15 @@ namespace RipNRage.Game
                 case "style":
                 {
                     // spawn a grunt in front, kill it with the Glock, spawn another, kill it with the MG: the meter should reach B and show
-                    if (_frame == 2 || _frame == 130) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
+                    // frame 700: a third grunt while the player is DEPRESSED — the comeback kill must end it and raise the multiplier
+                    if (_frame == 2 || _frame == 130 || _frame == 700) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
                         Camera.main.transform.position + Camera.main.transform.forward * 6f - Vector3.up * 1.3f, 0f);
                     if (_frame == 5) combat.OnChangeWeapon1();
                     if (_frame == 135) combat.OnChangeWeapon3();
-                    input.overrideFiring = (_frame > 20 && _frame < 120) || (_frame > 140 && _frame < 200);
+                    input.overrideFiring = (_frame > 20 && _frame < 120) || (_frame > 140 && _frame < 200) || (_frame > 710 && _frame < 800);
                     var sm = StyleMeter.Current;
                     if (_frame % 30 == 0 && sm != null) Debug.LogWarning($"[test] frame {_frame} style {sm.CurrentRank} {sm.Points:0} x{sm.Multiplier} visible={sm.Visible}");
+                    if (_frame % 30 == 0 && PlayerState.Current != null) LogRage();
                     break;
                 }
                 case "fall":

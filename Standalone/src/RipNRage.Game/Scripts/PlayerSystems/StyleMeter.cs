@@ -29,7 +29,9 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
     public int maxMultiplier = 4;
 
     [Header("Decay")]
-    public float decayDelay = 2.5f;
+    public float decayDelay = DecayDelay;
+    /// <summary>The pause after which both meters start losing ground (rage reads it too).</summary>
+    public const float DecayDelay = 2.5f;
     public float decayRate = 70f;
 
     [Header("S rank perks")]
@@ -42,6 +44,20 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
     public int Multiplier { get; private set; } = 1;
     public Rank CurrentRank { get; private set; } = Rank.F;
     public bool Visible => _visibility > 0.01f;
+
+    /// <summary>Seconds since the player last scored style or gained rage — the one pause clock both meters decay on.</summary>
+    public static float SinceLastAction(float now)
+    {
+        float last = -100f;
+        if (Current != null && !Current.IsDestroyed) last = Current._lastScoreTime;
+        var ps = PlayerState.Current;
+        if (ps != null) last = Math.Max(last, ps.LastRageGainTime);
+        return now - last;
+    }
+
+    /// <summary>Combined movement multiplier from rage and style, capped so the buffs do not stack past the
+    /// strongest one alone.</summary>
+    public const float MaxSpeedMultiplier = 1.5f;
 
     /// <summary>Movement speed multiplier read by the FPS controller (1 unless the meter is at S).</summary>
     public static float SpeedMultiplier => Current != null && !Current.IsDestroyed && Current.CurrentRank == Rank.S ? Current.sSpeedMultiplier : 1f;
@@ -70,7 +86,9 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
         float now = Time.time;
         if (killed)
         {
-            if (now - _lastKillTime > comboWindow) Multiplier = 1;                               // combo expired
+            if (_state != null && _state.RageState == PlayerRageState.DEPRESSED)                   // the comeback kill
+                Multiplier = Math.Min(maxMultiplier, Math.Max(Multiplier, 1) + 1);
+            else if (now - _lastKillTime > comboWindow) Multiplier = 1;                          // combo expired
             else if (!string.IsNullOrEmpty(_lastKillWeapon) && weaponName != _lastKillWeapon)      // variety: different weapon, quick succession
                 Multiplier = Math.Min(maxMultiplier, Multiplier + 1);
             pts += (killPoints + (headshot ? headshotKillBonus : 0f)) * Multiplier;
@@ -107,7 +125,7 @@ public class StyleMeter : MonoBehaviour, IUiDrawer, IUiLayer
         if (_state != null && _state.IsDead) { Points = 0f; Multiplier = 1; UpdateRank(); }
 
         if (now - _lastKillTime > comboWindow) Multiplier = 1;
-        if (Points > 0f && now - _lastScoreTime > decayDelay)
+        if (Points > 0f && SinceLastAction(now) > decayDelay)
         {
             Points = Mathf.Max(0f, Points - decayRate * (1f + (int)CurrentRank * 0.25f) * dt);
             UpdateRank();

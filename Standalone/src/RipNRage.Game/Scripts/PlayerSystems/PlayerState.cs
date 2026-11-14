@@ -41,7 +41,22 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
     }
 
     private Coroutine ResetCombatState;
-    private Coroutine ResetRageState;
+
+    // ---- rage tuning (2026-11-14: the small fixes, before the layer-7 redesign) ----
+    /// <summary>Enraged / depressed durations.</summary>
+    public const float EnragedDuration = 5f, DepressedDuration = 10f;
+    /// <summary>Each hit landed while enraged extends it, up to <see cref="EnragedDuration"/> left.</summary>
+    public const float EnragedExtendPerHit = 0.25f;
+    /// <summary>Where rage lands when enraged ends: above the middle, so topping out is not a step back.</summary>
+    public const float AfterEnraged = 0.7f;
+    /// <summary>Draining in a fight; drifting down while out of one (never below the floor, so exploring cannot depress).</summary>
+    public const float FightDecay = 0.2f, PassiveDrift = 0.02f, PassiveFloor = 0.25f;
+
+    /// <summary>Seconds left in ENRAGED / DEPRESSED (a timer instead of a coroutine: it survives a save restore).</summary>
+    private float _rageStateLeft;
+    /// <summary><see cref="Time.time"/> of the last rage gain; with the style meter's last score it forms one
+    /// "since the player last did something" clock (<see cref="StyleMeter.SinceLastAction"/>).</summary>
+    public float LastRageGainTime { get; private set; } = -100f;
     private CombatController _combatController;
 
     protected override void Awake()
@@ -91,7 +106,6 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
         Health = 0f;
 
         if (ResetCombatState != null) StopCoroutine(ResetCombatState);
-        if (ResetRageState != null) StopCoroutine(ResetRageState);
         Debug.LogWarning("Player died");
 
         OnHealthChanged?.Invoke(); // HUD: death portrait
@@ -106,7 +120,7 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
     protected override void Update()
     {
         if (IsDead) return;
-        TickRage();
+        TickRage(Time.deltaTime);
         GetRageState();
     }
 
@@ -126,6 +140,8 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
         _rage = Mathf.Clamp01(rage);
         RageState = rageState;
         CurrentRageState = rageStates[(int)rageState];
+        // the save keeps no remaining time: a restored state gets its full duration (it used to never end)
+        _rageStateLeft = rageState == PlayerRageState.ENRAGED ? EnragedDuration : rageState == PlayerRageState.DEPRESSED ? DepressedDuration : 0f;
         CombatState = combatState;
         if (ResetCombatState != null) StopCoroutine(ResetCombatState);
         if (combatState == PlayerCombatState.VIOLENT) ResetCombatState = StartCoroutine(ResetViolentCombatState_Coroutine());
@@ -135,8 +151,21 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
 
     public void AddToRage(float value)
     {
-        //_rage = Mathf.Lerp(_rage, _rage + value, 5);
-        _rage += value;
+        LastRageGainTime = Time.time;
+        if (RageState == PlayerRageState.ENRAGED)
+        {
+            // hits feed the rampage instead of a value nothing reads
+            _rageStateLeft = Mathf.Min(EnragedDuration, _rageStateLeft + EnragedExtendPerHit);
+            return;
+        }
+        _rage = Mathf.Clamp01(_rage + value);
+    }
+
+    /// <summary>A kill by the player: climbs out of DEPRESSED at once (the style meter reads the state first and
+    /// pays the comeback bonus — call this after <see cref="StyleMeter.RegisterHit"/>).</summary>
+    public void NotifyKill()
+    {
+        if (RageState == PlayerRageState.DEPRESSED) EndRageState(0.5f);
     }
 
     private IEnumerator ResetViolentCombatState_Coroutine()
@@ -146,31 +175,36 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
         CombatState = PlayerCombatState.PACIFIST;
         ResetRage();
     }
-    
-    private IEnumerator ResetRageState_Coroutine(float duration)
-    {
-        yield return new WaitForSeconds(duration);
 
-        ResetRage();
-    }
+    private void ResetRage() => EndRageState(0.5f);
 
-    private void ResetRage()
+    private void EndRageState(float rage)
     {
-        _rage = 0.5f;
+        _rage = rage;
+        _rageStateLeft = 0f;
         RageState = PlayerRageState.NORMAL;
         CurrentRageState = rageStates[0];
         OnUpdateRage?.Invoke();
     }
 
-    private void TickRage()
+    private void TickRage(float dt)
     {
-        if (CombatState == PlayerCombatState.PACIFIST ) return;
-        
-        float rageStateTick = 0.2f;
-        
-        _rage -= Time.deltaTime * rageStateTick;
+        if (RageState != PlayerRageState.NORMAL)
+        {
+            // ENRAGED / DEPRESSED hold the value; the timer decides
+            _rageStateLeft -= dt;
+            if (_rageStateLeft <= 0f) EndRageState(RageState == PlayerRageState.ENRAGED ? AfterEnraged : 0.5f);
+            return;
+        }
 
-        _rage = Mathf.Clamp01(_rage);
+        if (CombatState == PlayerCombatState.PACIFIST)
+        {
+            if (_rage > PassiveFloor) _rage = Mathf.Max(PassiveFloor, _rage - PassiveDrift * dt);
+        }
+        // in a fight, rage only drains after the same pause that starts the style meter's decay, measured on the
+        // same clock — one pause costs once, not twice
+        else if (StyleMeter.SinceLastAction(Time.time) > StyleMeter.DecayDelay)
+            _rage = Mathf.Clamp01(_rage - FightDecay * dt);
 
         OnUpdateRage?.Invoke();
     }
@@ -178,29 +212,15 @@ public class PlayerState : EntityState, RipNRage.Game.Ecs.ITriggerListener
     private void GetRageState()
     { 
         if (RageState != PlayerRageState.NORMAL) return;
-        
-        if (_rage >= 1 && RageState != PlayerRageState.ENRAGED)
-        {
-            SetRageState(PlayerRageState.ENRAGED, 5f);
-            
-            return;
-        }
-
-        if (_rage <= 0 && RageState != PlayerRageState.DEPRESSED)
-        {
-            SetRageState(PlayerRageState.DEPRESSED, 10f);
-        }
+        if (_rage >= 1f) SetRageState(PlayerRageState.ENRAGED, EnragedDuration);
+        else if (_rage <= 0f) SetRageState(PlayerRageState.DEPRESSED, DepressedDuration);
     }
 
     private void SetRageState(PlayerRageState state, float duration)
     {
         RageState = state;
         CurrentRageState = rageStates[(int)state];
-            
-        if (ResetRageState != null)
-            StopCoroutine(ResetRageState);
-
-        ResetRageState = StartCoroutine(ResetRageState_Coroutine(duration));
+        _rageStateLeft = duration;
     }
 
     public void OnTriggerEnter(GameObject other)
