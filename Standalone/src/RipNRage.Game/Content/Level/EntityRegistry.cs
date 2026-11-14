@@ -102,7 +102,7 @@ namespace RipNRage.Game.Content.Level
                 {
                     classname = cls, description = "Ammo pickup: " + type.ToString().ToLowerInvariant(),
                     gizmoColor = new Color(1f, 0.9f, 0.3f, 1f), pickExtents = new Vector3(0.7f, 0.7f, 0.7f),
-                    spawn = e => AmmoPrefab(t).Instantiate(e.origin + Vector3.up * 0.9f, Quaternion.identity),
+                    spawnEntity = e => RipNRage.Game.Ecs.Pickups.Spawn(Application.Current.World, t, e.origin), // 7.5: an entity, keyed by LevelRef
                     preview = e =>
                     {
                         var go = new GameObject(cls); go.transform.position = e.origin + Vector3.up * 0.9f;
@@ -219,12 +219,6 @@ namespace RipNRage.Game.Content.Level
                 preview = e => { var go = new GameObject("Checkpoint"); go.transform.position = e.origin; return go; },
             });
         }
-
-        private static Prefab AmmoPrefab(AmmoType t) => t switch
-        {
-            AmmoType.LIGHT => Prefabs.LightAmmoPickup, AmmoType.HEAVY => Prefabs.HeavyAmmoPickup, AmmoType.SHELL => Prefabs.ShellAmmoPickup,
-            AmmoType.ENERGY => Prefabs.EnergyAmmoPickup, _ => Prefabs.ExplosiveAmmoPickup,
-        };
 
         private static GameObject Gizmo(string name, Color color, Vector3 size, MapEntity e)
         {

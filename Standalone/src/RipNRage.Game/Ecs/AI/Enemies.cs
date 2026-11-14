@@ -9,7 +9,7 @@ namespace RipNRage.Game.Ecs.AI
     /// <summary>
     /// Where this enemy came from: its slot in the level file (<see cref="Index"/>, -1 = spawned at runtime) and
     /// the spawner that made it (<see cref="SpawnerIndex"/>, -1 = placed directly). The save system keys monsters
-    /// by it — the entity-side LevelEntityRef.
+    /// by it — the save's key for every level-placed entity.
     /// </summary>
     public struct LevelRef : IComponent
     {
@@ -80,7 +80,7 @@ namespace RipNRage.Game.Ecs.AI
             w.Add(e, new Enemy { Kind = kind });
             w.Add(e, new Heading { Yaw = yaw }); // the body never turns (6.4): facing is data
             w.Add(e, new Perception());
-            w.Add(e, new AiBrain { Rng = (uint)(e.Index + 1) * 2654435761u }); // seeded by the entity: the same run every time
+            w.Add(e, new AiBrain { Rng = AiBrains.Seed(floorPosition, kind) }); // seeded by the placement: the same run every time
             w.Add(e, new AiIntent());
             w.Add(e, new EnemyWeapon());
             w.Add(e, new LevelRef { Index = -1, SpawnerIndex = -1 });
@@ -128,7 +128,7 @@ namespace RipNRage.Game.Ecs.AI
             cmd.Add(e, new Enemy { Kind = kind });
             cmd.Add(e, new Heading { Yaw = yaw });
             cmd.Add(e, new Perception());
-            cmd.Add(e, new AiBrain { Rng = (uint)(e.Index + 1) * 2654435761u });
+            cmd.Add(e, new AiBrain { Rng = AiBrains.Seed(floorPosition, kind) }); // a deferred entity's index is not final
             cmd.Add(e, new AiIntent());
             cmd.Add(e, new EnemyWeapon());
             cmd.Add(e, new LevelRef { Index = -1, SpawnerIndex = spawnerIndex });

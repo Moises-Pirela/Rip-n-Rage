@@ -254,11 +254,12 @@ namespace RipNRage.Game.Content
 
         private static void BuildPickups()
         {
-            float y = DockOffset.y + 16f * MapScale + 0.9f;
-            Prefabs.ShellAmmoPickup.Instantiate(new Vector3(-3f, y, -20f), Quaternion.identity);
-            Prefabs.HeavyAmmoPickup.Instantiate(new Vector3(3f, y, -40f), Quaternion.identity);
-            Prefabs.LightAmmoPickup.Instantiate(new Vector3(-4f, y, -60f), Quaternion.identity);
-            Prefabs.ExplosiveAmmoPickup.Instantiate(new Vector3(4f, y, -90f), Quaternion.identity);
+            float y = DockOffset.y + 16f * MapScale; // the floor: Spawn lifts the pickup to its hover height
+            var w = Application.Current.World;
+            RipNRage.Game.Ecs.Pickups.Spawn(w, AmmoType.SHELL, new Vector3(-3f, y, -20f));
+            RipNRage.Game.Ecs.Pickups.Spawn(w, AmmoType.HEAVY, new Vector3(3f, y, -40f));
+            RipNRage.Game.Ecs.Pickups.Spawn(w, AmmoType.LIGHT, new Vector3(-4f, y, -60f));
+            RipNRage.Game.Ecs.Pickups.Spawn(w, AmmoType.EXPLOSIVE, new Vector3(4f, y, -90f));
         }
 
         private static void BuildEnemies()

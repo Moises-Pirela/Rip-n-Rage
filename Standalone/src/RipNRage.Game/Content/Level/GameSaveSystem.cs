@@ -11,14 +11,6 @@ using RipNRage.Level;
 
 namespace RipNRage.Game.Content.Level
 {
-    /// <summary>Marks a scene object that came from a level entity (index into the level file) or from a spawner.</summary>
-    public class LevelEntityRef : MonoBehaviour
-    {
-        public int index = -1;
-        public string classname;
-        public int spawnerIndex = -1;
-    }
-
     // ---- save file model (System.Text.Json, public fields) ----
     public sealed class GameSave
     {
@@ -93,13 +85,7 @@ namespace RipNRage.Game.Content.Level
 
             // level entities
             var doc = CurrentLevel.document;
-            var byIndex = new Dictionary<int, GameObject>();
-            foreach (var go in Scene.Current.GameObjects)
-            {
-                if (go.IsDestroyed) continue;
-                var r = go.GetComponent<LevelEntityRef>();
-                if (r != null && r.index >= 0) byIndex[r.index] = go;
-            }
+            // every saved level entity is an entity now (monsters 6.6, spawners 6.7, pickups 7.5), keyed by LevelRef;
             // monsters are entities (6.6): level-placed ones keyed by their LevelRef, runtime ones saved dynamic
             var w = Application.Current.World;
             var monstersByIndex = new Dictionary<int, Entity>();
@@ -119,6 +105,10 @@ namespace RipNRage.Game.Content.Level
                     health = w.Get<Health>(en).Current, spawnerIndex = r.SpawnerIndex,
                 });
             }
+            var pickupsByIndex = new Dictionary<int, Entity>();
+            var pickups = new List<Entity>();
+            RipNRage.Game.Ecs.Pickups.Collect(w, pickups);
+            foreach (var pk in pickups) { int idx = w.Get<LevelRef>(pk).Index; if (idx >= 0) pickupsByIndex[idx] = pk; }
             var spawnersByIndex = new Dictionary<int, Entity>();
             var spawners = new List<Entity>();
             Spawners.Collect(w, spawners);
@@ -131,7 +121,6 @@ namespace RipNRage.Game.Content.Level
             {
                 var e = doc.entities[i];
                 var es = new EntitySave { index = i, classname = e.classname };
-                byIndex.TryGetValue(i, out var go);
                 if (e.classname.StartsWith("monster_", StringComparison.OrdinalIgnoreCase) && !e.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase))
                 {
                     es.alive = monstersByIndex.TryGetValue(i, out var en) && !w.Has<Dead>(en);
@@ -142,7 +131,7 @@ namespace RipNRage.Game.Content.Level
                         es.health = w.Get<Health>(en).Current;
                     }
                 }
-                else if (e.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase)) es.taken = go == null;
+                else if (e.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase)) es.taken = !pickupsByIndex.ContainsKey(i);
                 else if (e.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase)) es.spawned = spawnersByIndex.TryGetValue(i, out var sp) ? w.Get<Spawner>(sp).Spawned : 0;
                 else continue;
                 save.entities.Add(es);
@@ -250,13 +239,6 @@ namespace RipNRage.Game.Content.Level
             var level = CurrentLevel;
             if (level != null)
             {
-                var byIndex = new Dictionary<int, GameObject>();
-                foreach (var go in Scene.Current.GameObjects)
-                {
-                    if (go.IsDestroyed) continue;
-                    var r = go.GetComponent<LevelEntityRef>();
-                    if (r != null && r.index >= 0) byIndex[r.index] = go;
-                }
                 // the freshly rebuilt level spawned every level-placed monster alive at its origin
                 var w = Application.Current.World;
                 var monstersByIndex = new Dictionary<int, Entity>();
@@ -267,6 +249,10 @@ namespace RipNRage.Game.Content.Level
                     var r = w.Get<LevelRef>(en);
                     if (r.Index >= 0) monstersByIndex[r.Index] = en;
                 }
+                var pickupsByIndex = new Dictionary<int, Entity>();
+                var pickupEnts = new List<Entity>();
+                RipNRage.Game.Ecs.Pickups.Collect(w, pickupEnts);
+                foreach (var pk in pickupEnts) { int idx = w.Get<LevelRef>(pk).Index; if (idx >= 0) pickupsByIndex[idx] = pk; }
                 var spawnersByIndex = new Dictionary<int, Entity>();
                 var spawnerEnts = new List<Entity>();
                 Spawners.Collect(w, spawnerEnts);
@@ -290,8 +276,11 @@ namespace RipNRage.Game.Content.Level
                         if (spawnersByIndex.TryGetValue(es.index, out var sp)) w.Get<Spawner>(sp).Spawned = es.spawned;
                         continue;
                     }
-                    if (!byIndex.TryGetValue(es.index, out var go)) continue;
-                    if (es.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase)) { if (es.taken) GameObject.Destroy(go); }
+                    if (es.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (es.taken && pickupsByIndex.TryGetValue(es.index, out var pk) && w.IsAlive(pk)) w.DestroyEntity(pk); // the sprite child follows
+                        continue;
+                    }
                 }
                 foreach (var m in save.dynamicMonsters)
                 {

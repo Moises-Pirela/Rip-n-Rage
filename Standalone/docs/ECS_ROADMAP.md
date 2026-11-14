@@ -1083,7 +1083,35 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
       `ScheduleChecks` re-pinned — 17 Tick batches (`RageFxSystem` alone after `RageSystem`, `SpinSystem` now
       its own batch behind it); **pixel gate** on the `rage` screenshot mid-ENRAGED: 1.19–1.32% of pixels vs a
       same-build floor of 1.09–1.23% (muzzle particles) — unchanged; all 17 scripts byte-identical.
-- [ ] 7.5 **Pickups are entities** (as planned before: `Pickup` + `PickupSystem`, delete `AmmoPickup`).
+- [x] 7.5 **Pickups are entities** (`Ecs/Pickups.cs`). One entity per pickup — its own static trigger sphere
+      (r 1.5, the prefab's) carrying `Pickup { Ammo, Amount }` and `LevelRef` — and a billboard sprite child with a
+      `Bob { BaseY, Phase }` that `BobSystem` steps on sim time. `PickupSystem` (`IConsumes<TriggerEnterEvent>`,
+      `[Exclusive]` for the HUD's ammo event) pays the player's `Inventory` once per pickup however many overlaps a
+      frame reports, refuses on a full pocket (the pickup stays), ignores anyone but the player, and destroys the
+      entity — the sprite goes through the hierarchy. The trigger no longer bobs (it never needed to: 0.15 m on a
+      1.5 m sphere), so `TriggerFollower` has nothing left to do. `Pickups.Spawn` builds **immediately**, not through
+      `PhysicsEntities` (which goes through the command buffer): the level loader stamps `LevelRef.Index` on the
+      entity it gets back, and a deferred one is not alive yet — the save would have lost every pickup's key in
+      silence. The save keys pickups by `LevelRef` like monsters and spawners, which left **`LevelEntityRef` with no
+      reader**: every saved level entity is an entity now, so it is deleted with the GameObject index the save kept
+      for it. **Deleted**: `AmmoPickup`, `Prefabs` (the file — pickups were all that was left), the `Bob`
+      MonoBehaviour, `LevelEntityRef`.
+      **AI seeding fixed on the way.** The first sweep moved every AI script; removing the pickups entirely moved
+      them *again, differently* — the AI was not reacting to pickups, it was reacting to *how many entities existed
+      before it*: `AiBrain.Rng` (and the spawner's scatter dice) were seeded by entity index (6.4), so every entity a
+      later layer adds at load reshuffled every enemy, and the buffered spawn seeded from a deferred entity whose
+      index is not final until playback. Seeds now come from **where the thing was placed** (`AiBrains.Seed`:
+      FNV-1a over the centimetre-rounded position and the kind). Proof: `peek` / `close` / `approach` are
+      byte-identical with and without the pickups in the level. **AI baseline re-recorded** (one last time for
+      this reason): `peek` 60 / 150 / 290 moved 0.00 / 7.26 / 18.03, never spotted; `close` the same walk, never
+      spotted; `approach` 100 wandering at 10.2 m (no longer the 6.9 m attack — that was a dice roll), 200 heard and
+      chased, 290 forgotten, 365 heard again. `rage` / `evade` grunts roll new dice too: `rage` still fills Fury to
+      0.54 and spends ENRAGED; `evade` now shows Calm **lost to hits** (0.13 → 0.07, the damage penalty's first
+      sighting in-game), a short DEPRESSED with armour regrowing 10 → 13, then Calm refilling to 0.54 under fire.
+      Gates: 199 engine + 284 gameplay assertions (13 new: the entity's shape, the bob within its band with the
+      trigger still, paid once on a doubled overlap, refused when full, the player only, the sprite going with it);
+      `ScheduleChecks` re-pinned — 18 Tick batches (`BobSystem` after `SpawnerSystem`); every combat script and
+      `pickup` / `water` byte-identical (**shells 64 → 80, pickups 4 → 3**, as the 7.0 baseline); repeatable.
 - [ ] 7.6 **Environment volumes** (water, checkpoint — delete the duplicate `SaveManager "Save1"` path — sky
       rotation; delete `TriggerBridge.cs`).
 - [ ] 7.7 **Surfaces come back** (optional for the layer, as before).

@@ -36,6 +36,7 @@ internal static class Program
         catch (Exception ex)
         {
             Console.Error.WriteLine("FAIL: " + ex.Message);
+            if (Environment.GetEnvironmentVariable("CHECKS_TRACE") == "1") Console.Error.WriteLine(ex); // where a non-assertion failure came from
             return 1;
         }
     }

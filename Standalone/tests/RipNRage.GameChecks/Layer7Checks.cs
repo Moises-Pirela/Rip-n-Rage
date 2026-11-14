@@ -2,6 +2,7 @@ using System;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
+using RipNRage.Engine.Ecs.Rendering;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Content;
 using RipNRage.Game.Ecs;
@@ -44,6 +45,7 @@ internal static class Layer7Checks
         CalmFromEvasion(True, Equal);
         StateEffects(True, Equal);
         Feedback(True, Equal);
+        PickupsAreEntities(True, Equal);
     }
 
     private const float Dt = 1f / 60f;
@@ -563,6 +565,62 @@ internal static class Layer7Checks
         Tick(w, 30);
         True(w.Get<RageFx>(player).EnragedWeight > 0.45f, "in a world, the player's grade follows their state");
         Close(w);
+    }
+
+
+    // ---------------------------------------------------------------- 7.5: pickups are entities
+
+    private static void PickupsAreEntities(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var w = NewWorld();
+        var pickup = Pickups.Spawn(w, AmmoType.SHELL, new Vector3(0f, 0f, 5f), default);
+        Tick(w, 2);
+        True(w.Has<Pickup>(pickup) && w.Has<ColliderShape>(pickup) && w.Get<ColliderShape>(pickup).Kind == ShapeKind.Sphere,
+             "a pickup is one entity: its own trigger sphere, carrying what it gives");
+        Equal(Pickups.ByType[(int)AmmoType.SHELL].Amount, w.Get<Pickup>(pickup).Amount, "the amount comes from the table");
+        Equal(Pickups.Lift, w.Get<LocalTransform>(pickup).Position.y, "it floats at the prefab's height above the floor");
+        var sprite = ChildOf(w, pickup);
+        True(!sprite.IsNull && w.Has<SpriteRender>(sprite) && w.Has<Bob>(sprite), "the sprite is a bobbing child");
+
+        float y0 = w.Get<LocalTransform>(sprite).Position.y;
+        Tick(w, 20);
+        True(MathF.Abs(w.Get<LocalTransform>(sprite).Position.y - y0) > 1e-4f, "the sprite moves");
+        True(MathF.Abs(w.Get<LocalTransform>(sprite).Position.y) <= Pickups.BobHeight + 1e-4f, "within its hover band");
+        Equal(Pickups.Lift, w.Get<LocalTransform>(pickup).Position.y, "the trigger does not bob (no follower needed)");
+
+        // the player walks in
+        var player = Player(w, Vector3.zero);
+        w.Add(player, new Inventory());
+        w.Post(new RipNRage.Engine.Ecs.Physics.TriggerEnterEvent { Trigger = pickup, Other = player });
+        w.Post(new RipNRage.Engine.Ecs.Physics.TriggerEnterEvent { Trigger = pickup, Other = player }); // the same frame twice
+        Tick(w, 3);
+        Equal(Pickups.ByType[(int)AmmoType.SHELL].Amount, w.Get<Inventory>(player).Ammo[(int)AmmoType.SHELL],
+              "walking in pays the ammo — once, however many overlaps the frame reports");
+        True(!w.IsAlive(pickup) && !w.IsAlive(sprite), "and the pickup goes, its sprite with it");
+
+        // a full pocket refuses it
+        var second = Pickups.Spawn(w, AmmoType.SHELL, new Vector3(0f, 0f, 9f), default);
+        ref var inv = ref w.Get<Inventory>(player);
+        inv.Ammo[(int)AmmoType.SHELL] = Weapons.AmmoLimits[(int)AmmoType.SHELL];
+        Tick(w, 2);
+        w.Post(new RipNRage.Engine.Ecs.Physics.TriggerEnterEvent { Trigger = second, Other = player });
+        Tick(w, 3);
+        True(w.IsAlive(second), "full on that ammo: the pickup stays for later");
+
+        // an enemy walking through is not a customer
+        var enemy = Enemy(w, new Vector3(0f, 0f, 9f));
+        w.Post(new RipNRage.Engine.Ecs.Physics.TriggerEnterEvent { Trigger = second, Other = enemy });
+        Tick(w, 3);
+        True(w.IsAlive(second), "only the player takes pickups");
+        Close(w);
+    }
+
+    private static Entity ChildOf(World w, Entity parent)
+    {
+        foreach (var chunk in w.Query().WithReadOnly<Parent>().Build())
+            for (int i = 0; i < chunk.Length; i++)
+                if (chunk.Includes(i) && chunk.Get<Parent>()[i].Value == parent) return chunk.Entities[i];
+        return Entity.Null;
     }
 
     /// <summary>Forces a state with a full meter: a state entered with an empty meter ends on the next tick.</summary>

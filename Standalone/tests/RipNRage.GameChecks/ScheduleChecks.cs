@@ -21,7 +21,7 @@ internal static class ScheduleChecks
         ["Tick"] = new[]
         {
             "AnimationSystem + LifetimeSystem", "RagdollSystem", "EcsInputSystem", "EnemyVisualSystem + HearingSystem",
-            "SightSystem", "AiBrainSystem", "SteeringSystem", "EnemyAttackSystem", "SpawnerSystem",
+            "SightSystem", "AiBrainSystem", "SteeringSystem", "EnemyAttackSystem", "SpawnerSystem", "BobSystem",
             "AltFireSystem", "BashFinisherSystem", "GrappleFinisherSystem", "PointBlankFinisherSystem",
             "WeaponFireSystem", "NearMissSystem + PlayerLookSystem + RageCalmSystem", "RageSystem", "RageFxSystem", "SpinSystem",
         },

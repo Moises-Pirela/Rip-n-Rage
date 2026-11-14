@@ -52,6 +52,25 @@ namespace RipNRage.Game.Ecs.AI
         /// <summary>Seconds a wander may take before the point is given up (a step off the dock the ledge guard refused).</summary>
         public const float WanderTimeout = 3f;
 
+        /// <summary>
+        /// A generator seed from <b>where something was placed</b> (and a salt, e.g. its kind). Not from the entity
+        /// index: that is decided by how many entities happen to exist before it, so every entity a later layer adds
+        /// at load (a pickup, a volume) would reshuffle every enemy's dice — and a buffered spawn's index is not even
+        /// final until playback. The same placement rolls the same dice, whatever else the level holds.
+        /// </summary>
+        public static uint Seed(Vector3 placed, int salt)
+        {
+            unchecked
+            {
+                uint h = 2166136261u; // FNV-1a over the centimetre-rounded position and the salt
+                h = (h ^ (uint)Mathf.RoundToInt(placed.x * 100f)) * 16777619u;
+                h = (h ^ (uint)Mathf.RoundToInt(placed.y * 100f)) * 16777619u;
+                h = (h ^ (uint)Mathf.RoundToInt(placed.z * 100f)) * 16777619u;
+                h = (h ^ (uint)salt) * 16777619u;
+                return h == 0u ? 1u : h; // xorshift must not start at zero
+            }
+        }
+
         /// <summary>The next roll in [0, 1) from the brain's own generator (xorshift32).</summary>
         public static float Roll(ref uint state)
         {

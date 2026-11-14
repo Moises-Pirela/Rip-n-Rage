@@ -100,7 +100,7 @@ namespace RipNRage.Game.Ecs.AI
                     int index = refs[i].Index;
                     if (index >= 0 && _standing.TryGetValue(index, out int standing) && standing >= s.MaxAlive) continue;
                     s.Timer = s.Interval;
-                    if (s.Rng == 0) s.Rng = (uint)(ents[i].Index + 1) * 2654435761u;
+                    if (s.Rng == 0) s.Rng = AiBrains.Seed(ltw[i].Position, s.Kind); // the placement, not the index
                     var scatter = new Vector3((AiBrains.Roll(ref s.Rng) * 2f - 1f) * s.Radius, 0f, (AiBrains.Roll(ref s.Rng) * 2f - 1f) * s.Radius);
                     Enemies.Spawn(ctx.Commands, s.Kind, ltw[i].Position + scatter, s.Yaw, index);
                     s.Spawned++;

@@ -425,13 +425,12 @@ namespace RipNRage.Game
         private int _frame;
         /// <summary>Where each enemy was first seen, so the probe can tell whether it has ever moved.</summary>
         private readonly System.Collections.Generic.Dictionary<Entity, Vector3> _enemyHome = new System.Collections.Generic.Dictionary<Entity, Vector3>();
-        /// <summary>Ammo pickups still standing (they are GameObjects until 7.5 makes them entities).</summary>
-        private static int CountPickups()
+        /// <summary>Ammo pickups still standing (entities since 7.5).</summary>
+        private readonly System.Collections.Generic.List<Entity> _pickups = new System.Collections.Generic.List<Entity>();
+        private int CountPickups()
         {
-            int n = 0;
-            var found = Scene.Current?.FindObjectsOfType<AmmoPickup>();
-            if (found != null) foreach (var go in found) if (go != null && !go.IsDestroyed) n++;
-            return n;
+            RipNRage.Game.Ecs.Pickups.Collect(Application.Current.World, _pickups);
+            return _pickups.Count;
         }
 
         private void LogRage()
@@ -517,7 +516,7 @@ namespace RipNRage.Game
                 {
                     // the dock's shell-ammo pickup sits at (-3, 0.91, -20), thirty metres down the planks: stand
                     // the player four metres short of it and walk in. The ammo must go up and the pickup must be
-                    // gone (today an AmmoPickup GameObject through the trigger bridge; 7.5 ports it to an entity)
+                    // gone (an entity since 7.5; the 7.0 baseline was the AmmoPickup GameObject: shells 64 -> 80, 4 -> 3)
                     if (_frame == 10) RipNRage.Game.Ecs.PlayerLink.Current?.Teleport(new Vector3(-3f, 1.8f, -16f), 180f);
                     input.overrideMove = _frame > 12 && _frame < 70 ? new Vector2(0f, 1f) : Vector2.zero;
                     if (_frame % 20 == 0)

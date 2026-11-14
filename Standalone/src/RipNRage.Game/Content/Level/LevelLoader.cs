@@ -80,10 +80,6 @@ namespace RipNRage.Game.Content.Level
                                 level.entityObjects.Add(go);
                                 string targetname = e.Get("targetname");
                                 if (!string.IsNullOrEmpty(targetname)) level.named[targetname] = go;
-                                if (!preview)
-                                {
-                                    var r = go.AddComponent<LevelEntityRef>(); r.index = index; r.classname = e.classname;
-                                }
                             }
                         }
                         catch (Exception ex) { Debug.LogError($"level: failed to spawn {e.classname}: {ex.Message}"); }
