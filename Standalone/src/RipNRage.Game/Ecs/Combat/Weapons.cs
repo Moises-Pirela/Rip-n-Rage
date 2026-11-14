@@ -103,6 +103,7 @@ namespace RipNRage.Game.Ecs.Combat
     /// hierarchy and its coroutines. Runs alone (physics queries; no [Reads]/[Writes]).
     /// </summary>
     [UpdateAfter(typeof(EcsInputSystem))]
+    [Exclusive] // impulses on physics bodies, the HUD and viewmodel GameObjects
     public sealed class WeaponFireSystem : SystemBase, ITick
     {
         /// <summary>Where rockets leave from (the prefab's ProjectileSpawn node; a bridge until projectiles are entities in 5.4).</summary>

@@ -48,13 +48,18 @@ then start at the first unchecked layer.
 
 Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.7 are in, next is **6.8 close-out**
 (full parity run, the AI probes re-recorded as the new baseline — remember: **compare scripts under
-`--fixed-dt 0.016667 --threads 1`** (the default seed is implied; wall-clock dt, the time-seeded `Random` and the
-parallel solver each make an unpinned run a coin flip — see 6.7b) — `--threads 1` interleaved bench, alloc/frame). The
+`--fixed-dt 0.016667 --threads 1 --validate-access`** (the default seed is implied; wall-clock dt, the time-seeded
+`Random` and the parallel solver each make an unpinned run a coin flip — see 6.7b; the access check is 6.7c) —
+`--threads 1` interleaved bench, alloc/frame). The
 standing direction — the behaviour trees replaced by a **data-oriented state tree**, not ported as-is — is done
 (6.2). Established rules: ECS + functional,
 OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
 goes in a component until a reader exists in the same commit; definitions as shared immutable tables, state in
-components, behaviour in systems; instrument a gate before porting what it watches.
+components, behaviour in systems; instrument a gate before porting what it watches; **a system declares what it touches** — its queries
+declare themselves, `[Reads]`/`[Writes]` cover ad-hoc `World.Get`/`Has`/`Commands.Add`, `[Exclusive]` marks state
+outside components (physics world, devices, GameObjects, VFX) — and the check suites and gate runs enforce it
+(`World.ValidateAccess`, `--validate-access`): an undeclared access fails the build's checks, so declarations cannot
+drift.
 
 What layer 6 inherits:
 
@@ -813,6 +818,27 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
       *batch*, so the day two systems share a batch they stop seeing each other's output within the frame —
       deriving Reads/Writes from queries, explicit groups instead of the name tiebreak, and a deliberate sync-point
       policy are design work for layer 9/10, and the golden check is what makes any step towards them visible.
+- [x] 6.7c **Declarations are derived and enforced** (`Systems.cs`). The scheduler used to trust hand-written
+      `[Reads]`/`[Writes]` and ignore what the `QueryBuilder` already knew; nearly every system wrote neither and
+      ran `Exclusive`. Now: a query built in `OnCreate` is part of its system's declaration (`World.DeclareQuery`);
+      `[Reads]`/`[Writes]` remain for ad-hoc access on entities a system looks up; a new **`[Exclusive]`** names the
+      systems that own state outside components (physics sync / step / write-back / triggers / joints / motors /
+      movers, the audio device, the input device, the particle library, weapon fire and finishers with their
+      impulses and GameObjects, the camera follower); a system that declares nothing at all is still exclusive. The
+      rule is **enforced**: with `World.ValidateAccess` on, every `World.Get`/`Has`, chunk column and buffered
+      `Commands.Add`/`Remove` inside a running system is checked against the thread's current system and an
+      undeclared one throws, naming both; both check suites run with it on, scripted runs take `--validate-access`
+      (gate rule), and `ECS_ACCESS_REPORT=1` turns the throw into a one-line-per-pair audit. The audit found 80
+      undeclared pairs across 22 systems — all declared or marked in this step; the three the suites could not reach
+      (`PlayerMoveSystem`'s footstep `Noise` and `BodyVelocity`, `PlayerViewSystem`'s rig pivot, `RagdollSystem`'s
+      `CameraLens`) came out of the scripted audit. Result: the Tick schedule goes from 18 serial batches to 15, with
+      three parallel pairs (`Animation + Lifetime`, `EnemyVisual + Hearing`, `PlayerLook + Spin`) — disjoint data,
+      neither feeding the other within a frame; `ScheduleChecks` re-pinned and now prints every phase before
+      asserting. Gates: 199 engine + 180 gameplay assertions; all 15 scripts byte-identical to 6.7b under the rule
+      and repeatable, with validation on throughout; frame time 4.4–5.6 ms vs 4.3–5.6 interleaved (inside the noise;
+      the `ecs=` slice reads 0.1–0.2 ms higher, plausibly the barrier cost of dispatching two tiny systems in
+      parallel — worth a look when a batch gains real work). Still true and still written down: unconstrained order is
+      alphabetical, playback is per batch — the golden check is what shows either changing.
 - [ ] 6.8 Close-out: full parity run, the AI probes re-recorded as the new baseline, `--threads 1` interleaved bench,
       alloc/frame (the burst coroutine's allocations should be structurally gone), close-out section.
 

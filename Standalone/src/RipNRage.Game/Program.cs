@@ -33,6 +33,7 @@ namespace RipNRage.Game
     ///   --shaders dir          folder with the .glsl shader files (default: "shaders" found in cwd/exe dir/parents)
     ///   --level file.map       play a level file (default: levels/dock.map if found; --no-level = built-in arena)
     ///   --export-dock out.map  write the built-in dock arena as a .map file and exit
+    ///   --validate-access      throw when a system touches a component it did not declare (gate runs)
     ///   --threads N            rigid solver worker threads (0 = one per core, 1 = single-threaded: repeatable runs)
     ///   --seed N               seed the shared Random (scripted runs default to 12345; 0 = time-seeded)
     ///   --load slot            load a saved game (slots live in <persistentDataPath>/saves; "quick", "checkpoint", ...)
@@ -98,6 +99,10 @@ namespace RipNRage.Game
                     case "--script": script = Next(); break;
                     case "--seed": seed = int.Parse(Next()); break;
                     case "--threads": threads = int.Parse(Next()); break;
+                    case "--validate-access":
+                        RipNRage.Engine.Ecs.World.ValidateAccess = true;
+                        RipNRage.Engine.Ecs.World.ReportAccessOnly = Environment.GetEnvironmentVariable("ECS_ACCESS_REPORT") == "1"; // audit: list, do not throw
+                        break;
                     case "--tunables": options.TunablesPath = Next(); break;
                     case "--shaders": options.ShaderDir = Next(); break;
                     case "--level": level = Next(); break;

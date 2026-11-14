@@ -59,6 +59,7 @@ namespace RipNRage.Engine.Ecs.Effects
     }
 
     /// <summary>Feeds the particle simulation (ParticleWorld) from the ECS: spawn events and entity-lifetime emitters.</summary>
+    [Exclusive] // the particle library
     public sealed class EffectSystem : SystemBase, IConsumes<SpawnEffectEvent>, ILateTick, IOnEntityDestroyed, IOnSimEnd
     {
         private readonly Dictionary<Entity, ParticleEffectInstance> _emitters = new Dictionary<Entity, ParticleEffectInstance>();

@@ -116,6 +116,7 @@ namespace RipNRage.Engine.Ecs
         public Span<T> Get<T>() where T : struct, IComponent
         {
             if (ComponentType<T>.Sparse) throw new InvalidOperationException($"{typeof(T).Name} is sparse: use world.Get<T>(entity)");
+            World.CheckAccess(ComponentType<T>.Id);
             return new Span<T>(Archetype.Data<T>(ComponentType<T>.Id), Start, End - Start);
         }
 
@@ -178,6 +179,7 @@ namespace RipNRage.Engine.Ecs
         {
             var q = new Query(_world) { TableAll = _all, TableNone = _none, TableAny = _any, SparseAll = _sAll, SparseNone = _sNone, Reads = _reads, Writes = _writes };
             _world.RegisterQuery(q);
+            _world.DeclareQuery(q);
             return q;
         }
     }

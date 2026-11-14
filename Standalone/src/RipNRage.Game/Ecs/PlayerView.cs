@@ -34,6 +34,7 @@ namespace RipNRage.Game.Ecs
     /// scheduler runs it alone.</para>
     /// </summary>
     [UpdateAfter(typeof(PlayerLookSystem)), UpdateBefore(typeof(CameraShakeSystem))]
+    [Reads(typeof(InputState)), Writes(typeof(LocalTransform), typeof(ViewBob))] // the rig pivot, by entity
     public sealed class PlayerViewSystem : SystemBase, ILateTick
     {
         private Query _q;
@@ -83,6 +84,7 @@ namespace RipNRage.Game.Ecs
     /// on the body, so the local pose is what has to be mirrored.
     /// </summary>
     [UpdateAfter(typeof(CameraShakeSystem))]
+    [Exclusive] // drives the camera GameObjects
     public sealed class PlayerViewFollowSystem : SystemBase, ILateTick
     {
         public void LateTick(SystemContext ctx)

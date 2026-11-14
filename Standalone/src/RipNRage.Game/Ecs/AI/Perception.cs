@@ -68,6 +68,7 @@ namespace RipNRage.Game.Ecs.AI
     /// alone (physics queries).
     /// </summary>
     [UpdateBefore(typeof(AiBrainSystem))]
+    [Reads(typeof(Dead))]
     public sealed class SightSystem : SystemBase, ITick
     {
         /// <summary>Eyes and chest heights above the body centre.</summary>
@@ -131,6 +132,7 @@ namespace RipNRage.Game.Ecs.AI
     /// shooting at someone). Runs alone (physics queries).
     /// </summary>
     [UpdateBefore(typeof(SightSystem))]
+    [Reads(typeof(Dead), typeof(Enemy))]
     public sealed class HearingSystem : SystemBase, ITick
     {
         private Query _noises, _ears;

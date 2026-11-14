@@ -147,13 +147,18 @@ namespace RipNRage.Engine.Ecs
 
         // ------------------------------------------------------------------ components
 
-        public bool Has<T>(Entity e) where T : struct, IComponent => IsAlive(e) && _records[e.Index].Signature.Has(ComponentType<T>.Id);
+        public bool Has<T>(Entity e) where T : struct, IComponent
+        {
+            CheckAccess(ComponentType<T>.Id);
+            return IsAlive(e) && _records[e.Index].Signature.Has(ComponentType<T>.Id);
+        }
 
         /// <summary>Reference to a component (archetype column or sparse slot). Valid until the next structural change.</summary>
         public ref T Get<T>(Entity e) where T : struct, IComponent
         {
             Check(e);
             int id = ComponentType<T>.Id;
+            CheckAccess(id);
             if (ComponentType<T>.Sparse) return ref Sparse<T>().Get(e.Index);
             ref var r = ref _records[e.Index];
             return ref r.Archetype.Data<T>(id)[r.Row];

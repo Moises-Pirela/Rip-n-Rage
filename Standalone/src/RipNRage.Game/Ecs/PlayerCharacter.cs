@@ -7,6 +7,8 @@ using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Content;
 using PhysicsApi = RipNRage.Engine.Physics;
 
+using RipNRage.Game.Ecs.AI;
+
 namespace RipNRage.Game.Ecs
 {
     /// <summary>Marks the player's character entity (one per world).</summary>
@@ -91,6 +93,7 @@ namespace RipNRage.Game.Ecs
 
     /// <summary>Integrates the look input into <see cref="PlayerLook"/> (per frame, before the transforms are built).</summary>
     [UpdateAfter(typeof(EcsInputSystem))]
+    [Reads(typeof(InputState))]
     public sealed class PlayerLookSystem : SystemBase, ITick
     {
         private Query _q;
@@ -130,6 +133,7 @@ namespace RipNRage.Game.Ecs
     /// by the same step.
     /// </summary>
     [UpdateAfter(typeof(PhysicsSyncSystem)), UpdateBefore(typeof(CharacterMotorSystem))]
+    [Reads(typeof(InputState), typeof(BodyVelocity)), Writes(typeof(Noise))] // footsteps: a Noise entity through the buffer
     public sealed class PlayerMoveSystem : SystemBase, IFixedTick
     {
         private Query _q;

@@ -36,6 +36,7 @@ namespace RipNRage.Game.Ecs.AI
     /// <see cref="HitEvent"/>; a death starts the clock via <see cref="DeathEvent"/>. Runs alone (writes child entities).
     /// Which sheets: the <see cref="Enemy"/>'s definition.
     /// </summary>
+    [Reads(typeof(Hidden)), Writes(typeof(SpriteRender), typeof(SpriteFx))] // the sprite child, by entity
     public sealed class EnemyVisualSystem : SystemBase, ITick, IConsumes<HitEvent>, IConsumes<DeathEvent>
     {
         private const float FlashDuration = 0.12f, DissolveDelay = 2.5f, DissolveDuration = 1.6f;

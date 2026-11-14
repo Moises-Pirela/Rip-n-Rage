@@ -29,6 +29,7 @@ namespace RipNRage.Game.Ecs
     /// nothing and runs alone.
     /// </summary>
     [UpdateBefore(typeof(TransformSystem))]
+    [Reads(typeof(InputState))]
     public sealed class WeaponSwaySystem : SystemBase, ILateTick
     {
         private Query _sways, _player;

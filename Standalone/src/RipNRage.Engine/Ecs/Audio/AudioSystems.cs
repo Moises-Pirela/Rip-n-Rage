@@ -60,6 +60,7 @@ namespace RipNRage.Engine.Ecs.Audio
     /// <see cref="MaxOneShots"/> are busy) and one voice per playing <see cref="AudioEmitter"/>.
     /// With no audio device (headless, --mute) it consumes the events and does nothing.
     /// </summary>
+    [Exclusive] // the audio device
     public sealed unsafe class AudioSystem : SystemBase, IConsumes<PlaySoundEvent>, ILateTick, IOnEntityDestroyed, IOnSimEnd
     {
         public const int MaxOneShots = 32;

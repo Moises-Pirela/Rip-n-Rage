@@ -33,6 +33,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// directly (skipped with a warning otherwise). Mesh colliders are exact triangles when static; on a
     /// <see cref="Body"/> they simulate as the mesh's bounding box (moving triangle soups have no volume to push).
     /// </summary>
+    [Exclusive] // owns state outside components: the physics world
     public sealed class PhysicsSyncSystem : SystemBase, IFixedTick, IOnEntityDestroyed, IOnSimEnd
     {
         internal sealed class Registration
@@ -292,6 +293,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
     /// <summary>Steps the simulation (FixedTick, after the sync).</summary>
     [UpdateAfter(typeof(PhysicsSyncSystem))]
+    [Exclusive] // owns state outside components: the physics world
     public sealed class PhysicsStepSystem : SystemBase, IFixedTick
     {
         public void FixedTick(SystemContext ctx) => PhysicsApi.FixedStep(ctx.DeltaTime);
@@ -303,6 +305,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// <see cref="ReportCollisions"/> bodies posted as <see cref="CollisionEvent"/>s.
     /// </summary>
     [UpdateAfter(typeof(PhysicsStepSystem))]
+    [Exclusive] // owns state outside components: the physics world
     public sealed class PhysicsWriteBackSystem : SystemBase, IFixedTick
     {
         public void FixedTick(SystemContext ctx)
@@ -373,6 +376,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// leaving the simulation) <see cref="TriggerExitEvent"/>. Static level geometry never counts as an overlap.
     /// </summary>
     [UpdateAfter(typeof(PhysicsWriteBackSystem))]
+    [Exclusive] // owns state outside components: the physics world
     public sealed class TriggerSystem : SystemBase, IFixedTick
     {
         private HashSet<(Entity trigger, Entity other)> _overlaps = new HashSet<(Entity, Entity)>();

@@ -2,6 +2,10 @@ using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Ecs.Combat;
 
+using RipNRage.Engine.Ecs.Physics;
+
+using RipNRage.Engine.Ecs.Rendering;
+
 namespace RipNRage.Game.Ecs.AI
 {
     /// <summary>
@@ -42,6 +46,9 @@ namespace RipNRage.Game.Ecs.AI
     // fixing a style-gate regression; the investigation after showed the schedule was identical either way and the
     // regression was the time-seeded Random — see the schedule check and --seed. The ordering stays for its intent.)
     [UpdateAfter(typeof(EnemyAttackSystem))]
+    [Writes(typeof(LocalTransform), typeof(ColliderShape), typeof(CollisionFilter), typeof(Body), typeof(BodyVelocity), typeof(CharacterMotor),
+            typeof(Health), typeof(Armor), typeof(Hitbox), typeof(Parent), typeof(SpriteRender), typeof(SpriteFx), typeof(EnemyVisual), typeof(Enemy),
+            typeof(Heading), typeof(Perception), typeof(AiBrain), typeof(AiIntent), typeof(EnemyWeapon), typeof(LevelRef))] // everything Enemies.Spawn builds
     public sealed class SpawnerSystem : SystemBase, ITick
     {
         private Query _spawners, _players, _monsters;

@@ -69,6 +69,7 @@ namespace RipNRage.Engine.Ecs.Input
     }
 
     /// <summary>Samples the "gameplay" action map into the <see cref="InputState"/> singleton (first in Tick).</summary>
+    [Exclusive] // polls the input device
     public sealed class EcsInputSystem : SystemBase, ITick
     {
         /// <summary>After (re)enabling, fire must be released once: the click that closed a menu must not fire the gun.</summary>

@@ -192,6 +192,7 @@ namespace RipNRage.Engine.Ecs.Destruction
     /// last second and removes it at the end of its lifetime. Broken joints are reported as detachments.
     /// </summary>
     [UpdateAfter(typeof(PhysicsSyncSystem)), UpdateBefore(typeof(PhysicsStepSystem))]
+    [Reads(typeof(RipNRage.Engine.Ecs.Rendering.CameraLens))] // the viewer, for the pieces' facing
     public sealed class RagdollSystem : SystemBase, IFixedTick, ITick, IConsumes<JointBrokenEvent>
     {
         private Query _impulses, _pieces;

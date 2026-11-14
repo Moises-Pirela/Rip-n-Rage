@@ -45,6 +45,7 @@ namespace RipNRage.Game.Ecs.AI
     /// steering reads as a brake), death cancels. Runs alone (launches projectiles, plays sound and effects).
     /// </summary>
     [UpdateAfter(typeof(SteeringSystem))]
+    [Exclusive] // the particle library (GameVfx)
     public sealed class EnemyAttackSystem : SystemBase, ITick, IConsumes<HitEvent>
     {
         private static readonly Color AlertColor = new Color(1f, 0.95f, 0.3f, 1f), AimColor = new Color(1f, 0.55f, 0.15f, 1f);

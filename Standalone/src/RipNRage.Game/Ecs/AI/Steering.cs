@@ -68,6 +68,7 @@ namespace RipNRage.Game.Ecs.AI
     /// enemy's body is braked. Runs alone (the ledge guard is a physics query).
     /// </summary>
     [UpdateAfter(typeof(AiBrainSystem))]
+    [Reads(typeof(Dead), typeof(EnemyWeapon))]
     public sealed class SteeringSystem : SystemBase, ITick
     {
         private Query _q;

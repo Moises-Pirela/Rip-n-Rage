@@ -40,11 +40,24 @@ namespace RipNRage.Engine.Ecs
     public sealed class UpdateAfterAttribute : Attribute { public readonly Type System; public UpdateAfterAttribute(Type t) => System = t; }
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
     public sealed class UpdateBeforeAttribute : Attribute { public readonly Type System; public UpdateBeforeAttribute(Type t) => System = t; }
-    /// <summary>Components this system reads. Systems whose reads/writes do not conflict share a parallel batch.</summary>
+    /// <summary>
+    /// Components this system reads <b>outside its queries</b> (ad-hoc <c>World.Get</c>/<c>Has</c> on entities it
+    /// looks up). What its queries read and write is derived when they are built in <see cref="SystemBase.OnCreate"/>;
+    /// the two together are the system's declaration, which decides which systems may share a parallel batch — and
+    /// which <see cref="World.ValidateAccess"/> enforces: an undeclared component access throws, naming the system.
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class)]
     public sealed class ReadsAttribute : Attribute { public readonly Type[] Types; public ReadsAttribute(params Type[] t) => Types = t; }
+    /// <summary>Components this system writes outside its queries (ad-hoc <c>World.Get</c>, buffered <c>Commands.Add</c>).</summary>
     [AttributeUsage(AttributeTargets.Class)]
     public sealed class WritesAttribute : Attribute { public readonly Type[] Types; public WritesAttribute(params Type[] t) => Types = t; }
+    /// <summary>
+    /// The system touches state that is not a component — writes the physics world, drives GameObjects, the audio
+    /// device, static caches — so it runs alone, conflicting with every other system. A system that declares nothing
+    /// at all (no queries, no attributes) is treated the same way.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class)]
+    public sealed class ExclusiveAttribute : Attribute { }
     /// <summary>Lifecycle events are delivered only for entities that have all of these components.</summary>
     [AttributeUsage(AttributeTargets.Class)]
     public sealed class EntityFilterAttribute : Attribute { public readonly Type[] Types; public EntityFilterAttribute(params Type[] t) => Types = t; }
@@ -76,13 +89,15 @@ namespace RipNRage.Engine.Ecs
         public ISystem System;
         public Type Type;
         public Signature Reads, Writes;
-        public bool Exclusive;            // declared nothing: conflicts with everything
+        public bool Exclusive;            // [Exclusive], or declared nothing: conflicts with everything
+        public bool Declares(int componentId) => Exclusive || Reads.Has(componentId) || Writes.Has(componentId);
         public Signature Filter;          // lifecycle-event filter
         public SystemContext Context;
         public string ProfileName;
     }
 
-    /// <summary>One phase (Tick, FixedTick...): systems in dependency order, packed into conflict-free batches.</summary>
+    /// <summary>One phase (Tick, FixedTick...): systems in dependency order, packed into conflict-free batches
+    /// (conflict = one writes what the other reads or writes, or either is exclusive).</summary>
     internal sealed class Phase
     {
         public readonly string Name;
@@ -140,7 +155,6 @@ namespace RipNRage.Engine.Ecs
             var t = system.GetType();
             var e = new SystemEntry { System = system, Type = t, ProfileName = "ecs: " + t.Name };
             var r = t.GetCustomAttribute<ReadsAttribute>(); var w = t.GetCustomAttribute<WritesAttribute>();
-            if (r == null && w == null) e.Exclusive = true;
             if (r != null) foreach (var c in r.Types) e.Reads.Set(ComponentRegistry.Get(c).Id);
             if (w != null) foreach (var c in w.Types) e.Writes.Set(ComponentRegistry.Get(c).Id);
             var f = t.GetCustomAttribute<EntityFilterAttribute>();
@@ -148,9 +162,49 @@ namespace RipNRage.Engine.Ecs
             e.Context = new SystemContext { World = this, Commands = new CommandBuffer(this), Workers = new CommandBuffer[Math.Max(1, Jobs.ThreadCount + 1)] };
             for (int i = 1; i < e.Context.Workers.Length; i++) e.Context.Workers[i] = new CommandBuffer(this);
             _systems.Add(e);
-            if (system is SystemBase sb) { sb.World = this; sb.OnCreate(); }
+            // the queries built in OnCreate declare what they read and write (RegisterQuery folds them into the entry)
+            if (system is SystemBase sb)
+            {
+                sb.World = this;
+                _creating = e;
+                try { sb.OnCreate(); } finally { _creating = null; }
+            }
+            e.Exclusive = t.GetCustomAttribute<ExclusiveAttribute>() != null || (e.Reads.IsEmpty && e.Writes.IsEmpty);
             _scheduleDirty = true;
             return system;
+        }
+
+        private SystemEntry _creating;
+        /// <summary>Called by <see cref="QueryBuilder.Build"/>: a query built while a system is being created is part of that system's declaration.</summary>
+        internal void DeclareQuery(Query q)
+        {
+            if (_creating == null) return;
+            _creating.Reads |= q.Reads;
+            _creating.Writes |= q.Writes;
+        }
+
+        // ---------------------------------------------------------------- access validation
+
+        /// <summary>
+        /// When on, every component access from inside a running system — <c>World.Get</c>/<c>Has</c>, a chunk
+        /// column, a buffered <c>Commands.Add</c>/<c>Remove</c> — is checked against that system's declaration and an
+        /// undeclared one throws. The check suites and gate runs turn it on; the game leaves it off (a branch per Get).
+        /// </summary>
+        public static bool ValidateAccess;
+        /// <summary>Audit mode: report each undeclared (system, component) pair once on stderr instead of throwing.</summary>
+        public static bool ReportAccessOnly;
+        private static readonly HashSet<string> _reported = new HashSet<string>();
+        [ThreadStatic] private static SystemEntry _current;
+
+        internal static void CheckAccess(int componentId)
+        {
+            if (!ValidateAccess) return;
+            var cur = _current;
+            if (cur == null || cur.Declares(componentId)) return;
+            string what = $"{cur.Type.Name} touches {ComponentRegistry.Get(componentId).Type.Name} without declaring it";
+            if (ReportAccessOnly) { lock (_reported) if (_reported.Add(what)) Console.Error.WriteLine("[access] " + what); return; }
+            throw new InvalidOperationException(what + ": build a query over it in OnCreate, add [Reads]/[Writes] for ad-hoc access, " +
+                "or mark the system [Exclusive] if it works on state outside components");
         }
 
         /// <summary>Diagnostics: the batches of a phase ("Tick", "FixedTick"...); systems in one batch run in parallel.</summary>
@@ -286,8 +340,10 @@ namespace RipNRage.Engine.Ecs
             {
                 for (int i = start; i < end; i++)
                 {
+                    _current = Batch[i];
                     try { Call(Batch[i].System, Batch[i].Context); }
                     catch (Exception e) { Interlocked.CompareExchange(ref Error, e, null); }
+                    finally { _current = null; }
                 }
             }
         }
@@ -306,7 +362,8 @@ namespace RipNRage.Engine.Ecs
                         foreach (var s in batch)
                         {
                             Profiler.Begin(s.ProfileName);
-                            try { call(s.System, s.Context); } finally { Profiler.End(); }
+                            _current = s;
+                            try { call(s.System, s.Context); } finally { _current = null; Profiler.End(); }
                         }
                     else
                     {

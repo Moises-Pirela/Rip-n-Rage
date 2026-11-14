@@ -23,6 +23,8 @@ internal static class Program
     {
         try
         {
+            RipNRage.Engine.Ecs.World.ValidateAccess = true; // every component access inside a system must be declared
+            RipNRage.Engine.Ecs.World.ReportAccessOnly = Environment.GetEnvironmentVariable("ECS_ACCESS_REPORT") == "1"; // audit: list, do not throw
             // Bounded input handling: clipping never leaves [minimum, maximum].
             Equal(0f, Mathf.Clamp(-100f, 0f, 1f), "Clamp below lower bound");
             Equal(1f, Mathf.Clamp(100f, 0f, 1f), "Clamp above upper bound");

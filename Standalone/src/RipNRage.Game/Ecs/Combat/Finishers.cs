@@ -84,6 +84,7 @@ namespace RipNRage.Game.Ecs.Combat
 
     /// <summary>Plays <see cref="GrappleFinisher"/>: grab (fist bool + view snapped to the target's chest), the gun
     /// out at 0.25 s asking for two shots, release a beat after the second lands. Runs alone (writes the player).</summary>
+    [Exclusive] // drives the player GameObject half and physics impulses
     public sealed class GrappleFinisherSystem : SystemBase, ITick
     {
         private Query _q;
@@ -145,6 +146,7 @@ namespace RipNRage.Game.Ecs.Combat
 
     /// <summary>Plays <see cref="PointBlankFinisher"/>: the swing telegraphs for 0.5 s, then one shell through the
     /// normal fire path, done when the shot's refire window closes.</summary>
+    [Exclusive] // drives the player GameObject half and physics impulses
     public sealed class PointBlankFinisherSystem : SystemBase, ITick
     {
         private Query _q;
@@ -179,6 +181,7 @@ namespace RipNRage.Game.Ecs.Combat
     }
 
     /// <summary>Plays <see cref="BashFinisher"/>: the strike sound and the swing animation, 0.2 s, done.</summary>
+    [Exclusive] // drives the player GameObject half and physics impulses
     public sealed class BashFinisherSystem : SystemBase, ITick
     {
         private Query _q;

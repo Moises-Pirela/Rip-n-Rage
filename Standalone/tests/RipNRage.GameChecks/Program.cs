@@ -24,9 +24,11 @@ internal static class Program
     {
         try
         {
-            ScheduleChecks.Run(True);
+            RipNRage.Engine.Ecs.World.ValidateAccess = true; // every component access inside a system must be declared
+            RipNRage.Engine.Ecs.World.ReportAccessOnly = Environment.GetEnvironmentVariable("ECS_ACCESS_REPORT") == "1"; // audit: list, do not throw
             Layer5Checks.Run(True, Equal);
             Layer6Checks.Run(True, Equal);
+            ScheduleChecks.Run(True); // last: the layout is judged after every system has declared itself
             Console.WriteLine($"PASS: {_assertions} gameplay assertions");
             return 0;
         }

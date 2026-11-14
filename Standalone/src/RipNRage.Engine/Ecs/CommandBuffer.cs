@@ -46,13 +46,15 @@ namespace RipNRage.Engine.Ecs
 
         public void Add<T>(Entity e, in T value) where T : struct, IComponent
         {
+            World.CheckAccess(ComponentType<T>.Id);
             if (!_payloads.TryGetValue(typeof(T), out var p)) _payloads[typeof(T)] = p = new Adds<T>();
             var adds = (Adds<T>)p;
             adds.Values.Add(value);
             _cmds.Add(new Cmd { Op = Op.Add, Entity = e, Payload = adds, Slot = adds.Values.Count - 1 });
         }
 
-        public void Remove<T>(Entity e) where T : struct, IComponent =>
+        public void Remove<T>(Entity e) where T : struct, IComponent { World.CheckAccess(ComponentType<T>.Id); RemoveCore<T>(e); }
+        private void RemoveCore<T>(Entity e) where T : struct, IComponent =>
             _cmds.Add(new Cmd { Op = Op.Remove, Entity = e, Payload = Removes<T>.Instance });
 
         /// <summary>Applies every command (only at a sync point). Lifecycle events are queued on the world.</summary>

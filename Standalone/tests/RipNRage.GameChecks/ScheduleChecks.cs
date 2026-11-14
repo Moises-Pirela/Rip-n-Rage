@@ -13,16 +13,17 @@ using RipNRage.Engine.Ecs;
 /// </summary>
 internal static class ScheduleChecks
 {
-    // one line per batch; systems in one batch run in parallel (today every batch is one system: nothing declares
-    // Reads/Writes except the few marked, and those never meet an independent neighbour)
+    // one line per batch; "A + B" run in parallel: their declarations (query-derived + [Reads]/[Writes]) are disjoint
+    // and neither feeds the other within the frame. An [Exclusive] system (physics, audio, input, VFX, GameObject
+    // drivers) is always a batch of its own.
     private static readonly Dictionary<string, string[]> Expected = new Dictionary<string, string[]>
     {
         ["Tick"] = new[]
         {
-            "AnimationSystem", "RagdollSystem", "LifetimeSystem", "EcsInputSystem", "EnemyVisualSystem",
-            "HearingSystem", "SightSystem", "AiBrainSystem", "SteeringSystem", "EnemyAttackSystem", "SpawnerSystem",
+            "AnimationSystem + LifetimeSystem", "RagdollSystem", "EcsInputSystem", "EnemyVisualSystem + HearingSystem",
+            "SightSystem", "AiBrainSystem", "SteeringSystem", "EnemyAttackSystem", "SpawnerSystem",
             "AltFireSystem", "BashFinisherSystem", "GrappleFinisherSystem", "PointBlankFinisherSystem",
-            "WeaponFireSystem", "PlayerLookSystem", "SpinSystem",
+            "WeaponFireSystem", "PlayerLookSystem + SpinSystem",
         },
         ["FixedTick"] = new[]
         {
@@ -41,19 +42,19 @@ internal static class ScheduleChecks
     {
         using var w = new World(0);
         w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(RipNRage.Game.Ecs.PlayerLink).Assembly);
-        foreach (var phase in Expected.Keys)
+        var same = new Dictionary<string, bool>();
+        foreach (var phase in Expected.Keys) // every phase is printed before the first assertion fails, so one run shows the whole new layout
         {
             var actual = w.DescribeBatches(phase).Select(b => string.Join(" + ", b.Select(t => t.Name))).ToArray();
             var expected = Expected[phase];
-            bool same = actual.SequenceEqual(expected);
-            if (!same)
-            {
-                Console.Error.WriteLine($"--- {phase} schedule changed. expected:");
-                foreach (var l in expected) Console.Error.WriteLine("    " + l);
-                Console.Error.WriteLine("--- actual:");
-                foreach (var l in actual) Console.Error.WriteLine("    " + l);
-            }
-            True(same, $"the {phase} schedule is the pinned one ({expected.Length} batches) — a system was added, renamed or re-attributed: if intended, update ScheduleChecks.Expected and note it in the roadmap");
+            same[phase] = actual.SequenceEqual(expected);
+            if (same[phase]) continue;
+            Console.Error.WriteLine($"--- {phase} schedule changed. expected:");
+            foreach (var l in expected) Console.Error.WriteLine("    " + l);
+            Console.Error.WriteLine($"--- {phase} actual:");
+            foreach (var l in actual) Console.Error.WriteLine("    " + l);
         }
+        foreach (var phase in Expected.Keys)
+            True(same[phase], $"the {phase} schedule is the pinned one ({Expected[phase].Length} batches) — a system was added, renamed or re-attributed: if intended, update ScheduleChecks.Expected and note it in the roadmap");
     }
 }

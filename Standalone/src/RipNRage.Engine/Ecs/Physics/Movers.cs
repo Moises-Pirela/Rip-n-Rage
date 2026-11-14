@@ -76,6 +76,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
     /// <summary>Steps every <see cref="CharacterMotor"/>: ground probe, dash, ride spring, motor (fixed step, before the solver).</summary>
     [UpdateAfter(typeof(PhysicsSyncSystem)), UpdateBefore(typeof(PhysicsStepSystem))]
+    [Exclusive] // owns state outside components: the physics world
     public sealed class CharacterMotorSystem : SystemBase, IFixedTick
     {
         private Query _q;
@@ -299,6 +300,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
     /// <summary>Moves every <see cref="KinematicMover"/> (fixed step, before the rigid solver so bodies see where it went).</summary>
     [UpdateAfter(typeof(PhysicsSyncSystem)), UpdateBefore(typeof(PhysicsStepSystem))]
+    [Exclusive] // owns state outside components: the physics world
     public sealed class KinematicMoverSystem : SystemBase, IFixedTick
     {
         private Query _q;

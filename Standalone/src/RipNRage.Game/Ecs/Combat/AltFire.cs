@@ -39,6 +39,7 @@ namespace RipNRage.Game.Ecs.Combat
     /// own system takes it from there. Runs alone (the 1 m probe is a physics query).
     /// </summary>
     [UpdateAfter(typeof(EcsInputSystem))]
+    [Exclusive] // the viewmodel GameObjects
     public sealed class AltFireSystem : SystemBase, ITick
     {
         /// <summary>Reach of a jab and of the finisher's target probe.</summary>

@@ -110,6 +110,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// <see cref="JointBrokenEvent"/>). Runs between the physics sync and the step.
     /// </summary>
     [UpdateAfter(typeof(PhysicsSyncSystem)), UpdateBefore(typeof(PhysicsStepSystem))]
+    [Exclusive] // owns state outside components: the physics world
     public sealed class JointSystem : SystemBase, IFixedTick, IOnEntityDestroyed, IOnSimEnd
     {
         private sealed class Rec { public Constraint C; public SolverBody A, B; public Entity Connected; }
