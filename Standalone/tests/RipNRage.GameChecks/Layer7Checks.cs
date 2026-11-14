@@ -1,6 +1,7 @@
 using System;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
+using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Ecs;
 using RipNRage.Game.Ecs.AI;
@@ -12,17 +13,29 @@ using RipNRage.Game.Ecs.Combat;
 /// meter (partial buys a shorter state), no gain and no exit while a state runs, the active meter draining to zero
 /// as the state's clock, and chaining straight into the other state once it does. Then the same rules over a
 /// world: the system pays Fury for the player's hits, kills, headshots and kills up close, and a dead player
-/// keeps nothing.
+/// keeps nothing. 7.2: the Calm meter — evasion gated on threat (a hunting enemy or an attack aimed at the
+/// player), the dodge edges, a bullet that passed close by, shaking a pursuer off, and the penalty for being hit.
 /// </summary>
 internal static class Layer7Checks
 {
     public static void Run(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        // the attack entities the dodge watches are stepped by EnemyAttackSystem, which reads the definition table
+        var saved = Enemies.All;
+        Enemies.All = new[] { new EnemyData { name = "TestGrunt", burstInterval = 0.1f, fireRate = 1f } };
+        try { Checks(True, Equal); }
+        finally { Enemies.All = saved; }
+    }
+
+    private static void Checks(Action<bool, string> True, Action<float, float, string> Equal)
     {
         Meters(True, Equal);
         Activation(True, Equal);
         InAState(True, Equal);
         Effects(Equal);
         FuryFromCombat(True, Equal);
+        NearMissBand(Equal);
+        CalmFromEvasion(True, Equal);
     }
 
     private const float Dt = 1f / 60f;
@@ -186,6 +199,164 @@ internal static class Layer7Checks
         Close(w);
     }
 
+
+    // ---------------------------------------------------------------- 7.2: the Calm meter
+
+    private static void NearMissBand(Action<float, float, string> Equal)
+    {
+        // the distance a bullet passed at is measured against the segment it flew, not where it ended up
+        Equal(1f, Calms.DistanceToSegment(new Vector3(0f, 1f, 0f), new Vector3(-5f, 0f, 0f), new Vector3(5f, 0f, 0f)),
+              "a bullet passing overhead: the distance is to the segment");
+        Equal(5f, Calms.DistanceToSegment(Vector3.zero, new Vector3(5f, 0f, 0f), new Vector3(9f, 0f, 0f)),
+              "a segment that never comes near: the distance is to its closest end");
+    }
+
+    private static void CalmFromEvasion(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        // ---- no threat: evasion pays nothing ----
+        var w = NewWorld();
+        var player = Mover(w, Vector3.zero);
+        SetMotor(w, player, wallRunning: true);
+        Tick(w, 4);
+        Equal(0f, w.Get<Rage>(player).Calm, "wall running with nothing hunting the player pays nothing");
+        True(!w.Get<Rage>(player).Threat, "no enemy, no threat");
+        Close(w);
+
+        // ---- under threat: wall running pays per second ----
+        w = NewWorld();
+        player = Mover(w, Vector3.zero);
+        var hunter = Hunter(w, new Vector3(0f, 0f, 6f), player);
+        SetMotor(w, player, wallRunning: true);
+        Tick(w, 2);
+        True(w.Get<Rage>(player).Threat, "an enemy that has the player and sees them is a threat");
+        float before = w.Get<Rage>(player).Calm;
+        Tick(w, 60);
+        float perSecond = w.Get<Rage>(player).Calm - before;
+        True(MathF.Abs(perSecond - Calms.WallRunPerSecond) < Calms.WallRunPerSecond * 0.2f,
+             $"a second of wall running under threat pays about {Calms.WallRunPerSecond} (paid {perSecond})");
+
+        // ---- sliding / airborne pays the smaller rate ----
+        SetMotor(w, player, wallRunning: false, sliding: true);
+        before = w.Get<Rage>(player).Calm;
+        Tick(w, 60);
+        float slide = w.Get<Rage>(player).Calm - before;
+        True(MathF.Abs(slide - Calms.EvadePerSecond) < Calms.EvadePerSecond * 0.25f,
+             $"a second of sliding under threat pays about {Calms.EvadePerSecond} (paid {slide})");
+        Close(w);
+
+        // ---- the dodge needs a live attack, not just a threat ----
+        w = NewWorld();
+        player = Mover(w, Vector3.zero);
+        hunter = Hunter(w, new Vector3(0f, 0f, 6f), player);
+        before = w.Get<Rage>(player).Calm;
+        SetMotor(w, player, dashing: true); // the edge: not dashing -> dashing
+        Tick(w, 2);
+        // dashing under threat still earns the per-second evade rate; what it must not earn is the dodge
+        True(w.Get<Rage>(player).Calm - before < Calms.Dodge * 0.5f, "a dash with nobody shooting is not a dodge");
+        SetMotor(w, player, dashing: false);
+        Tick(w, 2);
+
+        Attack(w, hunter, windup: 0.3f);
+        before = w.Get<Rage>(player).Calm;
+        SetMotor(w, player, dashing: true);
+        Tick(w, 2);
+        True(w.Get<Rage>(player).Calm - before >= Calms.Dodge, "a dash while an attack is winding up is a dodge");
+        Close(w);
+
+        // ---- a near miss pays once; a bullet far away pays nothing ----
+        w = NewWorld();
+        player = Mover(w, Vector3.zero);
+        SetMotor(w, player); // grounded and still: only the bullets should pay
+        hunter = Hunter(w, new Vector3(0f, 0f, 20f), player);
+        var bullet = Bullet(w, hunter, new Vector3(1f, 0.9f, 5f));
+        Tick(w, 4); // the transform updates in LateTick and the gain lands a tick later
+        Equal(0f, w.Get<Rage>(player).Calm, "a bullet's first tick has no segment to measure");
+        Move(w, bullet, new Vector3(1f, 0.9f, -5f)); // flies past, one metre to the side
+        Tick(w, 4); // the transform updates in LateTick and the gain lands a tick later
+        Equal(Calms.NearMiss, w.Get<Rage>(player).Calm, "a bullet that passed inside the band pays the near miss");
+        Move(w, bullet, new Vector3(1f, 0.9f, -15f));
+        Tick(w, 4); // the transform updates in LateTick and the gain lands a tick later
+        Equal(Calms.NearMiss, w.Get<Rage>(player).Calm, "the same bullet pays only once");
+
+        var far = Bullet(w, hunter, new Vector3(8f, 0.9f, 5f));
+        Tick(w, 4); // the transform updates in LateTick and the gain lands a tick later
+        Move(w, far, new Vector3(8f, 0.9f, -5f));
+        Tick(w, 4); // the transform updates in LateTick and the gain lands a tick later
+        Equal(Calms.NearMiss, w.Get<Rage>(player).Calm, "a bullet that passed eight metres away is not a near miss");
+        Close(w);
+
+        // ---- shaking a pursuer off, and the penalty for being hit ----
+        w = NewWorld();
+        player = Mover(w, Vector3.zero);
+        hunter = Hunter(w, new Vector3(0f, 0f, 6f), player);
+        SetMotor(w, player, speed: 8f);
+        Tick(w, 2);
+        before = w.Get<Rage>(player).Calm;
+        w.Get<Perception>(hunter).Seen = false; // the enemy lost sight of a moving player
+        Tick(w, 2);
+        Equal(before + Calms.BreakLineOfSight, w.Get<Rage>(player).Calm, "losing a pursuer while moving pays");
+
+        w.Get<Rage>(player).Calm = 0.5f;
+        SetMotor(w, player); // standing still: nothing else moves the meter
+        Tick(w, 2);
+        before = w.Get<Rage>(player).Calm;
+        w.Post(new HitEvent { Target = player, Point = Vector3.zero });
+        Tick(w, 2);
+        Equal(before - Calms.DamagePenalty, w.Get<Rage>(player).Calm, "taking a blow costs Calm");
+
+        // and it cannot go below empty
+        w.Get<Rage>(player).Calm = 0.05f;
+        w.Post(new HitEvent { Target = player, Point = Vector3.zero });
+        Tick(w, 2);
+        Equal(0f, w.Get<Rage>(player).Calm, "the penalty cannot take the meter below empty");
+        Close(w);
+    }
+
+    /// <summary>A player with the movement components the evasion gains read.</summary>
+    private static Entity Mover(World w, Vector3 at)
+    {
+        var e = Player(w, at);
+        w.Add(e, new PlayerMotor());
+        w.Add(e, new CharacterMotor());
+        return e;
+    }
+
+    private static void SetMotor(World w, Entity player, bool wallRunning = false, bool sliding = false,
+                                 bool dashing = false, float speed = 0f)
+    {
+        ref var p = ref w.Get<PlayerMotor>(player);
+        p.IsWallRunning = wallRunning; p.IsSliding = sliding; p.IsDashing = dashing; p.CurrentSpeed = speed;
+        w.Get<CharacterMotor>(player).IsGrounded = true; // only the flags above should pay
+    }
+
+    /// <summary>An enemy that has the player and can see them (with the gun its attack entity is stepped against).</summary>
+    private static Entity Hunter(World w, Vector3 at, Entity player)
+    {
+        var e = Enemy(w, at);
+        w.Add(e, new Perception { Target = player, Seen = true, LastKnown = Vector3.zero });
+        w.Add(e, new EnemyWeapon());
+        return e;
+    }
+
+    /// <summary>An attack entity parented to its enemy, as EnemyAttackSystem spawns it.</summary>
+    private static Entity Attack(World w, Entity enemy, float windup)
+    {
+        var e = w.CreateEntity();
+        w.Add(e, new EnemyAttack { WindupLeft = windup, ShotsLeft = 3 });
+        w.Add(e, new Parent { Value = enemy });
+        return e;
+    }
+
+    private static Entity Bullet(World w, Entity shooter, Vector3 at)
+    {
+        var e = w.CreateEntity();
+        w.Add(e, LocalTransform.At(at));
+        w.Add(e, new Projectile { Kind = 1, Instigator = shooter });
+        return e;
+    }
+
+    private static void Move(World w, Entity e, Vector3 to) => w.Get<LocalTransform>(e).Position = to;
+
     private static World NewWorld()
     {
         var w = new World(0);
@@ -218,3 +389,4 @@ internal static class Layer7Checks
 
     private static void Close(World w) { w.DestroyAllEntities(); w.Update(Dt); w.Dispose(); }
 }
+

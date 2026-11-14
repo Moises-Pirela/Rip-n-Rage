@@ -995,10 +995,24 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
       scripts byte-identical to 6.8 except the three that changed on purpose (`rage` / `style` are the new probes)
       and **`saveload`, whose second walk is now the same length as the first** — the old rage drained to DEPRESSED
       mid-walk and halved the player's speed; nothing does that any more. Repeatable across runs.
-- [ ] 7.2 **Calm sources.** `Threat` (perception + attack entities), near misses in the projectile step, dodge
-      edges off `PlayerMotor`, wall-run / slide / air under threat, line-of-sight breaks, damage taken.
-      Assertions per source, including "no threat → nothing"; a new `evade` script (wall run / dash past an
-      attacking grunt) that fills Calm.
+- [x] 7.2 **Calm sources** (`Ecs/RageCalm.cs`). `Rage.Threat` — a living enemy that has the player and can see
+      them, or an `EnemyAttack` in wind-up / burst aimed at them — gates every Calm gain, so laps around an empty
+      level pay nothing. `RageCalmSystem` pays per second for wall running (0.06) and for sliding / dashing /
+      airborne (0.03); the **dodge** (0.12) is an edge — a dash, a slide start or a wall jump *while an attack is
+      live* — and **breaking line of sight** (0.05) is the edge of a pursuer losing a moving player.
+      `NearMissSystem` pays 0.08 for an enemy bullet whose flight **segment** this tick passed the player inside
+      0.6–1.5 m: measured on the segment so a fast round cannot skip past between frames, banded so a bullet that
+      would have hit pays the damage penalty instead, and marked on the projectile so it pays once. Taking a blow
+      costs 0.10 of Calm (Fury is not penalised). Every gain is posted as a `RageGainEvent`, so it goes through
+      `Rages.Step` and is dropped while a state runs. The wall jump became countable (`PlayerMotor.WallJumps`) and
+      the projectile carries its last position and a paid mark. Gates: 199 engine + 231 gameplay assertions (16 new:
+      each source, the near-miss band and segment measure, "no threat → nothing", a dash that is not a dodge, one
+      payment per bullet, the penalty flooring at empty); `ScheduleChecks` re-pinned — 16 Tick batches now
+      (`NearMissSystem + PlayerLookSystem + RageCalmSystem + SpinSystem`, then `RageSystem` alone: it writes the
+      component the Calm system also writes). New **`evade`** script: a grunt engages, the player runs in and dashes
+      across its fire — `threat` from frame 60, Calm 0.23 by frame 210, then banked when the enemy loses them.
+      Every other script byte-identical to 7.1 apart from the probe lines (the Fury numbers are unchanged);
+      repeatable.
 - [ ] 7.3 **Effects.** `DamageEvent.Instigator`, the two damage multipliers, lifesteal, armour regen, speed and
       dash modifiers, the perception modifier; assertions per effect; the combat gates (`killedAtFrame 97`, `rocket`,
       `jab`, `glockalt`) must stay identical outside a state.

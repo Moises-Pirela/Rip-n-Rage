@@ -27,6 +27,9 @@ namespace RipNRage.Game.Ecs
         /// <summary>Evasion, 0..1 (filled in 7.2).</summary>
         public float Calm;
         public RageState State;
+        /// <summary>Something is hunting the player right now: what gates every Calm gain (written by
+        /// <see cref="RageCalmSystem"/>, read by its gains and the scripts' probe).</summary>
+        public bool Threat;
     }
 
     /// <summary>What <see cref="Rages.Step"/> is told about this tick: meter gains and the activation presses.</summary>
@@ -166,6 +169,7 @@ namespace RipNRage.Game.Ecs
             var w = ctx.World;
             foreach (ref readonly var e in events)
             {
+                if (w.IsAlive(e.Target) && w.Has<PlayerTag>(e.Target)) { _pendingCalm -= Calms.DamagePenalty; continue; } // taking a blow is the opposite of evading
                 if (!w.IsAlive(e.Target) || !w.Has<Enemy>(e.Target)) continue;
                 float fury = Rages.HitFury + (e.Headshot ? Rages.HeadshotHitFury : 0f);
                 if (e.Killed)

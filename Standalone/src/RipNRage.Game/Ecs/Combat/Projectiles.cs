@@ -17,6 +17,10 @@ namespace RipNRage.Game.Ecs.Combat
     {
         public int Kind;
         public Entity Instigator;
+        /// <summary>Where it was last tick: the segment the near-miss check measures against (0 = not flown yet).</summary>
+        public Vector3 LastPosition;
+        /// <summary>A bullet pays the player's near miss once.</summary>
+        public bool NearMissPaid;
     }
 
     /// <summary>One projectile definition — shared immutable data, like the weapons.</summary>

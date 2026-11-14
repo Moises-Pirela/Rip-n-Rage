@@ -427,7 +427,7 @@ namespace RipNRage.Game
         private void LogRage()
         {
             RipNRage.Game.Ecs.Rages.TryGet(out var rage);
-            Debug.LogWarning($"[test] frame {_frame} fury {rage.Fury:0.00} calm {rage.Calm:0.00} {rage.State} speed x{RipNRage.Game.Ecs.Rages.SpeedMultiplier(in rage):0.00}");
+            Debug.LogWarning($"[test] frame {_frame} fury {rage.Fury:0.00} calm {rage.Calm:0.00} {rage.State}{(rage.Threat ? " threat" : "")} speed x{RipNRage.Game.Ecs.Rages.SpeedMultiplier(in rage):0.00}");
         }
 
         private readonly System.Collections.Generic.List<Entity> _enemies = new System.Collections.Generic.List<Entity>();
@@ -577,6 +577,16 @@ namespace RipNRage.Game
                     // walk up to the rifleman standing near the spawn
                     input.overrideMove = _frame < 55 ? new Vector2(-0.25f, 1f) : Vector2.zero;
                     if (_frame == 60 || _frame == 150 || _frame == 290) AiProbe($"close {_frame}");
+                    break;
+                case "evade":
+                    // a grunt spawns in front and engages; the player runs at it, then dashes across its line of
+                    // fire: being shot at and moving fills CALM (nothing here fills FURY — the player never shoots)
+                    if (_frame == 2) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
+                        Camera.main.transform.position + Camera.main.transform.forward * 14f - Vector3.up * 1.3f, 180f);
+                    input.overrideMove = _frame < 120 ? new Vector2(0f, 1f) : new Vector2(1f, 0.2f);
+                    if (_frame > 140 && _frame % 40 == 0) RipNRage.Engine.Ecs.Input.InputOverride.Dash = true;
+                    else if (_frame % 40 == 1) RipNRage.Engine.Ecs.Input.InputOverride.Dash = null;
+                    if (_frame % 30 == 0) LogRage();
                     break;
                 case "approach":
                     // run towards the first rifleman, then stand and shoot

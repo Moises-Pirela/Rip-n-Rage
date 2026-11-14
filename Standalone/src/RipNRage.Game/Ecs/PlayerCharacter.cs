@@ -68,6 +68,8 @@ namespace RipNRage.Game.Ecs
         public bool IsSliding, IsWallRunning, IsDashing;
         /// <summary>-1 = wall on the left, +1 = wall on the right, 0 = none.</summary>
         public int WallSide;
+        /// <summary>Wall jumps so far: an edge a reader can count (the rage evasion gains) without a one-frame flag.</summary>
+        public int WallJumps;
         /// <summary>Camera drop the slide asks for (metres, negative); HeadBob follows it.</summary>
         public float CameraHeightOffset;
         /// <summary>Speed the motor is being asked for this step (the overlay's MOVER line).</summary>
@@ -356,6 +358,7 @@ namespace RipNRage.Game.Ecs
                 p.FinalMove.x = launch.x; p.FinalMove.z = launch.z;
                 m.PendingImpulse += new Vector3(launch.x - horizontal.x, 0f, launch.z - horizontal.z);
                 m.PendingJump = p.WallJumpUp;
+                p.WallJumps++;
                 p.WallJumpCooldown = 0.35f;
                 Sfx.Play(GameAssets.Jump);
                 EndWallRun(ref p, ref look);
