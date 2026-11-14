@@ -38,28 +38,27 @@ then start at the first unchecked layer.
 - [x] **Layer 5 — Weapons, combat, damage**: health / armour / hitboxes on entities, weapons and projectiles as data +
   systems, alt-fire finishers as entities; the Weapon / Projectile class hierarchies, `Inventory`, `CameraRecoil` and
   the no-VFX fallback branch deleted (close-out below)
-- [ ] Layer 6 — Enemies, AI, spawning
+- [x] **Layer 6 — Enemies, AI, spawning**: the enemy is only an entity — body, look, a data-oriented state tree,
+  perception (sight query + noise entities), steering, attacks as entities, spawners as components; the behaviour
+  trees, `AIAgent`, `AIState`, `MonsterSpawner` and the enemy GameObjects deleted; system declarations derived from
+  queries and enforced (close-out below)
 - [ ] Layer 7 — Pickups, rage, style, environment
 - [ ] Layer 8 — UI, HUD, save / load, game flow
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
 
-### Pick-up point for the next session (written 2026-11-12, after 5.6; layer 6 is in progress — see its step list)
+### Pick-up point for the next session (written 2026-11-14, after 6.8; layer 7 is next — see its step list)
 
-Layers 0–5 are done. Layer 6 (enemies, AI, spawning) is under way: 6.0–6.7 are in, next is **6.8 close-out**
-(full parity run, the AI probes re-recorded as the new baseline — remember: **compare scripts under
-`--fixed-dt 0.016667 --threads 1 --validate-access`** (the default seed is implied; wall-clock dt, the time-seeded
-`Random` and the parallel solver each make an unpinned run a coin flip — see 6.7b; the access check is 6.7c) —
-`--threads 1` interleaved bench, alloc/frame). The
-standing direction — the behaviour trees replaced by a **data-oriented state tree**, not ported as-is — is done
-(6.2). Established rules: ECS + functional,
-OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative fields — nothing
-goes in a component until a reader exists in the same commit; definitions as shared immutable tables, state in
-components, behaviour in systems; instrument a gate before porting what it watches; **a system declares what it touches** — its queries
-declare themselves, `[Reads]`/`[Writes]` cover ad-hoc `World.Get`/`Has`/`Commands.Add`, `[Exclusive]` marks state
-outside components (physics world, devices, GameObjects, VFX) — and the check suites and gate runs enforce it
-(`World.ValidateAccess`, `--validate-access`): an undeclared access fails the build's checks, so declarations cannot
-drift.
+Layers 0–6 are done. Start **layer 7 at 7.0** (instrument the gates). **Compare scripts under
+`--fixed-dt 0.016667 --threads 1 --validate-access`** (default seed implied; see 6.7b / 6.7c). Established rules:
+ECS + functional, OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative
+fields — nothing goes in a component until a reader exists in the same commit; definitions as shared immutable
+tables, state in components, behaviour in systems; instrument a gate before porting what it watches; **a system
+declares what it touches** — queries declare themselves, `[Reads]`/`[Writes]` cover ad-hoc access, `[Exclusive]`
+marks state outside components — and the check suites and gate runs enforce it; `ScheduleChecks` pins the batch
+layout, so a new system is re-pinned in its own commit, in the open.
+
+The notes below were written for layer 6 and still hold where they are not about enemies.
 
 What layer 6 inherits:
 
@@ -839,20 +838,103 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
       the `ecs=` slice reads 0.1–0.2 ms higher, plausibly the barrier cost of dispatching two tiny systems in
       parallel — worth a look when a batch gains real work). Still true and still written down: unconstrained order is
       alphabetical, playback is per batch — the golden check is what shows either changing.
-- [ ] 6.8 Close-out: full parity run, the AI probes re-recorded as the new baseline, `--threads 1` interleaved bench,
-      alloc/frame (the burst coroutine's allocations should be structurally gone), close-out section.
+- [x] 6.8 Close-out (below).
 
-### Layer 7 — Pickups, rage, style, environment (~0.4k lines)
+#### 6.8 — Layer close-out (done)
 
-- `Pickup` + trigger events; `Rage` (sparse flags for enraged / depressed), `StyleMeter`, environment props.
-- **Already live since 4.2** (asked for alongside layer 4): trigger callbacks fire again.
-  `RipNRage.Game/Ecs/TriggerBridge.cs` reinstates the deleted `ITriggerListener` contract on top of the ECS
-  `TriggerEnterEvent` / `TriggerExitEvent`: `EcsObjects` is the entity ↔ GameObject directory the bridges share,
-  `TriggerVolume` owns a volume entity for a GameObject (`TriggerFollower` keeps a moving one on top of it — the
-  bobbing ammo pickups), and `GameTriggerBridge` notifies **both** sides of an overlap, as Unity's `OnTriggerEnter`
-  did. Wired: `trigger_checkpoint` (saves), the water volumes, and the ammo pickups — which never had an ECS trigger
-  at all and now get their prefab's r = 1.5 sphere. `AgentVisionSensor` (layer 6) and the projectiles (layer 5) still
-  wait for their layers. These listeners become `IConsumes<T>` systems and the bridge goes away in layer 9.
+- Full sweep green under the gate rule (`--fixed-dt 0.016667 --threads 1 --validate-access`, `--frames 400`):
+  199 engine + 180 gameplay assertions; all 16 scripts (walk, fire, weapons, rage, saveload, jab, m1887, glockfire,
+  rocket, glockalt, killenemy, style, die, peek, close, approach) exit 0 and are **byte-identical across two runs**
+  (perf lines excluded). Combat gates at their values: `killedAtFrame 97`, `rocket` hp 80 armour 0 y 3.82, `jab`
+  1→2→0, `glockalt` step 0 / finisher none / ammo 120.
+- **AI baseline, re-recorded** (replaces the 6.0 statue and the 6.4 numbers; `close 290 armour 40` is gone — that hit
+  was a dice roll of the pre-6.6 spawn teleport, see 6.6):
+  `peek` 60 / 150 / 290: moved 0.00 / 7.04 / 13.42, never spotted, `Idle`, `Idle`, `Wander`, hp 100 throughout;
+  `close` 60 / 150 / 290: same path at d 15.9 / 13.1 / 10.2, never spotted, hp 100;
+  `approach` 100: d 6.9, `spotted True seen True Attack ATTACKING`; 200: d 21.0 `Chase` remembered, unseen;
+  290: d 12.4 forgotten, `Wander`; 365: d 12.9 `spotted True seen False Chase` — heard, not seen. Player hp 100
+  throughout: no AI probe currently lands an enemy hit; enemy damage is covered by the 6.5 assertions, not a script.
+- Bench (`--threads 1 --no-render --scenario all`, 3 interleaved runs vs 5.6 `033b7ee`, median physics ms/step):
+  crates 11.92 / 11.97, ragdolls 16.78 / 16.82, projectiles 0.20 / 0.20, ground 0.95 / 0.93 — flat. Layer 6 touched
+  engine hot paths (`TransformSystem` seeding, narrow-phase merge order, the access check in `World.Get`); none shows.
+- Allocations: walk 44–52, fire ≈ 48, combat / AI scripts 45–48 KB/frame, **the same at 5.6 and 6.6 built side by
+  side on the same flags** — so layer 6 added nothing. The ~8 KB/frame quoted in 5.6 does **not** reproduce at
+  `033b7ee` today (46–52 there too, fixed or wall-clock dt): the earlier figure was measured some other way. Treat
+  ~48 KB/frame as the real baseline; finding where it goes is a standalone task, not a layer gate. The burst
+  coroutine's allocations are structurally gone (no coroutine left in `Ecs/AI`) but sit below this noise.
+- Layer totals (`033b7ee..7fba77e`, `src` + `tests`): +2,270 / −1,332 across 65 files, 15 files deleted —
+  BehaviorTree2 and its node classes / blackboard, `AIAgent`, `AIState`, `AgentVisionSensor`, `AnimationStateController`,
+  `EnemyHitFlash`, `EnemyDestruction`, `DamageInfo`, `MonsterSpawner`, `Prefabs.Rifleman`, `Scripts/EnemyData/` — and
+  the enemy is: one definition table (`EnemyData`), 9 files / 1,268 lines in `Ecs/AI` (including the pure
+  `AiBrains.Step` / `Steering.Step`), and 109 new gameplay assertions. Engine gains: `SpriteFx`, seeded
+  `LocalToWorld`, order-independent narrow phase, `--seed` / `--threads`, derived + enforced system declarations.
+
+### Layer 7 — Pickups, rage, style, environment (~0.65k lines)
+
+**What is there today** (surveyed at 6.8):
+
+| Piece | Where | Shape |
+|---|---|---|
+| Rage | `PlayerState` (~90 of its 225 lines), `RageStateData`, `GameAssets.*Rage` | `_rage` 0..1, +0.1 per player hit (`CombatBridge`), +0.05 per enemy in a rocket blast (`Projectiles`); decays 0.2/s only while `CombatState == VIOLENT`; at 1 → `ENRAGED` for 5 s, at 0 → `DEPRESSED` for 10 s, then back to 0.5 / `NORMAL`; `VIOLENT` lasts 30 s after the last shot (`Weapons`, `AltFire` call `SetViolentCombatState`). Three coroutines |
+| Rage effects | `RagePostprocess` (112), `PlayerCharacter` speed, `HudController` portrait | polls `PlayerState.RageState`, lerps a volume weight in two coroutines, pushes a post-fx override. `RageStateData` has five fields; **only `movementSpeedModifier` is read** |
+| Style | `StyleMeter` (213, half of it Clay HUD) | `RegisterHit` from `CombatBridge` (weapon name, headshot, killed) → points, combo multiplier by weapon variety, rank F..S, decay; S rank: regen, ×1.25 speed (`PlayerCharacter`), ammo trickle. `Time.time` clocks |
+| Pickups | `AmmoPickup` (39), `EntityRegistry` `item_ammo_*` | MonoBehaviour + `ITriggerListener` via `TriggerBridge`; `TriggerFollower` keeps the trigger on the bobbing GO |
+| Water | `EnterWaterCollision` (25), `water_plane` | trigger listener toggling `RenderSettings.drawSky` on the camera; `GameSession` resets it |
+| Checkpoint | `CheckpointAutoSave` (in `EntityRegistry`) **and** `PlayerState.OnTriggerEnter` | **two saves on one overlap**: the registry one writes `GameSaveSystem` "checkpoint"; the `PlayerState` one is a legacy leftover writing `SaveManager` "Save1" on the `Checkpoint` tag |
+| Surfaces | `SurfaceMaterial`, `BrushSurface`, `SurfaceResolver` | **written, never read**: `SurfaceResolver.Resolve` returns `Surfaces.Default` (stubbed when physics went ECS in layer 2), so every impact VFX / decal is the default one |
+| Sky | `SkyboxRotator` (11) | `RenderSettings.skyboxRotation = t * 1.2` |
+| Bridge | `TriggerBridge.cs` (144) | `EcsObjects`, `TriggerVolume`, `TriggerFollower`, `GameTriggerBridge`; its last listeners are the pickup, the water, the two checkpoints |
+
+**Shape after the layer**: the player entity carries `Rage { Value, State, StateLeft, ViolentLeft }` and
+`Style { Points, Multiplier, Rank, LastKillWeapon, SinceKill, SinceScore, AmmoTimer }`; definitions are flat tables
+(`Rages.All` per state, `StyleDef`); behaviour is `IConsumes<HitEvent>` / `IConsumes<WeaponFiredEvent>`-style
+systems plus pure step functions (`Rages.Step`, `Styles.Score`, `Styles.Decay`) unit-tested like `AiBrains.Step`.
+HUD / post-fx stay UI-boundary readers of those components (layer 8 owns the HUD itself). Pickups, water and the
+checkpoint are entities with trigger components consumed by systems; **`TriggerBridge` and `ITriggerListener` are
+deleted at the end of this layer**, not in layer 9. Clocks are sim-time accumulators, never `Time.time`.
+
+**Steps** (one commit + review stop each; gates under the 6.7b/6.7c rule):
+
+- [ ] 7.0 **Instrument the gates** — nothing here prints today. `rage` logs nothing at all; add `[test]` lines for
+      rage value / state / speed modifier at frames 20, 40, 340 (5 s after enrage) and add the decay case (no
+      shots: value stays 0.5). `style` already prints rank / points / multiplier: keep. New script **`pickup`**: walk
+      into an `item_ammo_*` on dock (or spawn one), log ammo before / after and that the pickup is gone; a full-ammo
+      refusal case. New **`water`** probe on the existing `water` script: `drawSky` on entry / exit. Record the
+      baseline; note the double checkpoint save in `saveload` output if it shows.
+- [ ] 7.1 **Rage is a component.** `Rage` on the player entity, `RageSystem` (clocks, decay, thresholds — the three
+      coroutines become `StateLeft` / `ViolentLeft`), inputs as events: hits via `IConsumes<HitEvent>` (`HitEvent` has no
+      attacker: like `CombatBridge` today, "target `Has<Enemy>`" means the player hit it — enemy fire never targets
+      enemies; +0.1 per hit; the blast's +0.05 is a separate call in `Projectiles` and moves with it, or the event
+      gains a `Splash` flag only if that has a reader), shots via the existing fire path writing `ViolentLeft`. `RageStateData` → `Rages.All` with **only
+      `MovementSpeed`** (the other four fields have no reader: delete them). Readers move: `PlayerCharacter` speed,
+      HUD portrait, save/load (`GameSaveSystem` reads/writes the component). `PlayerState` loses its rage half.
+- [ ] 7.2 **Rage effects as a system.** `RagePostprocess` → `RageFxSystem` easing per-state weights in a component
+      (the lerp-to-0.5 with 30·dt kept) and posting the post-fx override; the Clay fallback stays a UI drawer reading
+      the weights. Pixel gate: `rage` screenshot at the enraged frame vs 7.1.
+- [ ] 7.3 **Style is a component.** `Style` + `StyleSystem` consuming `HitEvent` (weapon slot instead of the name
+      string — note it is the slot *equipped when the event is consumed*, as today, not the one that fired), decay and the S-rank perks (regen through `Health`, ammo through `Weapons.AddAmmo` on the player's
+      `Inventory`, speed read by `PlayerCharacter`). `StyleMeter` keeps only the Clay drawer, reading the
+      component. Gate: `style` byte-identical (C 426 x2 at 150; D 264 at 390).
+- [ ] 7.4 **Pickups are entities.** `Pickup { Ammo, Amount }` + trigger + sprite on one entity built by
+      `item_ammo_*.spawnEntity` (the 6.6 `LevelRef` pattern, so saves keep knowing which were taken); `PickupSystem`
+      `IConsumes<TriggerEnterEvent>` with the player → `AddAmmo` → destroy, refused when full. The bob becomes a
+      component on the sprite child (no `TriggerFollower`). Delete `AmmoPickup`.
+- [ ] 7.5 **Environment volumes.** Water: a `WaterVolume` tag + a system flipping sky on the camera's
+      enter / exit (the `MainCamera` tag test becomes `Has<ActiveCamera>`). Checkpoint: `Checkpoint` component +
+      system calling `GameSaveSystem.Save("checkpoint")` once; **delete the duplicate `PlayerState` / `SaveManager
+      "Save1"` path** (confirm `SaveManager` has no other caller first). `SkyboxRotator` → a tiny system or a
+      field on the sky singleton. Then **delete `TriggerBridge.cs`** (`EcsObjects` only if nothing else uses it).
+- [ ] 7.6 **Surfaces come back.** `Surface { Name }` (interned id) on collider entities: props and floor planes
+      from their texture, brushes as a per-face table resolved by the hit normal (`BrushSurface.Resolve` as a pure
+      function over a shared table); `SurfaceResolver` reads the hit entity. Restores per-surface impact VFX lost
+      since layer 2 — a visible change, judged on `fire` screenshots (particles: compare by eye, not pixels) plus
+      assertions. Optional for the layer: if it grows, split it out rather than stall 7.7.
+- [ ] 7.7 Close-out: full sweep, re-recorded baselines, interleaved bench, alloc, close-out section, `PlayerState`
+      line count (it should be health / armour / death only, for layer 8).
+
+**Decided at review (2026-11-14)**: rage is **retuned in this layer** — today it fights the style meter (design
+being brainstormed; 7.1 ports it with the new rules as a pure `Rages.Step`, 7.0 records the old behaviour first so
+the change is visible). The style meter's HUD **waits for layer 8**; 7.3 ports only its state and rules.
 
 ### Layer 8 — UI, HUD, save / load, game flow (~1.4k lines)
 
