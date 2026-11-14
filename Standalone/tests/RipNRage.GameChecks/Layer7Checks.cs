@@ -48,6 +48,7 @@ internal static class Layer7Checks
         Feedback(True, Equal);
         PickupsAreEntities(True, Equal);
         Environment(True, Equal);
+        ImpactSurfacesResolve(True, Equal);
     }
 
     private const float Dt = 1f / 60f;
@@ -691,6 +692,37 @@ internal static class Layer7Checks
             }
             finally { RenderSettings.skyboxRotation = rot; }
         }
+    }
+
+
+    // ---------------------------------------------------------------- 7.7: what a bullet kicks up
+
+    private static void ImpactSurfacesResolve(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        True(Surfaces.Id(Surfaces.Default) == 0 && Surfaces.Id("") == 0, "default is id 0, and so is no name");
+        True(Surfaces.Id("Wood") == Surfaces.Id(Surfaces.Wood), "surface names are interned case-blind");
+        True(Surfaces.Name(Surfaces.Id(Surfaces.Metal)) == Surfaces.Metal, "an id turns back into its name");
+        True(Surfaces.Name(Surfaces.Id("GLASS")) == Surfaces.Glass, "in the canonical spelling, whichever spelling came first");
+
+        var w = NewWorld();
+        var planks = w.CreateEntity(); Surfaces.Tag(w, planks, Surfaces.Wood);
+        var bare = w.CreateEntity();
+        var living = Enemy(w, Vector3.zero); w.Add(living, new Health { Current = 10f, Max = 10f });
+        // a brush whose top is sand and whose sides are concrete
+        var brush = w.CreateEntity();
+        Surfaces.TagFaces(w, brush, new BrushFaces(
+            new[] { Vector3.up, Vector3.right, Vector3.left },
+            new[] { Surfaces.Id(Surfaces.Sand), Surfaces.Id(Surfaces.Concrete), Surfaces.Id(Surfaces.Concrete) },
+            Surfaces.Id(Surfaces.Concrete)));
+        Tick(w, 1); // the tags go through the command buffer, like the colliders they ride on
+
+        True(Surfaces.Of(w, planks, Vector3.up) == Surfaces.Wood, "a tagged collider is its surface");
+        True(Surfaces.Of(w, bare, Vector3.up) == Surfaces.Default, "an untagged one is the default");
+        True(Surfaces.Of(w, living, Vector3.up) == Surfaces.Flesh, "anything with health bleeds");
+        True(Surfaces.Of(w, brush, new Vector3(0.1f, 0.99f, 0f)) == Surfaces.Sand, "a brush hit from above is its top face");
+        True(Surfaces.Of(w, brush, Vector3.right) == Surfaces.Concrete, "and from the side, its side");
+        True(Surfaces.Of(w, Entity.Null, Vector3.up) == Surfaces.Default, "a hit on nothing is the default");
+        Close(w);
     }
 
     /// <summary>Forces a state with a full meter: a state entered with an empty meter ends on the next tick.</summary>

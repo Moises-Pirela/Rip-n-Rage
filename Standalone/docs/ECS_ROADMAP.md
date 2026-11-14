@@ -1134,7 +1134,25 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
       Every other script byte-identical (`saveload` unchanged: the checkpoint was never on its path). **`look`
       screenshot: 2.8% of pixels changed against a 0.000% same-build floor — all of it the water and sand now drawn
       at the size the map asks for** (inspected: blue water on both sides of the dock where there was grey).
-- [ ] 7.7 **Surfaces come back** (optional for the layer, as before).
+- [x] 7.7 **Surfaces come back** (`Ecs/ImpactSurfaces.cs`). `ImpactSurface { Id, Faces }` rides on the **collider
+      entity** — an interned surface id, or for a level brush a handle to its `BrushFaces` table (normals → surface
+      ids, an `AssetRegistry` like every other shared table). `Surfaces.Of(world, entity, normal)` is the one
+      resolver: a living thing bleeds, a tagged collider is its surface (a brush: the face the hit normal points out
+      of), anything else the default. The tags go through the **same command buffer** as the colliders they ride on
+      (`PhysicsEntities` builds through it, so the entity is not alive until playback). Tagged: level brushes (per
+      face, from the texture table), floor planes, lamp posts, props, the test area's dock / sand / posts / crates,
+      and the VFX editor's preview props. The hitscan *and* the projectile impacts resolve through it (enemy bullets
+      and rockets on walls were hard-coded to default). **Found by the checks**: surface names were interned
+      case-blind but stored in whichever spelling came first, so a level texture saying `"Wood"` before anything said
+      `"wood"` would have made every wood resolve to a name the case-sensitive VFX bindings do not have — names are
+      keys and are stored lower-case now. **Deleted**: the `SurfaceMaterial` and `BrushSurface` MonoBehaviours (the
+      physics `SurfaceMaterial` component — friction — is untouched; this one is about what a bullet kicks up).
+      Gates: 305 gameplay assertions (10 new: interning and the canonical spelling, tagged / untagged / flesh /
+      nothing, a brush's top vs its side); schedule unchanged (no system); new **`surface`** probe — from the player
+      start: planks **wood**, a lamp post **metal**, through the water to the floor **sand** (until now every one of
+      them was `default`: the resolver had been stubbed since physics went ECS in layer 2). All 19 scripts
+      byte-identical. The `fire` screenshot barely moves (0.006%): that script fires level down the pier and its
+      impacts land far off and small, so it is not the evidence here — the probe and the checks are.
 - [ ] 7.8 Close-out.
 
 **Rage pre-tuning (2026-11-14; superseded by 7.1 — the shared pause clock, the climb-out, the speed cap and the

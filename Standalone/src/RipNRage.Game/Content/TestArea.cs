@@ -76,7 +76,6 @@ namespace RipNRage.Game.Content
             dock.transform.SetParent(env.transform, false);
             dock.transform.localPosition = DockOffset;
             dock.layer = Layers.Walkable;
-            dock.AddComponent<SurfaceMaterial>().surface = Surfaces.Wood; // the box colliders below inherit it (GetComponentInParent)
             var mr = dock.AddComponent<MeshRenderer>();
             mr.mesh = Mesh.LoadObj(objPath, MapScale, 1f / 64f, mirrorX: true);
             mr.texture = ProceduralTextures.WoodPlanks(); // Dock.blend's materials were not exported; generated planks instead
@@ -105,13 +104,13 @@ namespace RipNRage.Game.Content
             sand.transform.SetParent(water.transform, false);
             sand.transform.localPosition = new Vector3(0f, -15f, 0f);
             sand.layer = Layers.Walkable;
-            sand.AddComponent<SurfaceMaterial>().surface = Surfaces.Sand;
             var sandMr = sand.AddComponent<MeshRenderer>();
             sandMr.mesh = Mesh.CreatePlane(Vector3.zero, 1732.1f, 1000f, 1f / 4f);
             sandMr.texture = ProceduralTextures.Sand();
             sandMr.color = Color.white;
             sandMr.castsShadow = false;
-            EcsPhysics.PhysicsEntities.StaticBox(World, sand.transform.position + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(1732.1f, 2f, 1000f), Layers.Walkable);
+            var sandFloor = EcsPhysics.PhysicsEntities.StaticBox(World, sand.transform.position + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(1732.1f, 2f, 1000f), Layers.Walkable);
+            Surfaces.Tag(World, sandFloor, Surfaces.Sand);
         }
 
         /// <summary>
@@ -121,7 +120,8 @@ namespace RipNRage.Game.Content
         private static void BuildDockCollision(Mesh mesh)
         {
             var tris = EcsPhysics.PhysicsAssets.AddMesh("dock", mesh.vertices, mesh.triangles);
-            EcsPhysics.PhysicsEntities.StaticMesh(World, tris, LocalTransform.At(DockOffset), Layers.Walkable);
+            var dock = EcsPhysics.PhysicsEntities.StaticMesh(World, tris, LocalTransform.At(DockOffset), Layers.Walkable);
+            Surfaces.Tag(World, dock, Surfaces.Wood); // the planks
         }
 
         private static World World => Application.Current.World;
@@ -190,12 +190,11 @@ namespace RipNRage.Game.Content
             post.transform.SetParent(parent.transform, false);
             post.transform.position = basePos;
             post.layer = Layers.Walkable;
-            post.AddComponent<SurfaceMaterial>().surface = Surfaces.Metal;
             var pole = post.AddComponent<MeshRenderer>();
             pole.mesh = Mesh.CreateBox(new Vector3(0, 2.6f, 0), new Vector3(0.28f, 5.2f, 0.28f), 1f);
             pole.texture = GameAssets.Texture13;
             pole.color = new Color(0.35f, 0.35f, 0.38f, 1f);
-            EcsPhysics.PhysicsEntities.StaticBox(World, basePos + new Vector3(0, 2.6f, 0), Quaternion.identity, new Vector3(0.4f, 5.2f, 0.4f), Layers.Walkable);
+            Surfaces.Tag(World, EcsPhysics.PhysicsEntities.StaticBox(World, basePos + new Vector3(0, 2.6f, 0), Quaternion.identity, new Vector3(0.4f, 5.2f, 0.4f), Layers.Walkable), Surfaces.Metal);
 
             var head = new GameObject("LampHead");
             head.transform.SetParent(post.transform, false);
@@ -220,12 +219,11 @@ namespace RipNRage.Game.Content
             go.transform.SetParent(parent.transform, false);
             go.transform.position = basePos + new Vector3(0, size * 0.5f, 0);
             go.layer = Layers.Walkable;
-            go.AddComponent<SurfaceMaterial>().surface = Surfaces.Wood;
             var mr = go.AddComponent<MeshRenderer>();
             mr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * size, 1f / size);
             mr.texture = tex;
             mr.material = Materials.Crate;
-            EcsPhysics.PhysicsEntities.StaticBox(World, go.transform.position, Quaternion.identity, Vector3.one * size, Layers.Walkable);
+            Surfaces.Tag(World, EcsPhysics.PhysicsEntities.StaticBox(World, go.transform.position, Quaternion.identity, Vector3.one * size, Layers.Walkable), Surfaces.Wood);
         }
 
         // ------------------------------------------------------------------ managers

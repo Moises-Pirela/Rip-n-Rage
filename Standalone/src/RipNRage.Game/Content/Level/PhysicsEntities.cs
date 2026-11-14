@@ -142,7 +142,6 @@ namespace RipNRage.Game.Content.Level
             go.transform.position = center;
             go.transform.rotation = rotation;
             go.layer = Layers.Default;
-            go.AddComponent<SurfaceMaterial>().surface = tex.surface;
             var mr = go.AddComponent<MeshRenderer>();
             mr.mesh = Mesh.CreateBox(Vector3.zero, size, 1f / Mathf.Max(size.x, 0.01f));
             mr.texture = tex.Texture; mr.color = tex.tint;
@@ -155,6 +154,7 @@ namespace RipNRage.Game.Content.Level
             var world = Application.Current.World;
             var ent = RipNRage.Engine.Ecs.Physics.PhysicsEntities.Dynamic(world, new LocalTransform { Position = center, Rotation = rotation, Scale = Vector3.one }, shape, mass);
             world.Commands.Add(ent, new BodyConfig { mass = mass, collisionDetection = CollisionDetectionMode.Continuous }.Bake());
+            Surfaces.Tag(world, ent, tex.surface); // what a bullet kicks up off it
             world.Commands.Add(ent, new RipNRage.Engine.Ecs.Rendering.MeshRender
             {
                 Mesh = RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Intern(mr.mesh), Texture = RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Intern(tex.Texture ?? Texture2D.White),

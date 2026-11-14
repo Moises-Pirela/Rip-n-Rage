@@ -518,6 +518,27 @@ namespace RipNRage.Game
                                          + $" under {ww.GetSingleton<RipNRage.Game.Ecs.Underwater>().Under} water volumes {volumes}");
                     }
                     break;
+                case "surface":
+                    // what a bullet would kick up: rays from the eye at the level around the player start. Until 7.7
+                    // every one of these answered "default" — the resolver was stubbed when physics went ECS (layer 2)
+                    if (_frame == 20)
+                    {
+                        var eye = Camera.main.transform.position;
+                        var lampPost = new Vector3(-13.5f, 2.5f, -28f); // dock.map's first lamp post, mid-pole
+                        foreach (var (label, from, dir) in new[]
+                        {
+                            ("down", eye, Vector3.down), ("ahead", eye, new Vector3(0f, -0.15f, -1f)), ("left", eye, new Vector3(-1f, -0.1f, 0f)),
+                            ("behind", eye, new Vector3(0f, -0.05f, 1f)), ("lamp post", eye, lampPost - eye),
+                            ("off the dock, down", new Vector3(60f, 5f, 0f), Vector3.down), // through the water to the sand floor
+                        })
+                        {
+                            bool hitSomething = RipNRage.Engine.Physics.Raycast(from, dir.normalized, out var hit, 120f, Weapons.HitMask);
+                            Debug.LogWarning(hitSomething
+                                ? $"[test] surface {label}: {SurfaceResolver.Resolve(hit)} at {hit.distance:0.0} m"
+                                : $"[test] surface {label}: nothing within 120 m");
+                        }
+                    }
+                    break;
                 case "pickup":
                 {
                     // the dock's shell-ammo pickup sits at (-3, 0.91, -20), thirty metres down the planks: stand

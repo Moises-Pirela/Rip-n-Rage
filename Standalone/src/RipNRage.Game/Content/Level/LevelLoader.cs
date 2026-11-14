@@ -141,21 +141,22 @@ namespace RipNRage.Game.Content.Level
                     go.transform.SetParent(geo.transform, false);
                     go.transform.position = b.Center;
                     go.layer = Layers.Walkable;
-                    // surface per face for the impact effects (hit normal → face → texture → surface)
-                    var surf = go.AddComponent<BrushSurface>();
-                    foreach (var f in b.faces) surf.faces.Add(new BrushSurface.FaceSurface { normal = f.plane.normal, surface = LevelTextures.Get(f.texture).surface });
-                    if (b.faces.Count > 0) surf.fallback = LevelTextures.Get(b.faces[0].texture).surface;
-                    // collision: an ECS static collider (the GameObject keeps the face surfaces for impact effects)
+                    // collision: an ECS static collider, tagged with the surface of every face for the impact effects
+                    // (hit normal → face → texture → surface)
                     var world = Application.Current.World;
+                    RipNRage.Engine.Ecs.Entity collider;
                     if (b.IsAxisAligned)
-                        RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, (b.boundsMin + b.boundsMax) * 0.5f, Quaternion.identity, b.boundsMax - b.boundsMin, Layers.Walkable);
+                        collider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, (b.boundsMin + b.boundsMax) * 0.5f, Quaternion.identity, b.boundsMax - b.boundsMin, Layers.Walkable);
                     else
                     {
                         var planes = new Plane[b.faces.Count];
                         var verts = new List<Vector3>();
                         for (int i = 0; i < b.faces.Count; i++) { planes[i] = b.faces[i].plane; verts.AddRange(b.faces[i].polygon); }
-                        RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticConvex(world, planes, verts.ToArray(), Layers.Walkable);
+                        collider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticConvex(world, planes, verts.ToArray(), Layers.Walkable);
                     }
+                    var normals = new Vector3[b.faces.Count]; var ids = new int[b.faces.Count];
+                    for (int i = 0; i < b.faces.Count; i++) { normals[i] = b.faces[i].plane.normal; ids[i] = Surfaces.Id(LevelTextures.Get(b.faces[i].texture).surface); }
+                    Surfaces.TagFaces(world, collider, new RipNRage.Game.Ecs.BrushFaces(normals, ids, ids.Length > 0 ? ids[0] : 0));
                 }
             }
             return geo;

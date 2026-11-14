@@ -185,7 +185,8 @@ namespace RipNRage.Game.Content.Level
                 classname = "floor_plane", description = "Large textured ground plane (size w l, texture)",
                 gizmoColor = new Color(0.9f, 0.8f, 0.5f, 1f), pickExtents = new Vector3(2f, 0.2f, 2f),
                 defaults = { ["size"] = "200 200", ["texture"] = "sand" },
-                spawn = e => { var go = Plane(e, "FloorPlane", null, LevelTextures.Get(e.Get("texture", "sand")).Texture, Color.white, 1f / 4f, transparent: false, collider: true, water: false); go.AddComponent<SurfaceMaterial>().surface = LevelTextures.Get(e.Get("texture", "sand")).surface; return go; },
+                spawn = e => Plane(e, "FloorPlane", null, LevelTextures.Get(e.Get("texture", "sand")).Texture, Color.white, 1f / 4f, transparent: false, collider: true, water: false,
+                                   surface: LevelTextures.Get(e.Get("texture", "sand")).surface),
                 preview = e => Plane(e, "FloorPlane", null, LevelTextures.Get(e.Get("texture", "sand")).Texture, Color.white, 1f / 4f, transparent: false, collider: false, water: false),
             });
 
@@ -239,11 +240,11 @@ namespace RipNRage.Game.Content.Level
             var post = new GameObject("LampPost");
             post.transform.position = e.origin;
             post.layer = Layers.Walkable;
-            post.AddComponent<SurfaceMaterial>().surface = Surfaces.Metal;
             var pole = post.AddComponent<MeshRenderer>();
             pole.mesh = Mesh.CreateBox(new Vector3(0, 2.6f, 0), new Vector3(0.28f, 5.2f, 0.28f), 1f);
             pole.texture = GameAssets.Texture13; pole.color = new Color(0.35f, 0.35f, 0.38f, 1f);
-            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, 2.6f, 0), Quaternion.identity, new Vector3(0.4f, 5.2f, 0.4f), Layers.Walkable);
+            var poleCollider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, 2.6f, 0), Quaternion.identity, new Vector3(0.4f, 5.2f, 0.4f), Layers.Walkable);
+            Surfaces.Tag(Application.Current.World, poleCollider, Surfaces.Metal);
             var head = new GameObject("LampHead"); head.transform.SetParent(post.transform, false); head.transform.localPosition = new Vector3(0, 5.4f, 0);
             var headMr = head.AddComponent<MeshRenderer>();
             headMr.mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.7f, 0.5f, 0.7f), 1f);
@@ -254,7 +255,7 @@ namespace RipNRage.Game.Content.Level
             return post;
         }
 
-        private static GameObject Plane(MapEntity e, string name, Material material, Texture2D texture, Color color, float uvScale, bool transparent, bool collider, bool water)
+        private static GameObject Plane(MapEntity e, string name, Material material, Texture2D texture, Color color, float uvScale, bool transparent, bool collider, bool water, string surface = null)
         {
             // "w l" (what the maps write) or "w h l". MapEntity.GetVector wants three numbers and falls back to its
             // default otherwise — which is how dock.map's 1732 x 1000 water and sand were built 200 x 200 (found in
@@ -270,7 +271,11 @@ namespace RipNRage.Game.Content.Level
             var mr = go.AddComponent<MeshRenderer>();
             mr.mesh = Mesh.CreatePlane(Vector3.zero, w, l, uvScale);
             mr.texture = texture; mr.color = color; mr.transparent = transparent; mr.castsShadow = false; mr.material = material;
-            if (collider) RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(w, 2f, l), Layers.Walkable);
+            if (collider)
+            {
+                var floor = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(w, 2f, l), Layers.Walkable);
+                if (surface != null) Surfaces.Tag(Application.Current.World, floor, surface); // what a bullet kicks up off it
+            }
             if (water) RipNRage.Game.Ecs.Waters.Spawn(Application.Current.World, e.origin, new Vector3(w, 100f, l)); // the view under it hides the sky
             return go;
         }
