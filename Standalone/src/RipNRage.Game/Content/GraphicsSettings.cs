@@ -57,7 +57,7 @@ namespace RipNRage.Game.Content
 
         public static GraphicsSettings Current { get; private set; } = new GraphicsSettings();
         public static string FilePath => Path.Combine(Application.persistentDataPath, "graphics.json");
-        /// <summary>Gameplay-side flag read by RagePostprocess.</summary>
+        /// <summary>Gameplay-side flag read by the rage screen grade (RageScreen).</summary>
         public static bool RageEffectsEnabled => Current.rageEffects ?? true;
 
         /// <summary>Default for <see cref="hiDpi"/>: Retina Macs render the 3D at point resolution (4x fewer pixels; the UI stays sharp).</summary>

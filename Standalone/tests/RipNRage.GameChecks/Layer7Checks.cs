@@ -43,6 +43,7 @@ internal static class Layer7Checks
         NearMissBand(Equal);
         CalmFromEvasion(True, Equal);
         StateEffects(True, Equal);
+        Feedback(True, Equal);
     }
 
     private const float Dt = 1f / 60f;
@@ -520,6 +521,47 @@ internal static class Layer7Checks
         armor = w.Get<Armor>(player).Current;
         Tick(w, 60);
         Equal(armor, w.Get<Armor>(player).Current, "a Normal player regrows no armour");
+        Close(w);
+    }
+
+
+    // ---------------------------------------------------------------- 7.4: what it looks and sounds like
+
+    private static void Feedback(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var fx = new RageFx();
+        var enraged = new Rage { Fury = 1f, State = RageState.Enraged };
+
+        fx = RageFxs.Step(in fx, in enraged, Dt, out var cues);
+        True(cues.Enraged && !cues.Depressed, "entering ENRAGED is the sting's edge");
+        True(fx.EnragedWeight > 0f && fx.EnragedWeight < RageFxs.FullWeight, "the grade eases in, it does not snap");
+        fx = RageFxs.Step(in fx, in enraged, Dt, out cues);
+        True(!cues.Enraged, "the sting plays once, not every tick of the state");
+        for (int i = 0; i < 60; i++) fx = RageFxs.Step(in fx, in enraged, Dt, out cues);
+        True(MathF.Abs(fx.EnragedWeight - RageFxs.FullWeight) < 1e-3f, "a second in, the grade is all the way in");
+        Equal(0f, fx.DepressedWeight, "the other grade stays out");
+
+        var normal = new Rage();
+        fx = RageFxs.Step(in fx, in normal, Dt, out cues);
+        Equal(0f, fx.EnragedWeight, "the state ends: its grade is cut the same tick");
+
+        // the meter-full cue: filling to the brim while there is a choice to make, once
+        var full = new Rage { Calm = 1f };
+        fx = RageFxs.Step(in fx, in full, Dt, out cues);
+        True(cues.CalmFull && !cues.FuryFull, "the Calm meter filling is the cue's edge");
+        fx = RageFxs.Step(in fx, in full, Dt, out cues);
+        True(!cues.CalmFull, "a full meter that stays full cues nothing more");
+        var spending = new Rage { Calm = 1f, State = RageState.Depressed };
+        fx = RageFxs.Step(in fx, in spending, Dt, out cues);
+        True(cues.Depressed && !cues.CalmFull, "spending a full meter is the state's sting, not the full cue");
+
+        // over a world: the system steps the component off the player's rage
+        var w = NewWorld();
+        var player = Player(w, Vector3.zero);
+        w.Add(player, new RageFx());
+        Enrage(w, player);
+        Tick(w, 30);
+        True(w.Get<RageFx>(player).EnragedWeight > 0.45f, "in a world, the player's grade follows their state");
         Close(w);
     }
 

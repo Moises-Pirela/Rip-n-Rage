@@ -6,7 +6,7 @@ namespace RipNRage.Game.Content
     /// Builds the PlayerCharacter hierarchy from Assets/_Game/Prefabs/PlayerCharacter.prefab:
     ///
     /// PlayerCharacter [CapsuleCollider r0.4 h1.3 + RigidBody 80 kg + CharacterBody (ride 0.5 → 1.8 m tall, transform 0.9 m above the feet), AudioSource, FPSController, PlayerInputActions,
-    ///                  FPSCameraController, PlayerState, PlayerDeathSequence, CombatController, HudController, RagePostprocess]
+    ///                  FPSCameraController, PlayerState, PlayerDeathSequence, CombatController, HudController]
     ///  ├ Orientation
     ///  ├ Camera (0, 0.5, 0) [HeadBob]
     ///  │   └ WorldCamera (fov 77) [Camera]
@@ -114,7 +114,6 @@ namespace RipNRage.Game.Content
             var hud = player.AddComponent<HudController>();
             hud.playerState = state;
             HudLayout.Build(hud, player);
-            hud.ragePostprocess = player.AddComponent<RagePostprocess>();
 
             return player;
         }

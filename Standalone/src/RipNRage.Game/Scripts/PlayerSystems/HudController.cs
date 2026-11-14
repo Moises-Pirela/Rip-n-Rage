@@ -29,9 +29,6 @@ public class HudController : MonoBehaviour, IUiDrawer
     public readonly List<UiImage> images = new List<UiImage>();
     public readonly List<UiText> texts = new List<UiText>();
 
-    /// <summary>Full-screen tint driven by the rage post-processing stand-in.</summary>
-    public RagePostprocess ragePostprocess;
-
     protected override void Awake()
     {
         EnragedInjector<HudController>.SetInstance(this);
@@ -181,7 +178,7 @@ public class HudController : MonoBehaviour, IUiDrawer
 
     public void DrawUi(UiBatch ui)
     {
-        ragePostprocess?.Draw(ui); // full-screen tint, not layout
+        RipNRage.Game.Ecs.RageScreen.Draw(ui); // the rage grade: full screen, not layout
         DrawRageMeters(ui);
 
         // every HUD element is a floating Clay element pinned to the screen (anchors / pivots from HudLayout);

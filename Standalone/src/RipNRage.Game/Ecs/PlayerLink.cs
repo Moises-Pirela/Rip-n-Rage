@@ -90,6 +90,7 @@ namespace RipNRage.Game.Ecs
             });
             cmd.Add(e, new PlayerTag());
             cmd.Add(e, new Rage()); // both meters empty, Normal
+            cmd.Add(e, new RageFx()); // what it looks and sounds like
             // the player's trigger overlaps (checkpoints, water, pickups) have to be reported
             cmd.Add(e, new ReportCollisions());
             // hit points and armour (layer 5); PlayerState.Init overwrites both from the save data. Resistance 1:

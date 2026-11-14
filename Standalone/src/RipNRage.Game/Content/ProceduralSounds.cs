@@ -12,6 +12,7 @@ namespace RipNRage.Game.Content
         private const int SampleRate = 22050;
 
         private static AudioClip _playerDeath, _menuMove, _menuSelect, _menuBack, _enemyAim, _enemyShot, _enemyAlert, _dash;
+        private static AudioClip _rageEnraged, _rageDepressed, _rageFuryFull, _rageCalmFull;
 
         /// <summary>Rising "charging" whine: an enemy is about to fire.</summary>
         public static AudioClip EnemyAim => _enemyAim ??= Build("EnemyAim", 0.35f, (t, noise) =>
@@ -41,6 +42,38 @@ namespace RipNRage.Game.Content
         {
             float env = MathF.Sin(MathF.PI * MathF.Min(1f, t / 0.3f));
             return noise * env * env * 0.5f;
+        });
+
+        /// <summary>ENRAGED: a low growl that bites — detuned saw-ish partials falling a fifth, with grit.</summary>
+        public static AudioClip RageEnraged => _rageEnraged ??= Build("RageEnraged", 0.7f, (t, noise) =>
+        {
+            float f = 110f * MathF.Pow(2f, -t * 0.85f);
+            float v = MathF.Sin(2f * MathF.PI * f * t) + 0.5f * MathF.Sin(2f * MathF.PI * f * 2.01f * t) + 0.33f * MathF.Sin(2f * MathF.PI * f * 3.02f * t);
+            float env = MathF.Min(1f, t * 40f) * MathF.Exp(-t * 3.5f);
+            return (v * 0.32f + noise * 0.18f) * env;
+        });
+
+        /// <summary>DEPRESSED: the air goes out of the room — a soft falling sine pair under a hush.</summary>
+        public static AudioClip RageDepressed => _rageDepressed ??= Build("RageDepressed", 0.9f, (t, noise) =>
+        {
+            float f = 440f * MathF.Pow(2f, -t * 1.2f);
+            float v = MathF.Sin(2f * MathF.PI * f * t) + 0.6f * MathF.Sin(2f * MathF.PI * f * 1.5f * t);
+            float env = MathF.Min(1f, t * 12f) * MathF.Exp(-t * 2.6f);
+            return (v * 0.25f + noise * 0.05f) * env;
+        });
+
+        /// <summary>The FURY meter is full: two quick rising notes, dry.</summary>
+        public static AudioClip RageFuryFull => _rageFuryFull ??= Build("RageFuryFull", 0.3f, (t, noise) =>
+        {
+            float f = t < 0.09f ? 392f : 523f;
+            return MathF.Sin(2f * MathF.PI * f * t) * MathF.Exp(-(t % 0.09f) * 22f) * 0.35f;
+        });
+
+        /// <summary>The CALM meter is full: one bell-like note that rings.</summary>
+        public static AudioClip RageCalmFull => _rageCalmFull ??= Build("RageCalmFull", 0.6f, (t, noise) =>
+        {
+            float v = MathF.Sin(2f * MathF.PI * 659f * t) + 0.4f * MathF.Sin(2f * MathF.PI * 1318f * t);
+            return v * MathF.Exp(-t * 6f) * 0.28f;
         });
 
         /// <summary>Heavy double thud with a falling pitch and a short noise tail: the player hitting the floor.</summary>

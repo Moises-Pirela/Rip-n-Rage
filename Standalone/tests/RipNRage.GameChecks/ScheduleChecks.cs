@@ -23,7 +23,7 @@ internal static class ScheduleChecks
             "AnimationSystem + LifetimeSystem", "RagdollSystem", "EcsInputSystem", "EnemyVisualSystem + HearingSystem",
             "SightSystem", "AiBrainSystem", "SteeringSystem", "EnemyAttackSystem", "SpawnerSystem",
             "AltFireSystem", "BashFinisherSystem", "GrappleFinisherSystem", "PointBlankFinisherSystem",
-            "WeaponFireSystem", "NearMissSystem + PlayerLookSystem + RageCalmSystem + SpinSystem", "RageSystem",
+            "WeaponFireSystem", "NearMissSystem + PlayerLookSystem + RageCalmSystem", "RageSystem", "RageFxSystem", "SpinSystem",
         },
         ["FixedTick"] = new[]
         {

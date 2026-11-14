@@ -1071,8 +1071,18 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
       two enemies shooting at each other leave the player unthreatened and pay them nothing); all 17 scripts
       byte-identical; frame time unchanged — at one player and one enemy the two shapes cost the same (`ecs`
       1.2–2.5 ms either way, 3 interleaved runs), so this buys scale, not milliseconds today.
-- [ ] 7.4 **Rage feedback as a system.** `RageFxSystem` (post-fx weights, activation stings, meter-full cue);
-      pixel gate on the `rage` screenshot.
+- [x] 7.4 **Rage feedback as a system** (`Ecs/RageFx.cs`). `RageFx { EnragedWeight, DepressedWeight, LastState,
+      FuryWasFull, CalmWasFull }` on the player; `RageFxs.Step` is pure — the active state's grade eases in at the
+      old volumes' `Lerp(w, 0.5, 30·dt)`, the other is cut the same tick (the old `OnEnterNormal`), and the cues
+      are edges: a state entered → its sting, a meter filled to the brim *while there is a choice to make*
+      (Normal) → a softer cue, each once. `RageFxSystem` (after `RageSystem`, `[Exclusive]` for the audio device)
+      steps it and plays four new procedural clips; `RageScreen` is a plain drawer at the UI boundary that pushes
+      the grade into the post-fx stack or paints the fallback tint. **Deleted**: `RagePostprocess` (the
+      MonoBehaviour, its `Volume` class, two coroutines) and `Scripts/RageSystem/`. Gates: 271 gameplay
+      assertions (11 new: ease-in, cut, sting once, full cue once and not on spend, a world following the state);
+      `ScheduleChecks` re-pinned — 17 Tick batches (`RageFxSystem` alone after `RageSystem`, `SpinSystem` now
+      its own batch behind it); **pixel gate** on the `rage` screenshot mid-ENRAGED: 1.19–1.32% of pixels vs a
+      same-build floor of 1.09–1.23% (muzzle particles) — unchanged; all 17 scripts byte-identical.
 - [ ] 7.5 **Pickups are entities** (as planned before: `Pickup` + `PickupSystem`, delete `AmmoPickup`).
 - [ ] 7.6 **Environment volumes** (water, checkpoint — delete the duplicate `SaveManager "Save1"` path — sky
       rotation; delete `TriggerBridge.cs`).
