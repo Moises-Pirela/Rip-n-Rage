@@ -1013,9 +1013,26 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
       across its fire — `threat` from frame 60, Calm 0.23 by frame 210, then banked when the enemy loses them.
       Every other script byte-identical to 7.1 apart from the probe lines (the Fury numbers are unchanged);
       repeatable.
-- [ ] 7.3 **Effects.** `DamageEvent.Instigator`, the two damage multipliers, lifesteal, armour regen, speed and
-      dash modifiers, the perception modifier; assertions per effect; the combat gates (`killedAtFrame 97`, `rocket`,
-      `jab`, `glockalt`) must stay identical outside a state.
+- [x] 7.3 **Effects — what the states are worth.** `DamageEvent` gained `Instigator` (set by the hitscan, the
+      bullet and the blast), so `HealthSystem` scales a blow at **both ends**: `Amount × DamageDealtBy(instigator) ×
+      DamageTakenBy(target)` — ENRAGED ×1.5 dealt, DEPRESSED ×0.5 taken, 1 for anything with no rage. ENRAGED
+      **lifesteal** (2 a hit, 15 a kill, capped at full health) rides the same `HitEvent` the Fury gain does;
+      DEPRESSED regrows **5 armour a second**. DEPRESSED also halves the dash cooldown and grants one more air dash
+      (`PlayerMoveSystem`), and makes the player **harder to see**: `SightSystem` scales each enemy's range (×0.6)
+      and memory (×0.5) **per target**, read off that target's `Rage` — not off a query filter, which would have
+      made sight require the component (a layer-6 check caught exactly that). **Death**: a corpse keeps no rage, and
+      the signal is empty health, not the `Dead` tag — `FallRespawn` calls `PlayerState.Die()` straight out, so a
+      fall posts no damage and **no `DeathEvent` ever reaches the ECS** (a corpse was left DEPRESSED, regrowing
+      armour). Worth knowing for layer 8, which owns death and game flow: anything keyed on `DeathEvent` misses a
+      fall. Gates: 199 engine + 254 gameplay assertions (23 new: every multiplier including "Normal changes
+      nothing" and "a blow with no author is nobody's doing", lifesteal and its cap, armour regen and its absence,
+      the dash and sight scales, and the zeroed-health death); the schedule is unchanged. All 16 earlier scripts
+      **byte-identical to 7.2** — outside a state every effect is inert, so `killedAtFrame 97`, `rocket` hp 80
+      armour 0 y 3.82, `jab` 1→2→0 and `glockalt` are untouched. The probes now print hp / armour: `rage` spends
+      ENRAGED on a third grunt at frame 310 (speed ×1.20, the meter draining 0.50 → 0.38), `evade` spends the
+      dodged-up Calm at 240 — armour climbing 40 → 48 under fire, and the grunt losing the player at 300.
+      **Found and fixed on the way**: the dash's camera kick was an undeclared access (`PlayerMoveSystem` →
+      `CameraShake`) that no validated run had ever reached until a script dashed.
 - [ ] 7.4 **Rage feedback as a system.** `RageFxSystem` (post-fx weights, activation stings, meter-full cue);
       pixel gate on the `rage` screenshot.
 - [ ] 7.5 **Pickups are entities** (as planned before: `Pickup` + `PickupSystem`, delete `AmmoPickup`).

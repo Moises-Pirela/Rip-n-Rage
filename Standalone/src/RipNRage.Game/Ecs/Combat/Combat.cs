@@ -64,6 +64,8 @@ namespace RipNRage.Game.Ecs.Combat
     public struct DamageEvent : IPostProcessEvent
     {
         public Entity Target;
+        /// <summary>Who struck it (7.3: the rage multipliers read both ends). Null for a blow with no author.</summary>
+        public Entity Instigator;
         public float Amount;
         public Vector3 Point, Direction;
         /// <summary>Impulse the blow carries (N·s) — what the ragdoll piece is thrown with.</summary>
@@ -102,7 +104,7 @@ namespace RipNRage.Game.Ecs.Combat
     /// latched with <see cref="Dead"/>. Posts a <see cref="HitEvent"/> per applied blow and a <see cref="DeathEvent"/>
     /// for the one that crossed zero — both delivered in a further round of the same frame.
     /// </summary>
-    [Reads(typeof(Dead)), Writes(typeof(Health), typeof(Armor))]
+    [Reads(typeof(Dead), typeof(Rage)), Writes(typeof(Health), typeof(Armor))] // the rage states scale a blow at both ends
     public sealed class HealthSystem : SystemBase, IConsumes<DamageEvent>
     {
         public void Consume(SystemContext ctx, System.ReadOnlySpan<DamageEvent> events)
@@ -114,7 +116,8 @@ namespace RipNRage.Game.Ecs.Combat
                 ref var h = ref w.Get<Health>(e.Target);
                 if (h.Current <= 0f) continue; // killed earlier in this same span: the tag is not added until playback
 
-                float amount = e.Amount;
+                // ENRAGED hits harder, DEPRESSED takes less: the multipliers are the state's, read off each end
+                float amount = e.Amount * Rages.DamageDealtBy(w, e.Instigator) * Rages.DamageTakenBy(w, e.Target);
                 if (w.Has<Armor>(e.Target))
                 {
                     ref var a = ref w.Get<Armor>(e.Target);

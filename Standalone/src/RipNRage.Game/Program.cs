@@ -427,7 +427,9 @@ namespace RipNRage.Game
         private void LogRage()
         {
             RipNRage.Game.Ecs.Rages.TryGet(out var rage);
-            Debug.LogWarning($"[test] frame {_frame} fury {rage.Fury:0.00} calm {rage.Calm:0.00} {rage.State}{(rage.Threat ? " threat" : "")} speed x{RipNRage.Game.Ecs.Rages.SpeedMultiplier(in rage):0.00}");
+            var ps = PlayerState.Current;
+            Debug.LogWarning($"[test] frame {_frame} fury {rage.Fury:0.00} calm {rage.Calm:0.00} {rage.State}{(rage.Threat ? " threat" : "")}"
+                             + $" speed x{RipNRage.Game.Ecs.Rages.SpeedMultiplier(in rage):0.00} hp {ps?.Health ?? 0f:0} armour {ps?.Armor ?? 0f:0}");
         }
 
         private readonly System.Collections.Generic.List<Entity> _enemies = new System.Collections.Generic.List<Entity>();
@@ -583,9 +585,16 @@ namespace RipNRage.Game
                     // fire: being shot at and moving fills CALM (nothing here fills FURY — the player never shoots)
                     if (_frame == 2) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
                         Camera.main.transform.position + Camera.main.transform.forward * 14f - Vector3.up * 1.3f, 180f);
-                    input.overrideMove = _frame < 120 ? new Vector2(0f, 1f) : new Vector2(1f, 0.2f);
+                    // weave in front of the grunt instead of running off the dock: strafe one way, then the other
+                    input.overrideMove = _frame < 120 ? new Vector2(0f, 1f)
+                                       : _frame < 330 ? new Vector2(_frame % 60 < 30 ? 0.9f : -0.9f, 0f) // weave on the spot
+                                       : Vector2.zero;
                     if (_frame > 140 && _frame % 40 == 0) RipNRage.Engine.Ecs.Input.InputOverride.Dash = true;
                     else if (_frame % 40 == 1) RipNRage.Engine.Ecs.Input.InputOverride.Dash = null;
+                    // frame 240: spend the Calm the dodging earned — DEPRESSED halves what lands, regrows armour
+                    // and shortens the enemies' sight (the probe prints hp / armour and whether they still have him)
+                    if (_frame == 240) RipNRage.Engine.Ecs.Input.InputOverride.Calm = true;
+                    else if (_frame == 241) RipNRage.Engine.Ecs.Input.InputOverride.Calm = null;
                     if (_frame % 30 == 0) LogRage();
                     break;
                 case "approach":
@@ -602,14 +611,15 @@ namespace RipNRage.Game
                     if (_frame == 90) Debug.LogWarning($"[test] rocket aftermath: hp {PlayerState.Current?.Health:0} armour {PlayerState.Current?.Armor:0} y {PlayerState.Current?.transform.position.y:0.00}");
                     break;
                 case "rage":
-                    // two grunts killed with the MG fill the Fury meter; at frame 400 the player presses the
-                    // activation (Q / D-pad left) and ENRAGED drains over its 8 s
-                    if (_frame == 2 || _frame == 150) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
+                    // two grunts killed with the MG fill the Fury meter; at frame 310 the player presses the
+                    // activation (Q / D-pad left) and spends it on a third grunt: ENRAGED hits harder and the
+                    // blows feed the player (the probe prints hp / armour), then the meter drains and it ends
+                    if (_frame == 2 || _frame == 150 || _frame == 320) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
                         Camera.main.transform.position + Camera.main.transform.forward * 6f - Vector3.up * 1.3f, 0f);
                     if (_frame == 5) combat.OnChangeWeapon3();
-                    input.overrideFiring = (_frame > 20 && _frame < 140) || (_frame > 160 && _frame < 300);
-                    if (_frame == 400) RipNRage.Engine.Ecs.Input.InputOverride.Fury = true;
-                    else if (_frame == 401) RipNRage.Engine.Ecs.Input.InputOverride.Fury = null;
+                    input.overrideFiring = (_frame > 20 && _frame < 140) || (_frame > 160 && _frame < 300) || (_frame > 330 && _frame < 395);
+                    if (_frame == 310) RipNRage.Engine.Ecs.Input.InputOverride.Fury = true;
+                    else if (_frame == 311) RipNRage.Engine.Ecs.Input.InputOverride.Fury = null;
                     if (_frame % 30 == 0) LogRage();
                     break;
                 case "saveload":

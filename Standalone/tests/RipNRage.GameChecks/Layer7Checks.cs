@@ -15,6 +15,8 @@ using RipNRage.Game.Ecs.Combat;
 /// world: the system pays Fury for the player's hits, kills, headshots and kills up close, and a dead player
 /// keeps nothing. 7.2: the Calm meter — evasion gated on threat (a hunting enemy or an attack aimed at the
 /// player), the dodge edges, a bullet that passed close by, shaking a pursuer off, and the penalty for being hit.
+/// 7.3: what the states are worth — the damage multipliers at both ends of a blow, ENRAGED lifesteal, DEPRESSED
+/// armour regen and the shorter sight range / memory enemies get against a DEPRESSED player.
 /// </summary>
 internal static class Layer7Checks
 {
@@ -36,6 +38,7 @@ internal static class Layer7Checks
         FuryFromCombat(True, Equal);
         NearMissBand(Equal);
         CalmFromEvasion(True, Equal);
+        StateEffects(True, Equal);
     }
 
     private const float Dt = 1f / 60f;
@@ -197,6 +200,20 @@ internal static class Layer7Checks
         var dead = w.Get<Rage>(player);
         True(dead.Fury == 0f && dead.Calm == 0f && dead.State == RageState.Normal, "a dead player keeps no meters and no state");
         Close(w);
+
+        // the fall kill zeroes the player's health without any DamageEvent, so no DeathEvent is ever posted:
+        // empty health has to be enough on its own, or a corpse keeps spending a state (armour regen and all)
+        w = NewWorld();
+        player = Player(w, Vector3.zero);
+        w.Add(player, new Health { Current = 100f, Max = 100f });
+        Depress(w, player);
+        Tick(w, 2);
+        True(w.Get<Rage>(player).State == RageState.Depressed, "the state runs while the player lives");
+        w.Get<Health>(player).Current = 0f; // PlayerState.Die(), as FallRespawn calls it
+        Tick(w, 2);
+        var fell = w.Get<Rage>(player);
+        True(fell.State == RageState.Normal && fell.Calm == 0f, "zeroed health ends the state, with no DeathEvent");
+        Close(w);
     }
 
 
@@ -356,6 +373,113 @@ internal static class Layer7Checks
     }
 
     private static void Move(World w, Entity e, Vector3 to) => w.Get<LocalTransform>(e).Position = to;
+
+
+    // ---------------------------------------------------------------- 7.3: what the states do
+
+    private static void StateEffects(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        // ---- the multipliers are the state's, and Normal changes nothing ----
+        Equal(1f, Rages.DamageDealt(new Rage()), "Normal deals its own damage");
+        Equal(Rages.EnragedDamageDealt, Rages.DamageDealt(new Rage { State = RageState.Enraged }), "ENRAGED deals more");
+        Equal(1f, Rages.DamageDealt(new Rage { State = RageState.Depressed }), "DEPRESSED deals its own damage");
+        Equal(1f, Rages.DamageTaken(new Rage()), "Normal takes its own damage");
+        Equal(Rages.DepressedDamageTaken, Rages.DamageTaken(new Rage { State = RageState.Depressed }), "DEPRESSED takes less");
+        Equal(1f, Rages.DamageTaken(new Rage { State = RageState.Enraged }), "ENRAGED takes its own damage");
+        Equal(1f, Rages.SightRangeScale(new Rage()), "Normal is seen at the usual range");
+        Equal(Rages.DepressedSightRange, Rages.SightRangeScale(new Rage { State = RageState.Depressed }), "DEPRESSED is harder to see");
+        Equal(0, Rages.ExtraAirDashes(new Rage()), "Normal gets the usual air dashes");
+        Equal(Rages.DepressedAirDashes, Rages.ExtraAirDashes(new Rage { State = RageState.Depressed }), "DEPRESSED gets one more air dash");
+
+        // ---- a blow, over a world: dealt by an ENRAGED player ----
+        var w = NewWorld();
+        var player = Player(w, Vector3.zero);
+        var enemy = Hurtable(w, new Vector3(0f, 0f, 10f), health: 100f);
+        w.Post(new DamageEvent { Instigator = player, Target = enemy, Amount = 20f });
+        Tick(w, 2);
+        Equal(80f, w.Get<Health>(enemy).Current, "a blow from a Normal player lands as it is");
+
+        Enrage(w, player);
+        w.Post(new DamageEvent { Instigator = player, Target = enemy, Amount = 20f });
+        Tick(w, 2);
+        Equal(50f, w.Get<Health>(enemy).Current, "ENRAGED multiplies the blow the player struck");
+
+        // a blow with no author is nobody's doing
+        w.Post(new DamageEvent { Target = enemy, Amount = 10f });
+        Tick(w, 2);
+        Equal(40f, w.Get<Health>(enemy).Current, "a blow with no instigator is not multiplied");
+        Close(w);
+
+        // ---- taken by a DEPRESSED player ----
+        w = NewWorld();
+        player = Player(w, Vector3.zero);
+        w.Add(player, new Health { Current = 100f, Max = 100f });
+        w.Post(new DamageEvent { Target = player, Amount = 20f });
+        Tick(w, 2);
+        Equal(80f, w.Get<Health>(player).Current, "a Normal player takes the whole blow");
+
+        Depress(w, player);
+        w.Post(new DamageEvent { Target = player, Amount = 20f });
+        Tick(w, 2);
+        Equal(70f, w.Get<Health>(player).Current, "DEPRESSED halves what the player takes");
+        Close(w);
+
+        // ---- ENRAGED lifesteal ----
+        w = NewWorld();
+        player = Player(w, Vector3.zero);
+        w.Add(player, new Health { Current = 50f, Max = 100f });
+        enemy = Enemy(w, new Vector3(0f, 0f, 10f));
+        Enrage(w, player);
+        Hit(w, enemy, new Vector3(0f, 0f, 10f), headshot: false, killed: false);
+        Tick(w, 2);
+        Equal(50f + Rages.LifestealPerHit, w.Get<Health>(player).Current, "ENRAGED: a hit feeds the player");
+        Hit(w, enemy, new Vector3(0f, 0f, 10f), headshot: false, killed: true);
+        Tick(w, 2);
+        Equal(50f + Rages.LifestealPerHit + Rages.LifestealPerKill, w.Get<Health>(player).Current, "ENRAGED: a kill feeds more");
+
+        w.Get<Health>(player).Current = 99f;
+        Hit(w, enemy, new Vector3(0f, 0f, 10f), headshot: false, killed: true);
+        Tick(w, 2);
+        Equal(100f, w.Get<Health>(player).Current, "lifesteal stops at full health");
+
+        // and nothing of it outside the state
+        Calm(w, player);
+        w.Get<Health>(player).Current = 50f;
+        Hit(w, enemy, new Vector3(0f, 0f, 10f), headshot: false, killed: true);
+        Tick(w, 2);
+        Equal(50f, w.Get<Health>(player).Current, "a Normal player steals no life");
+        Close(w);
+
+        // ---- DEPRESSED armour regen ----
+        w = NewWorld();
+        player = Player(w, Vector3.zero);
+        w.Add(player, new Armor { Current = 0f, Max = 100f, Resistance = 1f });
+        Depress(w, player);
+        Tick(w, 60);
+        float armor = w.Get<Armor>(player).Current;
+        True(MathF.Abs(armor - Rages.ArmorRegenPerSecond) < Rages.ArmorRegenPerSecond * 0.2f,
+             $"DEPRESSED regrows about {Rages.ArmorRegenPerSecond} armour a second (grew {armor})");
+
+        Calm(w, player);
+        armor = w.Get<Armor>(player).Current;
+        Tick(w, 60);
+        Equal(armor, w.Get<Armor>(player).Current, "a Normal player regrows no armour");
+        Close(w);
+    }
+
+    /// <summary>Forces a state with a full meter: a state entered with an empty meter ends on the next tick.</summary>
+    private static void Enrage(World w, Entity player) { ref var r = ref w.Get<Rage>(player); r.Fury = 1f; r.State = RageState.Enraged; }
+    private static void Depress(World w, Entity player) { ref var r = ref w.Get<Rage>(player); r.Calm = 1f; r.State = RageState.Depressed; }
+    private static void Calm(World w, Entity player) { ref var r = ref w.Get<Rage>(player); r.State = RageState.Normal; }
+
+    /// <summary>Something with health that is not an enemy or a player: a blow lands on it unscaled.</summary>
+    private static Entity Hurtable(World w, Vector3 at, float health)
+    {
+        var e = w.CreateEntity();
+        w.Add(e, LocalTransform.At(at));
+        w.Add(e, new Health { Current = health, Max = health });
+        return e;
+    }
 
     private static World NewWorld()
     {

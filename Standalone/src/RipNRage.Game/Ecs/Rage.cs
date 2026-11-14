@@ -61,12 +61,41 @@ namespace RipNRage.Game.Ecs
         // ---- states: a full meter lasts this long, so the drain is 1/duration per second ----
         public const float EnragedDuration = 8f, DepressedDuration = 10f;
 
-        // ---- effects (ENRAGED is offensive, DEPRESSED defensive; the rest land in 7.3) ----
+        // ---- effects: ENRAGED presses the attack, DEPRESSED survives and slips away ----
         public const float EnragedSpeed = 1.2f;
+        /// <summary>ENRAGED deals more; DEPRESSED takes less.</summary>
+        public const float EnragedDamageDealt = 1.5f, DepressedDamageTaken = 0.5f;
+        /// <summary>ENRAGED lifesteal: health per hit on an enemy, and per kill.</summary>
+        public const float LifestealPerHit = 2f, LifestealPerKill = 15f;
+        /// <summary>DEPRESSED: armour points per second.</summary>
+        public const float ArmorRegenPerSecond = 5f;
+        /// <summary>DEPRESSED: the dash comes back sooner and there is one more of them in the air.</summary>
+        public const float DepressedDashCooldown = 0.5f;
+        public const int DepressedAirDashes = 1;
+        /// <summary>DEPRESSED: enemies see less far and forget sooner — the state to break away in.</summary>
+        public const float DepressedSightRange = 0.6f, DepressedMemory = 0.5f;
 
         /// <summary>Movement multiplier for the state (DEPRESSED no longer slows the player: it is a defensive
         /// state, and slowing it would fight its own purpose).</summary>
         public static float SpeedMultiplier(in Rage r) => r.State == RageState.Enraged ? EnragedSpeed : 1f;
+
+        public static float DamageDealt(in Rage r) => r.State == RageState.Enraged ? EnragedDamageDealt : 1f;
+        public static float DamageTaken(in Rage r) => r.State == RageState.Depressed ? DepressedDamageTaken : 1f;
+        public static float SightRangeScale(in Rage r) => r.State == RageState.Depressed ? DepressedSightRange : 1f;
+        public static float MemoryScale(in Rage r) => r.State == RageState.Depressed ? DepressedMemory : 1f;
+        public static float DashCooldownScale(in Rage r) => r.State == RageState.Depressed ? DepressedDashCooldown : 1f;
+        public static int ExtraAirDashes(in Rage r) => r.State == RageState.Depressed ? DepressedAirDashes : 0;
+
+        /// <summary>The multiplier an entity's state puts on a blow it struck (1 for anything with no rage).</summary>
+        public static float DamageDealtBy(World w, Entity e) =>
+            !e.IsNull && w.IsAlive(e) && w.Has<Rage>(e) ? DamageDealt(w.Get<Rage>(e)) : 1f;
+
+        /// <summary>The multiplier an entity's state puts on a blow it is taking.</summary>
+        public static float DamageTakenBy(World w, Entity e) =>
+            !e.IsNull && w.IsAlive(e) && w.Has<Rage>(e) ? DamageTaken(w.Get<Rage>(e)) : 1f;
+
+        /// <summary>The player's rage as the systems outside the ECS see it (null-safe, Normal if there is none).</summary>
+        public static Rage Current() => TryGet(out var r) ? r : default;
 
         /// <summary>
         /// One tick of the rules, as a pure function of the state and this tick's inputs:
@@ -125,8 +154,8 @@ namespace RipNRage.Game.Ecs
     /// <see cref="RageGainEvent"/>), reads the two activation presses, and hands both to <see cref="Rages.Step"/>.
     /// Death clears everything.
     /// </summary>
-    [Reads(typeof(InputState), typeof(Enemy), typeof(PlayerTag), typeof(LocalToWorld))] // the activation presses; the hit consumer asks whether the target was an enemy and how close it died
-    [Writes(typeof(Rage))]                    // and pays the player's meter, by entity, outside the query
+    [Reads(typeof(InputState), typeof(Enemy), typeof(PlayerTag), typeof(LocalToWorld), typeof(Dead))] // the activation presses; the hit consumer asks whether the target was an enemy and how close it died
+    [Writes(typeof(Rage), typeof(Health), typeof(Armor))] // the meter, and ENRAGED lifesteal / DEPRESSED armour regen
     public sealed class RageSystem : SystemBase, ITick, IConsumes<HitEvent>, IConsumes<RageGainEvent>, IConsumes<DeathEvent>
     {
         private Query _players;
@@ -153,13 +182,37 @@ namespace RipNRage.Game.Ecs
             float dt = ctx.DeltaTime;
             foreach (var chunk in _players)
             {
-                var rages = chunk.Get<Rage>();
+                var rages = chunk.Get<Rage>(); var ents = chunk.Entities;
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
+                    // a corpse has no rage. The Dead tag is not enough: the fall kill calls PlayerState.Die()
+                    // straight out, so no damage and no DeathEvent ever reach the ECS — empty health is the signal
+                    if (IsDead(ctx.World, ents[i])) { rages[i] = default; continue; }
                     rages[i] = Rages.Step(in rages[i], in inputs, dt);
+                    if (rages[i].State == RageState.Depressed) Regenerate(ctx.World, ents[i], dt);
                 }
             }
+        }
+
+        private static bool IsDead(World w, Entity e) =>
+            w.Has<Dead>(e) || (w.Has<Health>(e) && w.Get<Health>(e).Current <= 0f);
+
+        /// <summary>DEPRESSED: armour comes back while the player keeps out of trouble.</summary>
+        private static void Regenerate(World w, Entity player, float dt)
+        {
+            if (!w.Has<Armor>(player)) return;
+            ref var a = ref w.Get<Armor>(player);
+            a.Current = Mathf.Min(a.Max, a.Current + Rages.ArmorRegenPerSecond * dt);
+        }
+
+        /// <summary>ENRAGED: the player's blows feed them.</summary>
+        private static void Lifesteal(World w, Entity player, bool killed)
+        {
+            if (!w.Has<Health>(player)) return;
+            ref var h = ref w.Get<Health>(player);
+            if (h.Current <= 0f) return;
+            h.Current = Mathf.Min(h.Max, h.Current + (killed ? Rages.LifestealPerKill : Rages.LifestealPerHit));
         }
 
         /// <summary>Aggression: the player's blows on an enemy. (As the combat bridge does, "the target is an enemy"
@@ -179,6 +232,14 @@ namespace RipNRage.Game.Ecs
                         fury += Rages.CloseKillFury;
                 }
                 _pendingFury += fury;
+
+                // ENRAGED turns those blows into health
+                foreach (var chunk in _players)
+                {
+                    var rages = chunk.Get<Rage>(); var ents = chunk.Entities;
+                    for (int j = 0; j < chunk.Length; j++)
+                        if (chunk.Includes(j) && rages[j].State == RageState.Enraged) Lifesteal(w, ents[j], e.Killed);
+                }
             }
         }
 

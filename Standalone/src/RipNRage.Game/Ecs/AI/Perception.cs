@@ -68,7 +68,7 @@ namespace RipNRage.Game.Ecs.AI
     /// alone (physics queries).
     /// </summary>
     [UpdateBefore(typeof(AiBrainSystem))]
-    [Reads(typeof(Dead))]
+    [Reads(typeof(Dead), typeof(Rage))] // the target's state shortens the range and the memory (7.3)
     public sealed class SightSystem : SystemBase, ITick
     {
         /// <summary>Eyes and chest heights above the body centre.</summary>
@@ -102,23 +102,36 @@ namespace RipNRage.Game.Ecs.AI
                         for (int j = 0; j < pc.Length; j++)
                         {
                             if (!pc.Includes(j)) continue;
-                            if (!CanSee(ltw[i].Position, heads[i].Forward, pl[j].Position, def)) continue;
+                            // a DEPRESSED player is harder to see and sooner forgotten: the state to break contact in (7.3)
+                            if (!CanSee(ltw[i].Position, heads[i].Forward, pl[j].Position, def, SightScale(pe[j]))) continue;
                             p.Target = pe[j]; p.LastKnown = pl[j].Position; p.Seen = true; p.SinceSeen = 0f;
                         }
                     }
 
                     if (p.Seen || p.Target.IsNull) continue;
                     p.SinceSeen += dt;
-                    if (p.SinceSeen > def.memory) p = default;
+                    if (p.SinceSeen > def.memory * MemoryScale(p.Target)) p = default;
                 }
             }
         }
 
-        /// <summary>Range → cone about the facing (flattened) → nothing of the level between the eyes and the target.</summary>
-        public static bool CanSee(Vector3 self, Vector3 forward, Vector3 target, EnemyData def)
+        /// <summary>How much of its sight range an enemy gets against this target (1 for anything with no rage).</summary>
+        private float SightScale(Entity target) =>
+            World.IsAlive(target) && World.Has<Rage>(target) ? Rages.SightRangeScale(World.Get<Rage>(target)) : 1f;
+
+        /// <summary>How much of its memory an enemy keeps of this target.</summary>
+        private float MemoryScale(Entity target) =>
+            !target.IsNull && World.IsAlive(target) && World.Has<Rage>(target) ? Rages.MemoryScale(World.Get<Rage>(target)) : 1f;
+
+        /// <summary>
+        /// Range → cone about the facing (flattened) → nothing of the level between the eyes and the target.
+        /// <paramref name="rangeScale"/> is the target's doing: a DEPRESSED player is harder to spot (7.3).
+        /// </summary>
+        public static bool CanSee(Vector3 self, Vector3 forward, Vector3 target, EnemyData def, float rangeScale = 1f)
         {
             Vector3 to = target - self;
-            if (to.sqrMagnitude > def.sightRange * def.sightRange) return false;
+            float range = def.sightRange * rangeScale;
+            if (to.sqrMagnitude > range * range) return false;
             Vector3 flat = new Vector3(to.x, 0f, to.z); forward.y = 0f;
             if (flat.sqrMagnitude > 1e-6f && forward.sqrMagnitude > 1e-6f
                 && Vector3.Angle(forward, flat) > def.sightFov * 0.5f) return false;

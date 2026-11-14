@@ -130,7 +130,7 @@ namespace RipNRage.Game.Ecs.Combat
             if (flesh && e.Other != instigator)
             {
                 Vector3 dir = w.Has<LocalTransform>(e.Self) ? w.Get<LocalTransform>(e.Self).Forward : -e.Normal;
-                ctx.Post(new DamageEvent { Target = e.Other, Amount = def.Damage, Point = e.Point, Direction = dir, Impulse = 5f });
+                ctx.Post(new DamageEvent { Instigator = instigator, Target = e.Other, Amount = def.Damage, Point = e.Point, Direction = dir, Impulse = 5f });
             }
             GameVfx.ImpactOn(flesh ? Surfaces.Flesh : Surfaces.Default, e.Point, e.Normal, def.BulletKey);
         }
@@ -178,6 +178,7 @@ namespace RipNRage.Game.Ecs.Combat
                 blastDir.y += 0.5f;
                 ctx.Post(new DamageEvent
                 {
+                    Instigator = instigator,
                     Target = target, Amount = dmg, Point = point, Direction = blastDir.normalized,
                     Impulse = Mathf.Max(def.ExplosionImpulse, 60f), Explosive = true,
                     ExplosionRadius = Mathf.Max(def.ExplosionRadius, 6f),

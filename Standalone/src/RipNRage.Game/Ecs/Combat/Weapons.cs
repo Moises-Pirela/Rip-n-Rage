@@ -169,10 +169,10 @@ namespace RipNRage.Game.Ecs.Combat
             EnragedInjector<HudController>.GetInstance()?.CurrentCrosshair?.OnShoot();
 
             if (data.projectileKind >= 0) LaunchProjectile(data, in eye, spread * st.projectileSpreadScale);
-            else Hitscan(ctx, data, in eye, spread);
+            else Hitscan(ctx, player, data, in eye, spread);
         }
 
-        private void Hitscan(SystemContext ctx, WeaponData data, in LocalToWorld eye, float spread)
+        private void Hitscan(SystemContext ctx, Entity player, WeaponData data, in LocalToWorld eye, float spread)
         {
             var st = data.weaponStats;
             string bulletKey = GameVfx.AmmoKey(data.ammoType);
@@ -195,6 +195,7 @@ namespace RipNRage.Game.Ecs.Combat
                                     && World.Get<Hitbox>(hit.entity).IsHeadshot(World.Get<LocalToWorld>(hit.entity), hit.point);
                     ctx.Post(new DamageEvent
                     {
+                        Instigator = player,
                         Target = hit.entity,
                         Amount = st.damagePerShot * (headshot ? 2f : 1f),
                         Point = hit.point, Direction = dir.normalized,

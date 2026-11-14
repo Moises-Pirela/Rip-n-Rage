@@ -135,7 +135,7 @@ namespace RipNRage.Game.Ecs
     /// by the same step.
     /// </summary>
     [UpdateAfter(typeof(PhysicsSyncSystem)), UpdateBefore(typeof(CharacterMotorSystem))]
-    [Reads(typeof(InputState), typeof(BodyVelocity)), Writes(typeof(Noise))] // footsteps: a Noise entity through the buffer
+    [Reads(typeof(InputState), typeof(BodyVelocity)), Writes(typeof(Noise), typeof(RipNRage.Engine.Ecs.View.CameraShake))] // footsteps: a Noise entity through the buffer; the dash kicks the camera
     public sealed class PlayerMoveSystem : SystemBase, IFixedTick
     {
         private Query _q;
@@ -204,7 +204,7 @@ namespace RipNRage.Game.Ecs
             // ---- the standalone moves override the horizontal motion computed above ----
             UpdateSlide(ref p, ref m, in lt, input, ref jump, horizontal, grounded, dt);
             UpdateWallRun(ctx, ref p, ref m, ref look, in lt, input, ref jump, horizontal, grounded, dt);
-            UpdateDash(ctx, ref p, ref m, in lt, input, forward, right, grounded, dt);
+            UpdateDash(ctx, ref p, ref m, in lt, input, in rage, forward, right, grounded, dt);
 
             // ---- landing ----
             if (!p.PreviouslyGrounded && grounded) Sfx.Play(GameAssets.Land);
@@ -375,10 +375,10 @@ namespace RipNRage.Game.Ecs
         // ---------------------------------------------------------------- dash
 
         private void UpdateDash(SystemContext ctx, ref PlayerMotor p, ref CharacterMotor m, in LocalTransform lt,
-                                in InputState input, Vector3 forward, Vector3 right, bool grounded, float dt)
+                                in InputState input, in Rage rage, Vector3 forward, Vector3 right, bool grounded, float dt)
         {
             if (p.DashCooldownTimer > 0f) p.DashCooldownTimer -= dt;
-            if (grounded && !m.IsDashing) p.AirDashesLeft = p.AirDashes;
+            if (grounded && !m.IsDashing) p.AirDashesLeft = p.AirDashes + Rages.ExtraAirDashes(in rage); // DEPRESSED: one more
 
             if (!m.IsDashing && p.EnableDash && input.DashPressed && p.DashCooldownTimer <= 0f && (grounded || p.AirDashesLeft > 0))
             {
@@ -390,7 +390,8 @@ namespace RipNRage.Game.Ecs
                 if (p.IsSliding) EndSlide(ref p, ref m);
                 if (p.IsWallRunning) { p.IsWallRunning = false; p.WallSide = 0; }
                 if (!grounded) p.AirDashesLeft--;
-                p.DashDir = dir; p.DashTimer = p.DashDuration; p.DashCooldownTimer = p.DashCooldown;
+                p.DashDir = dir; p.DashTimer = p.DashDuration;
+                p.DashCooldownTimer = p.DashCooldown * Rages.DashCooldownScale(in rage); // DEPRESSED: back sooner
                 m.PendingDash = dir * p.DashSpeed; m.PendingDashTime = p.DashDuration; // gravity off for the burst
                 if (PlayerCamera.Has) PlayerCamera.Shake.AddTrauma(0.14f);
                 Sfx.Play(ProceduralSounds.Dash, 0.6f);
