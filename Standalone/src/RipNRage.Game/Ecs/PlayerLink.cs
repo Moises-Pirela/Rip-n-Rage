@@ -89,6 +89,7 @@ namespace RipNRage.Game.Ecs
                 ZSwayAngle = 5f, ZSwayMultiplier = 100f, ZSmoothSway = -50f, ZSmoothLerp = 0f,
             });
             cmd.Add(e, new PlayerTag());
+            cmd.Add(e, new Rage()); // both meters empty, Normal
             // the player's trigger overlaps (checkpoints, water, pickups) have to be reported
             cmd.Add(e, new ReportCollisions());
             // hit points and armour (layer 5); PlayerState.Init overwrites both from the save data. Resistance 1:

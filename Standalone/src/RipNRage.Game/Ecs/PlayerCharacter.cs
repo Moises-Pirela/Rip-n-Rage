@@ -138,7 +138,7 @@ namespace RipNRage.Game.Ecs
     {
         private Query _q;
         public override void OnCreate() =>
-            _q = World.Query().With<PlayerMotor>().With<CharacterMotor>().With<PlayerLook>().WithReadOnly<LocalTransform>().Build();
+            _q = World.Query().With<PlayerMotor>().With<CharacterMotor>().With<PlayerLook>().WithReadOnly<LocalTransform>().WithReadOnly<Rage>().Build();
 
         public void FixedTick(SystemContext ctx)
         {
@@ -151,18 +151,18 @@ namespace RipNRage.Game.Ecs
             foreach (var chunk in _q)
             {
                 var pms = chunk.Get<PlayerMotor>(); var motors = chunk.Get<CharacterMotor>();
-                var looks = chunk.Get<PlayerLook>(); var xforms = chunk.Get<LocalTransform>();
+                var looks = chunk.Get<PlayerLook>(); var xforms = chunk.Get<LocalTransform>(); var rages = chunk.Get<Rage>();
                 var ents = chunk.Entities;
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
-                    Step(ctx, ents[i], ref pms[i], ref motors[i], ref looks[i], xforms[i], input, ref jump, dt);
+                    Step(ctx, ents[i], ref pms[i], ref motors[i], ref looks[i], xforms[i], rages[i], input, ref jump, dt);
                 }
             }
         }
 
         private void Step(SystemContext ctx, Entity e, ref PlayerMotor p, ref CharacterMotor m, ref PlayerLook look,
-                          in LocalTransform lt, in InputState input, ref bool jump, float dt)
+                          in LocalTransform lt, in Rage rage, in InputState input, ref bool jump, float dt)
         {
             if (p.SettingsVersion != MovementSettings.Version)
             {
@@ -183,8 +183,7 @@ namespace RipNRage.Game.Ecs
             float speed = p.EnableBunnyHop ? (grounded ? p.RunSpeed : p.BunnyHopSpeed) : p.RunSpeed;
             if (Math.Abs(input.Move.y - (-1f)) < 1f) speed *= p.BackwardsPercent;
             if (input.Move.x != 0f && input.Move.y == 0f) speed *= p.SidePercent;
-            float rageSpeed = PlayerState.Current?.CurrentRageState?.movementSpeedModifier ?? 1f;
-            speed *= Math.Min(rageSpeed * StyleMeter.SpeedMultiplier, StyleMeter.MaxSpeedMultiplier); // rage × S rank, capped
+            speed *= Rages.SpeedMultiplier(in rage); // ENRAGED presses the attack
 
             // ---- smoothing (input, speed, direction) ----
             Vector2 rawInput = input.Move.normalized;

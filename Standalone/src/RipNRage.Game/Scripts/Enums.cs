@@ -24,19 +24,6 @@ public enum AnimationState
     DEAD
 }
 
-public enum PlayerRageState
-{
-    NORMAL = 0,
-    ENRAGED = 1,
-    DEPRESSED = 2
-}
-
-public enum PlayerCombatState
-{
-    PACIFIST,
-    VIOLENT
-}
-
 public enum ManagerInitState
 {
     PENDING,

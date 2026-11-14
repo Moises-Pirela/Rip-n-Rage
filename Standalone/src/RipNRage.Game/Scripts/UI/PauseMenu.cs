@@ -170,7 +170,8 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
             if (ps != null)
             {
                 ClayScreen.Gap(c, 8f);
-                c.Text($"HEALTH {ps.Health:0}   ARMOR {ps.Armor:0}   RAGE {ps.Rage * 100f:0}%", ClayScreen.Line(2.4f, new Color(0.8f, 0.8f, 0.82f, 0.85f)));
+                RipNRage.Game.Ecs.Rages.TryGet(out var rage);
+            c.Text($"HEALTH {ps.Health:0}   ARMOR {ps.Armor:0}   FURY {rage.Fury * 100f:0}%   CALM {rage.Calm * 100f:0}%", ClayScreen.Line(2.4f, new Color(0.8f, 0.8f, 0.82f, 0.85f)));
             }
         }
         MenuItem clicked;

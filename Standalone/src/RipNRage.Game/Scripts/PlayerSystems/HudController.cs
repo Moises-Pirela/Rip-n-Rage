@@ -47,7 +47,6 @@ public class HudController : MonoBehaviour, IUiDrawer
         playerState.OnHealthChanged += UpdateHealth;
         playerState.OnArmorChanged += UpdateArmor;
         playerState.OnHealthChanged += UpdatePortrait;
-        playerState.OnUpdateRage += UpdatePortrait;
         
         UpdateAmmo();
         UpdateArmor();
@@ -110,16 +109,19 @@ public class HudController : MonoBehaviour, IUiDrawer
             playerDamageIndex = 4;
         }
 
-        switch (playerState.RageState)
+        RipNRage.Game.Ecs.Rages.TryGet(out var rage);
+        switch (rage.State)
         {
-            case PlayerRageState.ENRAGED:
+            case RipNRage.Game.Ecs.RageState.Enraged:
                 newPortrait = _portraitData.enragedPortrait[playerDamageIndex];
                 break;
-            case PlayerRageState.DEPRESSED:
+            case RipNRage.Game.Ecs.RageState.Depressed:
                 newPortrait = _portraitData.depressedPortrait[playerDamageIndex];
                 break;
-            case PlayerRageState.NORMAL:
-                newPortrait = playerState.CombatState == PlayerCombatState.VIOLENT
+            default:
+                // "in combat" was the VIOLENT combat state, which the two meters replaced: a filled Fury meter is
+                // the nearest thing left to "this player is in a fight"
+                newPortrait = rage.Fury > 0f
                     ? _portraitData.inCombatPortrait[playerDamageIndex]
                     : _portraitData.defaultPortrait[playerDamageIndex];
                 break;
@@ -128,9 +130,16 @@ public class HudController : MonoBehaviour, IUiDrawer
         playerPortrait.sprite = newPortrait;
     }
 
-    public void OnRageTicked()
+    /// <summary>The rage meters are a component with no change event: the portrait is repainted every frame.</summary>
+    private RipNRage.Game.Ecs.RageState _lastRageState = RipNRage.Game.Ecs.RageState.Normal;
+    private bool _lastHadFury;
+    protected override void Update()
     {
-        
+        RipNRage.Game.Ecs.Rages.TryGet(out var rage);
+        bool hasFury = rage.Fury > 0f;
+        if (rage.State == _lastRageState && hasFury == _lastHadFury) return;
+        _lastRageState = rage.State; _lastHadFury = hasFury;
+        UpdatePortrait();
     }
 
     public void OnWeaponChanged()
@@ -143,9 +152,37 @@ public class HudController : MonoBehaviour, IUiDrawer
 
     protected override void OnDestroy() => _clay.Dispose();
 
+    /// <summary>
+    /// The two rage meters as plain bars (FURY red, CALM blue), bright once there is something to spend and
+    /// pulsing while their state runs. Placeholder for tuning: layer 8's HUD pass designs the real thing.
+    /// </summary>
+    private void DrawRageMeters(UiBatch ui)
+    {
+        if (!RipNRage.Game.Ecs.Rages.TryGet(out var rage)) return;
+        float s = ui.Scale;
+        float w = 220f * s, h = 12f * s, x = 150f * s, y = 118f * s, gap = 6f * s; // bottom left, right of the portrait
+        DrawMeter(ui, new Rect(x, y, w, h), rage.Fury, new Color(0.9f, 0.25f, 0.2f, 1f),
+                  rage.State == RipNRage.Game.Ecs.RageState.Enraged);
+        DrawMeter(ui, new Rect(x, y + h + gap, w, h), rage.Calm, new Color(0.35f, 0.55f, 0.95f, 1f),
+                  rage.State == RipNRage.Game.Ecs.RageState.Depressed);
+    }
+
+    private static void DrawMeter(UiBatch ui, Rect box, float value, Color color, bool active)
+    {
+        ui.FillRect(box, new Color(0f, 0f, 0f, 0.45f));
+        if (value > 0f)
+        {
+            // active: the bar pulses while its state drains, so the read-out says "spending", not just "full"
+            float pulse = active ? 0.75f + 0.25f * Mathf.Sin(Time.time * 8f) : (value >= 1f ? 1f : 0.7f);
+            ui.FillRect(new Rect(box.x, box.y, box.width * Mathf.Clamp01(value), box.height),
+                        new Color(color.r * pulse, color.g * pulse, color.b * pulse, 1f));
+        }
+    }
+
     public void DrawUi(UiBatch ui)
     {
         ragePostprocess?.Draw(ui); // full-screen tint, not layout
+        DrawRageMeters(ui);
 
         // every HUD element is a floating Clay element pinned to the screen (anchors / pivots from HudLayout);
         // the z index keeps the prefab's draw order (frames first)

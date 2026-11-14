@@ -33,8 +33,8 @@ namespace RipNRage.Game.Content.Level
     public sealed class PlayerSave
     {
         public float x, y, z, yaw, pitch;
-        public float health, armor, rage;
-        public int rageState, combatState, weaponIndex;
+        public float health, armor, rage, calm; // rage = the Fury meter (the field name is the save format's)
+        public int rageState, combatState, weaponIndex; // combatState: unused since the two meters replaced VIOLENT
         public int[] ammo = new int[5];
     }
 
@@ -85,8 +85,9 @@ namespace RipNRage.Game.Content.Level
             var p = save.player;
             p.x = player.transform.position.x; p.y = player.transform.position.y; p.z = player.transform.position.z;
             p.yaw = camCtrl != null ? camCtrl.Yaw : 0f; p.pitch = camCtrl != null ? camCtrl.Pitch : 0f;
-            p.health = player.Health; p.armor = player.Armor; p.rage = player.Rage;
-            p.rageState = (int)player.RageState; p.combatState = (int)player.CombatState;
+            p.health = player.Health; p.armor = player.Armor;
+            RipNRage.Game.Ecs.Rages.TryGet(out var rage);
+            p.rage = rage.Fury; p.calm = rage.Calm; p.rageState = (int)rage.State;
             p.weaponIndex = combat.CurrentWeaponIndex;
             p.ammo = combat.AmmoArray();
 
@@ -239,7 +240,8 @@ namespace RipNRage.Game.Content.Level
             var p = save.player;
             player.transform.position = new Vector3(p.x, p.y, p.z); // the ECS character warp replaces this in layer 4
             FPSCameraController.instance?.SetLook(p.yaw, p.pitch);
-            player.RestoreState(p.rage, (PlayerRageState)p.rageState, (PlayerCombatState)p.combatState, p.health, p.armor);
+            player.RestoreState(p.health, p.armor);
+            RipNRage.Game.Ecs.Rages.Restore(p.rage, p.calm, (RipNRage.Game.Ecs.RageState)p.rageState);
             // GameManager.Init re-reads the legacy "Save1" file during the build, so apply the inventory explicitly
             combat.LoadAmmo(p.ammo);
             combat.EquipWeaponIndex(p.weaponIndex);

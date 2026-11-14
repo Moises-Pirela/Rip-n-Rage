@@ -28,6 +28,7 @@ internal static class Program
             RipNRage.Engine.Ecs.World.ReportAccessOnly = Environment.GetEnvironmentVariable("ECS_ACCESS_REPORT") == "1"; // audit: list, do not throw
             Layer5Checks.Run(True, Equal);
             Layer6Checks.Run(True, Equal);
+            Layer7Checks.Run(True, Equal);
             ScheduleChecks.Run(True); // last: the layout is judged after every system has declared itself
             Console.WriteLine($"PASS: {_assertions} gameplay assertions");
             return 0;

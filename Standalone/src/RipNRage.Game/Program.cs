@@ -303,7 +303,8 @@ namespace RipNRage.Game
             {
                 var combat = EnragedInjector<CombatController>.GetInstance();
                 string weapon = combat?.CurrentWeaponData?.name ?? "-";
-                text += $"   HP {ps.Health:0} ARMOR {ps.Armor:0} RAGE {ps.Rage:0.00} {ps.RageState} {ps.CombatState}  WEAPON {weapon}";
+                RipNRage.Game.Ecs.Rages.TryGet(out var rage);
+                text += $"   HP {ps.Health:0} ARMOR {ps.Armor:0} FURY {rage.Fury:0.00} CALM {rage.Calm:0.00} {rage.State}  WEAPON {weapon}";
             }
             text += "\n";
             var fx = renderer.PostFx;
@@ -425,8 +426,8 @@ namespace RipNRage.Game
         private readonly System.Collections.Generic.Dictionary<Entity, Vector3> _enemyHome = new System.Collections.Generic.Dictionary<Entity, Vector3>();
         private void LogRage()
         {
-            var ps = PlayerState.Current;
-            Debug.LogWarning($"[test] frame {_frame} rage {ps.Rage:0.00} {ps.RageState} {ps.CombatState} speed x{ps.CurrentRageState?.movementSpeedModifier ?? 1f:0.00}");
+            RipNRage.Game.Ecs.Rages.TryGet(out var rage);
+            Debug.LogWarning($"[test] frame {_frame} fury {rage.Fury:0.00} calm {rage.Calm:0.00} {rage.State} speed x{RipNRage.Game.Ecs.Rages.SpeedMultiplier(in rage):0.00}");
         }
 
         private readonly System.Collections.Generic.List<Entity> _enemies = new System.Collections.Generic.List<Entity>();
@@ -591,9 +592,15 @@ namespace RipNRage.Game
                     if (_frame == 90) Debug.LogWarning($"[test] rocket aftermath: hp {PlayerState.Current?.Health:0} armour {PlayerState.Current?.Armor:0} y {PlayerState.Current?.transform.position.y:0.00}");
                     break;
                 case "rage":
-                    // force the enraged state to check the rage post-processing volume
-                    if (_frame == 20) { PlayerState.Current.SetViolentCombatState(); PlayerState.Current.AddToRage(1f); }
-                    if (_frame % 30 == 0 && PlayerState.Current != null) LogRage();
+                    // two grunts killed with the MG fill the Fury meter; at frame 400 the player presses the
+                    // activation (Q / D-pad left) and ENRAGED drains over its 8 s
+                    if (_frame == 2 || _frame == 150) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
+                        Camera.main.transform.position + Camera.main.transform.forward * 6f - Vector3.up * 1.3f, 0f);
+                    if (_frame == 5) combat.OnChangeWeapon3();
+                    input.overrideFiring = (_frame > 20 && _frame < 140) || (_frame > 160 && _frame < 300);
+                    if (_frame == 400) RipNRage.Engine.Ecs.Input.InputOverride.Fury = true;
+                    else if (_frame == 401) RipNRage.Engine.Ecs.Input.InputOverride.Fury = null;
+                    if (_frame % 30 == 0) LogRage();
                     break;
                 case "saveload":
                     // walk, save (F6), walk more, load (F9): the player must be back at the saved spot with the saved ammo
@@ -666,16 +673,14 @@ namespace RipNRage.Game
                 }
                 case "style":
                 {
-                    // spawn a grunt in front, kill it with the Glock, spawn another, kill it with the MG: the meter should reach B and show
-                    // frame 700: a third grunt while the player is DEPRESSED — the comeback kill must end it and raise the multiplier
-                    if (_frame == 2 || _frame == 130 || _frame == 700) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
+                    // (the style meter is gone; the script is kept as the Fury-gain probe) a grunt killed with the
+                    // Glock, then one with the MG: hits, kills and the close-range bonus fill the meter
+                    if (_frame == 2 || _frame == 130) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
                         Camera.main.transform.position + Camera.main.transform.forward * 6f - Vector3.up * 1.3f, 0f);
                     if (_frame == 5) combat.OnChangeWeapon1();
                     if (_frame == 135) combat.OnChangeWeapon3();
-                    input.overrideFiring = (_frame > 20 && _frame < 120) || (_frame > 140 && _frame < 200) || (_frame > 710 && _frame < 800);
-                    var sm = StyleMeter.Current;
-                    if (_frame % 30 == 0 && sm != null) Debug.LogWarning($"[test] frame {_frame} style {sm.CurrentRank} {sm.Points:0} x{sm.Multiplier} visible={sm.Visible}");
-                    if (_frame % 30 == 0 && PlayerState.Current != null) LogRage();
+                    input.overrideFiring = (_frame > 20 && _frame < 120) || (_frame > 140 && _frame < 200);
+                    if (_frame % 30 == 0) LogRage();
                     break;
                 }
                 case "fall":

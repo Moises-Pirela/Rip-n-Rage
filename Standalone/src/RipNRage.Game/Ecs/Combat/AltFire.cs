@@ -72,7 +72,6 @@ namespace RipNRage.Game.Ecs.Combat
 
                     if (!pressed || m.Step >= 3 || m.JabTimer > 0f) continue;
 
-                    PlayerState.Current?.SetViolentCombatState();
                     m.Step++;
                     if (m.Step < 3) Jab(ref m, ref gun, in rigs[i]);
                     else SpawnFinisher(ctx, ents[i], ref m, ref gun, in rigs[i]);

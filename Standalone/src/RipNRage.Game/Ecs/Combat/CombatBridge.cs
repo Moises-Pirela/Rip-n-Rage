@@ -25,10 +25,6 @@ namespace RipNRage.Game.Ecs.Combat
                 if (w.IsAlive(e.Target) && w.Has<RipNRage.Game.Ecs.AI.Enemy>(e.Target))
                 {
                     EnragedInjector<HudController>.GetInstance()?.CurrentCrosshair?.OnHit();
-                    PlayerState.Current?.AddToRage(0.1f);
-                    if (w.IsAlive(PlayerLink.PlayerEntity) && w.Has<Weapon>(PlayerLink.PlayerEntity))
-                        StyleMeter.Current?.RegisterHit(Weapons.Data(w.Get<Weapon>(PlayerLink.PlayerEntity).Slot).name, e.Headshot, e.Killed);
-                    if (e.Killed) PlayerState.Current?.NotifyKill(); // after the meter: it pays the comeback bonus off the DEPRESSED state
                 }
             }
         }

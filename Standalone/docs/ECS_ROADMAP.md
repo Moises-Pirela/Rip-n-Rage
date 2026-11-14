@@ -42,7 +42,7 @@ then start at the first unchecked layer.
   perception (sight query + noise entities), steering, attacks as entities, spawners as components; the behaviour
   trees, `AIAgent`, `AIState`, `MonsterSpawner` and the enemy GameObjects deleted; system declarations derived from
   queries and enforced (close-out below)
-- [ ] Layer 7 — Pickups, rage, style, environment
+- [ ] Layer 7 — Pickups, rage (two meters; the style meter retired), environment
 - [ ] Layer 8 — UI, HUD, save / load, game flow
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
@@ -869,7 +869,7 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
   `AiBrains.Step` / `Steering.Step`), and 109 new gameplay assertions. Engine gains: `SpriteFx`, seeded
   `LocalToWorld`, order-independent narrow phase, `--seed` / `--threads`, derived + enforced system declarations.
 
-### Layer 7 — Pickups, rage, style, environment (~0.65k lines)
+### Layer 7 — Pickups, rage, environment (~0.65k lines)
 
 **What is there today** (surveyed at 6.8):
 
@@ -885,54 +885,133 @@ Every step is judged on the three AI probes (`peek` / `close` / `approach`: `mov
 | Sky | `SkyboxRotator` (11) | `RenderSettings.skyboxRotation = t * 1.2` |
 | Bridge | `TriggerBridge.cs` (144) | `EcsObjects`, `TriggerVolume`, `TriggerFollower`, `GameTriggerBridge`; its last listeners are the pickup, the water, the two checkpoints |
 
-**Shape after the layer**: the player entity carries `Rage { Value, State, StateLeft, ViolentLeft }` and
-`Style { Points, Multiplier, Rank, LastKillWeapon, SinceKill, SinceScore, AmmoTimer }`; definitions are flat tables
-(`Rages.All` per state, `StyleDef`); behaviour is `IConsumes<HitEvent>` / `IConsumes<WeaponFiredEvent>`-style
-systems plus pure step functions (`Rages.Step`, `Styles.Score`, `Styles.Decay`) unit-tested like `AiBrains.Step`.
-HUD / post-fx stay UI-boundary readers of those components (layer 8 owns the HUD itself). Pickups, water and the
-checkpoint are entities with trigger components consumed by systems; **`TriggerBridge` and `ITriggerListener` are
-deleted at the end of this layer**, not in layer 9. Clocks are sim-time accumulators, never `Time.time`.
+**Direction (decided 2026-11-14, replaces the earlier rage / style plan): one rage system, two meters.**
+The style meter is retired; rage absorbs what was worth keeping. ENRAGED and DEPRESSED stay, but both are now
+**earned, chosen and useful**: aggression fills the *Fury* meter, evasion fills the *Calm* meter (working names —
+the state names stay). The player activates a full meter; inside a state **neither meter gains** and the state
+**cannot be left until its meter has drained**. ENRAGED rewards pressing the attack, DEPRESSED rewards evasive,
+defensive play. "Passive" means **evasive under threat** — dodging, wall running, sliding, near misses — not
+standing still or not shooting.
+
+#### The rage spec (draft — review before 7.1)
+
+**State** — one component on the player entity, replacing `PlayerState`'s rage half and `StyleMeter`:
+`Rage { Fury, Calm, State, Threat }`, `Fury` / `Calm` in 0..1, `State` ∈ Normal / Enraged / Depressed. The active
+meter *is* the timer — no separate duration field. `Threat` is described under evasion.
+
+**Rules** (`Rages.Step(in Rage, in RageInputs, dt, in RageDef)`, a pure function like `AiBrains.Step`):
+
+1. **Normal**: gains add to their meter, clamped to 1. A meter that is not full and has gained nothing for
+   `IdleDelay` decays at `IdleDecay` (keeps the meter about *recent* play). A full meter does not decay: it is
+   banked until spent. *(open: Q1)*
+2. **Activate**: the activate input with a full meter enters that meter's state. *(open: Q2 for the input)*
+3. **In a state**: every gain is dropped, for both meters. The active meter drains at its `DrainRate`; the other
+   one is frozen at its value. At 0 → Normal. No input, damage or kill ends a state early.
+4. **Death** clears both meters and the state; a save stores `Fury`, `Calm`, `State` (the active meter is the
+   remaining time, so a restored state resumes exactly; this replaces the "full duration on restore" fix).
+
+**Fury: aggression sources** (all from events that exist today, consumed off `HitEvent`):
+
+| Source | Starting value | Note |
+|---|---|---|
+| Hit on an enemy | +0.02 | spraying alone takes ~50 hits |
+| Kill | +0.15 | ~5–6 kills to fill with the other sources |
+| Headshot (hit / kill) | +0.03 / +0.10 extra | |
+| Close-range kill (< `CloseRange` 6 m) | +0.10 extra | rewards pushing in; distance known at consume time |
+| Melee / finisher kill | +0.15 extra | the jab and the alt-fire finishers |
+| Enemy in a rocket blast | +0.02 | the old splash call, kept |
+
+**Calm: evasion sources** — all gated by **threat**, so running laps around an empty level fills nothing.
+`Threat` is true while at least one living enemy has the player as `Perception.Target` *and* `Seen`, or has an
+`EnemyAttack` in progress aimed at the player. Sources:
+
+| Source | Starting value | Where it is detected |
+|---|---|---|
+| **Near miss**: an enemy projectile passes within `NearMissRadius` (1.5 m) of the player and does not hit | +0.08 | projectile step: closest approach between the projectile's segment this tick and the player |
+| **Dodge**: dash, slide start or wall jump while an `EnemyAttack` aimed at the player is in wind-up or burst | +0.12 | `PlayerMotor` edge + the attack entities |
+| Wall run under threat | +0.06/s | `PlayerMotor.IsWallRunning` |
+| Slide / airborne / dash under threat | +0.03/s | `IsSliding`, `!IsGrounded`, `IsDashing` |
+| Breaking line of sight: a pursuer goes from `Seen` to not seen while the player moves | +0.05 | `Perception` edge |
+| **Taking damage** | −0.10 of Calm per hit | the opposite of evading; aggression is not penalised |
+
+Standing still and not shooting gains nothing. Shooting does not *cost* Calm; the two meters can fill together,
+and choosing which one to spend is the decision.
+
+**Effects** (the starting point for tuning, each with a reader in the same commit):
+
+| | ENRAGED (offensive) | DEPRESSED (defensive) |
+|---|---|---|
+| Damage | dealt ×1.5 | taken ×0.5 |
+| Sustain | each hit heals 2, a kill heals 15 (lifesteal) | armour regenerates 5/s |
+| Movement | ×1.2 speed | dash cooldown ×0.5, one extra air dash |
+| Enemies | — | sight range ×0.6 and memory halved: easier to lose pursuers and reposition |
+| Duration (full meter) | `DrainRate` 1/8 s → 8 s | 1/10 s → 10 s |
+| Feedback | the existing red post-fx, a sting on activation | the existing blue post-fx, a sting |
+
+The old DEPRESSED speed ×0.5 penalty is gone: a defensive state that slows the player fights its own purpose.
+
+**What this deletes**: `StyleMeter` (all of it: scoring, ranks, S-rank perks — the HUD drawer goes too, not just
+the logic, since there is nothing left to draw), `RageStateData` and `GameAssets.*Rage`, `PlayerCombatState` /
+`SetViolentCombatState` (VIOLENT was the timer the old decay hung on; nothing needs it now), and most of the
+pre-tuning above (the shared pause clock, the climb-out, the speed cap — they solved conflicts that cannot happen
+any more). The `style` script becomes a rage script.
+
+**Engine / gameplay additions the effects need**: `DamageEvent.Instigator` (reader: the ENRAGED dealt multiplier
+and the DEPRESSED taken multiplier in `HealthSystem`; projectiles already carry `Instigator`); a perception
+modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash modifier read by the motor.
+
+**Answered at review (2026-11-14), and implemented in 7.1**
+
+- **Q1 — banking**: meters **never decay**, full or partial. What is earned is kept until it is spent.
+- **Q2 — activation input**: two actions — `rage_fury` (**Q**, D-pad left) and `rage_calm` (**E**, D-pad right).
+  Both D-pad bindings and Q were taken: quick swap moved to **Tab**, and weapons 2 / 4 lost their D-pad bindings
+  (number keys unchanged). `controls.json` gained a version and a one-time migration, so a saved config does not
+  leave Q doing two things.
+- **Q3 — partial activation**: allowed; the meter *is* the clock, so half a meter buys half a state.
+- **Q4 — chaining**: no lock-out — the tick a state ends, the other meter can be spent.
+- **Q5 — playtest HUD**: two plain bars beside the portrait (FURY red, CALM blue, pulsing while their state runs).
+  Replaced by layer 8's HUD pass.
+- **Q6 — numbers**: the tables' values are the starting point; tuning happens by playing.
 
 **Steps** (one commit + review stop each; gates under the 6.7b/6.7c rule):
 
-- [ ] 7.0 **Instrument the gates** — nothing here prints today. `rage` logs nothing at all; add `[test]` lines for
-      rage value / state / speed modifier at frames 20, 40, 340 (5 s after enrage) and add the decay case (no
-      shots: value stays 0.5). `style` already prints rank / points / multiplier: keep. New script **`pickup`**: walk
-      into an `item_ammo_*` on dock (or spawn one), log ammo before / after and that the pickup is gone; a full-ammo
-      refusal case. New **`water`** probe on the existing `water` script: `drawSky` on entry / exit. Record the
-      baseline; note the double checkpoint save in `saveload` output if it shows.
-- [ ] 7.1 **Rage is a component.** `Rage` on the player entity, `RageSystem` (clocks, decay, thresholds — the three
-      coroutines become `StateLeft` / `ViolentLeft`), inputs as events: hits via `IConsumes<HitEvent>` (`HitEvent` has no
-      attacker: like `CombatBridge` today, "target `Has<Enemy>`" means the player hit it — enemy fire never targets
-      enemies; +0.1 per hit; the blast's +0.05 is a separate call in `Projectiles` and moves with it, or the event
-      gains a `Splash` flag only if that has a reader), shots via the existing fire path writing `ViolentLeft`. `RageStateData` → `Rages.All` with **only
-      `MovementSpeed`** (the other four fields have no reader: delete them). Readers move: `PlayerCharacter` speed,
-      HUD portrait, save/load (`GameSaveSystem` reads/writes the component). `PlayerState` loses its rage half.
-- [ ] 7.2 **Rage effects as a system.** `RagePostprocess` → `RageFxSystem` easing per-state weights in a component
-      (the lerp-to-0.5 with 30·dt kept) and posting the post-fx override; the Clay fallback stays a UI drawer reading
-      the weights. Pixel gate: `rage` screenshot at the enraged frame vs 7.1.
-- [ ] 7.3 **Style is a component.** `Style` + `StyleSystem` consuming `HitEvent` (weapon slot instead of the name
-      string — note it is the slot *equipped when the event is consumed*, as today, not the one that fired), decay and the S-rank perks (regen through `Health`, ammo through `Weapons.AddAmmo` on the player's
-      `Inventory`, speed read by `PlayerCharacter`). `StyleMeter` keeps only the Clay drawer, reading the
-      component. Gate: `style` byte-identical (C 426 x2 at 150; D 264 at 390).
-- [ ] 7.4 **Pickups are entities.** `Pickup { Ammo, Amount }` + trigger + sprite on one entity built by
-      `item_ammo_*.spawnEntity` (the 6.6 `LevelRef` pattern, so saves keep knowing which were taken); `PickupSystem`
-      `IConsumes<TriggerEnterEvent>` with the player → `AddAmmo` → destroy, refused when full. The bob becomes a
-      component on the sprite child (no `TriggerFollower`). Delete `AmmoPickup`.
-- [ ] 7.5 **Environment volumes.** Water: a `WaterVolume` tag + a system flipping sky on the camera's
-      enter / exit (the `MainCamera` tag test becomes `Has<ActiveCamera>`). Checkpoint: `Checkpoint` component +
-      system calling `GameSaveSystem.Save("checkpoint")` once; **delete the duplicate `PlayerState` / `SaveManager
-      "Save1"` path** (confirm `SaveManager` has no other caller first). `SkyboxRotator` → a tiny system or a
-      field on the sky singleton. Then **delete `TriggerBridge.cs`** (`EcsObjects` only if nothing else uses it).
-- [ ] 7.6 **Surfaces come back.** `Surface { Name }` (interned id) on collider entities: props and floor planes
-      from their texture, brushes as a per-face table resolved by the hit normal (`BrushSurface.Resolve` as a pure
-      function over a shared table); `SurfaceResolver` reads the hit entity. Restores per-surface impact VFX lost
-      since layer 2 — a visible change, judged on `fire` screenshots (particles: compare by eye, not pixels) plus
-      assertions. Optional for the layer: if it grows, split it out rather than stall 7.7.
-- [ ] 7.7 Close-out: full sweep, re-recorded baselines, interleaved bench, alloc, close-out section, `PlayerState`
-      line count (it should be health / armour / death only, for layer 8).
+- [ ] 7.0 **Instrument the gates.** `rage` / `style` / `saveload` already log rage (pre-tuning commit). Add
+      `pickup` and the water probe as before. Record the baseline, knowing 7.1–7.4 replace the rage numbers wholesale.
+- [x] 7.1 **The two meters** (`Ecs/Rage.cs`). `Rage { Fury, Calm, State }` on the player entity, the constants flat
+      on `Rages`, and `Rages.Step` as the one place the rules live — a pure function (gains only in Normal and never
+      a decay; activation with any amount; inside a state no gain for either meter, no exit, the active meter
+      draining as the clock; both pressed at once = Fury). `RageSystem` collects the tick's gains (aggression off
+      `HitEvent`: hit / kill / headshot / inside 6 m; anything else off the new `RageGainEvent`, which is how the
+      rocket blast and 7.2's evasion sources pay), reads the two presses off `InputState`, and clears everything on
+      the player's death. **Deleted**: `StyleMeter` (213 lines, HUD drawer and all), `RageStateData`,
+      `GameAssets.*Rage`, `PlayerRageState`, `PlayerCombatState` / `SetViolentCombatState`, and `PlayerState`'s rage
+      half — 225 lines down to 114, health / armour / death / the save hooks only. The portrait, the post-fx, the
+      pause menu, the overlay and the save read the component (`Rages.TryGet` / `Restore`; the save keeps `rage` as
+      the Fury field name and gains `calm`). **No melee bonus**: the finisher deals no damage in this build and the
+      jab is cosmetic, so there is nothing to pay it off — it waits for a melee damage path, per the no-reader rule.
+      Gates: 199 engine + 213 gameplay assertions (32 new: the meters, activation, partial and chained states, the
+      drain as the clock, the effects, and the system over a world); `ScheduleChecks` re-pinned —
+      `PlayerLookSystem + RageSystem + SpinSystem` now share a batch (15 batches still, disjoint data); all 16
+      scripts byte-identical to 6.8 except the three that changed on purpose (`rage` / `style` are the new probes)
+      and **`saveload`, whose second walk is now the same length as the first** — the old rage drained to DEPRESSED
+      mid-walk and halved the player's speed; nothing does that any more. Repeatable across runs.
+- [ ] 7.2 **Calm sources.** `Threat` (perception + attack entities), near misses in the projectile step, dodge
+      edges off `PlayerMotor`, wall-run / slide / air under threat, line-of-sight breaks, damage taken.
+      Assertions per source, including "no threat → nothing"; a new `evade` script (wall run / dash past an
+      attacking grunt) that fills Calm.
+- [ ] 7.3 **Effects.** `DamageEvent.Instigator`, the two damage multipliers, lifesteal, armour regen, speed and
+      dash modifiers, the perception modifier; assertions per effect; the combat gates (`killedAtFrame 97`, `rocket`,
+      `jab`, `glockalt`) must stay identical outside a state.
+- [ ] 7.4 **Rage feedback as a system.** `RageFxSystem` (post-fx weights, activation stings, meter-full cue);
+      pixel gate on the `rage` screenshot.
+- [ ] 7.5 **Pickups are entities** (as planned before: `Pickup` + `PickupSystem`, delete `AmmoPickup`).
+- [ ] 7.6 **Environment volumes** (water, checkpoint — delete the duplicate `SaveManager "Save1"` path — sky
+      rotation; delete `TriggerBridge.cs`).
+- [ ] 7.7 **Surfaces come back** (optional for the layer, as before).
+- [ ] 7.8 Close-out.
 
-**Rage pre-tuning (2026-11-14, applied to the legacy code before 7.0, so 7.1 ports the tuned rules):**
+**Rage pre-tuning (2026-11-14; superseded by 7.1 — the shared pause clock, the climb-out, the speed cap and the
+drift are all gone with the meters they balanced; only the "a state is a timer, not a coroutine" shape survived):**
 the "small fixes" from the review brainstorm, constants on `PlayerState` / `StyleMeter`:
 (1) **one pause clock** — `StyleMeter.SinceLastAction` = time since the last style score *or* rage gain; rage only
 drains in a fight after `StyleMeter.DecayDelay` (2.5 s) on it, and the style decay reads the same clock;
@@ -950,9 +1029,8 @@ shot, so rage drains after a fight is over — `style` still ends DEPRESSED once
 second save moves 0.39 m (the drift starts rage 0.02 lower, so DEPRESSED arrives a few frames earlier). The
 player death at frame ~760 of the 900-frame `style` happens on HEAD too — a scenario artifact.
 
-**Decided at review (2026-11-14)**: rage is **retuned in this layer** — today it fights the style meter (design
-being brainstormed; 7.1 ports it with the new rules as a pure `Rages.Step`, 7.0 records the old behaviour first so
-the change is visible). The style meter's HUD **waits for layer 8**; 7.3 ports only its state and rules.
+**Earlier decision (superseded by the direction above)**: the style meter's HUD was to wait for layer 8; with the
+style meter retired there is nothing left to defer.
 
 ### Layer 8 — UI, HUD, save / load, game flow (~1.4k lines)
 

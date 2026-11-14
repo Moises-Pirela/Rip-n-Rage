@@ -96,16 +96,15 @@ public class RagePostprocess : MonoBehaviour
     }
 
     // The Unity prefab wired these to PlayerState through UnityEvents; here we poll the state.
-    private PlayerRageState _lastState = PlayerRageState.NORMAL;
+    private RipNRage.Game.Ecs.RageState _lastState = RipNRage.Game.Ecs.RageState.Normal;
     protected override void Update()
     {
-        var ps = PlayerState.Current;
-        if (ps == null || ps.RageState == _lastState) return;
-        _lastState = ps.RageState;
+        if (!RipNRage.Game.Ecs.Rages.TryGet(out var rage) || rage.State == _lastState) return;
+        _lastState = rage.State;
         switch (_lastState)
         {
-            case PlayerRageState.ENRAGED: OnEnterEnraged(); break;
-            case PlayerRageState.DEPRESSED: OnEnterDepressed(); break;
+            case RipNRage.Game.Ecs.RageState.Enraged: OnEnterEnraged(); break;
+            case RipNRage.Game.Ecs.RageState.Depressed: OnEnterDepressed(); break;
             default: OnEnterNormal(); break;
         }
     }

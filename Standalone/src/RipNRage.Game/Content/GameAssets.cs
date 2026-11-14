@@ -6,7 +6,7 @@ namespace RipNRage.Game.Content
     /// <summary>
     /// Loads the art/audio from the <c>assets/</c> folder (restored from the original Unity project) and rebuilds, in code, the
     /// data that lived in Unity-only assets: animation clips (.anim), animator controllers
-    /// (.controller / .overrideController) and ScriptableObjects (WeaponData, RageStateData, EnemyData).
+    /// (.controller / .overrideController) and ScriptableObjects (WeaponData, EnemyData).
     /// Every value below was read from the corresponding asset file.
     /// </summary>
     public static class GameAssets
@@ -32,7 +32,6 @@ namespace RipNRage.Game.Content
 
         // ---- scriptable data ----
         public static WeaponData GlockData, M1887Data, MG338Data, RocketLauncherData;
-        public static RageStateData NormalRage, EnragedRage, DepressedRage;
         public static EnemyData RiflemanData;
 
         public static bool Loaded { get; private set; }
@@ -360,10 +359,6 @@ namespace RipNRage.Game.Content
 
         private static void BuildData()
         {
-            // Assets/_Game/ScriptableObjects/RageStates/*.asset
-            NormalRage = new RageStateData { name = "NormalStateRageData", movementSpeedModifier = 1f };
-            EnragedRage = new RageStateData { name = "EnragedStateRageData", movementSpeedModifier = 1.5f };
-            DepressedRage = new RageStateData { name = "DepressedStateRageData", movementSpeedModifier = 0.5f };
 
             // Assets/_Game/ScriptableObjects/WeaponData/*.asset
             GlockData = new WeaponData

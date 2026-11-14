@@ -167,7 +167,7 @@ namespace RipNRage.Game.Ecs.Combat
             foreach (var target in _blast)
             {
                 if (!w.IsAlive(target) || !w.Has<Health>(target) || w.Has<Dead>(target)) continue;
-                if (w.Has<Hitbox>(target)) PlayerState.Current?.AddToRage(0.05f); // an enemy caught in the blast feeds the rage
+                if (w.Has<Hitbox>(target)) ctx.Post(new RageGainEvent { Fury = Rages.SplashFury }); // an enemy caught in the blast feeds the rage
                 // the shooter's own blast barely hurts them: rocket jumping is a movement tool, not suicide
                 float dmg = target == instigator ? def.Damage * 0.12f : def.Damage;
                 Vector3 blastDir = (w.Has<LocalTransform>(target) ? w.Get<LocalTransform>(target).Position : point) - point;

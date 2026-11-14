@@ -33,6 +33,8 @@ namespace RipNRage.Engine.Ecs.Input
         public bool DashPressed;
         public bool FirePressed, FireHeld;
         public bool AltFirePressed;
+        /// <summary>The rage meters' activation presses (Q / E, D-pad left / right).</summary>
+        public bool FuryPressed, CalmPressed;
         /// <summary>False while a UI screen owns the input: the other fields are neutral.</summary>
         public bool Live;
 
@@ -52,7 +54,7 @@ namespace RipNRage.Engine.Ecs.Input
     public static class InputOverride
     {
         public static Vector2? Move, Look;
-        public static bool? Fire, Jump, Slide, Dash;
+        public static bool? Fire, Jump, Slide, Dash, Fury, Calm;
 
         /// <summary>
         /// Hard gate: while set, <see cref="InputState"/> reads as neutral and not <c>Live</c> whatever the devices
@@ -65,7 +67,7 @@ namespace RipNRage.Engine.Ecs.Input
         public static void JumpOnce() => _jumpOnce = true;
         internal static bool TakeJumpOnce() { bool j = _jumpOnce; _jumpOnce = false; return j; }
 
-        public static void Clear() { Move = Look = null; Fire = Jump = Slide = Dash = null; _jumpOnce = false; }
+        public static void Clear() { Move = Look = null; Fire = Jump = Slide = Dash = Fury = Calm = null; _jumpOnce = false; }
     }
 
     /// <summary>Samples the "gameplay" action map into the <see cref="InputState"/> singleton (first in Tick).</summary>
@@ -119,6 +121,7 @@ namespace RipNRage.Engine.Ecs.Input
                 if (s.JumpPressed) s.JumpQueued = true;
                 s.SlidePressed = G["slide"].Pressed; s.SlideHeld = G["slide"].Held;
                 s.DashPressed = G["dash"].Pressed;
+                s.FuryPressed = G["rage_fury"].Pressed; s.CalmPressed = G["rage_calm"].Pressed;
             }
 
             // ---- automation overrides (they drive the game with no devices, so they ignore Live) ----
@@ -129,6 +132,8 @@ namespace RipNRage.Engine.Ecs.Input
             if (InputOverride.TakeJumpOnce()) { s.JumpPressed = true; s.JumpQueued = true; s.Live = true; }
             if (InputOverride.Slide is bool sl) { s.SlidePressed = sl; s.SlideHeld = sl; s.Live = true; }
             if (InputOverride.Dash is bool d) { s.DashPressed = d; s.Live = true; }
+            if (InputOverride.Fury is bool fu) { s.FuryPressed = fu; s.Live = true; }
+            if (InputOverride.Calm is bool ca) { s.CalmPressed = ca; s.Live = true; }
         }
     }
 }

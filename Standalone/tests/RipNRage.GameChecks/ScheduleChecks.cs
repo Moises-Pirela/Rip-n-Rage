@@ -23,7 +23,7 @@ internal static class ScheduleChecks
             "AnimationSystem + LifetimeSystem", "RagdollSystem", "EcsInputSystem", "EnemyVisualSystem + HearingSystem",
             "SightSystem", "AiBrainSystem", "SteeringSystem", "EnemyAttackSystem", "SpawnerSystem",
             "AltFireSystem", "BashFinisherSystem", "GrappleFinisherSystem", "PointBlankFinisherSystem",
-            "WeaponFireSystem", "PlayerLookSystem + SpinSystem",
+            "WeaponFireSystem", "PlayerLookSystem + RageSystem + SpinSystem",
         },
         ["FixedTick"] = new[]
         {
@@ -48,6 +48,11 @@ internal static class ScheduleChecks
             var actual = w.DescribeBatches(phase).Select(b => string.Join(" + ", b.Select(t => t.Name))).ToArray();
             var expected = Expected[phase];
             same[phase] = actual.SequenceEqual(expected);
+            if (Environment.GetEnvironmentVariable("ECS_SCHEDULE_PRINT") == "1") // read the new layout off a passing run
+            {
+                Console.Error.WriteLine($"--- {phase} actual:");
+                foreach (var l in actual) Console.Error.WriteLine("    " + l);
+            }
             if (same[phase]) continue;
             Console.Error.WriteLine($"--- {phase} schedule changed. expected:");
             foreach (var l in expected) Console.Error.WriteLine("    " + l);

@@ -193,12 +193,14 @@ namespace RipNRage.Engine
             G.Add("fire", "FIRE", InputBinding.Mouse(0), InputBinding.Axis(Glfw.GAMEPAD_AXIS_RIGHT_TRIGGER, true));
             G.Add("alt_fire", "JAB / GRAB", InputBinding.Mouse(1), InputBinding.Axis(Glfw.GAMEPAD_AXIS_LEFT_TRIGGER, true));
             G.Add("weapon_1", "GLOCK", InputBinding.Key(KeyCode.Alpha1), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_DPAD_UP));
-            G.Add("weapon_2", "M1887", InputBinding.Key(KeyCode.Alpha2), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_DPAD_RIGHT));
+            G.Add("weapon_2", "M1887", InputBinding.Key(KeyCode.Alpha2), InputBinding.None); // D-pad right went to RAGE: CALM
             G.Add("weapon_3", "MG338", InputBinding.Key(KeyCode.Alpha3), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_DPAD_DOWN));
-            G.Add("weapon_4", "ROCKET LAUNCHER", InputBinding.Key(KeyCode.Alpha4), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_DPAD_LEFT));
+            G.Add("weapon_4", "ROCKET LAUNCHER", InputBinding.Key(KeyCode.Alpha4), InputBinding.None); // D-pad left went to RAGE: FURY
             G.Add("weapon_next", "NEXT WEAPON", new InputBinding(InputSource.MouseScrollUp, 0), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_RIGHT_BUMPER));
             G.Add("weapon_prev", "PREVIOUS WEAPON", new InputBinding(InputSource.MouseScrollDown, 0), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_LEFT_BUMPER));
-            G.Add("weapon_last", "QUICK SWAP (LAST WEAPON)", InputBinding.Key(KeyCode.Q), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_Y));
+            G.Add("weapon_last", "QUICK SWAP (LAST WEAPON)", InputBinding.Key(KeyCode.Tab), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_Y)); // Q went to RAGE: FURY
+            G.Add("rage_fury", "RAGE: ENRAGE (FURY METER)", InputBinding.Key(KeyCode.Q), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_DPAD_LEFT));
+            G.Add("rage_calm", "RAGE: DEPRESS (CALM METER)", InputBinding.Key(KeyCode.E), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_DPAD_RIGHT));
             G.Add("pause", "PAUSE", InputBinding.Key(KeyCode.Escape), InputBinding.Pad(Glfw.GAMEPAD_BUTTON_START));
             G.Add("quick_save", "QUICK SAVE", InputBinding.Key(KeyCode.F6), InputBinding.None);
             G.Add("quick_load", "QUICK LOAD", InputBinding.Key(KeyCode.F9), InputBinding.None);
@@ -484,11 +486,21 @@ namespace RipNRage.Engine
         private sealed class ActionDto { public BindingDto keyboard; public BindingDto gamepad; }
         private sealed class FileDto
         {
+        /// <summary>2: the rage meters took Q / E and D-pad left / right (see <see cref="Migrate"/>).</summary>
+            public const int Current = 2;
             public int version = 1;
             public Dictionary<string, ActionDto> gameplay = new Dictionary<string, ActionDto>();
             public float mouseSensitivity = 1f; public bool invertMouseY; public float gamepadLookSpeed = 200f; public bool invertGamepadY; public float gamepadDeadzone = 0.2f; public float gamepadCurve = 1.8f;
         }
         private static readonly JsonSerializerOptions Json = new JsonSerializerOptions { WriteIndented = true, IncludeFields = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+
+        /// <summary>
+        /// Saved bindings that would collide with a later version's defaults are dropped once, so an existing
+        /// controls.json does not leave a key doing two things. v2: the rage meters took Q (was quick swap) and
+        /// D-pad left / right (were weapons 4 / 2) — those three actions take their new defaults.
+        /// </summary>
+        private static bool Migrate(int savedVersion, string action) =>
+            savedVersion < 2 && (action == "weapon_last" || action == "weapon_2" || action == "weapon_4");
 
         private static BindingDto ToDto(InputBinding b) => new BindingDto { source = b.source.ToString(), code = b.code };
         private static InputBinding FromDto(BindingDto d) => d == null || !Enum.TryParse<InputSource>(d.source, out var s) ? InputBinding.None : new InputBinding(s, d.code);
@@ -497,7 +509,7 @@ namespace RipNRage.Engine
         {
             try
             {
-                var f = new FileDto { mouseSensitivity = mouseSensitivity, invertMouseY = invertMouseY, gamepadLookSpeed = gamepadLookSpeed, invertGamepadY = invertGamepadY, gamepadDeadzone = gamepadDeadzone, gamepadCurve = gamepadCurve };
+                var f = new FileDto { version = FileDto.Current, mouseSensitivity = mouseSensitivity, invertMouseY = invertMouseY, gamepadLookSpeed = gamepadLookSpeed, invertGamepadY = invertGamepadY, gamepadDeadzone = gamepadDeadzone, gamepadCurve = gamepadCurve };
                 foreach (var a in Gameplay.actions) f.gameplay[a.name] = new ActionDto { keyboard = ToDto(a.keyboard), gamepad = ToDto(a.gamepad) };
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
                 File.WriteAllText(FilePath, JsonSerializer.Serialize(f, Json));
@@ -520,6 +532,7 @@ namespace RipNRage.Engine
                     {
                         var a = Gameplay.Get(kv.Key);
                         if (a == null || kv.Value == null) continue;
+                        if (Migrate(f.version, kv.Key)) continue; // keeps this action's new default
                         a.keyboard = FromDto(kv.Value.keyboard);
                         a.gamepad = FromDto(kv.Value.gamepad);
                     }
