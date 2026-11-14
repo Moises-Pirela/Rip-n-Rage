@@ -42,21 +42,54 @@ then start at the first unchecked layer.
   perception (sight query + noise entities), steering, attacks as entities, spawners as components; the behaviour
   trees, `AIAgent`, `AIState`, `MonsterSpawner` and the enemy GameObjects deleted; system declarations derived from
   queries and enforced (close-out below)
-- [ ] Layer 7 — Pickups, rage (two meters; the style meter retired), environment
+- [x] **Layer 7 — Pickups, rage, environment**: rage is two meters the player fills (Fury by aggression, Calm by
+  evasion under threat) and spends on ENRAGED / DEPRESSED, tuned live from tunables.cfg `[rage]`; the style meter
+  retired; pickups, water, checkpoints, sky and impact surfaces are entities and systems; the trigger bridge and
+  every trigger-listener MonoBehaviour deleted (close-out below)
 - [ ] Layer 8 — UI, HUD, save / load, game flow
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
 
-### Pick-up point for the next session (written 2026-11-14, after 6.8; layer 7 is next — see its step list)
+### Pick-up point for the next session (written 2026-11-14, after 7.8; layer 8 is next)
 
-Layers 0–6 are done. Start **layer 7 at 7.0** (instrument the gates). **Compare scripts under
-`--fixed-dt 0.016667 --threads 1 --validate-access`** (default seed implied; see 6.7b / 6.7c). Established rules:
-ECS + functional, OOP only at UI boundaries; simplicity over grand design (fewer lines per feature); no speculative
-fields — nothing goes in a component until a reader exists in the same commit; definitions as shared immutable
-tables, state in components, behaviour in systems; instrument a gate before porting what it watches; **a system
-declares what it touches** — queries declare themselves, `[Reads]`/`[Writes]` cover ad-hoc access, `[Exclusive]`
-marks state outside components — and the check suites and gate runs enforce it; `ScheduleChecks` pins the batch
-layout, so a new system is re-pinned in its own commit, in the open.
+Layers 0–7 are done. **Compare scripts under `--fixed-dt 0.016667 --threads 1 --validate-access`** (default seed
+implied). The established rules hold as written in layer 6's notes below, plus what layer 7 added:
+
+- **Build the test project before running it.** `dotnet build RipNRage.sln` does *not* refresh
+  `tests/RipNRage.GameChecks`' copy of the game assembly, so `dotnet run --no-build` after a solution build can
+  test stale code — layer 7 read two false PASSes this way, one hiding a compile error. Run
+  `dotnet build tests/RipNRage.GameChecks` explicitly (the gate scripts should do it). `CHECKS_TRACE=1` prints the
+  stack of a non-assertion failure.
+- **Seed by placement, never by entity index** (`AiBrains.Seed`): an index depends on how many entities exist
+  before it, so every entity a later layer adds at load would reshuffle the AI (and a buffered entity's index is
+  not final until playback).
+- **Build level entities immediately when the loader must stamp them** (`LevelRef.Index`); `PhysicsEntities`
+  builds through the command buffer, so its entity is not alive when `spawnEntity` returns. Tags that ride on such
+  a collider go through the same buffer (`Surfaces.Tag`).
+- **`--threads 1` pins the rigid solver, not the ECS**: parallel batches still run on workers. Determinism holds
+  (command buffers), but the per-system profiler cannot see systems inside a parallel batch — use `--perf-csv`
+  and the `ecs` total.
+- A pixel gate needs its floor measured first: `look` is 0.000% same-build; `rage` and anything with muzzle
+  particles ~1.1–1.3%.
+
+What layer 8 inherits:
+
+- **Death has two doors.** `FallRespawn` calls `PlayerState.Die()` directly, so a fall posts no `DamageEvent` and no
+  `DeathEvent` reaches the ECS. Rage copes (empty health is its signal); anything new keyed on `DeathEvent` misses
+  falls. Layer 8 owns death and game flow — route the fall through `HealthSystem`.
+- **HUD**: the two rage meters are placeholder bars beside the portrait (`HudController.DrawRageMeters`); the
+  portrait reads `Rage`; the rage grade is `RageScreen` (a drawer, no state). The style meter's HUD is gone.
+- **Save format**: `PlayerSave.rage` holds Fury (name kept), `calm` is new, `combatState` unused; every saved level
+  entity is keyed by `LevelRef` (monsters, spawners, pickups) — `LevelEntityRef` is deleted. The `object cycle`
+  save error is still layer 8's.
+- **Controls**: Q / E and D-pad left / right are the rage meters; quick swap moved to Tab; weapons 2 / 4 have no
+  D-pad binding. `controls.json` is versioned (v2) with a one-time migration.
+- `EcsObjects` (`Ecs/EcsObjects.cs`) is the last entity ↔ GameObject directory, used by the combat bridge.
+- No melee damage path exists (the finisher deals none), so Fury has no melee bonus yet.
+- **Open performance item**: on `approach`, the Tick-phase `ecs` total is +0.05–0.17 ms (0.19–0.23 → 0.24–0.40
+  over 3 runs). Every new system that runs alone costs 1–2 µs a frame; the remainder sits outside per-system work —
+  the parallel batch the profiler cannot see into, and four more batch boundaries (15 → 19 Tick batches, each a
+  playback + sync). Under 1% of a 60 fps frame, inside the noise on `walk` / `fire`; a per-batch profile settles it.
 
 The notes below were written for layer 6 and still hold where they are not about enemies.
 
@@ -1153,7 +1186,35 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
       them was `default`: the resolver had been stubbed since physics went ECS in layer 2). All 19 scripts
       byte-identical. The `fire` screenshot barely moves (0.006%): that script fires level down the pier and its
       impacts land far off and small, so it is not the evidence here — the probe and the checks are.
-- [ ] 7.8 Close-out.
+- [x] 7.8 Close-out (below).
+
+#### 7.8 — Layer close-out (done)
+
+- **Full sweep green, twice**: 199 engine + 305 gameplay assertions; all 20 scripts exit 0 under the gate rule and
+  are byte-identical across two complete runs. Combat gates at their values: `killedAtFrame 97`, `rocket` hp 80
+  armour 0 y 3.82, `jab` 1→2→0, `glockalt` step 0 / finisher none / ammo 120. New probes: `pickup` shells 64 → 80,
+  pickups 4 → 3; `water` `sky False under True` from y −1.43; `surface` wood / metal / sand; `rage` Fury 0.54 then
+  ENRAGED at ×1.2; `evade` Calm earned, lost to hits, spent on DEPRESSED.
+- **AI baseline** (re-recorded in 7.5, placement-seeded): `peek` / `close` wander unaware (moved 7.26 / 18.03);
+  `approach` 100 wandering at 10.2 m, 200 heard and chased, 290 forgotten, 365 heard again.
+- **Bench** (`--threads 1 --no-render`, 3 interleaved vs 6.8 `8d55aa1`, median ms/step): crates 11.65 / 11.81,
+  ragdolls 15.72 / 15.93, projectiles 0.19 / 0.21, ground 0.88 / 0.92 — flat (ragdolls spread 14.96–17.09; the
+  benchmark loads only the engine, whose layer-7 change is two input fields and two actions).
+- **Frame / alloc** (3 interleaved, 600 frames, medians): walk 3.9 / 4.0 ms, 50.6 / 48.2 KB; fire 6.5 / 5.0 ms,
+  49.7 / 46.4 KB; approach 6.4 / 7.2 ms, 47.7 / 47.7 KB. Twelve more `approach` samples put its median at 6.0 /
+  6.9 ms; the `--perf-csv` breakdown places that in scheduling, not system work (open item in the pick-up point).
+  Allocation is unchanged or lower everywhere.
+- **Layer totals** (`8d55aa1..HEAD`, `src` + `tests`, 10 commits): +2,349 / −1,124 across 51 files. **Deleted**:
+  `StyleMeter`, `RageStateData`, `RagePostprocess`, `AmmoPickup`, `Prefabs`, `TriggerBridge` (the bridge and every
+  trigger-listener MonoBehaviour), `EnterWaterCollision`, `SkyboxRotator`, `SurfaceMaterial` / `BrushSurface`, the
+  `Checkpoint` MonoBehaviour, `SaveManager`; `PlayerState` 225 → 89 lines (health, armour, death, save hooks).
+  **Is**: `Rage` / `RageFx` / `Pickup` / `Bob` / `WaterVolume` / `Underwater` / `Checkpoint` / `SkySpin` /
+  `ImpactSurface` components, 11 systems, the `RageDef` table in tunables.cfg `[rage]`, 1,191 lines in all, and 125
+  new gameplay assertions (180 → 305).
+- **Fixed on the way, not in the plan**: the double checkpoint save; the water sky swap (dead since layer 4); the
+  dock's water and sand built at 200 × 200 instead of 1732 × 1000 (map size parse); impact surfaces stubbed to
+  default since layer 2; AI dice reshuffled by unrelated entities; a corpse keeping its rage on a fall death; the
+  dash's undeclared camera access; case-dependent surface names.
 
 **Rage pre-tuning (2026-11-14; superseded by 7.1 — the shared pause clock, the climb-out, the speed cap and the
 drift are all gone with the meters they balanced; only the "a state is a timer, not a coroutine" shape survived):**
