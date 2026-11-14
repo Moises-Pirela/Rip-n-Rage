@@ -243,6 +243,23 @@ internal static class Layer7Checks
         True(!w.Get<Rage>(player).Threat, "no enemy, no threat");
         Close(w);
 
+        // ---- enemies busy with each other are nobody's threat (the index is keyed by target, not by "is it
+        // the player?", so infighting is just more entries) ----
+        w = NewWorld();
+        player = Mover(w, Vector3.zero);
+        SetMotor(w, player, wallRunning: true);
+        var brawlerA = Enemy(w, new Vector3(0f, 0f, 6f));
+        var brawlerB = Enemy(w, new Vector3(0f, 0f, 9f));
+        w.Add(brawlerA, new Perception { Target = brawlerB, Seen = true });
+        w.Add(brawlerB, new Perception { Target = brawlerA, Seen = true });
+        w.Add(brawlerA, new EnemyWeapon());
+        Attack(w, brawlerA, windup: 0.3f); // and shooting at each other
+        Evade(w, player);
+        Tick(w, 4);
+        True(!w.Get<Rage>(player).Threat, "two enemies fighting each other do not threaten the player");
+        Equal(0f, w.Get<Rage>(player).Calm, "and their fight pays the player nothing");
+        Close(w);
+
         // ---- under threat: wall running pays per second ----
         w = NewWorld();
         player = Mover(w, Vector3.zero);

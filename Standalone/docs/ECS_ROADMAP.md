@@ -1062,6 +1062,15 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
       real `SightSystem` and paid once, every counted evasion paid, the flag is an edge not a state); schedule
       unchanged; all 16 earlier scripts byte-identical, `evade` unchanged except that it no longer walks off the
       dock, `pickup` / `water` recorded. Repeatable.
+- [x] 7.3c **The Calm system asks once, not once per player** (`RageCalm.cs`). The tick now opens by indexing
+      **who is after whom, keyed by the target** — one pass over the living enemies (seen / lost-sight counts) and
+      one over the attacks in progress — and each player reads its own entry; the index is scratch, cleared every
+      tick (the `SpawnerSystem` pattern). It replaces two scans per player per tick that each asked "is this one
+      about the player?", a question that stops being answerable the day **enemies fight each other**: an
+      infighting pair is simply two more entries under their own targets. Gates: 260 gameplay assertions (2 new:
+      two enemies shooting at each other leave the player unthreatened and pay them nothing); all 17 scripts
+      byte-identical; frame time unchanged — at one player and one enemy the two shapes cost the same (`ecs`
+      1.2–2.5 ms either way, 3 interleaved runs), so this buys scale, not milliseconds today.
 - [ ] 7.4 **Rage feedback as a system.** `RageFxSystem` (post-fx weights, activation stings, meter-full cue);
       pixel gate on the `rage` screenshot.
 - [ ] 7.5 **Pickups are entities** (as planned before: `Pickup` + `PickupSystem`, delete `AmmoPickup`).

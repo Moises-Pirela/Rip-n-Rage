@@ -41,11 +41,30 @@ namespace RipNRage.Game.Ecs
     /// dashing / airborne, dodging a live attack, and shaking a pursuer off. The evasive moves are counted on the
     /// motor (<see cref="PlayerMotor.Evasions"/>) and the sight break is flagged by the AI
     /// (<see cref="Perception.LostSight"/>), so this system remembers nothing between ticks.
+    ///
+    /// <para>The tick starts by indexing <b>who is after whom</b>, keyed by the target, in one pass over the
+    /// enemies and one over the attacks; each player then reads its own entry. Asking per player instead would be
+    /// a scan per player per tick, and the question stops being "is this about the player?" the day enemies fight
+    /// each other — an infighting pair is just two more entries in the same index.</para>
     /// </summary>
-    [Reads(typeof(EnemyAttack), typeof(Parent), typeof(Perception))] // the attacks aimed at the player, and who has them
+    [Reads(typeof(EnemyAttack), typeof(Parent), typeof(Perception))] // who is after whom, and which attacks are live
     public sealed class RageCalmSystem : SystemBase, ITick
     {
+        /// <summary>What is on one target's back this tick.</summary>
+        private struct Hunt
+        {
+            /// <summary>Enemies that can see the target right now.</summary>
+            public int Seen;
+            /// <summary>Enemies that lost sight of the target this tick.</summary>
+            public int Lost;
+            /// <summary>An attack aimed at the target is winding up or firing.</summary>
+            public bool Attacked;
+        }
+
         private Query _players, _enemies, _attacks;
+        /// <summary>Rebuilt from scratch every tick (the SpawnerSystem pattern): scratch, never carried over.</summary>
+        private readonly System.Collections.Generic.Dictionary<Entity, Hunt> _hunted =
+            new System.Collections.Generic.Dictionary<Entity, Hunt>();
 
         public override void OnCreate()
         {
@@ -58,8 +77,8 @@ namespace RipNRage.Game.Ecs
         public void Tick(SystemContext ctx)
         {
             float dt = ctx.DeltaTime;
-            var w = ctx.World;
             var def = Rages.Def;
+            Index(ctx.World);
 
             foreach (var chunk in _players)
             {
@@ -70,13 +89,12 @@ namespace RipNRage.Game.Ecs
                     if (!chunk.Includes(i)) continue;
                     ref var rage = ref rages[i];
                     var motor = motors[i];
+                    _hunted.TryGetValue(ents[i], out var hunt); // nobody after them: an empty entry, every count zero
 
-                    // one pass over the enemies answers both questions: who has the player, and who just lost them
-                    Hunters(ents[i], motor.CurrentSpeed > def.movingSpeed, out bool hunted, out int lost);
-                    bool attacked = AttackAimedAtPlayer(w, ents[i]);
-                    rage.Threat = hunted || attacked;
+                    rage.Threat = hunt.Seen > 0 || hunt.Attacked;
 
-                    float calm = lost * def.breakLineOfSight;
+                    // shaking a pursuer off is the player's doing, so it only counts while they are moving
+                    float calm = motor.CurrentSpeed > def.movingSpeed ? hunt.Lost * def.breakLineOfSight : 0f;
                     if (rage.Threat)
                     {
                         if (motor.IsWallRunning) calm += def.wallRunPerSecond * dt;
@@ -86,7 +104,7 @@ namespace RipNRage.Game.Ecs
                     // the dodge: the evasive moves themselves, while something is actually shooting at the player
                     int dodges = motor.Evasions - rage.EvasionsSeen;
                     rage.EvasionsSeen = motor.Evasions;
-                    if (attacked && dodges > 0) calm += dodges * def.dodge;
+                    if (hunt.Attacked && dodges > 0) calm += dodges * def.dodge;
 
                     if (calm > 0f) ctx.Post(new RageGainEvent { Calm = calm });
                 }
@@ -94,28 +112,28 @@ namespace RipNRage.Game.Ecs
         }
 
         /// <summary>
-        /// One pass over the living enemies: whether any has the player in sight, and how many lost sight of them
-        /// this tick while the player was moving (shaken off, which is the player's doing — a dead pursuer has left
-        /// this query entirely, so it can never be counted).
+        /// Who is after whom, by target: one pass over the living enemies (a dead pursuer has left the query, so it
+        /// can never be counted as shaken off) and one over the attacks in progress.
         /// </summary>
-        private void Hunters(Entity player, bool moving, out bool hunted, out int lost)
+        private void Index(World w)
         {
-            hunted = false; lost = 0;
+            _hunted.Clear();
+
             foreach (var chunk in _enemies)
             {
                 var senses = chunk.Get<Perception>();
                 for (int i = 0; i < chunk.Length; i++)
                 {
-                    if (!chunk.Includes(i) || senses[i].Target != player) continue;
-                    if (senses[i].Seen) hunted = true;
-                    else if (senses[i].LostSight && moving) lost++;
+                    if (!chunk.Includes(i)) continue;
+                    var target = senses[i].Target;
+                    if (target.IsNull) continue;
+                    _hunted.TryGetValue(target, out var hunt);
+                    if (senses[i].Seen) hunt.Seen++;
+                    else if (senses[i].LostSight) hunt.Lost++;
+                    _hunted[target] = hunt;
                 }
             }
-        }
 
-        /// <summary>An <see cref="EnemyAttack"/> entity whose enemy is after the player, still winding up or firing.</summary>
-        private bool AttackAimedAtPlayer(World w, Entity player)
-        {
             foreach (var chunk in _attacks)
             {
                 var attacks = chunk.Get<EnemyAttack>(); var parents = chunk.Get<Parent>();
@@ -124,10 +142,14 @@ namespace RipNRage.Game.Ecs
                     if (!chunk.Includes(i)) continue;
                     if (attacks[i].WindupLeft <= 0f && attacks[i].ShotsLeft <= 0) continue;
                     Entity enemy = parents[i].Value;
-                    if (w.IsAlive(enemy) && w.Has<Perception>(enemy) && w.Get<Perception>(enemy).Target == player) return true;
+                    if (!w.IsAlive(enemy) || !w.Has<Perception>(enemy)) continue;
+                    var target = w.Get<Perception>(enemy).Target;
+                    if (target.IsNull) continue;
+                    _hunted.TryGetValue(target, out var hunt);
+                    hunt.Attacked = true;
+                    _hunted[target] = hunt;
                 }
             }
-            return false;
         }
     }
 
