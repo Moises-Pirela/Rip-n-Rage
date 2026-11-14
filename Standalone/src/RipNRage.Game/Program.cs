@@ -161,6 +161,7 @@ namespace RipNRage.Game
                     return RipNRage.Engine.Platform.GpuInfo.IsSoftware ? 3 : 0;
                 }
                 RipNRage.Game.Content.MovementSettings.Attach(app); // tunables.cfg [movement], live
+                RipNRage.Game.Content.RageDef.Attach(app);           // tunables.cfg [rage], live
                 if (exportDock != null) { RipNRage.Game.Content.Level.DockLevel.Export(exportDock); return 0; }
                 if (exportAnims != null) { RipNRage.Game.Content.GameAssets.Load(); RipNRage.Game.Content.GameAssets.ExportAnimations(exportAnims); return 0; }
                 string levelPath = noLevel ? null : (level != null ? RipNRage.Game.Content.Level.LevelLoader.Locate(level) : RipNRage.Game.Content.Level.LevelLoader.Locate("dock.map"));
@@ -424,6 +425,15 @@ namespace RipNRage.Game
         private int _frame;
         /// <summary>Where each enemy was first seen, so the probe can tell whether it has ever moved.</summary>
         private readonly System.Collections.Generic.Dictionary<Entity, Vector3> _enemyHome = new System.Collections.Generic.Dictionary<Entity, Vector3>();
+        /// <summary>Ammo pickups still standing (they are GameObjects until 7.5 makes them entities).</summary>
+        private static int CountPickups()
+        {
+            int n = 0;
+            var found = Scene.Current?.FindObjectsOfType<AmmoPickup>();
+            if (found != null) foreach (var go in found) if (go != null && !go.IsDestroyed) n++;
+            return n;
+        }
+
         private void LogRage()
         {
             RipNRage.Game.Ecs.Rages.TryGet(out var rage);
@@ -495,10 +505,29 @@ namespace RipNRage.Game
                     input.overrideLook = _frame > 270 && _frame < 310 ? new Vector2(-36f, 1.0f) : Vector2.zero;
                     break;
                 case "water":
-                    // look over the railing at the water
-                    input.overrideMove = _frame < 45 ? new Vector2(1f, 0f) : Vector2.zero;
+                    // look over the railing at the water, then walk off the edge into it: the water volume hides
+                    // the sky while the camera is under it (EnterWaterCollision, a trigger-bridge listener — 7.6
+                    // ports it). The probe is the gate for that port.
+                    input.overrideMove = _frame < 45 ? new Vector2(1f, 0f) : _frame > 100 ? new Vector2(1f, 0f) : Vector2.zero;
                     input.overrideLook = _frame > 45 && _frame < 76 ? new Vector2(30f, -6f) : Vector2.zero;
+                    if (_frame % 15 == 0 && _frame >= 90)
+                        Debug.LogWarning($"[test] frame {_frame} y {Camera.main.transform.position.y:0.00} sky {RenderSettings.drawSky}");
                     break;
+                case "pickup":
+                {
+                    // the dock's shell-ammo pickup sits at (-3, 0.91, -20), thirty metres down the planks: stand
+                    // the player four metres short of it and walk in. The ammo must go up and the pickup must be
+                    // gone (today an AmmoPickup GameObject through the trigger bridge; 7.5 ports it to an entity)
+                    if (_frame == 10) RipNRage.Game.Ecs.PlayerLink.Current?.Teleport(new Vector3(-3f, 1.8f, -16f), 180f);
+                    input.overrideMove = _frame > 12 && _frame < 70 ? new Vector2(0f, 1f) : Vector2.zero;
+                    if (_frame % 20 == 0)
+                    {
+                        int shells = combat.AmmoOf(AmmoType.SHELL);
+                        var pos = PlayerState.Current != null ? PlayerState.Current.transform.position : Vector3.zero;
+                        Debug.LogWarning($"[test] frame {_frame} at ({pos.x:0.0}, {pos.z:0.0}) shells {shells} pickups {CountPickups()}");
+                    }
+                    break;
+                }
                 case "killenemy":
                 {
                     // spawn a rifleman close by, aim at it, kill it with the MG, then watch the hit flash + dissolve

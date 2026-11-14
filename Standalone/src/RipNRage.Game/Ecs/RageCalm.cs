@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Transforms;
@@ -9,37 +8,22 @@ namespace RipNRage.Game.Ecs
 {
     /// <summary>
     /// The Calm meter's sources: evasion <b>under threat</b>. Being passive is not standing still and not shooting —
-    /// it is moving while something is trying to kill you, so every gain here is gated on
-    /// <see cref="Rage.Threat"/>: at least one living enemy has the player as its target and can see them, or an
-    /// attack aimed at the player is in progress. Running laps around an empty level pays nothing.
+    /// it is moving while something is trying to kill you, so every gain here is gated on <see cref="Rage.Threat"/>:
+    /// at least one living enemy has the player as its target and can see them, or an attack aimed at the player is
+    /// in progress. Running laps around an empty level pays nothing.
     ///
     /// <para>Gains are posted as <see cref="RageGainEvent"/>s rather than written to the component, so they pass
-    /// through <see cref="Rages.Step"/> like every other gain and are dropped while a state runs.</para>
+    /// through <see cref="Rages.Step"/> like every other gain and are dropped while a state runs. The numbers are in
+    /// <see cref="Content.RageDef"/> (tunables.cfg <c>[rage]</c>).</para>
     /// </summary>
     public static class Calms
     {
-        /// <summary>Per second, while under threat.</summary>
-        public const float WallRunPerSecond = 0.06f;
-        /// <summary>Per second, while under threat: sliding, dashing or off the ground.</summary>
-        public const float EvadePerSecond = 0.03f;
-        /// <summary>A dash, a slide or a wall jump while an attack aimed at the player is live.</summary>
-        public const float Dodge = 0.12f;
-        /// <summary>An enemy that had the player loses sight of them while the player is moving.</summary>
-        public const float BreakLineOfSight = 0.05f;
-        /// <summary>An enemy bullet that passed by without hitting.</summary>
-        public const float NearMiss = 0.08f;
-        /// <summary>Taking a blow is the opposite of evading (Fury is not penalised).</summary>
-        public const float DamagePenalty = 0.10f;
-
         /// <summary>
-        /// The near-miss band: closer than <see cref="NearMissMin"/> and the bullet would have hit the capsule
-        /// (that blow pays <see cref="DamagePenalty"/> instead), further than <see cref="NearMissMax"/> and it was
-        /// never a threat. Measured as the distance from the player to the segment the bullet flew this tick.
+        /// Where a bullet is measured against: the middle of the player's capsule, which is about where the enemies
+        /// aim (their <c>Aim</c> is the last known body position). Measuring at head height would make a well-aimed
+        /// shot look like a near miss.
         /// </summary>
-        public const float NearMissMin = 0.6f, NearMissMax = 1.5f;
-
-        /// <summary>The player counts as moving (so a break of line of sight was earned) above this speed.</summary>
-        public const float MovingSpeed = 1f;
+        public static readonly Vector3 PlayerCentre = new Vector3(0f, PlayerLink.CentreY, 0f);
 
         /// <summary>Distance from <paramref name="point"/> to the segment a → b.</summary>
         public static float DistanceToSegment(Vector3 point, Vector3 a, Vector3 b)
@@ -54,26 +38,20 @@ namespace RipNRage.Game.Ecs
 
     /// <summary>
     /// Writes <see cref="Rage.Threat"/> and pays the Calm meter for evading under it: wall running, sliding /
-    /// dashing / airborne, dodging a live attack, and shaking a pursuer off. The dodge and the wall jump are edges
-    /// (a flag going up, the wall-jump count moving), the rest are per-second.
+    /// dashing / airborne, dodging a live attack, and shaking a pursuer off. The evasive moves are counted on the
+    /// motor (<see cref="PlayerMotor.Evasions"/>) and the sight break is flagged by the AI
+    /// (<see cref="Perception.LostSight"/>), so this system remembers nothing between ticks.
     /// </summary>
-    [Reads(typeof(EnemyAttack), typeof(Parent), typeof(Perception), typeof(Dead))] // the attacks aimed at the player, and who can see them
+    [Reads(typeof(EnemyAttack), typeof(Parent), typeof(Perception))] // the attacks aimed at the player, and who has them
     public sealed class RageCalmSystem : SystemBase, ITick
     {
         private Query _players, _enemies, _attacks;
-        /// <summary>Last tick's edges, per player entity (one in practice; keyed so a respawn starts clean).</summary>
-        private readonly Dictionary<Entity, Edges> _edges = new Dictionary<Entity, Edges>();
-        /// <summary>Which enemies could see the player last tick (the line-of-sight break is an edge).</summary>
-        private readonly HashSet<Entity> _sawPlayer = new HashSet<Entity>();
-        private readonly HashSet<Entity> _seeingNow = new HashSet<Entity>();
-
-        private struct Edges { public bool Dashing, Sliding; public int WallJumps; }
 
         public override void OnCreate()
         {
             _players = World.Query().With<Rage>().WithReadOnly<PlayerTag>().WithReadOnly<PlayerMotor>()
-                .WithReadOnly<CharacterMotor>().WithReadOnly<LocalToWorld>().Build();
-            _enemies = World.Query().WithReadOnly<Enemy>().WithReadOnly<Perception>().Build();
+                .WithReadOnly<CharacterMotor>().Build();
+            _enemies = World.Query().WithReadOnly<Enemy>().WithReadOnly<Perception>().Without<Dead>().Build();
             _attacks = World.Query().WithReadOnly<EnemyAttack>().WithReadOnly<Parent>().Build();
         }
 
@@ -81,6 +59,7 @@ namespace RipNRage.Game.Ecs
         {
             float dt = ctx.DeltaTime;
             var w = ctx.World;
+            var def = Rages.Def;
 
             foreach (var chunk in _players)
             {
@@ -89,45 +68,49 @@ namespace RipNRage.Game.Ecs
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
-                    Entity player = ents[i];
                     ref var rage = ref rages[i];
                     var motor = motors[i];
 
-                    bool attacked = AttackAimedAtPlayer(w, player);
-                    rage.Threat = attacked || Hunted(w, player, out _);
+                    // one pass over the enemies answers both questions: who has the player, and who just lost them
+                    Hunters(ents[i], motor.CurrentSpeed > def.movingSpeed, out bool hunted, out int lost);
+                    bool attacked = AttackAimedAtPlayer(w, ents[i]);
+                    rage.Threat = hunted || attacked;
 
-                    float calm = LineOfSightBreaks(w, player, motor.CurrentSpeed);
+                    float calm = lost * def.breakLineOfSight;
                     if (rage.Threat)
                     {
-                        if (motor.IsWallRunning) calm += Calms.WallRunPerSecond * dt;
-                        else if (motor.IsSliding || motor.IsDashing || !characters[i].IsGrounded) calm += Calms.EvadePerSecond * dt;
+                        if (motor.IsWallRunning) calm += def.wallRunPerSecond * dt;
+                        else if (motor.IsSliding || motor.IsDashing || !characters[i].IsGrounded) calm += def.evadePerSecond * dt;
                     }
 
-                    // the dodge: the evasive move itself, while something is actually shooting at the player
-                    _edges.TryGetValue(player, out var was);
-                    bool dodged = (motor.IsDashing && !was.Dashing) || (motor.IsSliding && !was.Sliding) || motor.WallJumps > was.WallJumps;
-                    if (dodged && attacked) calm += Calms.Dodge;
-                    _edges[player] = new Edges { Dashing = motor.IsDashing, Sliding = motor.IsSliding, WallJumps = motor.WallJumps };
+                    // the dodge: the evasive moves themselves, while something is actually shooting at the player
+                    int dodges = motor.Evasions - rage.EvasionsSeen;
+                    rage.EvasionsSeen = motor.Evasions;
+                    if (attacked && dodges > 0) calm += dodges * def.dodge;
 
                     if (calm > 0f) ctx.Post(new RageGainEvent { Calm = calm });
                 }
             }
         }
 
-        /// <summary>Living enemies that have the player and can see them right now.</summary>
-        private bool Hunted(World w, Entity player, out int count)
+        /// <summary>
+        /// One pass over the living enemies: whether any has the player in sight, and how many lost sight of them
+        /// this tick while the player was moving (shaken off, which is the player's doing — a dead pursuer has left
+        /// this query entirely, so it can never be counted).
+        /// </summary>
+        private void Hunters(Entity player, bool moving, out bool hunted, out int lost)
         {
-            count = 0;
+            hunted = false; lost = 0;
             foreach (var chunk in _enemies)
             {
-                var senses = chunk.Get<Perception>(); var ents = chunk.Entities;
+                var senses = chunk.Get<Perception>();
                 for (int i = 0; i < chunk.Length; i++)
                 {
-                    if (!chunk.Includes(i) || w.Has<Dead>(ents[i])) continue;
-                    if (senses[i].Target == player && senses[i].Seen) count++;
+                    if (!chunk.Includes(i) || senses[i].Target != player) continue;
+                    if (senses[i].Seen) hunted = true;
+                    else if (senses[i].LostSight && moving) lost++;
                 }
             }
-            return count > 0;
         }
 
         /// <summary>An <see cref="EnemyAttack"/> entity whose enemy is after the player, still winding up or firing.</summary>
@@ -146,32 +129,6 @@ namespace RipNRage.Game.Ecs
             }
             return false;
         }
-
-        /// <summary>Pursuers that could see the player last tick and cannot now, while the player is moving.</summary>
-        private float LineOfSightBreaks(World w, Entity player, float speed)
-        {
-            _seeingNow.Clear();
-            foreach (var chunk in _enemies)
-            {
-                var senses = chunk.Get<Perception>(); var ents = chunk.Entities;
-                for (int i = 0; i < chunk.Length; i++)
-                {
-                    if (!chunk.Includes(i) || w.Has<Dead>(ents[i])) continue;
-                    if (senses[i].Target == player && senses[i].Seen) _seeingNow.Add(ents[i]);
-                }
-            }
-
-            float calm = 0f;
-            bool moving = speed > Calms.MovingSpeed;
-            foreach (var e in _sawPlayer)
-                if (!_seeingNow.Contains(e) && moving && w.IsAlive(e) && !w.Has<Dead>(e))
-                    calm += Calms.BreakLineOfSight; // shaken off, not killed: a dead pursuer is gone from the world
-
-            _sawPlayer.Clear();
-            foreach (var e in _seeingNow) _sawPlayer.Add(e);
-            return calm;
-        }
-
     }
 
     /// <summary>
@@ -193,6 +150,7 @@ namespace RipNRage.Game.Ecs
         {
             if (!TryPlayer(out var player)) return;
             var w = ctx.World;
+            var def = Rages.Def;
 
             foreach (var chunk in _bullets)
             {
@@ -201,18 +159,16 @@ namespace RipNRage.Game.Ecs
                 {
                     if (!chunk.Includes(i)) continue;
                     ref var b = ref bullets[i];
-                    Vector3 now = ltw[i].Position;
-                    Vector3 from = b.LastPosition;
-                    b.LastPosition = now;
-                    if (from == Vector3.zero) continue; // its first tick: no segment yet
+                    Vector3 from = b.LastPosition, now = ltw[i].Position;
+                    b.LastPosition = now; // Launch seeds it with the muzzle, so the first segment is a real one
 
                     if (b.NearMissPaid) continue;
                     if (!w.IsAlive(b.Instigator) || !w.Has<Enemy>(b.Instigator)) continue; // the player's own shots are not evasion
 
                     float d = Calms.DistanceToSegment(player, from, now);
-                    if (d < Calms.NearMissMin || d > Calms.NearMissMax) continue;
+                    if (d < def.nearMissMin || d > def.nearMissMax) continue;
                     b.NearMissPaid = true;
-                    ctx.Post(new RageGainEvent { Calm = Calms.NearMiss });
+                    ctx.Post(new RageGainEvent { Calm = def.nearMiss });
                 }
             }
         }
@@ -223,7 +179,7 @@ namespace RipNRage.Game.Ecs
             {
                 var ltw = chunk.Get<LocalToWorld>();
                 for (int i = 0; i < chunk.Length; i++)
-                    if (chunk.Includes(i)) { position = ltw[i].Position + new Vector3(0f, 0.9f, 0f); return true; } // mid-capsule
+                    if (chunk.Includes(i)) { position = ltw[i].Position + Calms.PlayerCentre; return true; }
             }
             position = default;
             return false;

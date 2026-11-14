@@ -3,6 +3,7 @@ using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Transforms;
+using RipNRage.Game.Content;
 using RipNRage.Game.Ecs;
 using RipNRage.Game.Ecs.AI;
 using RipNRage.Game.Ecs.Combat;
@@ -20,6 +21,9 @@ using RipNRage.Game.Ecs.Combat;
 /// </summary>
 internal static class Layer7Checks
 {
+    /// <summary>The checks pin their own table: tuning tunables.cfg [rage] must not move an assertion.</summary>
+    private static readonly RageDef Def = new RageDef();
+
     public static void Run(Action<bool, string> True, Action<float, float, string> Equal)
     {
         // the attack entities the dodge watches are stepped by EnemyAttackSystem, which reads the definition table
@@ -51,20 +55,20 @@ internal static class Layer7Checks
     private static void Meters(Action<bool, string> True, Action<float, float, string> Equal)
     {
         var r = new Rage();
-        r = Rages.Step(in r, Gain(fury: 0.2f), Dt);
+        r = Rages.Step(in r, Gain(fury: 0.2f), Dt, Def);
         Equal(0.2f, r.Fury, "a gain fills the meter");
         Equal(0f, r.Calm, "the other meter is untouched");
 
         // no decay anywhere: what is earned is banked until it is spent
         var idle = r;
-        for (int i = 0; i < 600; i++) idle = Rages.Step(in idle, default, Dt);
+        for (int i = 0; i < 600; i++) idle = Rages.Step(in idle, default, Dt, Def);
         Equal(0.2f, idle.Fury, "ten seconds idle: the meter does not decay");
 
         var full = new Rage { Fury = 0.95f };
-        full = Rages.Step(in full, Gain(fury: 0.5f), Dt);
+        full = Rages.Step(in full, Gain(fury: 0.5f), Dt, Def);
         Equal(1f, full.Fury, "a meter fills to one and no further");
 
-        var both = Rages.Step(in r, Gain(fury: 0.1f, calm: 0.3f), Dt);
+        var both = Rages.Step(in r, Gain(fury: 0.1f, calm: 0.3f), Dt, Def);
         Equal(0.3f, both.Fury, "both meters can fill at once: Fury");
         Equal(0.3f, both.Calm, "both meters can fill at once: Calm");
         True(both.State == RageState.Normal, "filling a meter does not enter a state: the player chooses");
@@ -75,26 +79,26 @@ internal static class Layer7Checks
     private static void Activation(Action<bool, string> True, Action<float, float, string> Equal)
     {
         var empty = new Rage();
-        empty = Rages.Step(in empty, Press(fury: true), Dt);
+        empty = Rages.Step(in empty, Press(fury: true), Dt, Def);
         True(empty.State == RageState.Normal, "an empty meter cannot be activated");
 
         var partial = new Rage { Fury = 0.5f };
-        partial = Rages.Step(in partial, Press(fury: true), Dt);
+        partial = Rages.Step(in partial, Press(fury: true), Dt, Def);
         True(partial.State == RageState.Enraged, "a partly filled meter can be activated");
 
         var calm = new Rage { Calm = 1f };
-        calm = Rages.Step(in calm, Press(calm: true), Dt);
+        calm = Rages.Step(in calm, Press(calm: true), Dt, Def);
         True(calm.State == RageState.Depressed, "the Calm meter activates DEPRESSED");
 
         var ambiguous = new Rage { Fury = 1f, Calm = 1f };
-        ambiguous = Rages.Step(in ambiguous, new RageInputs { ActivateFury = true, ActivateCalm = true }, Dt);
+        ambiguous = Rages.Step(in ambiguous, new RageInputs { ActivateFury = true, ActivateCalm = true }, Dt, Def);
         True(ambiguous.State == RageState.Enraged, "both pressed in one tick: Fury wins");
 
         // partial = proportionally shorter: half a meter is half the state
         var half = new Rage { Fury = 0.5f, State = RageState.Enraged };
-        Lasts(True, Rages.EnragedDuration * 0.5f, Drain(ref half), "half a Fury meter buys half of ENRAGED");
+        Lasts(True, Def.enragedDuration * 0.5f, Drain(ref half), "half a Fury meter buys half of ENRAGED");
         var whole = new Rage { Calm = 1f, State = RageState.Depressed };
-        Lasts(True, Rages.DepressedDuration, Drain(ref whole), "a full Calm meter buys the whole of DEPRESSED");
+        Lasts(True, Def.depressedDuration, Drain(ref whole), "a full Calm meter buys the whole of DEPRESSED");
     }
 
     /// <summary>A duration in whole ticks: the state ends on the tick that empties the meter, never before it.</summary>
@@ -105,7 +109,7 @@ internal static class Layer7Checks
     private static float Drain(ref Rage r)
     {
         float t = 0f;
-        for (int i = 0; i < 100_000 && r.State != RageState.Normal; i++) { r = Rages.Step(in r, default, Dt); t += Dt; }
+        for (int i = 0; i < 100_000 && r.State != RageState.Normal; i++) { r = Rages.Step(in r, default, Dt, Def); t += Dt; }
         return t;
     }
 
@@ -115,30 +119,30 @@ internal static class Layer7Checks
     {
         var r = new Rage { Fury = 1f, Calm = 0.4f, State = RageState.Enraged };
 
-        var gained = Rages.Step(in r, Gain(fury: 0.5f, calm: 0.5f), Dt);
-        Equal(1f - Dt / Rages.EnragedDuration, gained.Fury, "inside a state the active meter only drains: no Fury gain");
+        var gained = Rages.Step(in r, Gain(fury: 0.5f, calm: 0.5f), Dt, Def);
+        Equal(1f - Dt / Def.enragedDuration, gained.Fury, "inside a state the active meter only drains: no Fury gain");
         Equal(0.4f, gained.Calm, "inside a state the other meter is frozen: no Calm gain");
 
-        var pressed = Rages.Step(in r, new RageInputs { ActivateCalm = true, ActivateFury = true }, Dt);
+        var pressed = Rages.Step(in r, new RageInputs { ActivateCalm = true, ActivateFury = true }, Dt, Def);
         True(pressed.State == RageState.Enraged, "a state cannot be left by pressing: only the drain ends it");
 
         // the drain is the clock, and it empties the meter it spent
         var spent = r;
         float took = Drain(ref spent);
-        Lasts(True, Rages.EnragedDuration, took, "a full Fury meter runs ENRAGED for its duration");
+        Lasts(True, Def.enragedDuration, took, "a full Fury meter runs ENRAGED for its duration");
         Equal(0f, spent.Fury, "the spent meter is empty");
         Equal(0.4f, spent.Calm, "the other meter kept everything it had");
 
         // chaining: the moment the first state ends, a meter filled earlier can be spent
-        var chained = Rages.Step(in spent, Press(calm: true), Dt);
+        var chained = Rages.Step(in spent, Press(calm: true), Dt, Def);
         True(chained.State == RageState.Depressed, "ENRAGED can be chained straight into DEPRESSED");
-        Lasts(True, Rages.DepressedDuration * 0.4f, Drain(ref chained), "the chained state lasts what its meter held");
+        Lasts(True, Def.depressedDuration * 0.4f, Drain(ref chained), "the chained state lasts what its meter held");
     }
 
     private static void Effects(Action<float, float, string> Equal)
     {
         Equal(1f, Rages.SpeedMultiplier(new Rage()), "Normal does not change the player's speed");
-        Equal(Rages.EnragedSpeed, Rages.SpeedMultiplier(new Rage { State = RageState.Enraged }), "ENRAGED is faster");
+        Equal(Def.enragedSpeed, Rages.SpeedMultiplier(new Rage { State = RageState.Enraged }), "ENRAGED is faster");
         Equal(1f, Rages.SpeedMultiplier(new Rage { State = RageState.Depressed }), "DEPRESSED does not slow the player down");
     }
 
@@ -152,12 +156,12 @@ internal static class Layer7Checks
         var enemy = Enemy(w, new Vector3(0f, 0f, 20f));
         Hit(w, enemy, new Vector3(0f, 0f, 20f), headshot: false, killed: false);
         Tick(w, 2);
-        Equal(Rages.HitFury, w.Get<Rage>(player).Fury, "a hit on an enemy pays the hit gain");
+        Equal(Def.hitFury, w.Get<Rage>(player).Fury, "a hit on an enemy pays the hit gain");
 
         // a headshot hit pays more
         Hit(w, enemy, new Vector3(0f, 0f, 20f), headshot: true, killed: false);
         Tick(w, 2);
-        Equal(Rages.HitFury * 2f + Rages.HeadshotHitFury, w.Get<Rage>(player).Fury, "a headshot pays the extra");
+        Equal(Def.hitFury * 2f + Def.headshotHitFury, w.Get<Rage>(player).Fury, "a headshot pays the extra");
         Close(w);
 
         // a kill far away: hit + kill, no close-range bonus
@@ -166,7 +170,7 @@ internal static class Layer7Checks
         enemy = Enemy(w, new Vector3(0f, 0f, 20f));
         Hit(w, enemy, new Vector3(0f, 0f, 20f), headshot: false, killed: true);
         Tick(w, 2);
-        Equal(Rages.HitFury + Rages.KillFury, w.Get<Rage>(player).Fury, "a kill out of range pays hit + kill");
+        Equal(Def.hitFury + Def.killFury, w.Get<Rage>(player).Fury, "a kill out of range pays hit + kill");
         Close(w);
 
         // the same kill up close
@@ -175,7 +179,7 @@ internal static class Layer7Checks
         enemy = Enemy(w, new Vector3(0f, 0f, 3f));
         Hit(w, enemy, new Vector3(0f, 0f, 3f), headshot: true, killed: true);
         Tick(w, 2);
-        Equal(Rages.HitFury + Rages.HeadshotHitFury + Rages.KillFury + Rages.HeadshotKillFury + Rages.CloseKillFury,
+        Equal(Def.hitFury + Def.headshotHitFury + Def.killFury + Def.headshotKillFury + Def.closeKillFury,
               w.Get<Rage>(player).Fury, "a headshot kill inside the close range pays every bonus");
 
         // a hit on something that is not an enemy pays nothing (enemy fire on the player)
@@ -188,14 +192,14 @@ internal static class Layer7Checks
         // the posted gain event (the rocket blast, and 7.2's evasion sources)
         w = NewWorld();
         player = Player(w, Vector3.zero);
-        w.Post(new RageGainEvent { Fury = Rages.SplashFury, Calm = 0.25f });
+        w.Post(new RageGainEvent { Fury = Def.splashFury, Calm = 0.25f });
         Tick(w, 2);
-        Equal(Rages.SplashFury, w.Get<Rage>(player).Fury, "a posted gain pays Fury");
+        Equal(Def.splashFury, w.Get<Rage>(player).Fury, "a posted gain pays Fury");
         Equal(0.25f, w.Get<Rage>(player).Calm, "a posted gain pays Calm");
 
-        // death clears both meters and the state
-        w.Get<Rage>(player).State = RageState.Enraged;
-        w.Post(new DeathEvent { Entity = player });
+        // death clears both meters and the state (the Dead tag HealthSystem latches on a killing blow)
+        Enrage(w, player);
+        w.Add(player, new Dead());
         Tick(w, 2);
         var dead = w.Get<Rage>(player);
         True(dead.Fury == 0f && dead.Calm == 0f && dead.State == RageState.Normal, "a dead player keeps no meters and no state");
@@ -249,16 +253,16 @@ internal static class Layer7Checks
         float before = w.Get<Rage>(player).Calm;
         Tick(w, 60);
         float perSecond = w.Get<Rage>(player).Calm - before;
-        True(MathF.Abs(perSecond - Calms.WallRunPerSecond) < Calms.WallRunPerSecond * 0.2f,
-             $"a second of wall running under threat pays about {Calms.WallRunPerSecond} (paid {perSecond})");
+        True(MathF.Abs(perSecond - Def.wallRunPerSecond) < Def.wallRunPerSecond * 0.2f,
+             $"a second of wall running under threat pays about {Def.wallRunPerSecond} (paid {perSecond})");
 
         // ---- sliding / airborne pays the smaller rate ----
         SetMotor(w, player, wallRunning: false, sliding: true);
         before = w.Get<Rage>(player).Calm;
         Tick(w, 60);
         float slide = w.Get<Rage>(player).Calm - before;
-        True(MathF.Abs(slide - Calms.EvadePerSecond) < Calms.EvadePerSecond * 0.25f,
-             $"a second of sliding under threat pays about {Calms.EvadePerSecond} (paid {slide})");
+        True(MathF.Abs(slide - Def.evadePerSecond) < Def.evadePerSecond * 0.25f,
+             $"a second of sliding under threat pays about {Def.evadePerSecond} (paid {slide})");
         Close(w);
 
         // ---- the dodge needs a live attack, not just a threat ----
@@ -266,18 +270,27 @@ internal static class Layer7Checks
         player = Mover(w, Vector3.zero);
         hunter = Hunter(w, new Vector3(0f, 0f, 6f), player);
         before = w.Get<Rage>(player).Calm;
-        SetMotor(w, player, dashing: true); // the edge: not dashing -> dashing
+        SetMotor(w, player, dashing: true);
+        Evade(w, player); // the motor counts the move; nothing is shooting
         Tick(w, 2);
         // dashing under threat still earns the per-second evade rate; what it must not earn is the dodge
-        True(w.Get<Rage>(player).Calm - before < Calms.Dodge * 0.5f, "a dash with nobody shooting is not a dodge");
+        True(w.Get<Rage>(player).Calm - before < Def.dodge * 0.5f, "a dash with nobody shooting is not a dodge");
         SetMotor(w, player, dashing: false);
         Tick(w, 2);
 
         Attack(w, hunter, windup: 0.3f);
+        Tick(w, 2); // the attack entity has to exist before the move counts as a dodge
         before = w.Get<Rage>(player).Calm;
         SetMotor(w, player, dashing: true);
+        Evade(w, player);
         Tick(w, 2);
-        True(w.Get<Rage>(player).Calm - before >= Calms.Dodge, "a dash while an attack is winding up is a dodge");
+        True(w.Get<Rage>(player).Calm - before >= Def.dodge, "a dash while an attack is winding up is a dodge");
+
+        // two moves in one tick are two dodges: the count cannot lose one
+        before = w.Get<Rage>(player).Calm;
+        Evade(w, player); Evade(w, player);
+        Tick(w, 2);
+        True(w.Get<Rage>(player).Calm - before >= 2f * Def.dodge, "every evasive move counted is paid");
         Close(w);
 
         // ---- a near miss pays once; a bullet far away pays nothing ----
@@ -290,28 +303,41 @@ internal static class Layer7Checks
         Equal(0f, w.Get<Rage>(player).Calm, "a bullet's first tick has no segment to measure");
         Move(w, bullet, new Vector3(1f, 0.9f, -5f)); // flies past, one metre to the side
         Tick(w, 4); // the transform updates in LateTick and the gain lands a tick later
-        Equal(Calms.NearMiss, w.Get<Rage>(player).Calm, "a bullet that passed inside the band pays the near miss");
+        Equal(Def.nearMiss, w.Get<Rage>(player).Calm, "a bullet that passed inside the band pays the near miss");
         Move(w, bullet, new Vector3(1f, 0.9f, -15f));
         Tick(w, 4); // the transform updates in LateTick and the gain lands a tick later
-        Equal(Calms.NearMiss, w.Get<Rage>(player).Calm, "the same bullet pays only once");
+        Equal(Def.nearMiss, w.Get<Rage>(player).Calm, "the same bullet pays only once");
 
         var far = Bullet(w, hunter, new Vector3(8f, 0.9f, 5f));
         Tick(w, 4); // the transform updates in LateTick and the gain lands a tick later
         Move(w, far, new Vector3(8f, 0.9f, -5f));
         Tick(w, 4); // the transform updates in LateTick and the gain lands a tick later
-        Equal(Calms.NearMiss, w.Get<Rage>(player).Calm, "a bullet that passed eight metres away is not a near miss");
+        Equal(Def.nearMiss, w.Get<Rage>(player).Calm, "a bullet that passed eight metres away is not a near miss");
         Close(w);
 
-        // ---- shaking a pursuer off, and the penalty for being hit ----
+        // ---- shaking a pursuer off: driven by the real SightSystem, which flags the edge ----
+        w = NewWorld();
+        player = Mover(w, new Vector3(500f, 1f, 0f));
+        var watcher = Watcher(w, new Vector3(500f, 1f, 6f)); // 6 m ahead of the player, facing them
+        SetMotor(w, player, speed: 8f);
+        Tick(w, 3);
+        True(w.Get<Perception>(watcher).Target == player && w.Get<Rage>(player).Threat, "a watching enemy is a threat");
+
+        before = w.Get<Rage>(player).Calm;
+        w.Get<LocalTransform>(player).Position = new Vector3(540f, 1f, 0f); // gone, well past the sight range
+        Tick(w, 3);
+        Equal(before + Def.breakLineOfSight, w.Get<Rage>(player).Calm, "losing a pursuer while moving pays, once");
+        True(!w.Get<Perception>(watcher).LostSight, "the flag is the tick's edge, not a state");
+
+        before = w.Get<Rage>(player).Calm;
+        Tick(w, 10);
+        Equal(before, w.Get<Rage>(player).Calm, "staying lost pays nothing further");
+        Close(w);
+
+        // ---- the penalty for being hit ----
         w = NewWorld();
         player = Mover(w, Vector3.zero);
         hunter = Hunter(w, new Vector3(0f, 0f, 6f), player);
-        SetMotor(w, player, speed: 8f);
-        Tick(w, 2);
-        before = w.Get<Rage>(player).Calm;
-        w.Get<Perception>(hunter).Seen = false; // the enemy lost sight of a moving player
-        Tick(w, 2);
-        Equal(before + Calms.BreakLineOfSight, w.Get<Rage>(player).Calm, "losing a pursuer while moving pays");
 
         w.Get<Rage>(player).Calm = 0.5f;
         SetMotor(w, player); // standing still: nothing else moves the meter
@@ -319,7 +345,7 @@ internal static class Layer7Checks
         before = w.Get<Rage>(player).Calm;
         w.Post(new HitEvent { Target = player, Point = Vector3.zero });
         Tick(w, 2);
-        Equal(before - Calms.DamagePenalty, w.Get<Rage>(player).Calm, "taking a blow costs Calm");
+        Equal(before - Def.damagePenalty, w.Get<Rage>(player).Calm, "taking a blow costs Calm");
 
         // and it cannot go below empty
         w.Get<Rage>(player).Calm = 0.05f;
@@ -338,12 +364,25 @@ internal static class Layer7Checks
         return e;
     }
 
+    /// <summary>An evasive move, as the motor records one (a dash, a slide start or a wall jump).</summary>
+    private static void Evade(World w, Entity player) => w.Get<PlayerMotor>(player).Evasions++;
+
     private static void SetMotor(World w, Entity player, bool wallRunning = false, bool sliding = false,
                                  bool dashing = false, float speed = 0f)
     {
         ref var p = ref w.Get<PlayerMotor>(player);
         p.IsWallRunning = wallRunning; p.IsSliding = sliding; p.IsDashing = dashing; p.CurrentSpeed = speed;
         w.Get<CharacterMotor>(player).IsGrounded = true; // only the flags above should pay
+    }
+
+    /// <summary>A whole enemy as the AI builds one: SightSystem drives its perception (needs the heading).</summary>
+    private static Entity Watcher(World w, Vector3 at)
+    {
+        var e = Enemy(w, at);
+        w.Add(e, new Heading { Yaw = 180f }); // faces -z, down the player's way
+        w.Add(e, new Perception());
+        w.Add(e, new EnemyWeapon());
+        return e;
     }
 
     /// <summary>An enemy that has the player and can see them (with the gun its attack entity is stepped against).</summary>
@@ -381,15 +420,15 @@ internal static class Layer7Checks
     {
         // ---- the multipliers are the state's, and Normal changes nothing ----
         Equal(1f, Rages.DamageDealt(new Rage()), "Normal deals its own damage");
-        Equal(Rages.EnragedDamageDealt, Rages.DamageDealt(new Rage { State = RageState.Enraged }), "ENRAGED deals more");
+        Equal(Def.enragedDamageDealt, Rages.DamageDealt(new Rage { State = RageState.Enraged }), "ENRAGED deals more");
         Equal(1f, Rages.DamageDealt(new Rage { State = RageState.Depressed }), "DEPRESSED deals its own damage");
         Equal(1f, Rages.DamageTaken(new Rage()), "Normal takes its own damage");
-        Equal(Rages.DepressedDamageTaken, Rages.DamageTaken(new Rage { State = RageState.Depressed }), "DEPRESSED takes less");
+        Equal(Def.depressedDamageTaken, Rages.DamageTaken(new Rage { State = RageState.Depressed }), "DEPRESSED takes less");
         Equal(1f, Rages.DamageTaken(new Rage { State = RageState.Enraged }), "ENRAGED takes its own damage");
         Equal(1f, Rages.SightRangeScale(new Rage()), "Normal is seen at the usual range");
-        Equal(Rages.DepressedSightRange, Rages.SightRangeScale(new Rage { State = RageState.Depressed }), "DEPRESSED is harder to see");
+        Equal(Def.depressedSightRange, Rages.SightRangeScale(new Rage { State = RageState.Depressed }), "DEPRESSED is harder to see");
         Equal(0, Rages.ExtraAirDashes(new Rage()), "Normal gets the usual air dashes");
-        Equal(Rages.DepressedAirDashes, Rages.ExtraAirDashes(new Rage { State = RageState.Depressed }), "DEPRESSED gets one more air dash");
+        Equal(Def.depressedAirDashes, Rages.ExtraAirDashes(new Rage { State = RageState.Depressed }), "DEPRESSED gets one more air dash");
 
         // ---- a blow, over a world: dealt by an ENRAGED player ----
         var w = NewWorld();
@@ -432,10 +471,10 @@ internal static class Layer7Checks
         Enrage(w, player);
         Hit(w, enemy, new Vector3(0f, 0f, 10f), headshot: false, killed: false);
         Tick(w, 2);
-        Equal(50f + Rages.LifestealPerHit, w.Get<Health>(player).Current, "ENRAGED: a hit feeds the player");
+        Equal(50f + Def.lifestealPerHit, w.Get<Health>(player).Current, "ENRAGED: a hit feeds the player");
         Hit(w, enemy, new Vector3(0f, 0f, 10f), headshot: false, killed: true);
         Tick(w, 2);
-        Equal(50f + Rages.LifestealPerHit + Rages.LifestealPerKill, w.Get<Health>(player).Current, "ENRAGED: a kill feeds more");
+        Equal(50f + Def.lifestealPerHit + Def.lifestealPerKill, w.Get<Health>(player).Current, "ENRAGED: a kill feeds more");
 
         w.Get<Health>(player).Current = 99f;
         Hit(w, enemy, new Vector3(0f, 0f, 10f), headshot: false, killed: true);
@@ -457,8 +496,8 @@ internal static class Layer7Checks
         Depress(w, player);
         Tick(w, 60);
         float armor = w.Get<Armor>(player).Current;
-        True(MathF.Abs(armor - Rages.ArmorRegenPerSecond) < Rages.ArmorRegenPerSecond * 0.2f,
-             $"DEPRESSED regrows about {Rages.ArmorRegenPerSecond} armour a second (grew {armor})");
+        True(MathF.Abs(armor - Def.armorRegenPerSecond) < Def.armorRegenPerSecond * 0.2f,
+             $"DEPRESSED regrows about {Def.armorRegenPerSecond} armour a second (grew {armor})");
 
         Calm(w, player);
         armor = w.Get<Armor>(player).Current;
@@ -506,8 +545,18 @@ internal static class Layer7Checks
         return e;
     }
 
-    private static void Hit(World w, Entity target, Vector3 point, bool headshot, bool killed) =>
-        w.Post(new HitEvent { Target = target, Point = point, Headshot = headshot, Killed = killed });
+    /// <summary>A blow the player struck (the instigator is what makes it aggression).</summary>
+    private static void Hit(World w, Entity target, Vector3 point, bool headshot, bool killed, Entity by = default) =>
+        w.Post(new HitEvent { Target = target, Instigator = by.IsNull ? Player(w) : by, Point = point, Headshot = headshot, Killed = killed });
+
+    /// <summary>The one player in the world (the checks never build two).</summary>
+    private static Entity Player(World w)
+    {
+        foreach (var chunk in w.Query().WithReadOnly<PlayerTag>().Build())
+            for (int i = 0; i < chunk.Length; i++)
+                if (chunk.Includes(i)) return chunk.Entities[i];
+        return Entity.Null;
+    }
 
     private static void Tick(World w, int n) { for (int i = 0; i < n; i++) w.Update(Dt); }
 

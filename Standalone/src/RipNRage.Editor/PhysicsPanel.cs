@@ -63,6 +63,7 @@ namespace RipNRage.Editor
                 var lines = new List<(string, string, string, string)>();
                 lines.AddRange(_phys.Lines());
                 lines.AddRange(_move.Lines());
+                lines.AddRange(RipNRage.Game.Content.RageDef.Current.Lines()); // [rage] round-trips with the rest
                 t.Update(lines);
                 Apply();
                 _dirty = false;

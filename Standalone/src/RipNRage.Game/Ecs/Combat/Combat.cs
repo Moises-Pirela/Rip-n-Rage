@@ -75,10 +75,12 @@ namespace RipNRage.Game.Ecs.Combat
         public bool Headshot;
     }
 
-    /// <summary>A blow landed (posted by <see cref="HealthSystem"/> in the same frame): feedback — crosshair, rage, style, hit flash.</summary>
+    /// <summary>A blow landed (posted by <see cref="HealthSystem"/> in the same frame): feedback — crosshair, rage, hit flash.</summary>
     public struct HitEvent : IPostProcessEvent
     {
         public Entity Target;
+        /// <summary>Who struck it, carried over from the <see cref="DamageEvent"/> (null for a blow with no author).</summary>
+        public Entity Instigator;
         public Vector3 Point;
         public bool Headshot;
         /// <summary>This was the blow that emptied the health.</summary>
@@ -128,7 +130,7 @@ namespace RipNRage.Game.Ecs.Combat
                 h.Current = Mathf.Clamp(h.Current - amount, 0f, h.Max);
 
                 bool killed = h.Current <= 0f;
-                ctx.Post(new HitEvent { Target = e.Target, Point = e.Point, Headshot = e.Headshot, Killed = killed });
+                ctx.Post(new HitEvent { Target = e.Target, Instigator = e.Instigator, Point = e.Point, Headshot = e.Headshot, Killed = killed });
                 if (killed)
                 {
                     ctx.Commands.Add(e.Target, new Dead());

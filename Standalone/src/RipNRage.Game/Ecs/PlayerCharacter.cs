@@ -68,8 +68,9 @@ namespace RipNRage.Game.Ecs
         public bool IsSliding, IsWallRunning, IsDashing;
         /// <summary>-1 = wall on the left, +1 = wall on the right, 0 = none.</summary>
         public int WallSide;
-        /// <summary>Wall jumps so far: an edge a reader can count (the rage evasion gains) without a one-frame flag.</summary>
-        public int WallJumps;
+        /// <summary>Evasive moves made so far — a dash, a slide start or a wall jump. A count, not a one-frame
+        /// flag, so a reader on another phase (the rage evasion gains) cannot miss one.</summary>
+        public int Evasions;
         /// <summary>Camera drop the slide asks for (metres, negative); HeadBob follows it.</summary>
         public float CameraHeightOffset;
         /// <summary>Speed the motor is being asked for this step (the overlay's MOVER line).</summary>
@@ -260,6 +261,7 @@ namespace RipNRage.Game.Ecs
                     if (dir.magnitude >= p.SlideStartSpeed * 0.75f)
                     {
                         p.IsSliding = true;
+                        p.Evasions++;
                         p.SlideTime = 0f;
                         p.SlideDir = dir.normalized;
                         p.SlideSpeed = Mathf.Max(dir.magnitude, p.RunSpeed) + p.SlideSpeedBoost;
@@ -358,7 +360,7 @@ namespace RipNRage.Game.Ecs
                 p.FinalMove.x = launch.x; p.FinalMove.z = launch.z;
                 m.PendingImpulse += new Vector3(launch.x - horizontal.x, 0f, launch.z - horizontal.z);
                 m.PendingJump = p.WallJumpUp;
-                p.WallJumps++;
+                p.Evasions++;
                 p.WallJumpCooldown = 0.35f;
                 Sfx.Play(GameAssets.Jump);
                 EndWallRun(ref p, ref look);
@@ -390,6 +392,7 @@ namespace RipNRage.Game.Ecs
                 if (p.IsSliding) EndSlide(ref p, ref m);
                 if (p.IsWallRunning) { p.IsWallRunning = false; p.WallSide = 0; }
                 if (!grounded) p.AirDashesLeft--;
+                p.Evasions++;
                 p.DashDir = dir; p.DashTimer = p.DashDuration;
                 p.DashCooldownTimer = p.DashCooldown * Rages.DashCooldownScale(in rage); // DEPRESSED: back sooner
                 m.PendingDash = dir * p.DashSpeed; m.PendingDashTime = p.DashDuration; // gravity off for the burst

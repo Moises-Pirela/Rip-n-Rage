@@ -975,8 +975,13 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
 
 **Steps** (one commit + review stop each; gates under the 6.7b/6.7c rule):
 
-- [ ] 7.0 **Instrument the gates.** `rage` / `style` / `saveload` already log rage (pre-tuning commit). Add
-      `pickup` and the water probe as before. Record the baseline, knowing 7.1–7.4 replace the rage numbers wholesale.
+- [x] 7.0 **Instrument the gates.** The rage probes landed with the pre-tuning commit (`rage` / `style` /
+      `saveload`); the last two arrived with the 7.3b review. **`pickup`**: the player is put four metres short of
+      the dock's shell pickup at (-3, 0.91, -20) and walks in — baseline **shells 64 → 80, pickups 4 → 3** (an
+      `AmmoPickup` GameObject through the trigger bridge; 7.5 ports it). **`water`**: the sky probe walks off the
+      planks into the water and prints camera height and `drawSky` — baseline **`sky True` all the way down to
+      y = -7.2**, i.e. *the water sky-swap does not work today*: `EnterWaterCollision` waits for a GameObject tagged
+      MainCamera to enter the volume, and the camera has been an entity since layer 4. 7.6 is a fix, not a port.
 - [x] 7.1 **The two meters** (`Ecs/Rage.cs`). `Rage { Fury, Calm, State }` on the player entity, the constants flat
       on `Rages`, and `Rages.Step` as the one place the rules live — a pure function (gains only in Normal and never
       a decay; activation with any amount; inside a state no gain for either meter, no exit, the active meter
@@ -1033,6 +1038,30 @@ modifier read by `SightSystem` (reader: DEPRESSED); a dash-cooldown / air-dash m
       dodged-up Calm at 240 — armour climbing 40 → 48 under fire, and the grunt losing the player at 300.
       **Found and fixed on the way**: the dash's camera kick was an undeclared access (`PlayerMoveSystem` →
       `CameraShake`) that no validated run had ever reached until a script dashed.
+- [x] 7.3b **Review of 7.1–7.3 against the rules, and the fixes it found.** Read back the whole rage system
+      against the established rules; eight things to answer for, all applied in one commit:
+      (1) **state had moved into a system** — `RageCalmSystem` remembered the dash / slide / wall-jump edges and who
+      saw the player last tick in private fields. The motor now counts evasive moves (`PlayerMotor.Evasions`, one
+      counter for the dash, the slide start and the wall jump), the AI flags the sight break where it is known
+      (`Perception.LostSight`, written by `SightSystem`), and the meter keeps what it has paid for
+      (`Rage.EvasionsSeen`) — the system remembers nothing between ticks, and the edges are saved and inspectable;
+      (2) **`HitEvent` now carries `Instigator`**, so Fury pays for blows the player *struck* rather than guessing
+      from "the target is an enemy", and **the rocket jump no longer costs Calm** (a blow the player dealt
+      themselves is neither aggression nor carelessness);
+      (3) death was handled twice — the `DeathEvent` consumer is gone, the empty-health check covers both paths;
+      (4) dead code removed: `Rages.Current()`, and the two style stings orphaned when `StyleMeter` went;
+      (5) the two enemy scans in the Calm system became one pass answering both questions, with `Without<Dead>()`
+      in the query instead of a per-entity check;
+      (6) the near miss was measured **from the player's head** (a copied `+0.9`), which flattered a well-aimed
+      shot — it is measured from the capsule centre now, which is where the enemies actually aim, and the "first
+      tick" sentinel is gone (`Launch` seeds `LastPosition`);
+      (7) every tuning number moved out of `const` into **`RageDef`** — tunables.cfg **`[rage]`**, hot-reloaded like
+      `[movement]`, round-tripped by the editor's save; `Rages.Step` takes the table, and the checks pin their own
+      so tuning cannot move an assertion;
+      (8) 7.0 finished (above). Gates: 199 engine + 258 gameplay assertions (4 new: the sight break driven by the
+      real `SightSystem` and paid once, every counted evasion paid, the flag is an edge not a state); schedule
+      unchanged; all 16 earlier scripts byte-identical, `evade` unchanged except that it no longer walks off the
+      dock, `pickup` / `water` recorded. Repeatable.
 - [ ] 7.4 **Rage feedback as a system.** `RageFxSystem` (post-fx weights, activation stings, meter-full cue);
       pixel gate on the `rage` screenshot.
 - [ ] 7.5 **Pickups are entities** (as planned before: `Pickup` + `PickupSystem`, delete `AmmoPickup`).

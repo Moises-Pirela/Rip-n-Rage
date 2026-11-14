@@ -11,7 +11,7 @@ namespace RipNRage.Game.Content
     {
         private const int SampleRate = 22050;
 
-        private static AudioClip _playerDeath, _menuMove, _menuSelect, _menuBack, _styleUp, _styleS, _enemyAim, _enemyShot, _enemyAlert, _dash;
+        private static AudioClip _playerDeath, _menuMove, _menuSelect, _menuBack, _enemyAim, _enemyShot, _enemyAlert, _dash;
 
         /// <summary>Rising "charging" whine: an enemy is about to fire.</summary>
         public static AudioClip EnemyAim => _enemyAim ??= Build("EnemyAim", 0.35f, (t, noise) =>
@@ -41,25 +41,6 @@ namespace RipNRage.Game.Content
         {
             float env = MathF.Sin(MathF.PI * MathF.Min(1f, t / 0.3f));
             return noise * env * env * 0.5f;
-        });
-
-        /// <summary>Rising three-note sting for a style rank-up.</summary>
-        public static AudioClip StyleUp => _styleUp ??= Build("StyleUp", 0.35f, (t, noise) =>
-        {
-            float v = 0f;
-            float[] f = { 523f, 659f, 784f };
-            for (int i = 0; i < 3; i++) { float u = t - i * 0.08f; if (u >= 0f) v += MathF.Sin(2f * MathF.PI * f[i] * u) * MathF.Exp(-u * 14f); }
-            return v * 0.35f;
-        });
-
-        /// <summary>Bigger, brighter sting with a shimmer for reaching S.</summary>
-        public static AudioClip StyleS => _styleS ??= Build("StyleS", 0.8f, (t, noise) =>
-        {
-            float v = 0f;
-            float[] f = { 523f, 659f, 784f, 1046f };
-            for (int i = 0; i < 4; i++) { float u = t - i * 0.07f; if (u >= 0f) v += MathF.Sin(2f * MathF.PI * f[i] * u) * MathF.Exp(-u * 6f); }
-            v += MathF.Sin(2f * MathF.PI * 2093f * t) * MathF.Exp(-t * 5f) * 0.15f * (0.5f + 0.5f * MathF.Sin(t * 60f));
-            return v * 0.3f;
         });
 
         /// <summary>Heavy double thud with a falling pitch and a short noise tail: the player hitting the floor.</summary>

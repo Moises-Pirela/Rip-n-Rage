@@ -17,7 +17,7 @@ namespace RipNRage.Game.Ecs.Combat
     {
         public int Kind;
         public Entity Instigator;
-        /// <summary>Where it was last tick: the segment the near-miss check measures against (0 = not flown yet).</summary>
+        /// <summary>Where it was last tick: the segment the near-miss check measures against (seeded at launch).</summary>
         public Vector3 LastPosition;
         /// <summary>A bullet pays the player's near miss once.</summary>
         public bool NearMissPaid;
@@ -73,7 +73,7 @@ namespace RipNRage.Game.Ecs.Combat
 
             var e = cmd.CreateEntity();
             cmd.Add(e, new LocalTransform { Position = origin, Rotation = Quaternion.LookRotation(direction), Scale = Vector3.one * def.Scale });
-            cmd.Add(e, new Projectile { Kind = kind, Instigator = instigator });
+            cmd.Add(e, new Projectile { Kind = kind, Instigator = instigator, LastPosition = origin });
             cmd.Add(e, new Lifetime { Left = def.Range / def.Speed });
             cmd.Add(e, new ColliderShape { Kind = ShapeKind.Sphere, Radius = 0.08f });
             cmd.Add(e, new CollisionFilter { Layer = Layers.Projectile, Mask = def.CollisionMask, UseLayerMatrix = false });
@@ -171,7 +171,7 @@ namespace RipNRage.Game.Ecs.Combat
             foreach (var target in _blast)
             {
                 if (!w.IsAlive(target) || !w.Has<Health>(target) || w.Has<Dead>(target)) continue;
-                if (w.Has<Hitbox>(target)) ctx.Post(new RageGainEvent { Fury = Rages.SplashFury }); // an enemy caught in the blast feeds the rage
+                if (w.Has<Hitbox>(target)) ctx.Post(new RageGainEvent { Fury = Rages.Def.splashFury }); // an enemy caught in the blast feeds the rage
                 // the shooter's own blast barely hurts them: rocket jumping is a movement tool, not suicide
                 float dmg = target == instigator ? def.Damage * 0.12f : def.Damage;
                 Vector3 blastDir = (w.Has<LocalTransform>(target) ? w.Get<LocalTransform>(target).Position : point) - point;

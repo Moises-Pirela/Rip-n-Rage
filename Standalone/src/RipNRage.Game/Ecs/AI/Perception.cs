@@ -16,6 +16,9 @@ namespace RipNRage.Game.Ecs.AI
         public Entity Target;
         public Vector3 LastKnown;
         public bool Seen;
+        /// <summary>This tick the target went from seen to unseen — the edge, written where it is known
+        /// (<see cref="SightSystem"/>) instead of remembered by every reader. Read by the rage evasion gains.</summary>
+        public bool LostSight;
         public float SinceSeen;
     }
 
@@ -95,6 +98,7 @@ namespace RipNRage.Game.Ecs.AI
 
                     if (!p.Target.IsNull && (!World.IsAlive(p.Target) || World.Has<Dead>(p.Target))) p = default;
 
+                    bool wasSeen = p.Seen;
                     p.Seen = false;
                     foreach (var pc in _players)
                     {
@@ -108,6 +112,7 @@ namespace RipNRage.Game.Ecs.AI
                         }
                     }
 
+                    p.LostSight = wasSeen && !p.Seen;
                     if (p.Seen || p.Target.IsNull) continue;
                     p.SinceSeen += dt;
                     if (p.SinceSeen > def.memory * MemoryScale(p.Target)) p = default;
