@@ -10,7 +10,6 @@ using RipNRage.Game.Ecs.Combat;
 // component-backed accessors the HUD / save system read until layer 8.
 public class CombatController : MonoBehaviour
 {
-    public Action OnFireWeapon;
 
     [Header("Weapon setup")]
     [SerializeField] public Transform cameraTransform;

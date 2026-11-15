@@ -1592,10 +1592,29 @@ acceptable where drawing moves onto entities.
       - **Gates**: every probe unchanged and **all four shots pixel-identical (0.000%)** to 9.0 — the move from the
         legacy producer to the ECS one changed nothing on screen. Census: **level 80 → 34 GameObjects** (meshes 44 → 15,
         lights 7 → 1: what is left is the physics props and the muzzle light), **title 69 → 23**. Two sweeps identical.
-- [ ] 9.2 **Physics props** render on their own entities; `EntityFollower` / `RodFollower` go.
-- [ ] 9.3 **Cameras and lights**: the player camera is a `CameraLens` only; `MenuCamera` an entity and a system;
-      `ParticleWorld`'s effect lights `LightSource` entities and its follow target an entity; `MuzzleFlashLight` an
-      entity.
+- [x] 9.2 **Physics props have no GameObject half** (done, one commit with 9.3). The props already rendered as
+      entities; what went was the anchor skeleton around them: the connectors resolve `body` / `connected` through
+      **`LoadedLevel.namedEntities`** — name → (entity, spawn pose), recorded by `BodyEntity`, the pose math on the
+      recorded poses (the entities go through the command buffer and are not alive until playback) — and the rods
+      are **`RodVisual` entities stretched by `RodSystem`** (LateTick). `EntityFollower`, `RodFollower`, the
+      connector marker objects, the per-brush/entity GameObject spawn path and the game's `Level` root are gone
+      (`LoadedLevel.root` / `named` / `entityObjects` are editor-preview only). **The 9.1 leak is fixed**: the prop
+      box mesh is cached per size and UV (`deathf8`: 29 meshes before and after the rebuild; was 32 → 45).
+- [x] 9.3 **Cameras and lights are entities** (done). The player's legacy `Camera` and `Camera.main` assignment are
+      gone (the lens entity has been the render camera since layer 4; 9.0 removed the last readers); the title's
+      camera is an entity swung by **`MenuSwingSystem`** (`[Exclusive]`: real time, the absolute clock so the view
+      does not snap); the muzzle flash is an entity + **`MuzzleFlashSystem`** fed by `WeaponFireSystem` directly
+      (`CombatController.OnFireWeapon` and `Effects.cs` deleted; the flash lights the same frame now, one earlier
+      than the MonoBehaviour); `ParticleWorld`'s effect light is a `LightSource` entity — **created lazily in its
+      between-ticks update**, because effects spawn from inside systems where creating an entity is a forbidden
+      structural change (the `rocket` gate caught the naive version: `Fatal: structural change while systems run`).
+      - **Gates**: 415 gameplay assertions (+3: `Layer5Checks` asserts once per game system — `RodSystem`,
+        `MenuSwingSystem`, `MuzzleFlashSystem`). Schedule re-pinned: **24 Tick batches** (`DeathCamSystem` and
+        `MenuSwingSystem` alone, `MuzzleFlashSystem` joins `NearMiss + PlayerLook + RageCalm`), **10 LateTick**
+        (`RodSystem` after `PhysicsInterpolationSystem`). Every behavioural probe byte-identical to 9.1; `walk` /
+        `die` / `look` shots 0.000%, `menu` 0.021% (192 px: the swing camera's clock reads one tick apart);
+        `vfx` and `rocket` clean under `--validate-access`. **Census: level 12 GameObjects, 8 behaviours, 0 meshes /
+        sprites / lights / cameras; title 1 GameObject** (the session holder, `VfxRuntime`). Two sweeps identical.
 - [ ] 9.4 **The player's GameObject half**: `PlayerState` / `EntityState` (the hit kick a system), `CombatController`
       (the viewmodel equip a function, `OnFireWeapon` an event), `PlayerInputActions`, `FPSController`,
       `FPSCameraController`; `PlayerLink` a static helper; `EcsObjects`, `PlayerViewFollowSystem` and the probes'

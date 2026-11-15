@@ -23,7 +23,8 @@ internal static class ScheduleChecks
             "AnimationSystem + LifetimeSystem", "RagdollSystem", "EcsInputSystem", "EnemyVisualSystem + HearingSystem",
             "SightSystem", "AiBrainSystem", "SteeringSystem", "EnemyAttackSystem", "SpawnerSystem", "BobSystem",
             "AltFireSystem", "BashFinisherSystem", "GrappleFinisherSystem", "PointBlankFinisherSystem",
-            "WeaponFireSystem", "FallSystem", "FlowSystem", "DeathCamSystem + NearMissSystem + PlayerLookSystem + RageCalmSystem", "RageSystem", "RageFxSystem", "SkySpinSystem", "SpinSystem",
+            "WeaponFireSystem", "FallSystem", "FlowSystem", "DeathCamSystem", "MenuSwingSystem",
+            "MuzzleFlashSystem + NearMissSystem + PlayerLookSystem + RageCalmSystem", "RageSystem", "RageFxSystem", "SkySpinSystem", "SpinSystem",
         },
         ["FixedTick"] = new[]
         {
@@ -33,7 +34,7 @@ internal static class ScheduleChecks
         },
         ["LateTick"] = new[]
         {
-            "AudioSystem", "EffectSystem", "PhysicsInterpolationSystem", "PlayerViewSystem", "CameraShakeSystem",
+            "AudioSystem", "EffectSystem", "PhysicsInterpolationSystem", "RodSystem", "PlayerViewSystem", "CameraShakeSystem",
             "PlayerViewFollowSystem", "WeaponSwaySystem", "TransformSystem", "UnderwaterSystem",
         },
     };

@@ -15,10 +15,20 @@ namespace RipNRage.Game.Content.Level
         /// <summary>World Y below which the player is respawned (worldspawn kill_y, else 1 m under the water plane, else 5 m under the lowest brush).</summary>
         public float killY = -50f;
         public readonly List<GameObject> entityObjects = new List<GameObject>();
-        /// <summary>Spawned entities by their <c>targetname</c> key.</summary>
+        /// <summary>Spawned preview objects by their <c>targetname</c> key (the editor; the game's are entities).</summary>
         public readonly Dictionary<string, GameObject> named = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
 
         public GameObject Find(string targetname) => !string.IsNullOrEmpty(targetname) && named.TryGetValue(targetname, out var go) && go != null && !go.IsDestroyed ? go : null;
+
+        /// <summary>A named spawn and where it stood when the level was built (9.2: the connectors' pose math — the
+        /// entity itself goes through the command buffer and is not alive until playback).</summary>
+        public readonly Dictionary<string, (RipNRage.Engine.Ecs.Entity entity, Vector3 position, Quaternion rotation)> namedEntities =
+            new Dictionary<string, (RipNRage.Engine.Ecs.Entity, Vector3, Quaternion)>(StringComparer.OrdinalIgnoreCase);
+
+        public void RegisterNamed(string targetname, RipNRage.Engine.Ecs.Entity entity, Vector3 position, Quaternion rotation)
+        {
+            if (!string.IsNullOrEmpty(targetname)) namedEntities[targetname] = (entity, position, rotation);
+        }
     }
 
     /// <summary>
@@ -53,7 +63,8 @@ namespace RipNRage.Game.Content.Level
 
         public static LoadedLevel Load(MapDocument doc, bool preview = false)
         {
-            var level = new LoadedLevel { document = doc, root = new GameObject("Level") };
+            // the game is entities throughout (9.2); the root GameObject carries the editor's preview objects only
+            var level = new LoadedLevel { document = doc, root = preview ? new GameObject("Level") : null };
             BuildBrushes(doc, level.root, preview);
             ApplyWorldspawn(doc.worldspawn);
             level.killY = ComputeKillY(doc);
@@ -87,7 +98,13 @@ namespace RipNRage.Game.Content.Level
                                     w.Get<RipNRage.Game.Ecs.AI.LevelRef>(ent).Index = index;
                                 continue;
                             }
-                            var go = preview ? (def.preview ?? def.spawn)?.Invoke(e) : def.spawn?.Invoke(e);
+                            if (!preview)
+                            {
+                                // every game class spawns entities now (9.2); a class with only a preview is editor-only
+                                if (def.spawn != null) Debug.LogWarning($"level: {e.classname} has no entity spawn (skipped in game)");
+                                continue;
+                            }
+                            var go = (def.preview ?? def.spawn)?.Invoke(e);
                             if (go != null)
                             {
                                 go.transform.SetParent(level.root.transform, true);
@@ -122,9 +139,13 @@ namespace RipNRage.Game.Content.Level
         /// <summary>Brush geometry + collision only (used by the editor when rebuilding after edits).</summary>
         public static GameObject BuildBrushes(MapDocument doc, GameObject parent, bool preview)
         {
-            var geo = new GameObject("Brushes");
-            geo.transform.SetParent(parent.transform, false);
-            geo.layer = Layers.Walkable;
+            GameObject geo = null;
+            if (preview)
+            {
+                geo = new GameObject("Brushes");
+                geo.transform.SetParent(parent.transform, false);
+                geo.layer = Layers.Walkable;
+            }
 
             // chunked so the renderer can frustum/occlusion-cull parts of the level; every opaque chunk is an occluder.
             // The game draws them as entities (9.1); the editor's preview keeps GameObjects until the tools are ported.

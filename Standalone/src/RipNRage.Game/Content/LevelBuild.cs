@@ -20,7 +20,7 @@ namespace RipNRage.Game.Content
         private static World World => Application.Current.World;
 
         /// <summary>Builds <paramref name="levelPath"/>. With <paramref name="spawnPlayer"/> false there is no player; a
-        /// <see cref="MenuCamera"/> looks over the level from the player start (the title's backdrop).</summary>
+        /// menu camera entity looks over the level from the player start (the title's backdrop).</summary>
         public static void Build(string levelPath, bool spawnPlayer = true)
         {
             GameAssets.Load();
@@ -33,7 +33,7 @@ namespace RipNRage.Game.Content
             RipNRage.Game.Ecs.Sky.Spin(World, 1.2f);
             World.Singleton<RipNRage.Game.Ecs.KillHeight>().Y = level.killY;
             if (spawnPlayer) PlayerPrefab.Player.Instantiate(level.playerStart, level.playerRotation);
-            else MenuCamera.Create(level.playerStart, level.playerRotation);
+            else RipNRage.Game.Ecs.MenuViews.Spawn(World, level.playerStart, level.playerRotation); // 9.3: an entity
         }
     }
 }

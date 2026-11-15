@@ -65,8 +65,12 @@ namespace RipNRage.Engine.Graphics.Particles
         /// <summary>Set when the instance was culled in the last frame (not drawn).</summary>
         public bool Culled { get; internal set; }
 
-        internal GameObject lightGo;
-        internal Light light;
+        /// <summary>The flash's light entity (9.3; was a GameObject with a Light component). Created lazily in
+        /// <see cref="ParticleWorld.Update"/>: effects are spawned from inside systems, where creating an entity is a
+        /// forbidden structural change — the update runs between ticks, in the same frame.</summary>
+        internal Ecs.Entity lightEntity;
+        /// <summary>The flash is over (do not re-create the light); a restart re-arms it.</summary>
+        internal bool lightDone;
         internal readonly System.Random rng = new System.Random();
 
         public Vector3 Forward => rotation * Vector3.forward;
@@ -171,16 +175,7 @@ namespace RipNRage.Engine.Graphics.Particles
                 st.texture = st.sprites[0]?.texture;
                 inst.emitters[i] = st;
             }
-            if (def.hasLight && def.lightIntensity > 0f && Scene.Current != null)
-            {
-                inst.lightGo = new GameObject("VfxLight");
-                inst.lightGo.transform.position = position + forward * 0.15f;
-                inst.light = inst.lightGo.AddComponent<Light>();
-                inst.light.type = LightType.Point;
-                inst.light.color = def.lightColor;
-                inst.light.range = def.lightRange * inst.scale;
-                inst.light.intensity = def.lightDelay <= 0f ? def.lightIntensity : 0f;
-            }
+            // the light entity follows in the first Update (between ticks: Spawn may run inside a system)
             _instances.Add(inst);
             return inst;
         }
@@ -200,10 +195,25 @@ namespace RipNRage.Engine.Graphics.Particles
             _instances.Remove(inst);
         }
 
+        private static Ecs.World LightWorld => Application.Current?.World;
+
+        /// <summary>The flash's light, a world entity written between ticks (the particle world runs outside the systems).</summary>
+        private static void CreateLight(ParticleEffectInstance inst, float intensity, Vector3 position)
+        {
+            var w = LightWorld;
+            if (w == null) return;
+            inst.lightEntity = w.CreateEntity();
+            w.Add(inst.lightEntity, new Ecs.Transforms.LocalTransform { Position = position, Rotation = Quaternion.identity, Scale = Vector3.one });
+            w.Add(inst.lightEntity, new Ecs.Rendering.LightSource
+                { Type = LightType.Point, Color = inst.def.lightColor, Range = inst.def.lightRange * inst.scale, Intensity = intensity });
+        }
+
         private static void DestroyLight(ParticleEffectInstance inst)
         {
-            if (inst.lightGo != null && !inst.lightGo.IsDestroyed) GameObject.DestroyImmediate(inst.lightGo);
-            inst.lightGo = null; inst.light = null;
+            var w = LightWorld;
+            if (w != null && !inst.lightEntity.IsNull && w.IsAlive(inst.lightEntity)) w.DestroyEntity(inst.lightEntity);
+            inst.lightEntity = Ecs.Entity.Null;
+            inst.lightDone = true;
         }
 
         // ------------------------------------------------------------------ simulation
@@ -241,17 +251,11 @@ namespace RipNRage.Engine.Graphics.Particles
             inst.emitting = true;
             inst.Finished = false;
             foreach (var e in inst.emitters) { e.count = 0; e.emitAccumulator = 0f; e.burstDone = false; e.finishedEmitting = false; e.collisionSpawns = 0; }
-            if (inst.def.hasLight && inst.light == null && Scene.Current != null)
+            inst.lightDone = false; // a restarted loop flashes again (the light itself re-creates lazily)
+            if (!inst.lightEntity.IsNull && LightWorld is { } rw && rw.IsAlive(inst.lightEntity))
             {
-                inst.lightGo = new GameObject("VfxLight");
-                inst.light = inst.lightGo.AddComponent<Light>();
-                inst.light.type = LightType.Point;
-            }
-            if (inst.light != null)
-            {
-                inst.light.color = inst.def.lightColor;
-                inst.light.range = inst.def.lightRange * inst.scale;
-                inst.light.intensity = 0f;
+                ref var l = ref rw.Get<Ecs.Rendering.LightSource>(inst.lightEntity);
+                l.Color = inst.def.lightColor; l.Range = inst.def.lightRange * inst.scale; l.Intensity = 0f;
             }
         }
 
@@ -283,14 +287,21 @@ namespace RipNRage.Engine.Graphics.Particles
                 }
             }
 
-            // light flash
-            if (inst.light != null)
+            // light flash (the entity is created here, between ticks, the frame the effect spawned)
+            if (def.hasLight && def.lightIntensity > 0f && inst.lightEntity.IsNull && !inst.lightDone)
+                CreateLight(inst, inst.time >= def.lightDelay ? def.lightIntensity : 0f, inst.position + inst.Forward * 0.15f);
+            if (!inst.lightEntity.IsNull)
             {
-                float lt = inst.time - def.lightDelay;
-                float k = def.lightDuration > 0f ? 1f - lt / def.lightDuration : (lt >= 0f ? 0f : 1f);
-                inst.light.intensity = lt < 0f ? 0f : def.lightIntensity * Mathf.Clamp01(k);
-                inst.lightGo.transform.position = inst.position + inst.Forward * 0.15f;
-                if (lt >= def.lightDuration && !inst.loop) DestroyLight(inst);
+                var w = LightWorld;
+                if (w == null || !w.IsAlive(inst.lightEntity)) inst.lightEntity = Ecs.Entity.Null; // a scene reset took it
+                else
+                {
+                    float lt = inst.time - def.lightDelay;
+                    float k = def.lightDuration > 0f ? 1f - lt / def.lightDuration : (lt >= 0f ? 0f : 1f);
+                    w.Get<Ecs.Rendering.LightSource>(inst.lightEntity).Intensity = lt < 0f ? 0f : def.lightIntensity * Mathf.Clamp01(k);
+                    w.Get<Ecs.Transforms.LocalTransform>(inst.lightEntity).Position = inst.position + inst.Forward * 0.15f;
+                    if (lt >= def.lightDuration && !inst.loop) DestroyLight(inst);
+                }
             }
 
             bool anyAlive = false, anyEmitting = false;
@@ -304,8 +315,8 @@ namespace RipNRage.Engine.Graphics.Particles
                 if (st.count > 0) anyAlive = true;
                 if (!st.finishedEmitting) anyEmitting = true;
             }
-            if (!anyAlive && !anyEmitting && (inst.light == null || inst.loop)) inst.Finished = true;
-            if (!anyAlive && !anyEmitting && inst.light != null && inst.time >= def.lightDelay + def.lightDuration) inst.Finished = true;
+            if (!anyAlive && !anyEmitting && (inst.lightEntity.IsNull || inst.loop)) inst.Finished = true;
+            if (!anyAlive && !anyEmitting && !inst.lightEntity.IsNull && inst.time >= def.lightDelay + def.lightDuration) inst.Finished = true;
         }
 
         private static void Emit(ParticleEffectInstance inst, EmitterState st, float dt)

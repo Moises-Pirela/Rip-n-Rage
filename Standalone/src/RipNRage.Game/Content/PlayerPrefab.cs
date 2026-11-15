@@ -48,15 +48,8 @@ namespace RipNRage.Game.Content
             Child(player, "WeaponHolder", new Vector3(0, 0.8f, 2));
             Child(player, "Feet", new Vector3(0, -0.8f, 0));
 
-            // ---- camera ----
-            // The lens is on the camera *entity* now (PlayerLink builds the rig below) and the ECS camera outranks a
-            // legacy one, so this Camera only exists for the scripts that still read Camera.main; its GameObject
-            // follows the entity (PlayerViewFollowSystem). Gone in layer 9.
-            var cam = worldCamera.AddComponent<Camera>();
-            cam.fieldOfView = RipNRage.Game.Ecs.PlayerLink.FieldOfView;
-            cam.nearClipPlane = 0.05f;
-            cam.farClipPlane = 2000f;
-            Camera.main = cam;
+            // the camera is the entity's lens alone since 9.3 (PlayerLink builds the rig below); the last
+            // Camera.main readers went with 9.0's probes
 
             // ---- the character itself: an ECS entity (the force-driven capsule + locomotion + look + view rig) ----
             // The entity is the body the solver moves; PlayerLink copies its pose back onto this hierarchy each frame
@@ -101,9 +94,8 @@ namespace RipNRage.Game.Content
             combat.leftFistAnimator = vm.LeftFist;
             combat.rightFistAnimator = vm.RightFist;
 
-            // ---- muzzle flash light (not in the Unity prefab; feeds the new lighting) ----
-            var muzzleLightGo = Child(player, "MuzzleLight", Vector3.zero);
-            muzzleLightGo.AddComponent<MuzzleFlashLight>().cameraTransform = worldCamera.transform;
+            // ---- muzzle flash light (not in the Unity prefab; feeds the new lighting): an entity + system (9.3) ----
+            RipNRage.Game.Ecs.MuzzleFlashes.Spawn(Application.Current.World);
 
             // ---- HUD (PlayerHUD canvas): a plain screen reading the components, not a component itself (8.7) ----
             HudLayout.Build(UiScreens.Add(new HudScreen()));

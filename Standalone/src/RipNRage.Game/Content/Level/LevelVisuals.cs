@@ -18,10 +18,10 @@ namespace RipNRage.Game.Content.Level
     {
         private static World W => Application.Current.World;
 
-        /// <summary>A box mesh, built once per centre and size.</summary>
-        public static AssetHandle<Mesh> Box(Vector3 center, Vector3 size) =>
-            RenderAssets.Meshes.GetOrLoad(FormattableString.Invariant($"box:{center.x},{center.y},{center.z}:{size.x},{size.y},{size.z}"),
-                _ => Mesh.CreateBox(center, size, 1f));
+        /// <summary>A box mesh, built once per centre, size and UV scale.</summary>
+        public static AssetHandle<Mesh> Box(Vector3 center, Vector3 size, float uvScale = 1f) =>
+            RenderAssets.Meshes.GetOrLoad(FormattableString.Invariant($"box:{center.x},{center.y},{center.z}:{size.x},{size.y},{size.z}@{uvScale}"),
+                _ => Mesh.CreateBox(center, size, uvScale));
 
         /// <summary>A flat plane mesh, built once per extent and UV scale.</summary>
         public static AssetHandle<Mesh> Plane(float width, float length, float uvScale) =>
@@ -56,6 +56,53 @@ namespace RipNRage.Game.Content.Level
             if (!parent.IsNull) W.Add(e, new Parent { Value = parent });
             W.Add(e, new LightSource { Type = LightType.Point, Color = color, Intensity = intensity, Range = range });
             return e;
+        }
+    }
+
+    /// <summary>
+    /// A thin bar stretched from a fixed hook to a hanging prop every frame (9.2: the pendulum / spring rod — was the
+    /// <c>RodFollower</c> MonoBehaviour). Visual only; the joint is the physics.
+    /// </summary>
+    public struct RodVisual : IComponent
+    {
+        public Entity Target;
+        public Vector3 Hook;
+        public float Width;
+    }
+
+    /// <summary>Stretches every <see cref="RodVisual"/> after the frame's motion (the prop moved under physics).</summary>
+    [Writes(typeof(LocalTransform)), Reads(typeof(RodVisual))] // its own transform by query; the target's is read ad hoc
+    public sealed class RodSystem : SystemBase, ILateTick
+    {
+        private Query _rods;
+
+        public override void OnCreate() => _rods = World.Query().WithReadOnly<RodVisual>().With<LocalTransform>().Build();
+
+        public void LateTick(SystemContext ctx)
+        {
+            var w = ctx.World;
+            foreach (var chunk in _rods)
+            {
+                var rods = chunk.Get<RodVisual>(); var xforms = chunk.Get<LocalTransform>();
+                for (int i = 0; i < chunk.Length; i++)
+                {
+                    if (!chunk.Includes(i)) continue;
+                    ref readonly var r = ref rods[i];
+                    if (!w.IsAlive(r.Target) || !w.Has<LocalTransform>(r.Target)) continue;
+                    Place(ref xforms[i], w.Get<LocalTransform>(r.Target).Position, r.Hook, r.Width);
+                }
+            }
+        }
+
+        /// <summary>The rod's pose for a span (the unit box reaches +Y, so it stands on <paramref name="from"/>).</summary>
+        public static void Place(ref LocalTransform rod, Vector3 from, Vector3 to, float width)
+        {
+            Vector3 d = to - from;
+            float len = d.magnitude;
+            if (len < 0.01f) return;
+            rod.Rotation = Quaternion.FromToRotation(Vector3.up, d / len);
+            rod.Position = from;
+            rod.Scale = new Vector3(width, len, width);
         }
     }
 }

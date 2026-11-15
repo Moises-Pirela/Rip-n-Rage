@@ -5,7 +5,7 @@ using RipNRage.Game.Content;
 using RipNRage.Game.Content.Level;
 
 /// <summary>
-/// Title screen: NEW GAME / CONTINUE / QUIT over an attract-mode view of the level (<see cref="MenuCamera"/>).
+/// Title screen: NEW GAME / CONTINUE / QUIT over an attract-mode view of the level (a menu camera entity, 9.3).
 /// A plain screen (8.8), put up by <see cref="GameSession.ShowMainMenu"/>; every choice goes back through
 /// <see cref="GameSession"/>, which rebuilds the scene at the start of the next frame — the scene reset closes it.
 /// </summary>
@@ -139,39 +139,5 @@ public sealed class MainMenuScreen : IUiScreen, IUiLayer
 
         // black fade-in
         if (fade < 1f) ui.FillRect(new Rect(0, 0, ui.Width, ui.Height), new Color(0f, 0f, 0f, 1f - fade));
-    }
-}
-
-/// <summary>
-/// Camera used behind the main menu: stands at the player start and slowly swings its yaw over the
-/// level (attract mode). It is the scene's main camera while the menu is shown.
-/// </summary>
-public class MenuCamera : MonoBehaviour
-{
-    public float baseYaw;
-    public float pitch = 3f;
-    public float swingDegrees = 30f;
-    public float periodSeconds = 28f;
-
-    public static MenuCamera Create(Vector3 playerStart, Quaternion playerRotation)
-    {
-        var go = new GameObject("MenuCamera");
-        go.tag = "MainCamera";
-        go.transform.position = playerStart + Vector3.up * 0.6f;
-        var cam = go.AddComponent<Camera>();
-        cam.fieldOfView = 72f;
-        cam.nearClipPlane = 0.05f;
-        cam.farClipPlane = 2000f;
-        Camera.main = cam;
-        var mc = go.AddComponent<MenuCamera>();
-        mc.baseYaw = playerRotation.eulerAngles.y;
-        go.transform.rotation = Quaternion.Euler(mc.pitch, mc.baseYaw, 0f);
-        return mc;
-    }
-
-    protected override void Update()
-    {
-        float yaw = baseYaw + Mathf.Sin(Time.unscaledTime * 2f * Mathf.PI / periodSeconds) * swingDegrees;
-        transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
     }
 }

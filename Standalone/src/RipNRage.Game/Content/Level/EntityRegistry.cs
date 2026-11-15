@@ -144,7 +144,7 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = new Color(1f, 0.6f, 0.2f, 1f), pickExtents = new Vector3(0.5f, 0.5f, 0.5f),
                 defaults = { ["size"] = "1 1 1", ["mass"] = "10", ["texture"] = "orange", ["shape"] = "box" },
                 numericProps = { ("mass", 1f) },
-                spawn = e => PhysicsEntities.Prop(e, false),
+                spawnEntity = e => PhysicsEntities.PropEntity(e), // 9.2
                 preview = e => PhysicsEntities.Prop(e, true),
             });
 
