@@ -1548,6 +1548,53 @@ because another worktree, sweeping at the same time, wrote its own checkpoint in
   physics components. `Application` runs only the `World`.
 - Re-run every gate; update `README.md`.
 
+**Surveyed at 8.9** (legacy-API references: Game 382 in 36 files, Engine 167 / 20, AnimEditor 61, SkeletonEditor 39,
+Benchmark 38, VfxEditor 35, Editor 24; Level and ImGui clean). The engine's model: `GameObject` / `Component` (209),
+`Scene` (326: the update passes, the coroutines **and the fixed-step loop that drives the ECS FixedTick**), `Transform`
+(189), `Behaviour` (139), `Coroutine`, `Renderer` / `SpriteRenderer` / `MeshRenderer` / `Camera` (163), `Light`,
+`LegacySceneProducer` (80), the game's `UnityCompat` (81); plus `ParticleWorld`'s follow-a-`Transform` and its
+`VfxLight` GameObjects and the `Transform` tween extensions. "Legacy physics components" are already gone (every
+collider is ECS since layer 2; `Physics` is a query API over the world and stays). The ECS replacements exist:
+`MeshRender`, `SpriteRender`, `LightSource`, `CameraLens` (`EcsRenderProducer`).
+
+**Answered at review (2026-11-15)**: the editor tools are ported in this layer (not left on a legacy runtime for
+layer 10); the hand-made `TestArea` arena is deleted, a level is required; small, explained pixel differences are
+acceptable where drawing moves onto entities.
+
+**Steps**
+
+- [x] 9.0 **Instrument** (done). The gates no longer need GameObjects: **`DemoScript` and `DebugOverlay` are
+      `IUiScreen`s** (`OnSceneBuilt` is a plain `Action`). The `Camera.main` probe reads are the camera entity's
+      (`PlayerCamera.Alive` / `Rotation` / `Forward`, the overlay's POS / YAW / FOV off `LocalToWorld` / `CameraLens`).
+      **Census**: `walk` and `menu` print what is left of the legacy model — **level: 80 GameObjects, 76 behaviours,
+      44 meshes, 7 lights, 1 camera; title: 69 / 68 / 44 / 6 / 1** — the numbers this layer takes to zero. **Shots**:
+      `look` (the level, frame 60) and `menu` (the title, frame 50) join `walk` / `die`; all four 0.000% same-build.
+      **`TestArea` deleted**: the level build is `LevelBuild` (assets, layer matrix, level, kill height, sky, the player
+      or the menu camera); `--no-level` and the arena (environment, props, hard-coded pickups and enemies) are gone;
+      `DockLevel` keeps its two import constants.
+      - **Re-baselined**: the script is a frame-start screen now, so it acts **before** the scene's fixed steps
+        (`Scene.Tick` advances the clock and runs them before the old `Update` pass). Every scripted action therefore
+        lands a fixed step earlier relative to physics: walking offsets of ~0.25 m (`saveload` saved at z −14.66, was
+        −14.92), pickups taken earlier, AI distances ±0.2 m, `rage`'s late enemy hit now lands (hp 80 at frame 390);
+        shots `walk` 9.5% / `die` 7.5% past 8/255 (the same picture, offset poses and props). Starting the script's
+        clock a frame later was tried and made it worse (`die` 98%) — it is the order within the frame, not the
+        clock; 9.8 decides it again when the world drives its own fixed loop. Deleting the arena moved no gate.
+- [ ] 9.1 **Level rendering to entities**: brushes as `MeshRender` entities; `EntityRegistry`'s classes build
+      entities (sprites, meshes, `LightSource`) — the editor `preview` builders stay GameObjects until 9.7.
+- [ ] 9.2 **Physics props** render on their own entities; `EntityFollower` / `RodFollower` go.
+- [ ] 9.3 **Cameras and lights**: the player camera is a `CameraLens` only; `MenuCamera` an entity and a system;
+      `ParticleWorld`'s effect lights `LightSource` entities and its follow target an entity; `MuzzleFlashLight` an
+      entity.
+- [ ] 9.4 **The player's GameObject half**: `PlayerState` / `EntityState` (the hit kick a system), `CombatController`
+      (the viewmodel equip a function, `OnFireWeapon` an event), `PlayerInputActions`, `FPSController`,
+      `FPSCameraController`; `PlayerLink` a static helper; `EcsObjects`, `PlayerViewFollowSystem` and the probes'
+      facade reads go; the save applies straight after the build; the schedule re-pinned.
+- [ ] 9.5 **Session leftovers**: `VfxRuntime` off GameObjects; the "GameSession" holder goes.
+- [ ] 9.6 **The tools**: Editor, AnimEditor, SkeletonEditor and VfxEditor previews on entities, their controllers
+      screens or frame hooks; the Benchmark's GameObject camera.
+- [ ] 9.7 **Delete the legacy model**; `Application` runs only the `World`, which drives its own fixed loop.
+- [ ] 9.8 Close-out: every gate, the bench, README.
+
 ### Layer 10 — Editors on configs
 
 - Level editor places prefabs and edits `IComponentConfig` fields by reflection (like the VFX property grid).

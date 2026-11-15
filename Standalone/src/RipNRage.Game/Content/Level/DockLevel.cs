@@ -10,6 +10,10 @@ namespace RipNRage.Game.Content.Level
     /// </summary>
     public static class DockLevel
     {
+        /// <summary>How dock.obj is imported (Unity's import of the original scene): 0.25 units per map unit, placed at y −3.09.</summary>
+        private const float MapScale = 0.25f;
+        private static readonly Vector3 DockOffset = new Vector3(0f, -3.09f, 0f);
+
         public static MapDocument Create()
         {
             var doc = new MapDocument();
@@ -18,10 +22,10 @@ namespace RipNRage.Game.Content.Level
             doc.worldspawn.Set("sun_azimuth", "35");
 
             string objPath = Application.AssetPath("Levels/dock.obj");
-            foreach (var b in MapFile.ImportObjBrushes(objPath, TestArea.MapScale, true, TestArea.DockOffset, "planks", 8f))
+            foreach (var b in MapFile.ImportObjBrushes(objPath, MapScale, true, DockOffset, "planks", 8f))
                 doc.Brushes.Add(b);
 
-            float floor = TestArea.DockOffset.y + 16f * TestArea.MapScale; // 0.91
+            float floor = DockOffset.y + 16f * MapScale; // 0.91
             void Crate(Vector3 basePos, float size, string tex)
             {
                 var min = basePos - new Vector3(size * 0.5f, 0, size * 0.5f);

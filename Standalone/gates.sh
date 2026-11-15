@@ -55,11 +55,15 @@ for entry in $ALL; do
     if [ $code -ne 0 ]; then echo "FAIL $name (exit $code)"; fail=1; else echo "ok   $name"; fi
 done
 
-# pixel gates (8.0; same-build floor 0.000%): the HUD on `walk`, the death camera mid-fall on `die`, both at frame 120.
+# pixel gates (8.0 / 9.0; same-build floor 0.000%): the HUD on `walk` and the death camera mid-fall on `die` at
+# frame 120; 9.0 adds the level from the start (`look`, frame 60) and the title over it (`menu`, frame 50) — layer 9
+# moves everything visible onto entities, and these are the proof.
 # Compare two sweeps with: python3 tools/pngdiff.py A/shot-walk.png B/shot-walk.png
-for name in walk die; do
+for shot in walk:120 die:120 look:60 menu:50; do
+    name=${shot%%:*}; frames=${shot##*:}
     if [ -n "${GATES:-}" ] && [[ " $GATES " != *" $name "* ]]; then continue; fi
-    dotnet src/RipNRage.Game/bin/Release/net10.0/RipNRage.dll --script "$name" --frames 120 \
+    extra=""; [ "$name" = menu ] && extra="--menu"
+    dotnet src/RipNRage.Game/bin/Release/net10.0/RipNRage.dll $extra --script "$name" --frames "$frames" \
         --fixed-dt 0.016667 --threads 1 --no-vsync --width 640 --height 360 --overlay 0 \
         --screenshot "$OUT/shot-$name.png" > /dev/null 2>&1 || { echo "FAIL shot-$name"; fail=1; }
 done

@@ -962,7 +962,7 @@ player exists. **F6/F9** quick save/load, `trigger_checkpoint` volumes write the
 
 Levels are Quake-style brush maps in the classic `.map` text format (`levels/*.map`; metres, Y up,
 texture scale = world units per repeat; plus optional `paint` lines for vertex painting). The game loads `levels/dock.map` by default
-(`--level file.map` for another one, `--no-level` for the old hard-coded arena,
+(`--level file.map` for another one — a level is required; the old hard-coded arena is gone,
 `--export-dock out.map` regenerates the dock level from the original `dock.obj`).
 
 ```bash

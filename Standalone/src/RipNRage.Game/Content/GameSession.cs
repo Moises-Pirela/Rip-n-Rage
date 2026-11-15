@@ -24,8 +24,8 @@ namespace RipNRage.Game.Content
         /// checkpoint file belongs to this level — a run that never reached one restarts the level even if an older
         /// checkpoint file for it exists on disk.</summary>
         public static bool CanRespawnAtCheckpoint => RipNRage.Game.Ecs.Flows.Current.CheckpointReached && GameSaveSystem.CheckpointAvailable(LevelPath);
-        /// <summary>Called with the session tools object after a level was built (the game adds its debug overlay / demo scripts).</summary>
-        public static Action<GameObject> OnSceneBuilt;
+        /// <summary>Called after a scene was built (the game adds its debug overlay and the automation script — screens, 9.0).</summary>
+        public static Action OnSceneBuilt;
 
         // ------------------------------------------------------------------ public transitions
 
@@ -36,11 +36,11 @@ namespace RipNRage.Game.Content
             GameSaveSystem.CurrentLevelPath = levelPath;
             UiScreens.BeforeFrame = RunFrameStart;
             InputSystem.LockCursorInGameplay = true; // the gameplay scheme locks the mouse; UI screens release it
-            TestArea.Build(levelPath);
+            LevelBuild.Build(levelPath);
             UiScreens.Add(new PauseMenu());
             var tools = CreateSessionObject();
             tools.AddComponent<VfxRuntime>();
-            OnSceneBuilt?.Invoke(tools);
+            OnSceneBuilt?.Invoke();
         }
 
         /// <summary>Builds the title screen over an attract-mode view of <paramref name="backdropLevelPath"/> (default: the
@@ -53,12 +53,12 @@ namespace RipNRage.Game.Content
             GameSaveSystem.CurrentLevelPath = level;
             UiScreens.BeforeFrame = RunFrameStart;
             InputSystem.LockCursorInGameplay = false;
-            TestArea.Build(level, spawnPlayer: false);
+            LevelBuild.Build(level, spawnPlayer: false);
             RipNRage.Game.Ecs.Flows.BeginTitle();
             UiScreens.Add(new MainMenuScreen());
             var tools = CreateSessionObject();
             tools.AddComponent<VfxRuntime>();
-            OnSceneBuilt?.Invoke(tools); // the debug overlay and the automation scripts drive the title screen too (8.8)
+            OnSceneBuilt?.Invoke(); // the debug overlay and the automation scripts drive the title screen too (8.8)
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }

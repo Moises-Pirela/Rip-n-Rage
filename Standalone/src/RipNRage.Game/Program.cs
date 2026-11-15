@@ -12,7 +12,7 @@ namespace RipNRage.Game
 {
     /// <summary>
     /// Standalone Rip-n-Rage entry point (no Unity). Creates the engine application, builds the
-    /// TestArea scene and runs the main loop.
+    /// first scene (a level, or the title over it) and runs the main loop.
     ///
     /// Options:
     ///   --assets &lt;dir&gt;        the assets folder, or a folder containing it (auto-detected otherwise)
@@ -32,7 +32,7 @@ namespace RipNRage.Game
     ///   --tunables path.cfg    post-processing tunables file (default: tunables.cfg found in cwd/exe dir/parents)
     ///   --no-postfx            start with post-processing disabled (F4 toggles it)
     ///   --shaders dir          folder with the .glsl shader files (default: "shaders" found in cwd/exe dir/parents)
-    ///   --level file.map       play a level file (default: levels/dock.map if found; --no-level = built-in arena)
+    ///   --level file.map       play a level file (default: levels/dock.map)
     ///   --export-dock out.map  write the built-in dock arena as a .map file and exit
     ///   --validate-access      throw when a system touches a component it did not declare (gate runs)
     ///   --threads N            rigid solver worker threads (0 = one per core, 1 = single-threaded: repeatable runs)
@@ -56,7 +56,6 @@ namespace RipNRage.Game
             int? seed = null;
             int threads = -1;
             string level = null;
-            bool noLevel = false;
             string exportDock = null, exportAnims = null;
             string loadSlot = null;
             bool? startInMenu = null;
@@ -105,7 +104,6 @@ namespace RipNRage.Game
                     case "--tunables": options.TunablesPath = Next(); break;
                     case "--shaders": options.ShaderDir = Next(); break;
                     case "--level": level = Next(); break;
-                    case "--no-level": noLevel = true; break;
                     case "--export-dock": exportDock = Next(); break;
                     case "--load": loadSlot = Next(); break;
                     case "--no-postfx": options.DisablePostFx = true; break;
@@ -162,12 +160,13 @@ namespace RipNRage.Game
                 RipNRage.Game.Content.RageDef.Attach(app);           // tunables.cfg [rage], live
                 if (exportDock != null) { RipNRage.Game.Content.Level.DockLevel.Export(exportDock); return 0; }
                 if (exportAnims != null) { RipNRage.Game.Content.GameAssets.Load(); RipNRage.Game.Content.GameAssets.ExportAnimations(exportAnims); return 0; }
-                string levelPath = noLevel ? null : (level != null ? RipNRage.Game.Content.Level.LevelLoader.Locate(level) : RipNRage.Game.Content.Level.LevelLoader.Locate("dock.map"));
-                if (level != null && levelPath == null) { Console.Error.WriteLine("Level not found: " + level); return 1; }
-                GameSession.OnSceneBuilt = tools =>
+                // a level is required since 9.0 (the built-in arena is gone)
+                string levelPath = RipNRage.Game.Content.Level.LevelLoader.Locate(level ?? "dock.map");
+                if (levelPath == null) { Console.Error.WriteLine("Level not found: " + (level ?? "dock.map")); return 1; }
+                GameSession.OnSceneBuilt = () =>
                 {
-                    tools.AddComponent<DebugOverlay>();
-                    if (script != null) tools.AddComponent<DemoScript>().scriptName = script;
+                    UiScreens.Add(new DebugOverlay());
+                    if (script != null) UiScreens.Add(new DemoScript { scriptName = script });
                 };
                 app.World.AddSystemsFromAssemblies(typeof(Program).Assembly); // game ECS systems
                 InputSystem.Initialize();          // rebindable gameplay / UI schemes (controls.json)
@@ -196,7 +195,7 @@ namespace RipNRage.Game
     /// CPU/GPU table, memory, renderer counters, game state). The F-keys drive the save system / renderer toggles
     /// (Escape belongs to the pause menu).
     /// </summary>
-    public class DebugOverlay : MonoBehaviour, IUiDrawer, IUiLayer
+    public sealed class DebugOverlay : IUiScreen, IUiLayer
     {
         public int UiLayer => UiLayers.Debug;
         /// <summary>0 = hidden, 1 = compact, 2 = full profiler.</summary>
@@ -206,13 +205,13 @@ namespace RipNRage.Game
         public bool visible { get => mode > 0; set => mode = value ? 2 : 0; }
         private static string _message = ""; private static float _messageTimer;
 
-        protected override void Start()
+        public DebugOverlay()
         {
             RipNRage.Game.Content.Level.GameSaveSystem.OnMessage = m => { _message = m; _messageTimer = 3f; };
             mode = ForcedMode ?? RipNRage.Game.Content.GraphicsSettings.Current.overlayMode ?? mode;
         }
 
-        protected override void Update()
+        public void Update()
         {
             if (_messageTimer > 0f) _messageTimer -= Time.unscaledDeltaTime;
             if (InputSystem.Gameplay["quick_save"].Pressed) RipNRage.Game.Content.Level.GameSaveSystem.Save("quick");
@@ -228,7 +227,7 @@ namespace RipNRage.Game
         }
 
         private readonly RipNRage.Engine.UI.ClayUi _clay = new RipNRage.Engine.UI.ClayUi(8192);
-        protected override void OnDestroy() => _clay.Dispose();
+        public void Close() => _clay.Dispose();
 
         // the overlay keeps its pixel-exact text size (2 px per glyph pixel at 1080p, never below 1): Clay lengths are
         // reference pixels, so screen sizes are divided by the canvas scale
@@ -289,15 +288,14 @@ namespace RipNRage.Game
         {
             string text = "";
             var ps = PlayerState.Current;
-            var cam = Camera.main;
             text += $"GPU  {RipNRage.Engine.Platform.GpuInfo.Renderer.ToUpperInvariant()}  ({RipNRage.Engine.Platform.GpuInfo.Vendor.ToUpperInvariant()})  GL {RipNRage.Engine.Platform.GpuInfo.Version.ToUpperInvariant()}{(RipNRage.Engine.Platform.GpuInfo.IsIntegrated ? "  [INTEGRATED]" : "")}\n";
             text += $"MEMORY  GC GEN0/1/2 {Profiler.Gen0PerSecond:0.0}/{Profiler.Gen1PerSecond:0.0}/{Profiler.Gen2PerSecond:0.0} PER S   ALLOC {Profiler.AllocBytesPerFrame / 1024.0:0.0} KB/FRAME   HEAP {Profiler.HeapBytes / (1024.0 * 1024.0):0.0} MB\n";
             var scene = Application.Current.Scene;
             text += $"SCENE  {scene.GameObjects.Count} OBJECTS  {scene.BehaviourCount} BEHAVIOURS  {scene.CoroutineCount} COROUTINES  FIXED STEPS {scene.FixedStepsLastFrame}{(scene.FixedStepsLastFrame >= 8 ? " (CLAMPED: SIM BEHIND)" : "")}   DRAWS {renderer.DrawCalls} ({renderer.BatchedSprites} BATCHED SPRITES, {renderer.InstancedMeshes} INSTANCED MESHES)\n";
-            if (cam != null)
+            if (RipNRage.Game.Ecs.PlayerCamera.Alive)
             {
-                var p = cam.transform.position;
-                text += $"POS {p.x:0.0} {p.y:0.0} {p.z:0.0}  YAW {cam.transform.eulerAngles.y:0}";
+                var p = RipNRage.Game.Ecs.PlayerCamera.Position;
+                text += $"POS {p.x:0.0} {p.y:0.0} {p.z:0.0}  YAW {RipNRage.Game.Ecs.PlayerCamera.Rotation.eulerAngles.y:0}";
             }
             if (ps != null)
             {
@@ -316,7 +314,7 @@ namespace RipNRage.Game
             text += $"SHADOW CACHE {sm.StaticRenders} STATIC RENDERS  {sm.StaticCasters} DRAWN / {sm.StaticCulled} CULLED  DYNAMIC {sm.DynamicCasters}  LIGHT SETS {renderer.LightUploads}\n";
             text += $"VFX {RipNRage.Engine.Graphics.Particles.VfxLibrary.Effects.Count} EFFECTS  LIVE {RipNRage.Engine.Graphics.Particles.ParticleWorld.LiveInstances} FX / {RipNRage.Engine.Graphics.Particles.ParticleWorld.LiveParticles} PARTICLES  {renderer.Particles.DrawCalls} DRAWS  {RipNRage.Engine.Graphics.Particles.ParticleWorld.CollisionRaycasts} RAYCASTS\n";
             var cc = renderer.CameraConfig;
-            text += $"FOV WORLD {cam?.fieldOfView:0} / VIEWMODEL {cc.viewmodelFov:0} ({(cc.viewmodelLit ? "LIT" : "UNLIT")})  CULLING {(cc.frustumCulling ? "FRUSTUM " : "")}{(cc.occlusionCulling ? $"OCCLUSION {cc.occlusionMode.ToString().ToUpperInvariant()}{(renderer.GpuOcclusion != null && cc.occlusionMode == OcclusionMode.Gpu ? $" ({renderer.GpuOcclusion.Tested} QUERIES, {renderer.GpuOcclusion.Pending} PENDING)" : "")} " : "")}{renderer.Culling}\n";
+            text += $"FOV WORLD {(RipNRage.Game.Ecs.PlayerCamera.Alive && Application.Current.World.Has<RipNRage.Engine.Ecs.Rendering.CameraLens>(RipNRage.Game.Ecs.PlayerLink.CameraEntity) ? Application.Current.World.Get<RipNRage.Engine.Ecs.Rendering.CameraLens>(RipNRage.Game.Ecs.PlayerLink.CameraEntity).FieldOfView : 0f):0} / VIEWMODEL {cc.viewmodelFov:0} ({(cc.viewmodelLit ? "LIT" : "UNLIT")})  CULLING {(cc.frustumCulling ? "FRUSTUM " : "")}{(cc.occlusionCulling ? $"OCCLUSION {cc.occlusionMode.ToString().ToUpperInvariant()}{(renderer.GpuOcclusion != null && cc.occlusionMode == OcclusionMode.Gpu ? $" ({renderer.GpuOcclusion.Tested} QUERIES, {renderer.GpuOcclusion.Pending} PENDING)" : "")} " : "")}{renderer.Culling}\n";
             var world = Physics.World;
             text += $"PHYSICS {world.StaticCount} STATIC ({world.CellCount} CELLS) + {world.DynamicCount} DYNAMIC COLLIDERS  {world.RigidBodyCount} RIGID BODIES ({world.Rigid.ManifoldCount} MANIFOLDS, {world.Rigid.ContactCount} CONTACTS ({world.Rigid.MatchedPoints} WARM, {world.Rigid.CachedManifolds} CACHED), {world.Rigid.JointCount} JOINTS SOLVED / {Application.Current.World.GetSystem<RipNRage.Engine.Ecs.Physics.JointSystem>()?.ActiveJoints ?? 0} ATTACHED, {world.Rigid.IslandCount} ISLANDS (MAX {world.Rigid.LargestIsland}), {world.Rigid.ThreadsUsed} THREADS, {world.Rigid.CcdSweepsThisStep} CCD, {world.Rigid.positionCorrection.ToString().ToUpperInvariant()})  {world.RaycastsLastFrame} RAYS / {world.SweepsLastFrame} SWEEPS / {world.QueriesLastFrame} QUERIES\n";
             var plink = RipNRage.Game.Ecs.PlayerLink.Current;
@@ -417,10 +415,17 @@ namespace RipNRage.Game
         private static readonly float[] _guides = { 16.7f, 33.3f };
     }
 
-    /// <summary>Scripted input for automated screenshots/tests (feeds PlayerInputActions' override hooks).</summary>
-    public class DemoScript : MonoBehaviour
+    /// <summary>Scripted input for automated screenshots/tests (feeds PlayerInputActions' override hooks). A plain
+    /// screen since 9.0 — updated at frame start, draws nothing — so the gates need no GameObject.</summary>
+    public sealed class DemoScript : IUiScreen
     {
+        public void DrawUi(UiBatch ui) { }
+        public void Close() { }
+
         public string scriptName = "look";
+        /// <summary>The script's frame. Since 9.0 the script is a screen: it acts at frame start, before the scene's fixed
+        /// steps (the GameObject script acted after them), so every action lands one fixed step earlier relative to
+        /// physics than before 9.0 — the gates were re-baselined on that.</summary>
         private int _frame;
         /// <summary>Where each enemy was first seen, so the probe can tell whether it has ever moved.</summary>
         private readonly System.Collections.Generic.Dictionary<Entity, Vector3> _enemyHome = new System.Collections.Generic.Dictionary<Entity, Vector3>();
@@ -430,6 +435,21 @@ namespace RipNRage.Game
         {
             RipNRage.Game.Ecs.Pickups.Collect(Application.Current.World, _pickups);
             return _pickups.Count;
+        }
+
+        /// <summary>9.0: what is left of the legacy model in this scene — the number layer 9 drives to zero.</summary>
+        private static void Census(string scene)
+        {
+            var sc = Application.Current.Scene;
+            int meshes = 0, sprites = 0, lights = 0, cameras = 0;
+            foreach (var go in sc.GameObjects)
+            {
+                if (go.GetComponent<MeshRenderer>() != null) meshes++;
+                if (go.GetComponent<SpriteRenderer>() != null) sprites++;
+                if (go.GetComponent<RipNRage.Engine.Graphics.Lighting.Light>() != null) lights++;
+                if (go.GetComponent<Camera>() != null) cameras++;
+            }
+            Debug.LogWarning($"[test] legacy {scene}: gameobjects {sc.GameObjects.Count} behaviours {sc.BehaviourCount} meshes {meshes} sprites {sprites} lights {lights} cameras {cameras}");
         }
 
         /// <summary>8.2: the flow singleton and what the menus made of it.</summary>
@@ -498,6 +518,7 @@ namespace RipNRage.Game
         {
             if (_menuStage == 0)
             {
+                if (_frame == 40) Census("title");
                 if (_frame == 40) Debug.LogWarning($"[test] menu flow={RipNRage.Game.Ecs.Flows.Current.Phase} player={(PlayerState.Current != null)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} timeScale {Time.timeScale:0.00}");
                 if (_frame == 60) { _menuStage = 1; Input.SimulateKey(KeyCode.Return, true); } // NEW GAME (the fade takes input from frame 28)
             }
@@ -537,7 +558,7 @@ namespace RipNRage.Game
                 && Math.Abs(p - q) <= 0.05;
         }
 
-        protected override void Update()
+        public void Update()
         {
             _frame++;
             // the title screen has no player, so the menu script runs before the player-facade guard (8.8)
@@ -579,7 +600,7 @@ namespace RipNRage.Game
                         var ww = Application.Current.World;
                         int volumes = 0;
                         foreach (var ch in ww.Query().WithReadOnly<RipNRage.Game.Ecs.WaterVolume>().Build()) volumes += ch.Length;
-                        Debug.LogWarning($"[test] frame {_frame} y {Camera.main.transform.position.y:0.00} sky {RenderSettings.drawSky}"
+                        Debug.LogWarning($"[test] frame {_frame} y {RipNRage.Game.Ecs.PlayerCamera.Position.y:0.00} sky {RenderSettings.drawSky}"
                                          + $" under {ww.GetSingleton<RipNRage.Game.Ecs.Underwater>().Under} water volumes {volumes}");
                     }
                     break;
@@ -588,7 +609,7 @@ namespace RipNRage.Game
                     // every one of these answered "default" — the resolver was stubbed when physics went ECS (layer 2)
                     if (_frame == 20)
                     {
-                        var eye = Camera.main.transform.position;
+                        var eye = RipNRage.Game.Ecs.PlayerCamera.Position;
                         var lampPost = new Vector3(-13.5f, 2.5f, -28f); // dock.map's first lamp post, mid-pole
                         foreach (var (label, from, dir) in new[]
                         {
@@ -625,19 +646,19 @@ namespace RipNRage.Game
                     var world = Application.Current.World;
                     if (_frame == 2) Enemies.Spawn(world, Enemies.KindOf(GameAssets.RiflemanData), new Vector3(-1.5f, 0.91f, -6f), 0f);
                     if (_frame == 5) combat.OnChangeWeapon1();
-                    var cam = Camera.main.transform;
+                    var camPos = RipNRage.Game.Ecs.PlayerCamera.Position; var camFwd = RipNRage.Game.Ecs.PlayerCamera.Forward;
                     Enemies.Collect(world, _enemies);
                     var nearest = Entity.Null; float best = float.MaxValue;
                     foreach (var en in _enemies)
                     {
-                        float d = (world.Get<LocalTransform>(en).Position - cam.position).sqrMagnitude;
+                        float d = (world.Get<LocalTransform>(en).Position - camPos).sqrMagnitude;
                         if (d < best) { best = d; nearest = en; }
                     }
                     if (!nearest.IsNull)
                     {
-                        Vector3 to = world.Get<LocalTransform>(nearest).Position + Vector3.up * 0.3f - cam.position;
-                        float yawErr = Vector3.SignedAngle(new Vector3(cam.forward.x, 0, cam.forward.z), new Vector3(to.x, 0, to.z), Vector3.up);
-                        float pitchNow = -Mathf.Asin(Mathf.Clamp(cam.forward.y, -1f, 1f)) * Mathf.Rad2Deg;
+                        Vector3 to = world.Get<LocalTransform>(nearest).Position + Vector3.up * 0.3f - camPos;
+                        float yawErr = Vector3.SignedAngle(new Vector3(camFwd.x, 0, camFwd.z), new Vector3(to.x, 0, to.z), Vector3.up);
+                        float pitchNow = -Mathf.Asin(Mathf.Clamp(camFwd.y, -1f, 1f)) * Mathf.Rad2Deg;
                         float pitchWanted = -Mathf.Asin(Mathf.Clamp(to.normalized.y, -1f, 1f)) * Mathf.Rad2Deg;
                         // FPSCameraController: degrees = pixels * sensitivity(5) * fixedDeltaTime(0.02) = 0.1 deg/px
                         input.overrideLook = new Vector2(Mathf.Clamp(yawErr * 10f, -60f, 60f), Mathf.Clamp((pitchNow - pitchWanted) * 10f, -60f, 60f));
@@ -660,6 +681,7 @@ namespace RipNRage.Game
                 case "walk":
                     input.overrideMove = new Vector2(0f, 1f);
                     if (_frame % 90 == 0) input.OnJump();
+                    if (_frame == 30) Census("level");
                     break;
                 case "fire":
                     input.overrideMove = new Vector2(0f, 0.5f);
@@ -704,7 +726,7 @@ namespace RipNRage.Game
                     // a grunt spawns in front and engages; the player runs at it, then dashes across its line of
                     // fire: being shot at and moving fills CALM (nothing here fills FURY — the player never shoots)
                     if (_frame == 2) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
-                        Camera.main.transform.position + Camera.main.transform.forward * 14f - Vector3.up * 1.3f, 180f);
+                        RipNRage.Game.Ecs.PlayerCamera.Position + RipNRage.Game.Ecs.PlayerCamera.Forward * 14f - Vector3.up * 1.3f, 180f);
                     // weave in front of the grunt instead of running off the dock: strafe one way, then the other
                     input.overrideMove = _frame < 120 ? new Vector2(0f, 1f)
                                        : _frame < 330 ? new Vector2(_frame % 60 < 30 ? 0.9f : -0.9f, 0f) // weave on the spot
@@ -735,7 +757,7 @@ namespace RipNRage.Game
                     // activation (Q / D-pad left) and spends it on a third grunt: ENRAGED hits harder and the
                     // blows feed the player (the probe prints hp / armour), then the meter drains and it ends
                     if (_frame == 2 || _frame == 150 || _frame == 320) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
-                        Camera.main.transform.position + Camera.main.transform.forward * 6f - Vector3.up * 1.3f, 0f);
+                        RipNRage.Game.Ecs.PlayerCamera.Position + RipNRage.Game.Ecs.PlayerCamera.Forward * 6f - Vector3.up * 1.3f, 0f);
                     if (_frame == 5) combat.OnChangeWeapon3();
                     input.overrideFiring = (_frame > 20 && _frame < 140) || (_frame > 160 && _frame < 300) || (_frame > 330 && _frame < 395);
                     if (_frame == 310) RipNRage.Engine.Ecs.Input.InputOverride.Fury = true;
@@ -835,7 +857,7 @@ namespace RipNRage.Game
                     // (the style meter is gone; the script is kept as the Fury-gain probe) a grunt killed with the
                     // Glock, then one with the MG: hits, kills and the close-range bonus fill the meter
                     if (_frame == 2 || _frame == 130) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
-                        Camera.main.transform.position + Camera.main.transform.forward * 6f - Vector3.up * 1.3f, 0f);
+                        RipNRage.Game.Ecs.PlayerCamera.Position + RipNRage.Game.Ecs.PlayerCamera.Forward * 6f - Vector3.up * 1.3f, 0f);
                     if (_frame == 5) combat.OnChangeWeapon1();
                     if (_frame == 135) combat.OnChangeWeapon3();
                     input.overrideFiring = (_frame > 20 && _frame < 120) || (_frame > 140 && _frame < 200);

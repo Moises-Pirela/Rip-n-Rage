@@ -3,7 +3,7 @@ using RipNRage.Engine.Graphics;
 namespace RipNRage.Game.Content
 {
     /// <summary>
-    /// Materials used by the TestArea. They are registered in the MaterialLibrary so
+    /// Materials used by the levels. They are registered in the MaterialLibrary so
     /// <c>[material.&lt;name&gt;]</c> sections in tunables.cfg can retune them while the game runs,
     /// and their shaders live in Standalone/shaders/*.glsl (hot-reloaded on save).
     /// </summary>

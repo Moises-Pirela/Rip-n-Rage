@@ -124,6 +124,12 @@ namespace RipNRage.Game.Ecs
             W != null && W.IsAlive(PlayerLink.CameraEntity) && W.Has<LocalToWorld>(PlayerLink.CameraEntity)
                 ? W.Get<LocalToWorld>(PlayerLink.CameraEntity).Position : Vector3.zero;
 
+        /// <summary>The player camera entity exists (a level is up; the title has none).</summary>
+        public static bool Alive => W != null && W.IsAlive(PlayerLink.CameraEntity) && W.Has<LocalToWorld>(PlayerLink.CameraEntity);
+        /// <summary>The camera's world rotation and forward, off the entity (9.0: replaces <c>Camera.main.transform</c>).</summary>
+        public static Quaternion Rotation => Alive ? W.Get<LocalToWorld>(PlayerLink.CameraEntity).Rotation : Quaternion.identity;
+        public static Vector3 Forward => Rotation * Vector3.forward;
+
         /// <summary>Kick bounds from the PlayerCharacter prefab (the deleted CameraRecoil.recoilCameraShake).</summary>
         private static readonly Vector3 KickBounds = new Vector3(0.5f, 0.5f, 1.5f);
 
