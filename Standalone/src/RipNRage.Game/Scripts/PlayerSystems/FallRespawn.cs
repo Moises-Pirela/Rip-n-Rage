@@ -175,7 +175,9 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
 
     private static string F(Vector3 v) => $"({v.x:0.0}, {v.y:0.0}, {v.z:0.0})";
 
-    /// <summary>Lethal fall: freeze the body where it is and run the normal death sequence.</summary>
+    /// <summary>Lethal fall: freeze the body where it is and kill the player through HealthSystem — a fatal
+    /// <see cref="RipNRage.Game.Ecs.Combat.DamageEvent"/>, so the fall posts the same DeathEvent as any other death
+    /// and the death sequence runs off it (8.1; it used to call <c>PlayerState.Die()</c> straight out).</summary>
     private void Drown()
     {
         _link?.ResetVelocity();
@@ -183,7 +185,12 @@ public class FallRespawn : MonoBehaviour, IUiDrawer, IUiLayer
         bool edge = LastFallKind == "EDGE";
         GameSaveSystem.OnMessage?.Invoke(edge ? "You fell into the harbour." : "You fell out of the world.");
         DeathScreen.NextCause = edge ? "YOU FELL INTO THE HARBOUR" : "YOU FELL OUT OF THE WORLD";
-        if (_state != null && !_state.IsDead) _state.Die();
+        if (_state == null || _state.IsDead) return;
+        Application.Current.World.Post(new RipNRage.Game.Ecs.Combat.DamageEvent
+        {
+            Target = _state.entity, Fatal = true,
+            Point = transform.position, Direction = Vector3.down,
+        });
     }
 
     /// <summary>Arcade respawn: back to a recorded, footprint-supported spot from before the fall — or the level start if those keep failing.</summary>

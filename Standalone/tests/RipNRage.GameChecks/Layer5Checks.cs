@@ -215,6 +215,17 @@ internal static class Layer5Checks
         True(log.Deaths.Count == 1 && log.Hits.Count == 1,
             "a lethal blow on a dead target is dropped whole (death latches — deliberate change from the legacy base class)");
 
+        // 8.1: a fatal blow (the lethal fall) takes all the health that is left, through full armour, and dies by
+        // the same door as any other: Dead tag, one DeathEvent, the HitEvent marked as the kill.
+        log.Hits.Clear(); log.Deaths.Clear();
+        d = Damageable(100f, 100f, resistance: 1f);
+        w.Post(new DamageEvent { Target = d, Fatal = true });
+        w.Update(1f / 60f);
+        Equal(0f, w.Get<Health>(d).Current, "a fatal blow empties the health whatever its amount");
+        Equal(100f, w.Get<Armor>(d).Current, "and the armour is not touched: it does not soak a fall");
+        True(w.Has<Dead>(d) && log.Deaths.Count == 1 && log.Hits.Count == 1 && log.Hits[0].Killed,
+            "a fatal blow dies by the one door: Dead, one DeathEvent, a killing HitEvent");
+
         // Two lethal blows arriving in the same frame kill once: the span guard, before the tag exists.
         log.Deaths.Clear();
         d = Damageable(30f, 0f);

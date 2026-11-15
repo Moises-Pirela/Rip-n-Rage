@@ -74,7 +74,7 @@ implied). The established rules hold as written in layer 6's notes below, plus w
 
 What layer 8 inherits:
 
-- **Death has two doors.** `FallRespawn` calls `PlayerState.Die()` directly, so a fall posts no `DamageEvent` and no
+- **Death has two doors** *(closed in 8.1: the fall is a fatal `DamageEvent`)*. `FallRespawn` calls `PlayerState.Die()` directly, so a fall posts no `DamageEvent` and no
   `DeathEvent` reaches the ECS. Rage copes (empty health is its signal); anything new keyed on `DeathEvent` misses
   falls. Layer 8 owns death and game flow — route the fall through `HealthSystem`.
 - **HUD**: the two rage meters are placeholder bars beside the portrait (`HudController.DrawRageMeters`); the
@@ -1319,9 +1319,24 @@ vector properties, see layer 4's notes).
         no pure HUD read to assert on until 8.7 writes one).
       - Sweep green twice: 199 engine + 305 gameplay assertions, 23 scripts exit 0, probe lines byte-identical
         across the two sweeps, both shots 0.000%.
-- [ ] 8.1 **Death has one door.** The lethal fall posts a `DamageEvent` (damage = remaining health + armour,
-      cause `Fall`) instead of calling `Die()`; `HealthSystem` produces the `DeathEvent`. Gate: `falldie` shows 1
-      `DeathEvent`; `die` unchanged; rage's empty-health fallback can go if nothing else needs it.
+- [x] 8.1 **Death has one door** (done). `DamageEvent.Fatal` (reader: `HealthSystem`, same commit): the blow takes
+      all the health that is left and skips the armour and both rage multipliers, so a fall kills a DEPRESSED,
+      armoured player too — the planned "damage = health + armour" would have been halved by DEPRESSED. The lethal
+      fall (`FallRespawn.Drown`) posts it instead of calling `PlayerState.Die()`; the death sequence now runs off
+      the `DeathEvent` like every other death. Nothing else kills outside `HealthSystem` (searched: `Die()` and
+      the facade's `HealthState` / `Health` writers), so rage's empty-health fallback is gone — the `Dead` tag is
+      the whole signal.
+      - **Gates**: `fall` **`deathEvents=0` → `1`**. 309 gameplay assertions (+4: a fatal blow through full armour
+        empties the health, leaves the armour, dies by the one door; the 7.3b "zeroed health, no DeathEvent" check
+        becomes "a fatal fall kills a DEPRESSED, armoured player and ends the state"). Schedule unchanged (no
+        system). Two sweeps byte-identical; both shots 0.000%.
+      - **What moved, and why**: `fall` and `water` (the two scripts that die by falling) sink differently after
+        the death — `fall` y −1.94 → −2.00 at frame 120, `water` camera −3.70 → −4.05 at 210 — and come to rest
+        where they did (`fall` −14.60 both; `water` −15.53 → −15.45 at its last line, still settling). The scene
+        ticks before the world each frame (`Application`: `Scene.Tick` → physics → `World.Update`): the old
+        direct `Die()` tagged the player dead before that frame's ECS tick, the fatal event is applied inside it,
+        so the ECS sees the death one tick later. That is the one-door rule, not a regression. Every other script
+        byte-identical.
 - [ ] 8.2 **`Flow` singleton and system.** `Phase`, `CheckpointReached`, a transition request; `FlowSystem`
       consumes `DeathEvent` (→ Dying) and the pause action (Playing ↔ Paused), owns the time scale. `PauseMenu.IsPaused`
       and `GameSession.CheckpointReached` become reads of `Flow`. Re-pin `ScheduleChecks` in its own commit.

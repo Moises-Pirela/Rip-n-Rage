@@ -211,18 +211,20 @@ internal static class Layer7Checks
         True(dead.Fury == 0f && dead.Calm == 0f && dead.State == RageState.Normal, "a dead player keeps no meters and no state");
         Close(w);
 
-        // the fall kill zeroes the player's health without any DamageEvent, so no DeathEvent is ever posted:
-        // empty health has to be enough on its own, or a corpse keeps spending a state (armour regen and all)
+        // 8.1: the fall kill is a fatal DamageEvent — DEPRESSED's halved damage and the armour do not save the player,
+        // and the corpse stops spending the state (armour regen and all) off the Dead tag like any other death
         w = NewWorld();
         player = Player(w, Vector3.zero);
         w.Add(player, new Health { Current = 100f, Max = 100f });
+        w.Add(player, new Armor { Current = 100f, Max = 100f, Resistance = 1f });
         Depress(w, player);
         Tick(w, 2);
         True(w.Get<Rage>(player).State == RageState.Depressed, "the state runs while the player lives");
-        w.Get<Health>(player).Current = 0f; // PlayerState.Die(), as FallRespawn calls it
+        w.Post(new DamageEvent { Target = player, Fatal = true }); // FallRespawn's lethal fall
         Tick(w, 2);
         var fell = w.Get<Rage>(player);
-        True(fell.State == RageState.Normal && fell.Calm == 0f, "zeroed health ends the state, with no DeathEvent");
+        True(w.Has<Dead>(player) && w.Get<Health>(player).Current == 0f, "a fatal fall kills a DEPRESSED, armoured player");
+        True(fell.State == RageState.Normal && fell.Calm == 0f, "and the fall death ends the state like any other");
         Close(w);
     }
 

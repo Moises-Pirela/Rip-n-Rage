@@ -167,17 +167,14 @@ namespace RipNRage.Game.Ecs
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
-                    // a corpse has no rage. The Dead tag alone is not enough: the fall kill calls PlayerState.Die()
-                    // straight out, so no damage and no DeathEvent ever reach the ECS — empty health is the signal
-                    if (IsDead(w, ents[i])) { rages[i] = default; continue; }
+                    // a corpse has no rage. Every death goes through HealthSystem since 8.1 (the fall too), so the
+                    // Dead tag it latches is the whole signal
+                    if (w.Has<Dead>(ents[i])) { rages[i] = default; continue; }
                     rages[i] = Rages.Step(in rages[i], in inputs, dt);
                     if (rages[i].State == RageState.Depressed) Regenerate(w, ents[i], dt);
                 }
             }
         }
-
-        private static bool IsDead(World w, Entity e) =>
-            w.Has<Dead>(e) || (w.Has<Health>(e) && w.Get<Health>(e).Current <= 0f);
 
         /// <summary>DEPRESSED: armour comes back while the player keeps out of trouble.</summary>
         private static void Regenerate(World w, Entity player, float dt)
