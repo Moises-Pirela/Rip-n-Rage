@@ -80,8 +80,8 @@ What layer 8 inherits:
 - **HUD**: the two rage meters are placeholder bars beside the portrait (`HudController.DrawRageMeters`); the
   portrait reads `Rage`; the rage grade is `RageScreen` (a drawer, no state). The style meter's HUD is gone.
 - **Save format**: `PlayerSave.rage` holds Fury (name kept), `calm` is new, `combatState` unused; every saved level
-  entity is keyed by `LevelRef` (monsters, spawners, pickups) — `LevelEntityRef` is deleted. The `object cycle`
-  save error is still layer 8's.
+  entity is keyed by `LevelRef` (monsters, spawners, pickups) — `LevelEntityRef` is deleted. (The `object cycle`
+  save error was fixed in layer 4.)
 - **Controls**: Q / E and D-pad left / right are the rage meters; quick swap moved to Tab; weapons 2 / 4 have no
   D-pad binding. `controls.json` is versioned (v2) with a one-time migration.
 - `EcsObjects` (`Ecs/EcsObjects.cs`) is the last entity ↔ GameObject directory, used by the combat bridge.
@@ -1240,11 +1240,89 @@ style meter retired there is nothing left to defer.
 
 ### Layer 8 — UI, HUD, save / load, game flow (~1.4k lines)
 
-- HUD / menus stay Clay drawers but read ECS state (queries / singletons) instead of `MonoBehaviour` fields.
-- Save / load serialises entities via their configs (round-trip runtime → config needs a `Capture()` counterpart
-  to `Bake()` per config — decide whether that is generated or hand-written). Fix the existing
-  `object cycle` save error as part of this.
-- Game flow (title, pause, death loop, checkpoints) as systems + singleton state.
+**What is there today** (surveyed at 7.8):
+
+| Piece | Where | Shape |
+|---|---|---|
+| Game flow | `GameSession` (152), static class | `State` (None / MainMenu / Playing), `CheckpointReached`, `LevelPath`; transitions deferred to the next frame by a `SessionBehaviour` MonoBehaviour; `ResetWorld` resets the scene, three `EnragedInjector`s and `SaveData.Current` |
+| Level start | `GameManager` (74), `LevelManager` (42) | an `IManager` coroutine chain (`Init` → `WaitUntil` per child → `OnBeginPlay`) left from Unity; it gates when the player exists, and `GameSaveSystem.ApplyWhenReady` polls for that |
+| Pause | `PauseMenu` (183) | `IsPaused` static, writes `Time.timeScale` (4 sites), reads `PlayerState.Current` and the `PlayerInputActions` injector |
+| Death | `PlayerState.Die` (89 in all), `PlayerDeathSequence` (113), `DeathScreen` (137) | `DeathEvent` → bridge → `Die()` → a coroutine that disables three MonoBehaviours, animates the pivot on unscaled time, ramps `Time.timeScale` to 0.2; the screen offers RESTART (→ `GameSession.Respawn`) / MAIN MENU |
+| Falls | `FallRespawn` (249) | **calls `Die()` directly** (no `DamageEvent`, no `DeathEvent`); also the arcade respawn mode, the safe-spot history, the EDGE / THROUGH classifier and an overlay line |
+| HUD | `HudController` (204), `GlockCrosshair` (79) | reads `PlayerState` fields and the `CombatController` injector; placeholder rage bars (`DrawRageMeters`) |
+| Menus | `MainMenuScreen` (183), `PauseMenu`, `ControlsMenu` (165), `GraphicsMenu` (260), `MenuList` (287) | Clay / `UiBatch` drawers — UI boundary, OOP allowed; only what they *read* changes |
+| Save | `GameSaveSystem` (317), `SaveData` (34), `PlayerStateData` (19) | hand-written JSON model (`GameSave` / `PlayerSave` / `EntitySave` / `MonsterSave`); the player half round-trips through the `SaveData.Current` static that `PlayerState.Init` and `Inventory` read in `Start()`; `combatState` dead; level entities already keyed by `LevelRef` |
+
+The outline's "fix the `object cycle` save error" is stale: it was fixed in layer 4 (`[JsonIgnore]` on the derived
+vector properties, see layer 4's notes).
+
+**Direction (reviewed 2026-11-14)**
+
+- **One door for death.** Every death is a `DamageEvent` through `HealthSystem`; everything downstream keys on
+  `DeathEvent`. A fall is lethal damage with a `Fall` cause.
+- **Flow is a singleton, stepped by a system.** `Flow { Phase, CheckpointReached, ... }` with `Phase` ∈ Playing /
+  Paused / Dying / Dead (the title screen is a separate scene build, so MainMenu stays a `GameSession` concern,
+  Q3). Pause and the death slow-motion are the only writers of the time scale, both through `Flow`.
+- **Scene transitions stay outside the world.** `ResetScene` tears the world down, so `GameSession` remains a
+  small static boundary that systems *request* transitions from (a request field, played back after the tick) —
+  not a system itself.
+- **Save captures from queries and applies to entities, by hand.** No generated `Capture()` per config: the save
+  holds ~15 fields across four kinds, and a reflective round-trip is grand design with no second reader. `Saves.Capture(World) → GameSave`
+  and `Saves.Apply(World, GameSave)` are pure functions over components; `SaveData.Current` goes.
+- **Drawers read components.** The HUD and menus keep their OOP shape and read `Health` / `Armour` / `Rage` /
+  weapon components and `Flow` through a query — no MonoBehaviour fields, no injectors.
+
+**Answered at review (2026-11-14)**
+
+- **Q1 — save version**: keep v1. Field names stay (`rage` holds Fury); `combatState` is no longer written. **No
+  save versioning or migration yet**: saves are not a compatibility promise, so a format change just changes the
+  format.
+- **Q2 — fall respawn mode**: **dropped.** Falls are always lethal. `FallMode`, `--fall-mode`, worldspawn
+  `fall_mode`, the safe-spot history, the footprint probes and the repeat-fall fallback go; the EDGE / THROUGH
+  classifier stays (it guards against collision bugs).
+- **Q3 — title screen**: stays a separate scene build in `GameSession`; `Flow` exists only in a level.
+- **Q4 — death sequence**: port the camera fall as it is (pivot drop, roll, extra pitch, thud bounce, ×0.2 slow
+  motion, same timings) as a component stepped on unscaled time. The `die` screenshot is its gate.
+
+**Steps**
+
+- [ ] 8.0 **Instrument the gates.** Before anything moves:
+      - `die`: print `DeathEvent` count, `Flow`-to-be state, time scale at frames after death; add a `falldie` probe
+        (the `fall` script in die mode) that prints the `DeathEvent` count — **0 today**, the gate 8.1 flips.
+      - `saveload`: dump the whole `GameSave` at save and immediately after load and diff them (today it prints
+        position / ammo / hp only); add a checkpoint-respawn script (cross a checkpoint, die, RESTART, assert the
+        checkpoint pose and state).
+      - `pause`: already prints `paused` / `timeScale`; add the main-menu → new game path under `--menu`.
+      - HUD: a screenshot gate on `walk` (measure the same-build floor first) and a GameChecks assertion per
+        HUD value read (health, armour, ammo, both meters).
+      - Make the gate scripts run `dotnet build tests/RipNRage.GameChecks` (the stale-binary trap).
+- [ ] 8.1 **Death has one door.** The lethal fall posts a `DamageEvent` (damage = remaining health + armour,
+      cause `Fall`) instead of calling `Die()`; `HealthSystem` produces the `DeathEvent`. Gate: `falldie` shows 1
+      `DeathEvent`; `die` unchanged; rage's empty-health fallback can go if nothing else needs it.
+- [ ] 8.2 **`Flow` singleton and system.** `Phase`, `CheckpointReached`, a transition request; `FlowSystem`
+      consumes `DeathEvent` (→ Dying) and the pause action (Playing ↔ Paused), owns the time scale. `PauseMenu.IsPaused`
+      and `GameSession.CheckpointReached` become reads of `Flow`. Re-pin `ScheduleChecks` in its own commit.
+- [ ] 8.3 **The death sequence is a component**, ported as it is (Q4). `DeathCam { T, Roll, StartPose }` on the
+      pivot, stepped on unscaled time, same curve, timings and ×0.2 slow motion; input / combat / look are switched off by `Flow.Phase` (systems already read it) instead of
+      disabling MonoBehaviours. `PlayerDeathSequence` deleted; `PlayerState.Die` / `OnDied` deleted if nothing
+      else reads them.
+- [ ] 8.4 **Falls as a system.** Kill height as a singleton from the loader; the lethal check and the EDGE /
+      THROUGH classifier as a system (its overlay line becomes a drawer read). The arcade respawn is dropped (Q2):
+      `FallMode`, `--fall-mode` and worldspawn `fall_mode` deleted with it. `FallRespawn` deleted.
+- [ ] 8.5 **Save captures and applies.** `Saves.Capture` / `Saves.Apply` over components; the player half reads
+      `Health` / `Armour` / `Rage` / the weapon components directly; `SaveData`, `PlayerStateData`,
+      `ApplyWhenReady`'s polling and the `SaveData.Current` reset in `ResetWorld` deleted. v1 field names kept,
+      `combatState` no longer written (Q1). Gate: the 8.0 `GameSave` diff is empty.
+- [ ] 8.6 **Level start is a function.** `GameManager` / `LevelManager`'s `IManager` coroutine chain replaced by
+      the build itself (the player exists when `TestArea.Build` returns, or `Flow` knows when it does).
+      `EnragedInjector` resets in `ResetWorld` shrink to what still exists.
+- [ ] 8.7 **HUD reads the ECS.** `HudController` reads components through a query; `PlayerState`'s remaining
+      facade goes if this was its last reader (else layer 9). The rage meters get a real pass (still a drawer).
+      `EnragedInjector<HudController>` deleted.
+- [ ] 8.8 **Menus read the ECS.** `PauseMenu` / `DeathScreen` / `MainMenuScreen` read `Flow` and components;
+      RESTART / MAIN MENU / Continue go through the `Flow` transition request.
+- [ ] 8.9 Close-out: full sweep twice, byte-identical scripts, bench / frame / alloc vs 7.8 (and settle 7.8's open
+      `approach` scheduling item with a per-batch profile), layer totals, pick-up point for layer 9.
 
 ### Layer 9 — Remove the legacy model
 
