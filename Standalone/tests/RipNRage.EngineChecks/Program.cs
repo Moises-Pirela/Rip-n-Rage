@@ -48,7 +48,6 @@ internal static class Program
             Equal(-20f, Mathf.DeltaAngle(10f, 350f), "DeltaAngle wraps backward");
             True(Mathf.Approximately(1f, 1f + 0.0000001f), "Approximately small delta");
             EcsChecks.Run(True);
-            TransformChecks.Run(True);
             PhysicsEcsChecks.Run(True);
             Layer3Checks.Run(True);
             Layer4Checks.Run(True);

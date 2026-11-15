@@ -60,7 +60,7 @@ namespace RipNRage.Engine.Graphics
         public static bool Batchable(SpriteDraw sr)
         {
             var mat = sr.sharedMaterial;
-            if (mat != SpriteRenderer.DefaultSpriteMaterial && (mat == null || mat.shader != SpriteRenderer.DefaultSpriteMaterial.shader || !mat.IsEmpty)) return false;
+            if (mat != DefaultMaterials.Sprite && (mat == null || mat.shader != DefaultMaterials.Sprite.shader || !mat.IsEmpty)) return false;
             return sr.propertyBlock == null || sr.propertyBlock.IsEmpty;
         }
 

@@ -100,7 +100,7 @@ namespace RipNRage.Game.Ecs
                     DeathScreen.NextCause = edge ? "YOU FELL INTO THE HARBOUR" : "YOU FELL OUT OF THE WORLD";
                     // the body stops where it is: the velocity goes, and so does this frame's input — the fixed steps
                     // after this tick would otherwise move the player again before the death (end of frame) blocks it
-                    PlayerLink.Current?.ResetVelocity();
+                    PlayerLink.ResetVelocity();
                     ctx.World.Singleton<RipNRage.Engine.Ecs.Input.InputState>() = default;
                     ctx.Post(new DamageEvent { Target = ents[i], Fatal = true, Point = pos, Direction = Vector3.down });
                 }

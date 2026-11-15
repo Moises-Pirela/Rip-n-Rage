@@ -63,7 +63,7 @@ namespace RipNRage.Engine.Graphics
         public Material material;
         public MaterialPropertyBlock propertyBlock;
 
-        public Material sharedMaterial => material ?? SpriteRenderer.DefaultSpriteMaterial;
+        public Material sharedMaterial => material ?? DefaultMaterials.Sprite;
     }
 
     /// <summary>One mesh to draw this frame.</summary>
@@ -82,7 +82,7 @@ namespace RipNRage.Engine.Graphics
         public MaterialPropertyBlock propertyBlock;
         internal InstanceGroup instanceGroup;
 
-        public Material sharedMaterial => material ?? (transparent ? MeshRenderer.DefaultTransparentMeshMaterial : MeshRenderer.DefaultMeshMaterial);
+        public Material sharedMaterial => material ?? (transparent ? DefaultMaterials.MeshTransparent : DefaultMaterials.Mesh);
 
         /// <summary>What has to match for two meshes to share one instanced draw.</summary>
         internal readonly struct InstanceKey : IEquatable<InstanceKey>

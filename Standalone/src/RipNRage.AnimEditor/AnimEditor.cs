@@ -17,16 +17,15 @@ namespace RipNRage.AnimEditor
     /// Data lives in <see cref="AnimationLibrary"/> (animations/*.json); everything is edited in place so a running
     /// game that watches the folder picks up saved changes immediately.
     /// </summary>
-    public sealed partial class AnimEditor : Behaviour, IUiDrawer
+    public sealed partial class AnimEditor : RipNRage.Engine.Graphics.IUiScreen
     {
-        // ---- scene rig (set up by Program) ----
-        public Camera cam;
-        public Transform arms;          // = PlayerArms node of the player prefab (child of the camera)
-        public Transform worldAnchor;   // a few metres in front of the camera for world-layer clips
-        private GameObject _previewGo;
-        private SpriteRenderer _previewSr, _ghostPrev, _ghostNext;
+        // ---- scene rig (set up by Program; entities since 9.6) ----
+        public RipNRage.Engine.Graphics.CameraView cam;
+        public RipNRage.Engine.Ecs.Entity arms;        // = PlayerArms node of the player prefab (a child pose of the camera)
+        public RipNRage.Engine.Ecs.Entity worldAnchor; // a few metres in front of the camera for world-layer clips
+        private RipNRage.Engine.Ecs.Entity _previewRoot;
+        private RipNRage.Engine.Ecs.Animation.AnimatedSprite _previewSr, _ghostPrev, _ghostNext;
         private RipNRage.Engine.Ecs.Animation.AnimatedSprite _previewAnim; // controller mode: the game's ECS animation path
-        private GameObject _previewAnimGo; // the node the entity's pose is taken from each frame
 
         // ---- document ----
         private SpriteAnimationClip _clip;
@@ -69,6 +68,9 @@ namespace RipNRage.AnimEditor
         /// <summary>Raises the viewmodel rig so the weapon sits in the middle of the viewport instead of under the timeline (G toggles the true game framing).</summary>
         private bool _fitView = true;
         private Vector3 _armsHome;
+        /// <summary>The PlayerArms offset of the player prefab (the rig Program builds).</summary>
+        public static readonly Vector3 ArmsHome = new Vector3(0.017f, -0.65f, 2.36f);
+        private static RipNRage.Engine.Ecs.World W => Application.Current.World;
         private bool _layoutKnown;
         private string _status = "";
         private float _statusUntil;
@@ -89,9 +91,9 @@ namespace RipNRage.AnimEditor
 
         // ------------------------------------------------------------------ lifecycle
 
-        protected override void Start()
+        public void Start()
         {
-            _armsHome = arms.localPosition;
+            _armsHome = ArmsHome;
             _imgui = new ImGuiController(layoutName: "anim-editor");
             _timeline = new ImGuiViewportPanel("Timeline");
             Application.Current.Renderer.AfterUi += OnAfterUi;
@@ -102,7 +104,7 @@ namespace RipNRage.AnimEditor
             AnimationLibrary.Reloaded += RefreshLists;
         }
 
-        protected override void OnDestroy()
+        public void Close()
         {
             AnimationLibrary.Reloaded -= RefreshLists;
             AnimationLibrary.SuppressPolling = false;
@@ -132,53 +134,47 @@ namespace RipNRage.AnimEditor
 
         private void BuildPreviewObject()
         {
-            _previewGo = new GameObject("Preview");
-            _previewSr = _previewGo.AddComponent<SpriteRenderer>();
-            _previewSr.renderLayer = RenderLayer.FirstPerson;
-            // controller mode plays through the ECS (SpriteAnimator), on a child so it can be shown instead of the clip sprite
-            var animGo = new GameObject("PreviewAnimated");
-            animGo.transform.SetParent(_previewGo.transform, false);
-            _previewAnimGo = animGo;
+            _previewRoot = W.CreateEntity();
+            W.Add(_previewRoot, RipNRage.Engine.Ecs.Transforms.LocalTransform.Identity);
+            W.Add(_previewRoot, new RipNRage.Engine.Ecs.Transforms.Parent { Value = arms });
+            _previewSr = MakeGhost(0);
+            _previewSr.color = Color.white;
+            _previewSr.fullBright = false;
+            // controller mode plays through the ECS (SpriteAnimator), shown instead of the clip sprite
             _previewAnim = new RipNRage.Engine.Ecs.Animation.AnimatedSprite(Application.Current.World, null, RenderLayer.FirstPerson);
             _previewAnim.OnEvent = n => Flash("EVENT " + n); // clip events (routed by the engine's AnimationEventRouter)
+            _previewAnim.SetParent(_previewRoot);
             _previewAnim.SetActive(false);
-            _previewGo.AddComponent<EventCatcher>().editor = this;
-            _ghostPrev = MakeGhost("GhostPrev", -2);
-            _ghostNext = MakeGhost("GhostNext", -1);
+            _ghostPrev = MakeGhost(-2);
+            _ghostPrev.color = new Color(1f, 1f, 1f, 0.3f);
+            _ghostNext = MakeGhost(-1);
+            _ghostNext.color = new Color(1f, 1f, 1f, 0.3f);
         }
 
-        private SpriteRenderer MakeGhost(string n, int order)
+        private RipNRage.Engine.Ecs.Animation.AnimatedSprite MakeGhost(int order)
         {
-            var go = new GameObject(n);
-            go.transform.SetParent(_previewGo.transform, false);
-            var sr = go.AddComponent<SpriteRenderer>();
-            sr.renderLayer = RenderLayer.FirstPerson;
-            sr.sortingOrder = order;
-            sr.color = new Color(1f, 1f, 1f, 0.3f);
-            sr.fullBright = true;
-            sr.enabled = false;
+            var sr = new RipNRage.Engine.Ecs.Animation.AnimatedSprite(Application.Current.World, null, RenderLayer.FirstPerson, order, fullBright: true);
+            sr.SetParent(_previewRoot);
+            sr.SetActive(false);
             return sr;
         }
 
         /// <summary>Moves the preview object to the rig (viewmodel under PlayerArms, or the world anchor) of the clip's controller.</summary>
         private void ApplyRig()
         {
-            arms.localPosition = _armsHome;
             var owner = _controllerMode ? _controller : (_clip != null ? AnimationLibrary.RigOwner(_clip) : null);
             var rig = owner?.previewRig ?? new AnimationPreviewRig();
             bool world = rig.layer == RenderLayer.World;
-            _previewGo.transform.SetParent(world ? worldAnchor : arms, false);
-            _previewGo.transform.localPosition = rig.position + new Vector3(0f, world ? 0f : CentringLift(owner, rig), 0f);
-            _previewGo.transform.localRotation = Quaternion.identity;
-            _previewGo.transform.localScale = rig.scale;
+            ref var rootParent = ref W.Get<RipNRage.Engine.Ecs.Transforms.Parent>(_previewRoot);
+            rootParent.Value = world ? worldAnchor : arms;
+            ref var rootLt = ref W.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(_previewRoot);
+            rootLt.Position = rig.position + new Vector3(0f, world ? 0f : CentringLift(owner, rig), 0f);
+            rootLt.Rotation = Quaternion.identity;
+            rootLt.Scale = rig.scale;
             foreach (var sr in new[] { _previewSr, _ghostPrev, _ghostNext })
-            {
-                sr.renderLayer = rig.layer;
-                sr.billboard = world && rig.billboard;
-                sr.lit = world;
-            }
+                sr.SetRender(rig.layer, world && rig.billboard, world);
             _previewAnim.SetRender(rig.layer, world && rig.billboard, world);
-            _ghostPrev.transform.localScale = _ghostNext.transform.localScale = Vector3.one;
+            _ghostPrev.LocalScale = _ghostNext.LocalScale = Vector3.one;
         }
 
         /// <summary>
@@ -251,7 +247,7 @@ namespace RipNRage.AnimEditor
             {
                 _previewAnim.SetActive(false);
                 _previewAnim.runtimeAnimatorController = null;
-                _previewSr.enabled = true; // clip mode: the timeline drives the plain sprite
+                _previewSr.SetActive(true); // clip mode: the timeline drives the plain sprite
                 _playing = false; _time = 0f;
                 ApplyRig(); SampleClip();
             }
@@ -263,14 +259,14 @@ namespace RipNRage.AnimEditor
             _previewAnim.runtimeAnimatorController = _controller;
             _previewAnim.SetActive(true);
             _previewAnim.speed = _previewSpeed;
-            _previewSr.enabled = false; // the ECS-animated child renders instead
+            _previewSr.SetActive(false); // the ECS-animated child renders instead
             _playing = true;
             ApplyRig();
         }
 
         // ------------------------------------------------------------------ update / playback
 
-        protected override void Update()
+        public void Update()
         {
             // one ImGui frame per rendered frame: the panels are declared here, the timeline tracks are drawn into
             // their panel after the UI pass and ImGui is rendered last
@@ -278,9 +274,6 @@ namespace RipNRage.AnimEditor
             BuildUi();
             if (_promptOpen || _imgui.WantsKeyboard) return; // a focused field keeps the shortcuts quiet
             HandleKeys();
-            // the preview entity has no game-side bridge: its pose follows the editor's preview node here
-            if (_previewAnimGo != null)
-                _previewAnim.SetPose(_previewAnimGo.transform.position, _previewAnimGo.transform.rotation, _previewAnimGo.transform.lossyScale);
             if (_controllerMode) UpdateControllerPreview();
             else UpdateClipPlayback();
             _flashes.RemoveAll(f => f.until < Time.unscaledTime);
@@ -319,20 +312,20 @@ namespace RipNRage.AnimEditor
             var sp = _clip.SampleSprite(_time);
             _previewSr.sprite = sp;
             var en = _clip.SampleEnabled(_time);
-            _previewSr.enabled = sp != null && (en ?? true);
+            _previewSr.SetActive(sp != null && (en ?? true));
             // onion skin: previous / next sprite keys around the playhead
             int cur = CurrentSpriteKey();
-            _ghostPrev.enabled = _ghostNext.enabled = false;
+            _ghostPrev.SetActive(false); _ghostNext.SetActive(false);
             if (_onion && cur >= 0)
             {
-                if (cur > 0) { _ghostPrev.sprite = _clip.spriteKeys[cur - 1].sprite; _ghostPrev.enabled = _ghostPrev.sprite != null; }
-                if (cur + 1 < _clip.spriteKeys.Count) { _ghostNext.sprite = _clip.spriteKeys[cur + 1].sprite; _ghostNext.enabled = _ghostNext.sprite != null; }
+                if (cur > 0) { _ghostPrev.sprite = _clip.spriteKeys[cur - 1].sprite; _ghostPrev.SetActive(_ghostPrev.sprite != null); }
+                if (cur + 1 < _clip.spriteKeys.Count) { _ghostNext.sprite = _clip.spriteKeys[cur + 1].sprite; _ghostNext.SetActive(_ghostNext.sprite != null); }
             }
         }
 
         private void UpdateControllerPreview()
         {
-            _ghostPrev.enabled = _ghostNext.enabled = false;
+            _ghostPrev.SetActive(false); _ghostNext.SetActive(false);
             _previewAnim.speed = _playing ? _previewSpeed : 0f;
             // the timeline follows the animator
             var st = _previewAnim.currentState;
@@ -857,11 +850,4 @@ namespace RipNRage.AnimEditor
         }
     }
 
-    /// <summary>Receives messages sent at the preview GameObject and shows them as flashes (the controller preview's clip events arrive through AnimatedSprite.OnEvent instead).</summary>
-    public sealed class EventCatcher : Behaviour, GameObject.IMessageSink
-    {
-        public AnimEditor editor;
-        public void OnMessage(string methodName, object value) => editor?.Flash("EVENT " + methodName);
-        protected override void Update() { }
-    }
 }

@@ -98,6 +98,13 @@ namespace RipNRage.Engine.Tweening
             foreach (var t in Active.ToArray()) if (t.target == target) t.Kill();
         }
 
+        /// <summary>The scene reset: every tween dies, applied where it stands (9.7; was an Update(0) sweep).</summary>
+        public static void KillEverything()
+        {
+            foreach (var t in Active.ToArray()) t.complete = true;
+            Active.Clear();
+        }
+
         public static void Update(float dt)
         {
             foreach (var t in Active.ToArray())
@@ -116,24 +123,5 @@ namespace RipNRage.Engine.Tweening
                 }
             }
         }
-    }
-
-    /// <summary>DOTween-style extension methods used by the game.</summary>
-    public static class TweenExtensions
-    {
-        /// <summary>Smoothly rotates the transform to look at a world point (DOTween's DOLookAt).</summary>
-        public static Tween DOLookAt(this Transform t, Vector3 worldPoint, float duration)
-        {
-            Vector3 dir = worldPoint - t.position;
-            if (dir.sqrMagnitude < 1E-08f) return TweenRunner.Rotate(() => t.rotation, r => t.rotation = r, t.rotation, 0f, t);
-            Quaternion target = Quaternion.LookRotation(dir);
-            return TweenRunner.Rotate(() => t.rotation, r => t.rotation = r, target, duration, t);
-        }
-
-        public static Tween DOLocalMove(this Transform t, Vector3 localPos, float duration) =>
-            TweenRunner.To(() => t.localPosition, v => t.localPosition = v, localPos, duration, t);
-
-        public static void DOComplete(this Transform t) => TweenRunner.CompleteAll(t);
-        public static void DOKill(this Transform t) => TweenRunner.KillAll(t);
     }
 }

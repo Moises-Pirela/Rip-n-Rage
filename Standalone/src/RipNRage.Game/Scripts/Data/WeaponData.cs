@@ -6,8 +6,10 @@ using System.Collections.Generic;
 // Instances (Glock, M1887, MG338, RocketLauncher) are defined in Content/GameAssets.cs with the
 // exact values of the .asset files.
 [CreateAssetMenu(menuName = "ENRAGED/Weapon", fileName = "Weapon")]
-public class WeaponData : ScriptableObject
+public class WeaponData // a plain shared-data class (9.4: ScriptableObject is gone; the name was EngineObject's)
 {
+    public string name = "";
+
     public AmmoType ammoType;
     /// <summary>&gt;= 0 = this weapon launches that <see cref="RipNRage.Game.Ecs.Combat.Projectiles"/> kind instead of hitscan rays.</summary>
     public int projectileKind = -1;

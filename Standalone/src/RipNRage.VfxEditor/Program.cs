@@ -53,11 +53,9 @@ namespace RipNRage.VfxEditor
                 Materials.Load();
 
                 var rig = BuildPreviewScene();
-                var edGo = new GameObject("VfxEditor");
-                var editor = edGo.AddComponent<VfxEditor>();
-                editor.rig = rig;
-                editor.startEffect = effectName;
-                if (script != null) edGo.AddComponent<VfxEditorScript>().scriptName = script;
+                var editor = RipNRage.Engine.Graphics.UiScreens.Add(new VfxEditor { rig = rig, startEffect = effectName });
+                editor.Start();
+                if (script != null) RipNRage.Engine.Graphics.UiScreens.Add(new VfxEditorScript { scriptName = script, Editor = editor });
                 app.Run();
                 return 0;
             }
@@ -71,92 +69,113 @@ namespace RipNRage.VfxEditor
         /// <summary>Plank floor, a concrete wall facing the camera, a wooden crate and a metal post; all with colliders so particles bounce and clicks place the effect.</summary>
         private static PreviewRig BuildPreviewScene()
         {
+            var world = Application.Current.World;
             var rig = new PreviewRig();
-            var camGo = new GameObject("PreviewCamera");
-            camGo.transform.position = new Vector3(0f, 1.6f, -2.5f);
-            rig.camera = camGo.AddComponent<Camera>();
+            rig.camera.Position = new Vector3(0f, 1.6f, -2.5f);
             rig.camera.fieldOfView = 60f; rig.camera.nearClipPlane = 0.03f; rig.camera.farClipPlane = 400f;
-            Camera.main = rig.camera;
+            rig.lens = world.CreateEntity();
+            world.Add(rig.lens, RipNRage.Engine.Ecs.Transforms.LocalTransform.At(rig.camera.Position));
+            world.Add(rig.lens, new RipNRage.Engine.Ecs.Rendering.CameraLens { FieldOfView = 60f, Near = 0.03f, Far = 400f });
 
-            var floor = new GameObject("Floor");
-            floor.layer = Layers.Walkable;
-            var fmr = floor.AddComponent<MeshRenderer>();
-            fmr.mesh = Mesh.CreatePlane(Vector3.zero, 40f, 40f, 0.25f);
-            fmr.texture = ProceduralTextures.WoodPlanks();
-            fmr.occluder = true;
-            Surfaces.Tag(Application.Current.World, RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, floor.transform.position + new Vector3(0f, -0.5f, 0f), Quaternion.identity, new Vector3(40f, 1f, 40f), Layers.Walkable), Surfaces.Wood);
+            RipNRage.Engine.Ecs.Entity StaticMesh(Mesh mesh, Texture2D tex, Color color, Vector3 position, bool occluder = false)
+            {
+                var e = world.CreateEntity();
+                world.Add(e, RipNRage.Engine.Ecs.Transforms.LocalTransform.At(position));
+                world.Add(e, new RipNRage.Engine.Ecs.Rendering.MeshRender
+                {
+                    Mesh = RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Intern(mesh),
+                    Texture = RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Intern(tex),
+                    UvScale = Vector2.one, Color = color, CastsShadow = true, Occluder = occluder,
+                    Layer = RipNRage.Engine.Graphics.RenderLayer.World,
+                });
+                return e;
+            }
 
-            var wall = new GameObject("Wall");
-            wall.layer = Layers.Walkable;
-            var wmr = wall.AddComponent<MeshRenderer>();
-            wmr.mesh = Mesh.CreateBox(new Vector3(0f, 2f, 4.5f), new Vector3(14f, 4f, 1f), 0.5f);
-            wmr.texture = GameAssets.Texture13;
-            wmr.color = new Color(0.8f, 0.8f, 0.82f, 1f);
-            wmr.occluder = true;
-            Surfaces.Tag(Application.Current.World, RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, wall.transform.position + new Vector3(0f, 2f, 4.5f), Quaternion.identity, new Vector3(14f, 4f, 1f), Layers.Walkable), Surfaces.Concrete);
+            StaticMesh(Mesh.CreatePlane(Vector3.zero, 40f, 40f, 0.25f), ProceduralTextures.WoodPlanks(), Color.white, Vector3.zero, occluder: true);
+            Surfaces.Tag(world, RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, new Vector3(0f, -0.5f, 0f), Quaternion.identity, new Vector3(40f, 1f, 40f), Layers.Walkable), Surfaces.Wood);
 
-            var crate = new GameObject("Crate");
-            crate.layer = Layers.Walkable;
-            crate.transform.position = new Vector3(2.6f, 0.6f, 2.2f);
-            var cmr = crate.AddComponent<MeshRenderer>();
-            cmr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * 1.2f, 1f / 1.2f);
-            cmr.texture = GameAssets.OrangeProto;
-            Surfaces.Tag(Application.Current.World, RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, crate.transform.position + Vector3.zero, Quaternion.identity, Vector3.one * 1.2f, Layers.Walkable), Surfaces.Wood);
+            StaticMesh(Mesh.CreateBox(new Vector3(0f, 2f, 4.5f), new Vector3(14f, 4f, 1f), 0.5f), GameAssets.Texture13, new Color(0.8f, 0.8f, 0.82f, 1f), Vector3.zero, occluder: true);
+            Surfaces.Tag(world, RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, new Vector3(0f, 2f, 4.5f), Quaternion.identity, new Vector3(14f, 4f, 1f), Layers.Walkable), Surfaces.Concrete);
 
-            var post = new GameObject("Post");
-            post.layer = Layers.Walkable;
-            post.transform.position = new Vector3(-2.4f, 1.2f, 2.6f);
-            var pmr = post.AddComponent<MeshRenderer>();
-            pmr.mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.3f, 2.4f, 0.3f), 1f);
-            pmr.texture = GameAssets.Texture13; pmr.color = new Color(0.35f, 0.35f, 0.38f, 1f);
-            Surfaces.Tag(Application.Current.World, RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, post.transform.position + Vector3.zero, Quaternion.identity, new Vector3(0.3f, 2.4f, 0.3f), Layers.Walkable), Surfaces.Metal);
+            StaticMesh(Mesh.CreateBox(Vector3.zero, Vector3.one * 1.2f, 1f / 1.2f), GameAssets.OrangeProto, Color.white, new Vector3(2.6f, 0.6f, 2.2f));
+            Surfaces.Tag(world, RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, new Vector3(2.6f, 0.6f, 2.2f), Quaternion.identity, Vector3.one * 1.2f, Layers.Walkable), Surfaces.Wood);
+
+            StaticMesh(Mesh.CreateBox(Vector3.zero, new Vector3(0.3f, 2.4f, 0.3f), 1f), GameAssets.Texture13, new Color(0.35f, 0.35f, 0.38f, 1f), new Vector3(-2.4f, 1.2f, 2.6f));
+            Surfaces.Tag(world, RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, new Vector3(-2.4f, 1.2f, 2.6f), Quaternion.identity, new Vector3(0.3f, 2.4f, 0.3f), Layers.Walkable), Surfaces.Metal);
 
             // dummy "projectile" that flies a circle for trail-type (open ended) effects
-            var dummy = new GameObject("TrailDummy");
-            rig.trailDummy = dummy.AddComponent<CircleFlyer>();
-            dummy.SetActive(false);
+            rig.trailDummy = RipNRage.Engine.Graphics.UiScreens.Add(new CircleFlyer());
+            var dummyEnt = world.CreateEntity();
+            world.Add(dummyEnt, RipNRage.Engine.Ecs.Transforms.LocalTransform.At(Vector3.zero));
+            rig.trailDummy.Entity = dummyEnt;
 
             RenderSettings.drawSky = true;
             return rig;
         }
     }
 
-    /// <summary>Scene objects the editor drives.</summary>
+    /// <summary>Scene pieces the editor drives (entities since 9.6).</summary>
     public sealed class PreviewRig
     {
-        public Camera camera;
+        /// <summary>The preview camera's pose and projection; the editor writes it onto the lens entity.</summary>
+        public readonly RipNRage.Engine.Graphics.CameraView camera = new RipNRage.Engine.Graphics.CameraView();
+        public RipNRage.Engine.Ecs.Entity lens;
         public CircleFlyer trailDummy;
+
+        public void ApplyCamera()
+        {
+            var w = Application.Current.World;
+            if (!w.IsAlive(lens)) return;
+            ref var lt = ref w.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(lens);
+            lt.Position = camera.Position; lt.Rotation = camera.Rotation;
+        }
     }
 
-    /// <summary>Moves its object around a horizontal circle (stand-in for a rocket when previewing trails).</summary>
-    public sealed class CircleFlyer : Behaviour
+    /// <summary>Moves its entity around a horizontal circle (stand-in for a rocket when previewing trails).</summary>
+    public sealed class CircleFlyer : RipNRage.Engine.Graphics.IUiScreen
     {
         public Vector3 center = new Vector3(0f, 1.6f, 1.5f);
         public float radius = 1.8f;
         public float speed = 5f; // m/s
+        public bool Active;
+        /// <summary>The pose entity trails follow.</summary>
+        public RipNRage.Engine.Ecs.Entity Entity;
         private float _angle;
 
-        protected override void Update()
+        public Vector3 Position { get; private set; }
+        public Vector3 Forward { get; private set; } = Vector3.forward;
+
+        public void Update()
         {
+            if (!Active) return;
             _angle += speed / Mathf.Max(0.1f, radius) * Time.deltaTime;
-            Vector3 p = center + new Vector3(Mathf.Cos(_angle), 0f, Mathf.Sin(_angle)) * radius;
-            Vector3 tangent = new Vector3(-Mathf.Sin(_angle), 0f, Mathf.Cos(_angle));
-            transform.position = p;
-            transform.rotation = Quaternion.LookRotation(tangent, Vector3.up);
+            Position = center + new Vector3(Mathf.Cos(_angle), 0f, Mathf.Sin(_angle)) * radius;
+            Forward = new Vector3(-Mathf.Sin(_angle), 0f, Mathf.Cos(_angle));
+            var w = Application.Current.World;
+            if (!w.IsAlive(Entity)) return;
+            ref var lt = ref w.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(Entity);
+            lt.Position = Position;
+            lt.Rotation = Quaternion.LookRotation(Forward, Vector3.up);
         }
+
+        public void DrawUi(UiBatch ui) { }
+        public void Close() { }
     }
 
     /// <summary>Scripted sessions for screenshots / smoke tests.</summary>
-    public sealed class VfxEditorScript : Behaviour
+    public sealed class VfxEditorScript : RipNRage.Engine.Graphics.IUiScreen
     {
         public string scriptName = "";
+        public VfxEditor Editor;
         private int _frame;
         private VfxEditor _ed;
+        public void DrawUi(UiBatch ui) { }
+        public void Close() { }
 
-        protected override void Update()
+        public void Update()
         {
             _frame++;
-            _ed ??= GetComponent<VfxEditor>();
+            _ed ??= Editor;
             if (_ed == null) return;
             switch (scriptName)
             {

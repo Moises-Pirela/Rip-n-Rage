@@ -110,6 +110,40 @@ namespace RipNRage.Engine.Ecs.Animation
         // ---------------------------------------------------------------- visibility
 
         /// <summary>Shows / hides the sprite (the legacy GameObject.SetActive on the viewmodel parts).</summary>
+        /// <summary>A static sprite (clip-less previews: the editors).</summary>
+        public Sprite sprite
+        {
+            get => Alive && _w.Has<SpriteRender>(Entity) ? RenderAssets.Sprites.Resolve(_w.Get<SpriteRender>(Entity).Sprite) : null;
+            set { if (Alive && _w.Has<SpriteRender>(Entity)) _w.Get<SpriteRender>(Entity).Sprite = RenderAssets.Sprites.Intern(value); }
+        }
+
+        public Color color
+        {
+            get => Alive && _w.Has<SpriteRender>(Entity) ? _w.Get<SpriteRender>(Entity).Color : Color.white;
+            set { if (Alive && _w.Has<SpriteRender>(Entity)) _w.Get<SpriteRender>(Entity).Color = value; }
+        }
+
+        public bool fullBright
+        {
+            get => Alive && _w.Has<SpriteRender>(Entity) && _w.Get<SpriteRender>(Entity).FullBright;
+            set { if (Alive && _w.Has<SpriteRender>(Entity)) _w.Get<SpriteRender>(Entity).FullBright = value; }
+        }
+
+        public int sortingOrder
+        {
+            get => Alive && _w.Has<SpriteRender>(Entity) ? _w.Get<SpriteRender>(Entity).SortingOrder : 0;
+            set { if (Alive && _w.Has<SpriteRender>(Entity)) _w.Get<SpriteRender>(Entity).SortingOrder = value; }
+        }
+
+        /// <summary>Parents the sprite entity (local pose kept as set; Entity.Null unparents).</summary>
+        public void SetParent(Entity parent)
+        {
+            if (!Alive) return;
+            if (parent.IsNull) { if (_w.Has<Transforms.Parent>(Entity)) _w.Remove<Transforms.Parent>(Entity); }
+            else if (_w.Has<Transforms.Parent>(Entity)) _w.Get<Transforms.Parent>(Entity).Value = parent;
+            else _w.Add(Entity, new Transforms.Parent { Value = parent });
+        }
+
         public void SetActive(bool active)
         {
             if (active) Unset<Hidden>();

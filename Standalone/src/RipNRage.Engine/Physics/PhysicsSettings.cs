@@ -248,7 +248,7 @@ namespace RipNRage.Engine
             Current.CopyFrom(this);
             Time.fixedDeltaTime = 1f / Mathf.Clamp(tickRate, 10f, 1000f);
             Time.maximumDeltaTime = maxFrameDelta;
-            Scene.MaxFixedSteps = maxStepsPerFrame;
+            Application.MaxFixedSteps = maxStepsPerFrame;
             Physics.gravity = gravity;
 
             ContactGeneration.ContactMargin = contactMargin;

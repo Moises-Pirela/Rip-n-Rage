@@ -8,14 +8,14 @@ using RipNRage.Engine.Graphics;
 
 namespace RipNRage.Benchmark
 {
-    /// <summary>A benchmark scenario: builds its world under a root object, gets ticked every frame, reports a line of live stats.</summary>
+    /// <summary>A benchmark scenario: builds its entities, gets ticked every frame, reports a line of live stats.</summary>
     public abstract class Scenario
     {
         public abstract string Name { get; }
         public abstract string Description { get; }
         /// <summary>The count the scenario is about (for the report).</summary>
         public abstract int Target(BenchmarkConfig cfg);
-        public abstract void Build(GameObject root, BenchmarkConfig cfg);
+        public abstract void Build(BenchmarkConfig cfg);
         public virtual void Tick(float dt, float elapsed) { }
         /// <summary>Live numbers appended to the per-frame sample (entities alive etc.).</summary>
         public virtual int Alive => 0;
@@ -56,7 +56,7 @@ namespace RipNRage.Benchmark
     /// Runs the scenarios back to back: build → warm-up → measure → tear down, sampling every frame at the
     /// profiler's end-of-frame hook (so the stage times of that very frame are read), then prints / writes the report.
     /// </summary>
-    public sealed class BenchmarkRunner : Behaviour
+    public sealed class BenchmarkRunner : IUiScreen
     {
         public BenchmarkConfig config;
         public List<Scenario> scenarios = new List<Scenario>();
@@ -64,17 +64,19 @@ namespace RipNRage.Benchmark
 
         private int _index = -1;
         private Scenario _current;
-        private GameObject _root;
+
         private ScenarioResult _result;
         private float _elapsed;
         private bool _measuring;
         private readonly List<ScenarioResult> _results = new List<ScenarioResult>();
         private StreamWriter _csv;
-        private Camera _camera;
+        private readonly RipNRage.Engine.Graphics.CameraView _camera = new RipNRage.Engine.Graphics.CameraView();
+        private RipNRage.Engine.Ecs.Entity _lens;
         private float _hudTimer;
         private bool _done;
 
-        protected override void Awake()
+        /// <summary>After config / scenarios are assigned (9.6: no scene lifecycle).</summary>
+        public void Start()
         {
             Profiler.FrameEnded += OnFrameEnded;
             if (config.csvPath != null)
@@ -86,19 +88,20 @@ namespace RipNRage.Benchmark
                 }
                 catch (Exception e) { Debug.LogError("csv: " + e.Message); _csv = null; }
             }
-            var camGo = new GameObject("BenchmarkCamera");
-            _camera = camGo.AddComponent<Camera>();
             _camera.fieldOfView = 60f; _camera.nearClipPlane = 0.1f; _camera.farClipPlane = 600f;
-            Camera.main = _camera;
+            _lens = BenchmarkScene.World.CreateEntity();
+            BenchmarkScene.World.Add(_lens, RipNRage.Engine.Ecs.Transforms.LocalTransform.At(Vector3.zero));
+            BenchmarkScene.World.Add(_lens, new RipNRage.Engine.Ecs.Rendering.CameraLens { FieldOfView = 60f, Near = 0.1f, Far = 600f });
             RenderSettings.drawSky = true;
             Next();
         }
 
-        protected override void OnDestroy()
+        public void Close()
         {
             Profiler.FrameEnded -= OnFrameEnded;
             _csv?.Dispose();
         }
+        public void DrawUi(UiBatch ui) { }
 
         private void Next()
         {
@@ -106,12 +109,13 @@ namespace RipNRage.Benchmark
             _index++;
             if (_index >= scenarios.Count) { Finish(); return; }
             _current = scenarios[_index];
-            _root = new GameObject("Scenario_" + _current.Name);
             _result = new ScenarioResult { name = _current.Name, description = _current.Description, target = _current.Target(config) };
             _elapsed = 0f; _measuring = false;
             BenchmarkScene.PlaceCamera(_camera, _current.Name);
+            ref var lensLt = ref BenchmarkScene.World.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(_lens);
+            lensLt.Position = _camera.Position; lensLt.Rotation = _camera.Rotation;
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            _current.Build(_root, config);
+            _current.Build(config);
             Debug.LogWarning($"[bench] {_current.Name}: built in {sw.Elapsed.TotalMilliseconds:0} ms — {_current.Description} (target {_result.target}); warm-up {config.warmup:0.#} s, measuring {config.duration:0.#} s");
         }
 
@@ -119,13 +123,12 @@ namespace RipNRage.Benchmark
         {
             _current.Teardown();
             BenchmarkScene.DestroyEntities();
-            if (_root != null) GameObject.DestroyImmediate(_root);
-            _root = null; _current = null;
+            _current = null;
             Physics.World.Rigid.Contacts.Clear();
             GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
         }
 
-        protected override void Update()
+        public void Update()
         {
             if (_done || _current == null) return;
             float dt = Time.deltaTime;
@@ -138,7 +141,7 @@ namespace RipNRage.Benchmark
             {
                 _hudTimer = 1f;
                 var w = Physics.World;
-                int steps = Math.Max(1, Scene.Current != null ? Scene.Current.FixedStepsLastFrame : 1);
+                int steps = Math.Max(1, Application.Current.FixedStepsLastFrame);
                 Debug.LogWarning($"[bench] {_current.Name} t={_elapsed:0.0}s {(_measuring ? "MEASURE" : "warmup")}  frame {Profiler.FrameMsAvg:0.0} ms  physics {Profiler.StageMs("fixed physics") / steps + Profiler.StageMs("physics"):0.0} ms/step ({steps} steps)  bodies {w.RigidBodyCount} ({w.Rigid.AwakeBodies} awake)  islands {w.Rigid.IslandCount} (max {w.Rigid.LargestIsland})  threads {w.Rigid.ThreadsUsed}  manifolds {w.Rigid.ManifoldCount}  contacts {w.Rigid.ContactCount}  joints {w.Rigid.JointCount}  movers {w.DynamicCount}  alive {_current.Alive} {_current.Extra}");
             }
         }
@@ -147,7 +150,7 @@ namespace RipNRage.Benchmark
         {
             if (!_measuring || _current == null || _result == null) return;
             var w = Physics.World;
-            int steps = Scene.Current != null ? Scene.Current.FixedStepsLastFrame : 0;
+            int steps = Application.Current.FixedStepsLastFrame;
             double fixedMs = Profiler.StageMs("fixed physics"), frameMs = Profiler.StageMs("physics");
             var s = new Sample
             {

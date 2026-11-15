@@ -41,7 +41,7 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = PropColor, pickExtents = new Vector3(0.6f, 1.2f, 0.2f),
                 defaults = { ["size"] = "1.2 2.4 0.12", ["mass"] = "25", ["texture"] = "planks", ["hinge"] = "left", ["limits"] = "-110 110", ["spring"] = "0", ["damper"] = "3", ["closed_angle"] = "0", ["motor"] = "0", ["motor_torque"] = "60", ["break_force"] = "0" },
                 numericProps = { ("spring", 5f), ("motor", 15f) },
-                spawnEntity = e => DoorEntity(e), preview = e => Door(e, true),
+                spawnEntity = e => DoorEntity(e), previewEntity = e => StandPreview(e, "phys_door"),
             });
             add(new EntityDefinition
             {
@@ -49,7 +49,7 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = PropColor, pickExtents = new Vector3(0.6f, 0.6f, 0.6f),
                 defaults = { ["size"] = "3 0.2 0.6", ["mass"] = "20", ["texture"] = "planks", ["axis"] = "0 0 1", ["pivot"] = "0 0 0", ["limits"] = "", ["motor"] = "0", ["motor_torque"] = "100", ["spring"] = "0", ["damper"] = "2", ["target"] = "0", ["break_force"] = "0" },
                 numericProps = { ("motor", 15f), ("spring", 5f) },
-                spawnEntity = e => HingedPropEntity(e), preview = e => HingedProp(e, true),
+                spawnEntity = e => HingedPropEntity(e), previewEntity = e => StandPreview(e, "phys_hinge"),
             });
             add(new EntityDefinition
             {
@@ -57,7 +57,7 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = PropColor, pickExtents = new Vector3(0.6f, 0.6f, 0.6f),
                 defaults = { ["size"] = "1 1 1", ["mass"] = "15", ["texture"] = "orange", ["axis"] = "1 0 0", ["limits"] = "-2 2", ["motor"] = "0", ["motor_force"] = "300", ["patrol"] = "0", ["spring"] = "0", ["damper"] = "10", ["target"] = "0", ["break_force"] = "0" },
                 numericProps = { ("motor", 0.25f), ("spring", 25f) },
-                spawnEntity = e => SliderPropEntity(e), preview = e => SliderProp(e, true),
+                spawnEntity = e => SliderPropEntity(e), previewEntity = e => StandPreview(e, "phys_slider"),
             });
             add(new EntityDefinition
             {
@@ -65,7 +65,7 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = PropColor, pickExtents = new Vector3(0.3f, 0.3f, 0.3f),
                 defaults = { ["size"] = "0.6 0.6 0.6", ["mass"] = "15", ["texture"] = "red", ["shape"] = "sphere", ["length"] = "3", ["rope"] = "0", ["start_angle"] = "0", ["break_force"] = "0" },
                 numericProps = { ("length", 0.25f), ("start_angle", 5f) },
-                spawnEntity = e => PendulumEntity(e), preview = e => Pendulum(e, true),
+                spawnEntity = e => PendulumEntity(e), previewEntity = e => PendulumPreview(e, rodWidth: 0.07f, length: Mathf.Max(e.GetFloat("length", 3f), 0.1f), swing: e.GetFloat("start_angle", 0f)),
             });
             add(new EntityDefinition
             {
@@ -73,7 +73,7 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = PropColor, pickExtents = new Vector3(0.3f, 0.3f, 0.3f),
                 defaults = { ["size"] = "0.8 0.8 0.8", ["mass"] = "10", ["texture"] = "green", ["length"] = "2", ["stiffness"] = "150", ["damper"] = "6", ["max_length"] = "0", ["break_force"] = "0" },
                 numericProps = { ("stiffness", 25f), ("length", 0.25f) },
-                spawnEntity = e => SpringPropEntity(e), preview = e => SpringProp(e, true),
+                spawnEntity = e => SpringPropEntity(e), previewEntity = e => PendulumPreview(e, rodWidth: 0.04f, length: Mathf.Max(e.GetFloat("length", 2f), 0.1f), swing: 0f),
             });
             add(new EntityDefinition
             {
@@ -81,7 +81,7 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = PropColor, pickExtents = new Vector3(0.5f, 0.5f, 0.5f),
                 defaults = { ["size"] = "1 1 1", ["mass"] = "10", ["texture"] = "purple", ["break_force"] = "400", ["break_torque"] = "0" },
                 numericProps = { ("break_force", 50f), ("mass", 1f) },
-                spawnEntity = e => FixedPropEntity(e), preview = e => FixedProp(e, true),
+                spawnEntity = e => FixedPropEntity(e), previewEntity = e => PropPreview(e),
             });
 
             // connectors
@@ -101,7 +101,7 @@ namespace RipNRage.Game.Content.Level
                     classname = c, description = desc, gizmoColor = JointColor, pickExtents = new Vector3(0.25f, 0.25f, 0.25f), deferred = true,
                     defaults = JointDefaults(c),
                     spawnEntity = e => Connector(c, e),
-                    preview = e => JointGizmo(c, e),
+                    previewEntity = e => JointGizmo(c, e),
                 });
             }
         }
@@ -128,11 +128,45 @@ namespace RipNRage.Game.Content.Level
             return BodyEntity(e, e.origin + Vector3.up * (size.y * 0.5f + 0.02f), Quaternion.Euler(0f, e.angle, 0f));
         }
 
-        /// <summary>The editor's preview prop (a GameObject until the tools are ported).</summary>
-        public static GameObject Prop(MapEntity e, bool preview)
+        /// <summary>The editor's preview prop: the body's box where it would stand, no physics (entities since 9.6).</summary>
+        public static Entity PropPreview(MapEntity e) => PreviewBodyEntity(e, PropCenter(e), Quaternion.Euler(0f, e.angle, 0f));
+
+        private static Vector3 PropCenter(MapEntity e) { Vector3 size = Size(e); return e.origin + Vector3.up * (size.y * 0.5f + 0.02f); }
+
+        /// <summary>A door / hinge / slider preview: the panel standing on its origin.</summary>
+        private static Entity StandPreview(MapEntity e, string _)
         {
             Vector3 size = Size(e);
-            return PreviewBody(e, e.origin + Vector3.up * (size.y * 0.5f + 0.02f), Quaternion.Euler(0f, e.angle, 0f), "prop_physics");
+            return PreviewBodyEntity(e, e.origin + Vector3.up * (size.y * 0.5f + 0.01f), Quaternion.Euler(0f, e.angle, 0f));
+        }
+
+        /// <summary>A pendulum / spring preview: the bob at rest below the hook, with its rod.</summary>
+        private static Entity PendulumPreview(MapEntity e, float rodWidth, float length, float swing)
+        {
+            Quaternion rot = Quaternion.Euler(0f, e.angle, 0f);
+            Vector3 down = Quaternion.AngleAxis(swing, rot * Vector3.forward) * Vector3.down;
+            Vector3 center = e.origin + down * length;
+            var bob = PreviewBodyEntity(e, center, rot);
+            var w = Application.Current.World;
+            var rod = w.CreateEntity();
+            var lt = new LocalTransform { Position = center, Rotation = Quaternion.identity, Scale = Vector3.one };
+            RodSystem.Place(ref lt, center, e.origin, rodWidth);
+            w.Add(rod, lt);
+            w.Add(rod, new Parent { Value = bob }); // torn down with the bob — but world-posed, so parent only for lifetime
+            w.Add(rod, LevelVisuals.Render(LevelVisuals.Box(new Vector3(0f, 0.5f, 0f), Vector3.one),
+                                           Texture2D.White, new Color(0.35f, 0.33f, 0.3f, 1f), castsShadow: false));
+            return bob;
+        }
+
+        /// <summary>The preview body: the prop's box, visuals only.</summary>
+        private static Entity PreviewBodyEntity(MapEntity e, Vector3 center, Quaternion rotation)
+        {
+            Vector3 size = Size(e);
+            var tex = LevelTextures.Get(e.Get("texture", "orange"));
+            var ent = LevelVisuals.Spawn(center, LevelVisuals.Render(LevelVisuals.Box(Vector3.zero, size, 1f / Mathf.Max(size.x, 0.01f)),
+                                                                    tex.Texture ?? Texture2D.White, tex.tint));
+            Application.Current.World.Get<LocalTransform>(ent).Rotation = rotation;
+            return ent;
         }
 
         /// <summary>
@@ -159,21 +193,6 @@ namespace RipNRage.Game.Content.Level
                                                         tex.Texture ?? Texture2D.White, tex.tint));
             LevelLoader.Loading?.RegisterNamed(e.Get("targetname"), ent, center, rotation);
             return ent;
-        }
-
-        /// <summary>The preview's box body (renderer only; a GameObject until the tools are ported).</summary>
-        private static GameObject PreviewBody(MapEntity e, Vector3 center, Quaternion rotation, string name)
-        {
-            Vector3 size = Size(e);
-            var tex = LevelTextures.Get(e.Get("texture", "orange"));
-            var go = new GameObject(name);
-            go.transform.position = center;
-            go.transform.rotation = rotation;
-            go.layer = Layers.Default;
-            var mr = go.AddComponent<MeshRenderer>();
-            mr.mesh = Mesh.CreateBox(Vector3.zero, size, 1f / Mathf.Max(size.x, 0.01f));
-            mr.texture = tex.Texture; mr.color = tex.tint;
-            return go;
         }
 
         private static void AddJoint(Entity e, in Joint j)
@@ -241,12 +260,6 @@ namespace RipNRage.Game.Content.Level
             return ent;
         }
 
-        private static GameObject Door(MapEntity e, bool preview)
-        {
-            Vector3 size = Size(e);
-            return PreviewBody(e, e.origin + Vector3.up * (size.y * 0.5f + 0.01f), Quaternion.Euler(0f, e.angle, 0f), "phys_door");
-        }
-
         /// <summary>phys_hinge: a prop turning about a local axis through its centre (+ pivot offset), hinged to the world.</summary>
         private static Entity HingedPropEntity(MapEntity e)
         {
@@ -254,12 +267,6 @@ namespace RipNRage.Game.Content.Level
             var ent = BodyEntity(e, e.origin + Vector3.up * (size.y * 0.5f + 0.01f), Quaternion.Euler(0f, e.angle, 0f));
             AddJoint(ent, Hinge(e.GetVector("pivot", Vector3.zero), Axis(e, Vector3.forward), e, "target"));
             return ent;
-        }
-
-        private static GameObject HingedProp(MapEntity e, bool preview)
-        {
-            Vector3 size = Size(e);
-            return PreviewBody(e, e.origin + Vector3.up * (size.y * 0.5f + 0.01f), Quaternion.Euler(0f, e.angle, 0f), "phys_hinge");
         }
 
         /// <summary>phys_slider: a prop on a rail through its centre along a local axis, fixed to the world.</summary>
@@ -276,12 +283,6 @@ namespace RipNRage.Game.Content.Level
             return ent;
         }
 
-        private static GameObject SliderProp(MapEntity e, bool preview)
-        {
-            Vector3 size = Size(e);
-            return PreviewBody(e, e.origin + Vector3.up * (size.y * 0.5f + 0.01f), Quaternion.Euler(0f, e.angle, 0f), "phys_slider");
-        }
-
         /// <summary>phys_pendulum: the origin is the pivot; the bob hangs <c>length</c> below it on a rod (or a rope), optionally swung out by <c>start_angle</c>.</summary>
         private static Entity PendulumEntity(MapEntity e)
         {
@@ -294,17 +295,6 @@ namespace RipNRage.Game.Content.Level
             var pj = new JointConfig { kind = JointKind.Distance, connectedAnchor = new[] { e.origin.x, e.origin.y, e.origin.z }, rope = e.GetInt("rope", 0) != 0 }.Bake();
             AddJoint(ent, Breakable(pj, e));
             return ent;
-        }
-
-        private static GameObject Pendulum(MapEntity e, bool preview)
-        {
-            float length = Mathf.Max(e.GetFloat("length", 3f), 0.1f);
-            Quaternion rot = Quaternion.Euler(0f, e.angle, 0f);
-            Vector3 down = Quaternion.AngleAxis(e.GetFloat("start_angle", 0f), rot * Vector3.forward) * Vector3.down;
-            Vector3 center = e.origin + down * length;
-            var go = PreviewBody(e, center, rot, "phys_pendulum");
-            PreviewRod(go, e.origin, center);
-            return go;
         }
 
         /// <summary>phys_spring_prop: the origin is the hook; the prop hangs on a spring at its rest length.</summary>
@@ -324,28 +314,12 @@ namespace RipNRage.Game.Content.Level
             return ent;
         }
 
-        private static GameObject SpringProp(MapEntity e, bool preview)
-        {
-            float length = Mathf.Max(e.GetFloat("length", 2f), 0.1f);
-            Vector3 center = e.origin + Vector3.down * length;
-            var go = PreviewBody(e, center, Quaternion.Euler(0f, e.angle, 0f), "phys_spring_prop");
-            PreviewRod(go, e.origin, center, thin: true);
-            return go;
-        }
-
         /// <summary>phys_fixed: welded where it stands; a strong enough hit (break_force) frees it.</summary>
         private static Entity FixedPropEntity(MapEntity e)
         {
             var ent = PropEntity(e);
             AddJoint(ent, Breakable(new JointConfig { kind = JointKind.Fixed }.Bake(), e));
             return ent;
-        }
-
-        private static GameObject FixedProp(MapEntity e, bool preview)
-        {
-            var go = Prop(e, preview);
-            go.name = "phys_fixed";
-            return go;
         }
 
         // ------------------------------------------------------------------ connectors
@@ -453,44 +427,22 @@ namespace RipNRage.Game.Content.Level
             world.Add(rod, new RodVisual { Target = prop, Hook = hook, Width = w });
         }
 
-        /// <summary>The preview's rod (static; a GameObject until the tools are ported).</summary>
-        private static void PreviewRod(GameObject prop, Vector3 from, Vector3 to, bool thin = false)
-        {
-            var rod = new GameObject("Rod");
-            rod.transform.SetParent(prop.transform, false);
-            var mr = rod.AddComponent<MeshRenderer>();
-            mr.mesh = Mesh.CreateBox(new Vector3(0f, 0.5f, 0f), Vector3.one, 1f);
-            mr.texture = Texture2D.White; mr.color = new Color(0.35f, 0.33f, 0.3f, 1f); mr.castsShadow = false;
-            float w = thin ? 0.04f : 0.07f;
-            Vector3 d = to - from;
-            if (d.magnitude >= 0.01f)
-            {
-                rod.transform.rotation = Quaternion.FromToRotation(Vector3.up, d.normalized);
-                rod.transform.position = from;
-                rod.transform.localScale = new Vector3(w, d.magnitude, w);
-            }
-        }
-
         // ------------------------------------------------------------------ editor gizmos
 
-        private static GameObject JointGizmo(string cls, MapEntity e)
+        /// <summary>A joint connector's preview: an emissive marker box, with the axis bar for hinge / slider.</summary>
+        private static Entity JointGizmo(string cls, MapEntity e)
         {
-            var go = new GameObject(cls);
-            go.transform.position = e.origin;
-            var mr = go.AddComponent<MeshRenderer>();
-            mr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one * 0.3f, 1f);
-            mr.texture = Texture2D.White; mr.color = JointColor; mr.emissive = 0.8f; mr.castsShadow = false;
+            var marker = LevelVisuals.Spawn(e.origin, LevelVisuals.Render(LevelVisuals.Box(Vector3.zero, Vector3.one * 0.3f),
+                                                                          Texture2D.White, JointColor, emissive: 0.8f, castsShadow: false));
             if (cls == "joint_hinge" || cls == "joint_slider")
             {
                 Vector3 axis = Quaternion.Euler(0f, e.angle, 0f) * e.GetVector("axis", cls == "joint_slider" ? Vector3.right : Vector3.up);
                 if (axis.sqrMagnitude < 1E-06f) axis = Vector3.up;
-                var bar = new GameObject("Axis"); bar.transform.SetParent(go.transform, false);
-                var bm = bar.AddComponent<MeshRenderer>();
-                bm.mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.08f, 1.2f, 0.08f), 1f);
-                bm.texture = Texture2D.White; bm.color = JointColor; bm.emissive = 0.8f; bm.castsShadow = false;
-                bar.transform.rotation = Quaternion.FromToRotation(Vector3.up, axis.normalized);
+                var bar = LevelVisuals.Spawn(Vector3.zero, LevelVisuals.Render(LevelVisuals.Box(Vector3.zero, new Vector3(0.08f, 1.2f, 0.08f)),
+                                                                               Texture2D.White, JointColor, emissive: 0.8f, castsShadow: false), marker);
+                Application.Current.World.Get<LocalTransform>(bar).Rotation = Quaternion.FromToRotation(Vector3.up, axis.normalized);
             }
-            return go;
+            return marker;
         }
     }
 }

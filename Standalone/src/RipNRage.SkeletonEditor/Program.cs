@@ -52,11 +52,10 @@ namespace RipNRage.SkeletonEditor
                 GameAssets.Load();
                 Materials.Load();
 
-                BuildPreviewScene(out var cam, out var anchor);
-                var edGo = new GameObject("SkeletonEditor");
-                var editor = edGo.AddComponent<SkeletonEditor>();
-                editor.cam = cam; editor.anchor = anchor;
-                editor.startSkeleton = skeletonName;
+                BuildPreviewScene(out var cam, out var lens);
+                var editor = RipNRage.Engine.Graphics.UiScreens.Add(new SkeletonEditor
+                    { cam = cam, lens = lens, anchorPosition = Vector3.zero, startSkeleton = skeletonName });
+                editor.Start();
                 app.Run();
                 return 0;
             }
@@ -68,40 +67,32 @@ namespace RipNRage.SkeletonEditor
         }
 
         /// <summary>A plank floor with collision, a back wall and a camera: the physics preview runs here.</summary>
-        private static void BuildPreviewScene(out Camera cam, out Transform anchor)
+        private static void BuildPreviewScene(out RipNRage.Engine.Graphics.CameraView cam, out RipNRage.Engine.Ecs.Entity lens)
         {
-            var camGo = new GameObject("PreviewCamera");
-            camGo.transform.position = new Vector3(0f, 1.6f, -5f);
-            cam = camGo.AddComponent<Camera>();
-            cam.fieldOfView = 60f; cam.nearClipPlane = 0.05f; cam.farClipPlane = 300f;
-            Camera.main = cam;
+            var world = Application.Current.World;
+            cam = new RipNRage.Engine.Graphics.CameraView { Position = new Vector3(0f, 1.6f, -5f), fieldOfView = 60f, nearClipPlane = 0.05f, farClipPlane = 300f };
+            lens = world.CreateEntity();
+            world.Add(lens, RipNRage.Engine.Ecs.Transforms.LocalTransform.At(cam.Position));
+            world.Add(lens, new RipNRage.Engine.Ecs.Rendering.CameraLens { FieldOfView = 60f, Near = 0.05f, Far = 300f });
 
-            var anchorGo = new GameObject("Anchor");
-            anchorGo.transform.position = new Vector3(0f, 0f, 0f);
-            anchor = anchorGo.transform;
-
-            var floor = new GameObject("Floor");
-            floor.layer = Layers.Walkable;
-            var fmr = floor.AddComponent<MeshRenderer>();
-            fmr.mesh = Mesh.CreatePlane(Vector3.zero, 40f, 40f, 0.25f);
-            fmr.texture = ProceduralTextures.WoodPlanks();
-            fmr.occluder = true;
-            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, floor.transform.position + new Vector3(0f, -0.5f, 0f), Quaternion.identity, new Vector3(40f, 1f, 40f), Layers.Walkable);
-
-            var wall = new GameObject("BackWall");
-            wall.layer = Layers.Walkable;
-            var wmr = wall.AddComponent<MeshRenderer>();
-            wmr.mesh = Mesh.CreateBox(new Vector3(0f, 2.5f, 6f), new Vector3(30f, 5f, 1f), 0.25f);
-            wmr.texture = GameAssets.Texture13;
-            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, wall.transform.position + new Vector3(0f, 2.5f, 6f), Quaternion.identity, new Vector3(30f, 5f, 1f), Layers.Walkable);
-
-            var crate = new GameObject("Crate");
-            crate.layer = Layers.Walkable;
-            crate.transform.position = new Vector3(2.5f, 0.5f, 1.5f);
-            var cmr = crate.AddComponent<MeshRenderer>();
-            cmr.mesh = Mesh.CreateBox(Vector3.zero, Vector3.one, 1f);
-            cmr.texture = GameAssets.OrangeProto;
-            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, crate.transform.position + Vector3.zero, Quaternion.identity, Vector3.one, Layers.Walkable);
+            void StaticMesh(Mesh mesh, Texture2D tex, Vector3 position, bool occluder)
+            {
+                var e = world.CreateEntity();
+                world.Add(e, RipNRage.Engine.Ecs.Transforms.LocalTransform.At(position));
+                world.Add(e, new RipNRage.Engine.Ecs.Rendering.MeshRender
+                {
+                    Mesh = RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Intern(mesh),
+                    Texture = RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Intern(tex),
+                    UvScale = Vector2.one, Color = Color.white, CastsShadow = true, Occluder = occluder,
+                    Layer = RipNRage.Engine.Graphics.RenderLayer.World,
+                });
+            }
+            StaticMesh(Mesh.CreatePlane(Vector3.zero, 40f, 40f, 0.25f), ProceduralTextures.WoodPlanks(), Vector3.zero, true);
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, new Vector3(0f, -0.5f, 0f), Quaternion.identity, new Vector3(40f, 1f, 40f), Layers.Walkable);
+            StaticMesh(Mesh.CreateBox(new Vector3(0f, 2.5f, 6f), new Vector3(30f, 5f, 1f), 0.25f), GameAssets.Texture13, Vector3.zero, false);
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, new Vector3(0f, 2.5f, 6f), Quaternion.identity, new Vector3(30f, 5f, 1f), Layers.Walkable);
+            StaticMesh(Mesh.CreateBox(Vector3.zero, Vector3.one, 1f), GameAssets.OrangeProto, new Vector3(2.5f, 0.5f, 1.5f), false);
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, new Vector3(2.5f, 0.5f, 1.5f), Quaternion.identity, Vector3.one, Layers.Walkable);
             RenderSettings.drawSky = true;
         }
     }

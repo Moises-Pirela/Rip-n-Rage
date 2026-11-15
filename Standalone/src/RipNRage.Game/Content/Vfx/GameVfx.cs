@@ -21,7 +21,7 @@ namespace RipNRage.Game.Content.Vfx
 
     /// <summary>
     /// <c>vfx/bindings.json</c>: which effect plays for what. Surfaces → impact effect, ammo types → tracer +
-    /// scales, explosion / trail / death kinds → effect names. Hot-reloaded by <see cref="VfxRuntime"/>.
+    /// scales, explosion / trail / death kinds → effect names. Hot-reloaded by <see cref="GameVfxReload"/>.
     /// </summary>
     public sealed class VfxBindings
     {
@@ -146,7 +146,6 @@ namespace RipNRage.Game.Content.Vfx
         }
 
         /// <summary>Approximate world-space muzzle of the first-person weapon (the viewmodel has its own projection, so it is placed relative to the camera).</summary>
-        public static Vector3 MuzzlePosition(Transform camera) => MuzzlePosition(camera.position, camera.rotation);
         public static Vector3 MuzzlePosition(Vector3 position, Quaternion rotation) =>
             position + rotation * new Vector3(0.28f, -0.22f, 0.9f);
 
@@ -194,28 +193,21 @@ namespace RipNRage.Game.Content.Vfx
         }
     }
 
-    /// <summary>
-    /// Lives on the session object: keeps <c>bindings.json</c> hot-reloaded and sets the particle collision mask
-    /// (particles bounce off level geometry and props, never off characters, projectiles or triggers).
-    /// </summary>
-    public class VfxRuntime : MonoBehaviour
+    /// <summary>Hot-reloads vfx_bindings.json (9.4: was the VfxRuntime MonoBehaviour; the session polls at frame start).</summary>
+    public static class GameVfxReload
     {
-        private DateTime _stamp;
-        private float _nextPoll;
+        private static DateTime _stamp = DateTime.MinValue;
+        private static float _nextPoll;
 
-        protected override void Awake()
-        {
-            ParticleWorld.CollisionMask = ~((1 << Layers.Player) | (1 << Layers.Enemies) | (1 << Layers.Projectile) | (1 << Layers.VisionSensor) | (1 << Layers.Pickup) | (1 << Layers.IgnoreRaycast));
-            _stamp = Stamp();
-        }
-
-        protected override void Update()
+        public static void Poll()
         {
             if (Time.unscaledTime < _nextPoll) return;
             _nextPoll = Time.unscaledTime + 0.5f;
             var s = Stamp();
             if (s == _stamp) return;
+            bool first = _stamp == DateTime.MinValue;
             _stamp = s;
+            if (first) return; // the first sight of the file is not an edit
             GameVfx.LoadBindings();
             Debug.LogWarning("vfx: bindings reloaded");
         }

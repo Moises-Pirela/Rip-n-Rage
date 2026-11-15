@@ -110,7 +110,8 @@ namespace RipNRage.Game.Ecs.Combat
     public sealed class WeaponFireSystem : SystemBase, ITick
     {
         /// <summary>Where rockets leave from (the prefab's ProjectileSpawn node; a bridge until projectiles are entities in 5.4).</summary>
-        public static Transform ProjectileSpawn;
+        /// <summary>Where projectiles leave, in camera space (set by the equip; 9.4: was a GameObject under the weapon node).</summary>
+        public static Vector3 ProjectileSpawnLocal;
 
         private Query _q;
         public override void OnCreate() => _q = World.Query().With<Weapon>().With<Inventory>().With<PlayerViewRig>().Build();
@@ -220,7 +221,7 @@ namespace RipNRage.Game.Ecs.Combat
         private void LaunchProjectile(WeaponData data, in LocalToWorld eye, float spread)
         {
             Vector3 dir = eye.Forward + eye.Right * Random.Range(-spread, spread) + eye.Up * Random.Range(-spread, spread);
-            Vector3 origin = ProjectileSpawn != null ? ProjectileSpawn.position : eye.Position;
+            Vector3 origin = eye.Value.MultiplyPoint3x4(ProjectileSpawnLocal);
             Projectiles.Launch(World, data.projectileKind, origin, dir, PlayerLink.PlayerEntity);
         }
 

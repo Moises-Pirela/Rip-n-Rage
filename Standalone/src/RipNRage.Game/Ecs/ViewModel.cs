@@ -99,6 +99,9 @@ namespace RipNRage.Game.Ecs
     /// </summary>
     public sealed class ViewModel
     {
+        /// <summary>The PlayerArms offset in camera space (the prefab's node; the projectile spawn derives from it).</summary>
+        public static readonly Vector3 ArmsHome = new Vector3(0.017f, -0.65f, 2.36f);
+
         public AnimatedSprite Weapon, MuzzleFlash, LeftFist, RightFist;
         public Entity Arms;
 
@@ -110,7 +113,7 @@ namespace RipNRage.Game.Ecs
             // Created immediately (prefab building is not inside a system), like the AnimatedSprites below: a
             // command-buffered entity is not alive until the next sync point, and anything the build then sets on it
             // through a checked accessor would be dropped.
-            Vector3 armsHome = new Vector3(0.017f, -0.65f, 2.36f);
+            Vector3 armsHome = ArmsHome;
             var arms = w.CreateEntity();
             w.Add(arms, new LocalTransform { Position = armsHome, Rotation = Quaternion.identity, Scale = Vector3.one });
             w.Add(arms, new Parent { Value = PlayerLink.CameraEntity });

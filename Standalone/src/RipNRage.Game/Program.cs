@@ -163,6 +163,7 @@ namespace RipNRage.Game
                 // a level is required since 9.0 (the built-in arena is gone)
                 string levelPath = RipNRage.Game.Content.Level.LevelLoader.Locate(level ?? "dock.map");
                 if (levelPath == null) { Console.Error.WriteLine("Level not found: " + (level ?? "dock.map")); return 1; }
+                RipNRage.Engine.Ecs.Input.InputOverride.Scripted = script != null; // the devices stay out of a scripted run
                 GameSession.OnSceneBuilt = () =>
                 {
                     UiScreens.Add(new DebugOverlay());
@@ -202,11 +203,14 @@ namespace RipNRage.Game
         public int mode = 2;
         /// <summary>--overlay N: start in this mode regardless of graphics.json (profiling runs).</summary>
         public static int? ForcedMode;
+        /// <summary>The live overlay (the graphics menu adjusts its mode).</summary>
+        public static DebugOverlay Current { get; private set; }
         public bool visible { get => mode > 0; set => mode = value ? 2 : 0; }
         private static string _message = ""; private static float _messageTimer;
 
         public DebugOverlay()
         {
+            Current = this;
             RipNRage.Game.Content.Level.GameSaveSystem.OnMessage = m => { _message = m; _messageTimer = 3f; };
             mode = ForcedMode ?? RipNRage.Game.Content.GraphicsSettings.Current.overlayMode ?? mode;
         }
@@ -227,7 +231,7 @@ namespace RipNRage.Game
         }
 
         private readonly RipNRage.Engine.UI.ClayUi _clay = new RipNRage.Engine.UI.ClayUi(8192);
-        public void Close() => _clay.Dispose();
+        public void Close() { _clay.Dispose(); if (Current == this) Current = null; }
 
         // the overlay keeps its pixel-exact text size (2 px per glyph pixel at 1080p, never below 1): Clay lengths are
         // reference pixels, so screen sizes are divided by the canvas scale
@@ -287,29 +291,26 @@ namespace RipNRage.Game
         private string BuildStats(RenderPipeline renderer)
         {
             string text = "";
-            var ps = PlayerState.Current;
             text += $"GPU  {RipNRage.Engine.Platform.GpuInfo.Renderer.ToUpperInvariant()}  ({RipNRage.Engine.Platform.GpuInfo.Vendor.ToUpperInvariant()})  GL {RipNRage.Engine.Platform.GpuInfo.Version.ToUpperInvariant()}{(RipNRage.Engine.Platform.GpuInfo.IsIntegrated ? "  [INTEGRATED]" : "")}\n";
             text += $"MEMORY  GC GEN0/1/2 {Profiler.Gen0PerSecond:0.0}/{Profiler.Gen1PerSecond:0.0}/{Profiler.Gen2PerSecond:0.0} PER S   ALLOC {Profiler.AllocBytesPerFrame / 1024.0:0.0} KB/FRAME   HEAP {Profiler.HeapBytes / (1024.0 * 1024.0):0.0} MB\n";
-            var scene = Application.Current.Scene;
-            text += $"SCENE  {scene.GameObjects.Count} OBJECTS  {scene.BehaviourCount} BEHAVIOURS  {scene.CoroutineCount} COROUTINES  FIXED STEPS {scene.FixedStepsLastFrame}{(scene.FixedStepsLastFrame >= 8 ? " (CLAMPED: SIM BEHIND)" : "")}   DRAWS {renderer.DrawCalls} ({renderer.BatchedSprites} BATCHED SPRITES, {renderer.InstancedMeshes} INSTANCED MESHES)\n";
+            text += $"SCENE  FIXED STEPS {Application.Current.FixedStepsLastFrame}{(Application.Current.FixedStepsLastFrame >= 8 ? " (CLAMPED: SIM BEHIND)" : "")}   DRAWS {renderer.DrawCalls} ({renderer.BatchedSprites} BATCHED SPRITES, {renderer.InstancedMeshes} INSTANCED MESHES)\n";
             if (RipNRage.Game.Ecs.PlayerCamera.Alive)
             {
                 var p = RipNRage.Game.Ecs.PlayerCamera.Position;
                 text += $"POS {p.x:0.0} {p.y:0.0} {p.z:0.0}  YAW {RipNRage.Game.Ecs.PlayerCamera.Rotation.eulerAngles.y:0}";
             }
-            if (ps != null)
+            if (RipNRage.Game.Ecs.PlayerLink.Alive)
             {
-                var combat = EnragedInjector<CombatController>.GetInstance();
-                string weapon = combat?.CurrentWeaponData?.name ?? "-";
+                string weapon = CombatController.CurrentWeaponData?.name ?? "-";
                 RipNRage.Game.Ecs.Rages.TryGet(out var rage);
-                text += $"   HP {ps.Health:0} ARMOR {ps.Armor:0} FURY {rage.Fury:0.00} CALM {rage.Calm:0.00} {rage.State}  WEAPON {weapon}";
+                text += $"   HP {RipNRage.Game.Ecs.PlayerLink.Health:0} ARMOR {RipNRage.Game.Ecs.PlayerLink.Armor:0} FURY {rage.Fury:0.00} CALM {rage.Calm:0.00} {rage.State}  WEAPON {weapon}";
             }
             text += "\n";
             var fx = renderer.PostFx;
             var st = fx.Settings;
             var lt = renderer.Lighting;
             text += $"POSTFX {(fx.IsActive ? "ON" : "OFF")} (F4)  BLOOM {(st.bloomEnabled ? "ON" : "OFF")}  CA {(st.chromaticEnabled ? "ON" : "OFF")}  VIGNETTE {(st.vignetteEnabled ? "ON" : "OFF")}  MOTION BLUR {(st.motionBlurEnabled ? "ON" : "OFF")}  RENDER SCALE {st.renderScale:0.00}  F5 RELOAD CFG\n";
-            text += $"SHADOWS {(lt.shadowsEnabled ? lt.shadowResolution.ToString() : "OFF")}  VOLUMETRIC FOG {(lt.volumetricEnabled ? $"ON ({lt.volSteps} STEPS @ {lt.volScale:0.00})" : "OFF")}  SUN {lt.sunElevation:0}/{lt.sunAzimuth:0}  LIGHTS {RipNRage.Engine.Graphics.Lighting.Light.Lights.Count}  SHADERS {(ShaderLibrary.Directory != null ? "FILES (HOT RELOAD)" : "EMBEDDED")}\n";
+            text += $"SHADOWS {(lt.shadowsEnabled ? lt.shadowResolution.ToString() : "OFF")}  VOLUMETRIC FOG {(lt.volumetricEnabled ? $"ON ({lt.volSteps} STEPS @ {lt.volScale:0.00})" : "OFF")}  SUN {lt.sunElevation:0}/{lt.sunAzimuth:0}  SHADERS {(ShaderLibrary.Directory != null ? "FILES (HOT RELOAD)" : "EMBEDDED")}\n";
             var sm = renderer.Shadows;
             text += $"SHADOW CACHE {sm.StaticRenders} STATIC RENDERS  {sm.StaticCasters} DRAWN / {sm.StaticCulled} CULLED  DYNAMIC {sm.DynamicCasters}  LIGHT SETS {renderer.LightUploads}\n";
             text += $"VFX {RipNRage.Engine.Graphics.Particles.VfxLibrary.Effects.Count} EFFECTS  LIVE {RipNRage.Engine.Graphics.Particles.ParticleWorld.LiveInstances} FX / {RipNRage.Engine.Graphics.Particles.ParticleWorld.LiveParticles} PARTICLES  {renderer.Particles.DrawCalls} DRAWS  {RipNRage.Engine.Graphics.Particles.ParticleWorld.CollisionRaycasts} RAYCASTS\n";
@@ -317,12 +318,11 @@ namespace RipNRage.Game
             text += $"FOV WORLD {(RipNRage.Game.Ecs.PlayerCamera.Alive && Application.Current.World.Has<RipNRage.Engine.Ecs.Rendering.CameraLens>(RipNRage.Game.Ecs.PlayerLink.CameraEntity) ? Application.Current.World.Get<RipNRage.Engine.Ecs.Rendering.CameraLens>(RipNRage.Game.Ecs.PlayerLink.CameraEntity).FieldOfView : 0f):0} / VIEWMODEL {cc.viewmodelFov:0} ({(cc.viewmodelLit ? "LIT" : "UNLIT")})  CULLING {(cc.frustumCulling ? "FRUSTUM " : "")}{(cc.occlusionCulling ? $"OCCLUSION {cc.occlusionMode.ToString().ToUpperInvariant()}{(renderer.GpuOcclusion != null && cc.occlusionMode == OcclusionMode.Gpu ? $" ({renderer.GpuOcclusion.Tested} QUERIES, {renderer.GpuOcclusion.Pending} PENDING)" : "")} " : "")}{renderer.Culling}\n";
             var world = Physics.World;
             text += $"PHYSICS {world.StaticCount} STATIC ({world.CellCount} CELLS) + {world.DynamicCount} DYNAMIC COLLIDERS  {world.RigidBodyCount} RIGID BODIES ({world.Rigid.ManifoldCount} MANIFOLDS, {world.Rigid.ContactCount} CONTACTS ({world.Rigid.MatchedPoints} WARM, {world.Rigid.CachedManifolds} CACHED), {world.Rigid.JointCount} JOINTS SOLVED / {Application.Current.World.GetSystem<RipNRage.Engine.Ecs.Physics.JointSystem>()?.ActiveJoints ?? 0} ATTACHED, {world.Rigid.IslandCount} ISLANDS (MAX {world.Rigid.LargestIsland}), {world.Rigid.ThreadsUsed} THREADS, {world.Rigid.CcdSweepsThisStep} CCD, {world.Rigid.positionCorrection.ToString().ToUpperInvariant()})  {world.RaycastsLastFrame} RAYS / {world.SweepsLastFrame} SWEEPS / {world.QueriesLastFrame} QUERIES\n";
-            var plink = RipNRage.Game.Ecs.PlayerLink.Current;
-            if (plink != null && plink.HasMotor)
+            if (RipNRage.Game.Ecs.PlayerLink.HasMotor)
             {
-                ref var pm = ref plink.Motor;
-                ref var cm = ref plink.Character;
-                Vector3 vel = plink.Velocity;
+                ref var pm = ref RipNRage.Game.Ecs.PlayerLink.Motor;
+                ref var cm = ref RipNRage.Game.Ecs.PlayerLink.Character;
+                Vector3 vel = RipNRage.Game.Ecs.PlayerLink.Velocity;
                 string move = pm.IsDashing ? "DASH" : pm.IsSliding ? "SLIDE" : pm.IsWallRunning ? $"WALLRUN {(pm.WallSide < 0 ? "L" : "R")}" : cm.IsGrounded ? "GROUND" : "AIR";
                 float slope = Mathf.Acos(Mathf.Clamp(cm.GroundNormal.y, -1f, 1f)) * Mathf.Rad2Deg;
                 var fall = RipNRage.Game.Ecs.FallSystem.Current;
@@ -442,20 +442,9 @@ namespace RipNRage.Game
         private static void MeshProbe() =>
             Debug.LogWarning($"[test] assets meshes {RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Count} textures {RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Count} materials {RipNRage.Engine.Ecs.Rendering.RenderAssets.Materials.Count}");
 
-        /// <summary>9.0: what is left of the legacy model in this scene — the number layer 9 drives to zero.</summary>
-        private static void Census(string scene)
-        {
-            var sc = Application.Current.Scene;
-            int meshes = 0, sprites = 0, lights = 0, cameras = 0;
-            foreach (var go in sc.GameObjects)
-            {
-                if (go.GetComponent<MeshRenderer>() != null) meshes++;
-                if (go.GetComponent<SpriteRenderer>() != null) sprites++;
-                if (go.GetComponent<RipNRage.Engine.Graphics.Lighting.Light>() != null) lights++;
-                if (go.GetComponent<Camera>() != null) cameras++;
-            }
-            Debug.LogWarning($"[test] legacy {scene}: gameobjects {sc.GameObjects.Count} behaviours {sc.BehaviourCount} meshes {meshes} sprites {sprites} lights {lights} cameras {cameras}");
-        }
+        /// <summary>9.0 → 9.7: the legacy model is deleted; the line stays so the gates assert it stays deleted.</summary>
+        private static void Census(string scene) =>
+            Debug.LogWarning($"[test] legacy {scene}: gone (the world is the scene)");
 
         /// <summary>8.2: the flow singleton and what the menus made of it.</summary>
         private void FlowProbe()
@@ -468,9 +457,8 @@ namespace RipNRage.Game
         private void LogRage()
         {
             RipNRage.Game.Ecs.Rages.TryGet(out var rage);
-            var ps = PlayerState.Current;
             Debug.LogWarning($"[test] frame {_frame} fury {rage.Fury:0.00} calm {rage.Calm:0.00} {rage.State}{(rage.Threat ? " threat" : "")}"
-                             + $" speed x{RipNRage.Game.Ecs.Rages.SpeedMultiplier(in rage):0.00} hp {ps?.Health ?? 0f:0} armour {ps?.Armor ?? 0f:0}");
+                             + $" speed x{RipNRage.Game.Ecs.Rages.SpeedMultiplier(in rage):0.00} hp {RipNRage.Game.Ecs.PlayerLink.Health:0} armour {RipNRage.Game.Ecs.PlayerLink.Armor:0}");
         }
 
         private readonly System.Collections.Generic.List<Entity> _enemies = new System.Collections.Generic.List<Entity>();
@@ -481,8 +469,7 @@ namespace RipNRage.Game
         /// </summary>
         private void AiProbe(string tag)
         {
-            var ps = PlayerState.Current;
-            if (ps == null) return;
+            if (!RipNRage.Game.Ecs.PlayerLink.Alive) return;
             var w = Application.Current.World;
             Enemies.Collect(w, _enemies);
             var nearest = Entity.Null; float best = float.MaxValue;
@@ -490,17 +477,17 @@ namespace RipNRage.Game
             {
                 var pos = w.Get<LocalTransform>(en).Position;
                 if (!_enemyHome.ContainsKey(en)) _enemyHome[en] = pos;
-                float d = (pos - ps.transform.position).sqrMagnitude;
+                float d = (pos - RipNRage.Game.Ecs.PlayerLink.Position).sqrMagnitude;
                 if (d < best) { best = d; nearest = en; }
             }
-            if (nearest.IsNull) { Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} enemy none"); return; }
+            if (nearest.IsNull) { Debug.LogWarning($"[test] {tag}: hp {RipNRage.Game.Ecs.PlayerLink.Health:0} enemy none"); return; }
             var brain = w.Has<AiBrain>(nearest) ? w.Get<AiBrain>(nearest) : default;
             var sense = w.Has<Perception>(nearest) ? w.Get<Perception>(nearest) : default;
             bool spotted = !sense.Target.IsNull;
             var anim = w.Has<EnemyVisual>(nearest) ? w.Get<EnemyVisual>(nearest).State : AnimationState.IDLE;
             float moved = (w.Get<LocalTransform>(nearest).Position - _enemyHome[nearest]).magnitude;
             float ehp = w.Has<Health>(nearest) ? w.Get<Health>(nearest).Current : 0f;
-            Debug.LogWarning($"[test] {tag}: hp {ps.Health:0} armour {ps.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
+            Debug.LogWarning($"[test] {tag}: hp {RipNRage.Game.Ecs.PlayerLink.Health:0} armour {RipNRage.Game.Ecs.PlayerLink.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
                              $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0}");
         }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
@@ -524,14 +511,14 @@ namespace RipNRage.Game
             if (_menuStage == 0)
             {
                 if (_frame == 40) Census("title");
-                if (_frame == 40) Debug.LogWarning($"[test] menu flow={RipNRage.Game.Ecs.Flows.Current.Phase} player={(PlayerState.Current != null)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} timeScale {Time.timeScale:0.00}");
+                if (_frame == 40) Debug.LogWarning($"[test] menu flow={RipNRage.Game.Ecs.Flows.Current.Phase} player={(RipNRage.Game.Ecs.PlayerLink.Alive)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} timeScale {Time.timeScale:0.00}");
                 if (_frame == 60) { _menuStage = 1; Input.SimulateKey(KeyCode.Return, true); } // NEW GAME (the fade takes input from frame 28)
             }
             else
             {
                 if (_frame == 1) Input.SimulateKey(KeyCode.Return, false);
-                if (_frame == 60 && PlayerState.Current != null)
-                    Debug.LogWarning($"[test] new game flow={RipNRage.Game.Ecs.Flows.Current.Phase} player=True hp={PlayerState.Current.Health} ammo={EnragedInjector<CombatController>.GetInstance()?.AmmoOf(AmmoType.LIGHT)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} pos {PlayerState.Current.transform.position}");
+                if (_frame == 60 && RipNRage.Game.Ecs.PlayerLink.Alive)
+                    Debug.LogWarning($"[test] new game flow={RipNRage.Game.Ecs.Flows.Current.Phase} player=True hp={RipNRage.Game.Ecs.PlayerLink.Health} ammo={CombatController.AmmoOf(AmmoType.LIGHT)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} pos {RipNRage.Game.Ecs.PlayerLink.Position}");
             }
         }
 
@@ -569,10 +556,10 @@ namespace RipNRage.Game
             // the title screen has no player, so the menu script runs before the player-facade guard (8.8)
             if (scriptName == "menu") { MenuScript(); return; }
             if (scriptName == "flowmoves" && _movesStage == 1) { if (_frame == 30) FlowProbe(); return; } // the title scene: no player
-            var input = EnragedInjector<PlayerInputActions>.GetInstance();
-            var combat = EnragedInjector<CombatController>.GetInstance();
-            if (input == null || combat == null) return;
-            input.overrideFiring = null; input.overrideMove = null; input.overrideLook = null;
+            if (!RipNRage.Game.Ecs.PlayerLink.Alive) return;
+            RipNRage.Engine.Ecs.Input.InputOverride.Fire = null;
+            RipNRage.Engine.Ecs.Input.InputOverride.Move = null;
+            RipNRage.Engine.Ecs.Input.InputOverride.Look = null;
             switch (scriptName)
             {
                 case "graphicsmenu":
@@ -582,24 +569,24 @@ namespace RipNRage.Game
                     else Input.SimulateKey(KeyCode.DownArrow, false);
                     break;
                 case "look":
-                    input.overrideLook = new Vector2(2f, 0f);
+                    RipNRage.Engine.Ecs.Input.InputOverride.Look = new Vector2(2f, 0f);
                     break;
                 case "crates":
                     // walk to the crate pile and look at it
-                    input.overrideMove = _frame < 95 ? new Vector2(-0.2f, 1f) : Vector2.zero;
-                    input.overrideLook = _frame > 95 && _frame < 115 ? new Vector2(14f, -3f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 95 ? new Vector2(-0.2f, 1f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Look = _frame > 95 && _frame < 115 ? new Vector2(14f, -3f) : Vector2.zero;
                     break;
                 case "sunward":
                     // walk down the pier, then turn around to face the sun through the lamp posts
-                    input.overrideMove = _frame < 270 ? new Vector2(0f, 1f) : Vector2.zero;
-                    input.overrideLook = _frame > 270 && _frame < 310 ? new Vector2(-36f, 1.0f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 270 ? new Vector2(0f, 1f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Look = _frame > 270 && _frame < 310 ? new Vector2(-36f, 1.0f) : Vector2.zero;
                     break;
                 case "water":
                     // look over the railing at the water, then walk off the edge into it: the sky goes while the
                     // view is under (7.6; the 7.0 baseline recorded "sky True" all the way down — the old trigger
                     // waited for a camera GameObject that has been an entity since layer 4)
-                    input.overrideMove = _frame < 45 ? new Vector2(1f, 0f) : _frame > 100 ? new Vector2(1f, 0f) : Vector2.zero;
-                    input.overrideLook = _frame > 45 && _frame < 76 ? new Vector2(30f, -6f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 45 ? new Vector2(1f, 0f) : _frame > 100 ? new Vector2(1f, 0f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Look = _frame > 45 && _frame < 76 ? new Vector2(30f, -6f) : Vector2.zero;
                     if (_frame % 15 == 0 && _frame >= 90)
                     {
                         var ww = Application.Current.World;
@@ -635,12 +622,12 @@ namespace RipNRage.Game
                     // the dock's shell-ammo pickup sits at (-3, 0.91, -20), thirty metres down the planks: stand
                     // the player four metres short of it and walk in. The ammo must go up and the pickup must be
                     // gone (an entity since 7.5; the 7.0 baseline was the AmmoPickup GameObject: shells 64 -> 80, 4 -> 3)
-                    if (_frame == 10) RipNRage.Game.Ecs.PlayerLink.Current?.Teleport(new Vector3(-3f, 1.8f, -16f), 180f);
-                    input.overrideMove = _frame > 12 && _frame < 70 ? new Vector2(0f, 1f) : Vector2.zero;
+                    if (_frame == 10) RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(-3f, 1.8f, -16f), 180f);
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame > 12 && _frame < 70 ? new Vector2(0f, 1f) : Vector2.zero;
                     if (_frame % 20 == 0)
                     {
-                        int shells = combat.AmmoOf(AmmoType.SHELL);
-                        var pos = PlayerState.Current != null ? PlayerState.Current.transform.position : Vector3.zero;
+                        int shells = CombatController.AmmoOf(AmmoType.SHELL);
+                        var pos = RipNRage.Game.Ecs.PlayerLink.Alive ? RipNRage.Game.Ecs.PlayerLink.Position : Vector3.zero;
                         Debug.LogWarning($"[test] frame {_frame} at ({pos.x:0.0}, {pos.z:0.0}) shells {shells} pickups {CountPickups()}");
                     }
                     break;
@@ -650,7 +637,7 @@ namespace RipNRage.Game
                     // spawn a rifleman close by, aim at it, kill it with the MG, then watch the hit flash + dissolve
                     var world = Application.Current.World;
                     if (_frame == 2) Enemies.Spawn(world, Enemies.KindOf(GameAssets.RiflemanData), new Vector3(-1.5f, 0.91f, -6f), 0f);
-                    if (_frame == 5) combat.OnChangeWeapon1();
+                    if (_frame == 5) CombatController.OnChangeWeapon1();
                     var camPos = RipNRage.Game.Ecs.PlayerCamera.Position; var camFwd = RipNRage.Game.Ecs.PlayerCamera.Forward;
                     Enemies.Collect(world, _enemies);
                     var nearest = Entity.Null; float best = float.MaxValue;
@@ -666,9 +653,9 @@ namespace RipNRage.Game
                         float pitchNow = -Mathf.Asin(Mathf.Clamp(camFwd.y, -1f, 1f)) * Mathf.Rad2Deg;
                         float pitchWanted = -Mathf.Asin(Mathf.Clamp(to.normalized.y, -1f, 1f)) * Mathf.Rad2Deg;
                         // FPSCameraController: degrees = pixels * sensitivity(5) * fixedDeltaTime(0.02) = 0.1 deg/px
-                        input.overrideLook = new Vector2(Mathf.Clamp(yawErr * 10f, -60f, 60f), Mathf.Clamp((pitchNow - pitchWanted) * 10f, -60f, 60f));
+                        RipNRage.Engine.Ecs.Input.InputOverride.Look = new Vector2(Mathf.Clamp(yawErr * 10f, -60f, 60f), Mathf.Clamp((pitchNow - pitchWanted) * 10f, -60f, 60f));
                     }
-                    input.overrideFiring = _frame >= 60 && _frame < 240; // many Glock hits: the grunt has 1000 hp + 1000 armour
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame >= 60 && _frame < 240; // many Glock hits: the grunt has 1000 hp + 1000 armour
                     // the gate: without this the script only proves the game does not crash while firing at something.
                     // Layer 5 has to turn "ALIVE 1000/1000" into a dead grunt.
                     bool dead = !nearest.IsNull && (world.Has<Dead>(nearest) || world.Get<Health>(nearest).Current <= 0f);
@@ -676,31 +663,31 @@ namespace RipNRage.Game
                     if (_frame == 240 || _frame == 290)
                         Debug.LogWarning(nearest.IsNull
                             ? $"[test] frame {_frame}: no enemy in the scene"
-                            : $"[test] frame {_frame}: enemy {(dead ? EntityHealthState.DEAD : EntityHealthState.ALIVE)} health {world.Get<Health>(nearest).Current:0} " +
+                            : $"[test] frame {_frame}: enemy {(dead ? "DEAD" : "ALIVE")} health {world.Get<Health>(nearest).Current:0} " +
                               $"armour {(world.Has<Armor>(nearest) ? world.Get<Armor>(nearest).Current : 0f):0} killedAtFrame {_killFrame}");
                     break;
                 }
                 case "spin":
-                    input.overrideLook = new Vector2(40f, 0f);
+                    RipNRage.Engine.Ecs.Input.InputOverride.Look = new Vector2(40f, 0f);
                     break;
                 case "walk":
-                    input.overrideMove = new Vector2(0f, 1f);
-                    if (_frame % 90 == 0) input.OnJump();
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = new Vector2(0f, 1f);
+                    if (_frame % 90 == 0) RipNRage.Engine.Ecs.Input.InputOverride.JumpOnce();
                     if (_frame == 30) Census("level");
                     break;
                 case "fire":
-                    input.overrideMove = new Vector2(0f, 0.5f);
-                    input.overrideFiring = _frame > 30 && (_frame / 20) % 2 == 0;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = new Vector2(0f, 0.5f);
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame > 30 && (_frame / 20) % 2 == 0;
                     break;
                 case "weapons":
-                    if (_frame == 40) combat.OnChangeWeapon2();
-                    if (_frame == 80) combat.OnChangeWeapon3();
-                    if (_frame == 120) combat.OnChangeWeapon4();
-                    if (_frame == 160) combat.OnChangeWeapon1();
-                    input.overrideFiring = _frame % 40 > 30;
+                    if (_frame == 40) CombatController.OnChangeWeapon2();
+                    if (_frame == 80) CombatController.OnChangeWeapon3();
+                    if (_frame == 120) CombatController.OnChangeWeapon4();
+                    if (_frame == 160) CombatController.OnChangeWeapon1();
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 40 > 30;
                     break;
                 case "jab":
-                    if (_frame == 30 || _frame == 45) combat.OnAltFire(true);
+                    if (_frame == 30 || _frame == 45) CombatController.OnAltFire(true);
                     if (_frame == 32 || _frame == 47 || _frame == 120)
                     {
                         var w = Application.Current.World;
@@ -711,20 +698,20 @@ namespace RipNRage.Game
                     }
                     break;
                 case "m1887":
-                    if (_frame == 10) combat.OnChangeWeapon2();
-                    input.overrideFiring = _frame == 30;
+                    if (_frame == 10) CombatController.OnChangeWeapon2();
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame == 30;
                     break;
                 case "glockfire":
-                    input.overrideFiring = _frame == 30;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame == 30;
                     break;
                 case "peek":
                     // turn towards the nearby rifleman and watch it
-                    input.overrideLook = _frame < 40 ? new Vector2(1.2f, 0f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Look = _frame < 40 ? new Vector2(1.2f, 0f) : Vector2.zero;
                     if (_frame == 60 || _frame == 150 || _frame == 290) AiProbe($"peek {_frame}");
                     break;
                 case "close":
                     // walk up to the rifleman standing near the spawn
-                    input.overrideMove = _frame < 55 ? new Vector2(-0.25f, 1f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 55 ? new Vector2(-0.25f, 1f) : Vector2.zero;
                     if (_frame == 60 || _frame == 150 || _frame == 290) AiProbe($"close {_frame}");
                     break;
                 case "evade":
@@ -733,7 +720,7 @@ namespace RipNRage.Game
                     if (_frame == 2) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
                         RipNRage.Game.Ecs.PlayerCamera.Position + RipNRage.Game.Ecs.PlayerCamera.Forward * 14f - Vector3.up * 1.3f, 180f);
                     // weave in front of the grunt instead of running off the dock: strafe one way, then the other
-                    input.overrideMove = _frame < 120 ? new Vector2(0f, 1f)
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 120 ? new Vector2(0f, 1f)
                                        : _frame < 330 ? new Vector2(_frame % 60 < 30 ? 0.9f : -0.9f, 0f) // weave on the spot
                                        : Vector2.zero;
                     if (_frame > 140 && _frame % 40 == 0) RipNRage.Engine.Ecs.Input.InputOverride.Dash = true;
@@ -746,16 +733,16 @@ namespace RipNRage.Game
                     break;
                 case "approach":
                     // run towards the first rifleman, then stand and shoot
-                    input.overrideMove = _frame < 270 ? new Vector2(0f, 1f) : Vector2.zero;
-                    input.overrideFiring = _frame > 300 && _frame % 30 == 0;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 270 ? new Vector2(0f, 1f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame > 300 && _frame % 30 == 0;
                     // 365: the first shot is at 330 and its sound carries 30 m in 23 frames (run with --frames 400)
                     if (_frame == 100 || _frame == 200 || _frame == 290 || _frame == 365) AiProbe($"approach {_frame}");
                     break;
                 case "rocket":
-                    if (_frame == 10) combat.OnChangeWeapon4();
-                    input.overrideLook = _frame > 20 && _frame < 26 ? new Vector2(0f, -60f) : Vector2.zero; // aim down at the dock
-                    input.overrideFiring = _frame == 40;
-                    if (_frame == 90) Debug.LogWarning($"[test] rocket aftermath: hp {PlayerState.Current?.Health:0} armour {PlayerState.Current?.Armor:0} y {PlayerState.Current?.transform.position.y:0.00}");
+                    if (_frame == 10) CombatController.OnChangeWeapon4();
+                    RipNRage.Engine.Ecs.Input.InputOverride.Look = _frame > 20 && _frame < 26 ? new Vector2(0f, -60f) : Vector2.zero; // aim down at the dock
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame == 40;
+                    if (_frame == 90) Debug.LogWarning($"[test] rocket aftermath: hp {RipNRage.Game.Ecs.PlayerLink.Health:0} armour {RipNRage.Game.Ecs.PlayerLink.Armor:0} y {RipNRage.Game.Ecs.PlayerLink.Position.y:0.00}");
                     break;
                 case "rage":
                     // two grunts killed with the MG fill the Fury meter; at frame 310 the player presses the
@@ -763,8 +750,8 @@ namespace RipNRage.Game
                     // blows feed the player (the probe prints hp / armour), then the meter drains and it ends
                     if (_frame == 2 || _frame == 150 || _frame == 320) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
                         RipNRage.Game.Ecs.PlayerCamera.Position + RipNRage.Game.Ecs.PlayerCamera.Forward * 6f - Vector3.up * 1.3f, 0f);
-                    if (_frame == 5) combat.OnChangeWeapon3();
-                    input.overrideFiring = (_frame > 20 && _frame < 140) || (_frame > 160 && _frame < 300) || (_frame > 330 && _frame < 395);
+                    if (_frame == 5) CombatController.OnChangeWeapon3();
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = (_frame > 20 && _frame < 140) || (_frame > 160 && _frame < 300) || (_frame > 330 && _frame < 395);
                     if (_frame == 310) RipNRage.Engine.Ecs.Input.InputOverride.Fury = true;
                     else if (_frame == 311) RipNRage.Engine.Ecs.Input.InputOverride.Fury = null;
                     if (_frame % 30 == 0) LogRage();
@@ -777,14 +764,14 @@ namespace RipNRage.Game
                         if (_frame == 30) SaveRoundTrip();
                         break;
                     }
-                    input.overrideMove = (_frame < 100 || (_frame > 120 && _frame < 200)) ? new Vector2(0f, 1f) : Vector2.zero;
-                    input.overrideFiring = _frame > 60 && _frame < 66;
-                    if (_frame == 110) { Input.SimulateKey(KeyCode.F6, true); Debug.LogWarning($"[test] saved at {PlayerState.Current.transform.position} ammo {combat.AmmoOf(AmmoType.LIGHT)}"); }
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = (_frame < 100 || (_frame > 120 && _frame < 200)) ? new Vector2(0f, 1f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame > 60 && _frame < 66;
+                    if (_frame == 110) { Input.SimulateKey(KeyCode.F6, true); Debug.LogWarning($"[test] saved at {RipNRage.Game.Ecs.PlayerLink.Position} ammo {CombatController.AmmoOf(AmmoType.LIGHT)}"); }
                     if (_frame == 111) Input.SimulateKey(KeyCode.F6, false);
-                    if (_frame == 205) Debug.LogWarning($"[test] before load at {PlayerState.Current.transform.position}");
+                    if (_frame == 205) Debug.LogWarning($"[test] before load at {RipNRage.Game.Ecs.PlayerLink.Position}");
                     if (_frame == 210) { _saveLoaded = true; Input.SimulateKey(KeyCode.F9, true); }
-                    if (_frame % 20 == 0 && PlayerState.Current != null) LogRage();
-                    if (_frame == 240 && PlayerState.Current != null) Debug.LogWarning($"[test] after load at {PlayerState.Current.transform.position} ammo {EnragedInjector<CombatController>.GetInstance().AmmoOf(AmmoType.LIGHT)} hp {PlayerState.Current.Health}");
+                    if (_frame % 20 == 0 && RipNRage.Game.Ecs.PlayerLink.Alive) LogRage();
+                    if (_frame == 240 && RipNRage.Game.Ecs.PlayerLink.Alive) Debug.LogWarning($"[test] after load at {RipNRage.Game.Ecs.PlayerLink.Position} ammo {CombatController.AmmoOf(AmmoType.LIGHT)} hp {RipNRage.Game.Ecs.PlayerLink.Health}");
                     // 8.0: the whole save, not three fields. The load rebuilds the scene and this script restarts its
                     // count there (so the frame-240 line above never prints): 30 frames into the rebuilt scene, save
                     // again and diff the two files line by line, the wall-clock stamp aside.
@@ -793,13 +780,13 @@ namespace RipNRage.Game
                     // Three right clicks: jab, jab, then the Glock grapple finisher — which needs a victim within
                     // 1 m, and this level has none in reach, so the gate pins the refusal: no finisher entity, the
                     // combo reset, no rounds spent. The grapple itself is covered in vitro (GameChecks).
-                    if (_frame == 30 || _frame == 40 || _frame == 50) combat.OnAltFire(true);
+                    if (_frame == 30 || _frame == 40 || _frame == 50) CombatController.OnAltFire(true);
                     if (_frame == 55)
                     {
                         var w = Application.Current.World;
                         var pe = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
                         var combo = w.Get<RipNRage.Game.Ecs.Combat.AltFire>(pe);
-                        Debug.LogWarning($"[test] after 3 presses: step {combo.Step} finisher {(combo.Finisher.IsNull ? "none" : "live")} ammo {combat.AmmoOf(AmmoType.LIGHT)}");
+                        Debug.LogWarning($"[test] after 3 presses: step {combo.Step} finisher {(combo.Finisher.IsNull ? "none" : "live")} ammo {CombatController.AmmoOf(AmmoType.LIGHT)}");
                     }
                     break;
                 case "die":
@@ -812,49 +799,47 @@ namespace RipNRage.Game
                     {
                         if (_frame == 1) Input.SimulateKey(KeyCode.Return, false);
                         if (_frame == 40) FlowProbe();
-                        if (_frame == 40) Debug.LogWarning($"[test] after respawn: player={(PlayerState.Current != null)} dead={PlayerState.Current?.IsDead} hp={PlayerState.Current?.Health} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
+                        if (_frame == 40) Debug.LogWarning($"[test] after respawn: player={(RipNRage.Game.Ecs.PlayerLink.Alive)} dead={RipNRage.Game.Ecs.PlayerLink.IsDead} hp={RipNRage.Game.Ecs.PlayerLink.Health} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
                         break;
                     }
-                    input.overrideMove = _frame < 40 ? new Vector2(0f, 1f) : Vector2.zero;
-                    if (_frame == 40 && PlayerState.Current != null) PlayerState.Current.TakeDamage(10000f);
-                    if (_frame == 120 && PlayerState.Current != null) Debug.LogWarning($"[test] dead={PlayerState.Current.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} hp={PlayerState.Current.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 40 ? new Vector2(0f, 1f) : Vector2.zero;
+                    if (_frame == 40 && RipNRage.Game.Ecs.PlayerLink.Alive) RipNRage.Game.Ecs.PlayerLink.TakeDamage(10000f);
+                    if (_frame == 120 && RipNRage.Game.Ecs.PlayerLink.Alive) Debug.LogWarning($"[test] dead={RipNRage.Game.Ecs.PlayerLink.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} hp={RipNRage.Game.Ecs.PlayerLink.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
                     // 8.2: the flow through the death — Dying at once, Dead 2.4 real seconds (144 frames) after it
                     if (_frame == 41 || _frame == 120 || _frame == 183 || _frame == 185 || _frame == 259) FlowProbe();
                     if (_frame == 260) { _dieStage = 1; Input.SimulateKey(KeyCode.Return, true); }
-                    if (_frame == 300) Debug.LogWarning($"[test] after respawn: player={(PlayerState.Current != null)} dead={PlayerState.Current?.IsDead} hp={PlayerState.Current?.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
+                    if (_frame == 300) Debug.LogWarning($"[test] after respawn: player={(RipNRage.Game.Ecs.PlayerLink.Alive)} dead={RipNRage.Game.Ecs.PlayerLink.IsDead} hp={RipNRage.Game.Ecs.PlayerLink.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
                     break;
                 case "vfx":
                 {
                     // data-driven effects: shoot the floor / wall with every weapon, then a rocket; prints particle stats
-                    if (_frame == 5) combat.OnChangeWeapon1();
-                    if (_frame == 60) combat.OnChangeWeapon2();
-                    if (_frame == 110) combat.OnChangeWeapon3();
-                    if (_frame == 170) combat.OnChangeWeapon4();
-                    input.overrideLook = _frame > 10 && _frame < 16 ? new Vector2(0f, -40f) : Vector2.zero; // aim down at the planks
-                    input.overrideFiring = (_frame >= 20 && _frame < 24) || (_frame >= 70 && _frame < 72) || (_frame >= 120 && _frame < 150) || _frame == 180;
+                    if (_frame == 5) CombatController.OnChangeWeapon1();
+                    if (_frame == 60) CombatController.OnChangeWeapon2();
+                    if (_frame == 110) CombatController.OnChangeWeapon3();
+                    if (_frame == 170) CombatController.OnChangeWeapon4();
+                    RipNRage.Engine.Ecs.Input.InputOverride.Look = _frame > 10 && _frame < 16 ? new Vector2(0f, -40f) : Vector2.zero; // aim down at the planks
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = (_frame >= 20 && _frame < 24) || (_frame >= 70 && _frame < 72) || (_frame >= 120 && _frame < 150) || _frame == 180;
                     if (_frame % 30 == 0) Debug.LogWarning($"[test] vfx instances={RipNRage.Engine.Graphics.Particles.ParticleWorld.LiveInstances} particles={RipNRage.Engine.Graphics.Particles.ParticleWorld.LiveParticles} effects={RipNRage.Engine.Graphics.Particles.VfxLibrary.Effects.Count}");
                     break;
                 }
                 case "dash":
                 {
                     // dash forward at frame 40 and again in the air after a jump at frame 120
-                    input.overrideMove = new Vector2(0f, 1f);
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = new Vector2(0f, 1f);
                     if (_frame == 40 || _frame == 125) Input.SimulateKey(KeyCode.LeftShift, true);
                     if (_frame == 41 || _frame == 126) Input.SimulateKey(KeyCode.LeftShift, false);
-                    if (_frame == 115) input.OnJump();
-                    var fps = PlayerState.Current?.GetComponent<FPSController>();
-                    if (_frame % 10 == 0 && fps != null) Debug.LogWarning($"[test] frame {_frame} dashing={fps.IsDashing} pos {PlayerState.Current.transform.position}");
+                    if (_frame == 115) RipNRage.Engine.Ecs.Input.InputOverride.JumpOnce();
+                    if (_frame % 10 == 0 && RipNRage.Game.Ecs.PlayerLink.HasMotor) Debug.LogWarning($"[test] frame {_frame} dashing={RipNRage.Game.Ecs.PlayerLink.Motor.IsDashing} pos {RipNRage.Game.Ecs.PlayerLink.Position}");
                     break;
                 }
                 case "slide":
                 {
                     // run forward, slide at frame 50, jump out of it at frame 80; logs the controller state
-                    input.overrideMove = new Vector2(0f, 1f);
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = new Vector2(0f, 1f);
                     if (_frame == 50) Input.SimulateKey(KeyCode.LeftControl, true);
                     if (_frame == 80) { Input.SimulateKey(KeyCode.LeftControl, false); Input.SimulateKey(KeyCode.Space, true); }
                     if (_frame == 81) Input.SimulateKey(KeyCode.Space, false);
-                    var fps = PlayerState.Current?.GetComponent<FPSController>();
-                    if (_frame % 10 == 0 && fps != null) Debug.LogWarning($"[test] frame {_frame} sliding={fps.IsSliding} wallrun={fps.IsWallRunning} pos {PlayerState.Current.transform.position} speed {fps.MCurrentSpeed:0.0}");
+                    if (_frame % 10 == 0 && RipNRage.Game.Ecs.PlayerLink.HasMotor) Debug.LogWarning($"[test] frame {_frame} sliding={RipNRage.Game.Ecs.PlayerLink.Motor.IsSliding} wallrun={RipNRage.Game.Ecs.PlayerLink.Motor.IsWallRunning} pos {RipNRage.Game.Ecs.PlayerLink.Position} speed {RipNRage.Game.Ecs.PlayerLink.Motor.CurrentSpeed:0.0}");
                     break;
                 }
                 case "style":
@@ -863,9 +848,9 @@ namespace RipNRage.Game
                     // Glock, then one with the MG: hits, kills and the close-range bonus fill the meter
                     if (_frame == 2 || _frame == 130) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
                         RipNRage.Game.Ecs.PlayerCamera.Position + RipNRage.Game.Ecs.PlayerCamera.Forward * 6f - Vector3.up * 1.3f, 0f);
-                    if (_frame == 5) combat.OnChangeWeapon1();
-                    if (_frame == 135) combat.OnChangeWeapon3();
-                    input.overrideFiring = (_frame > 20 && _frame < 120) || (_frame > 140 && _frame < 200);
+                    if (_frame == 5) CombatController.OnChangeWeapon1();
+                    if (_frame == 135) CombatController.OnChangeWeapon3();
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = (_frame > 20 && _frame < 120) || (_frame > 140 && _frame < 200);
                     if (_frame % 30 == 0) LogRage();
                     break;
                 }
@@ -873,17 +858,16 @@ namespace RipNRage.Game
                 {
                     // walk sideways off the dock into the water: the fall must be classified as EDGE and then either kill
                     // the player (falls are always lethal since 8.4)
-                    input.overrideMove = _frame < 150 ? new Vector2(1f, 0f) : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 150 ? new Vector2(1f, 0f) : Vector2.zero;
                     var fr = RipNRage.Game.Ecs.FallSystem.Current;
-                    if (_frame % 30 == 0 && PlayerState.Current != null) Debug.LogWarning($"[test] frame {_frame} pos {PlayerState.Current.transform.position} falls={fr.Count} last={RipNRage.Game.Ecs.Falls.Label(fr.LastKind)} dead={PlayerState.Current.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} killY={Application.Current.World.GetSingleton<RipNRage.Game.Ecs.KillHeight>().Y:0.0}");
+                    if (_frame % 30 == 0 && RipNRage.Game.Ecs.PlayerLink.Alive) Debug.LogWarning($"[test] frame {_frame} pos {RipNRage.Game.Ecs.PlayerLink.Position} falls={fr.Count} last={RipNRage.Game.Ecs.Falls.Label(fr.LastKind)} dead={RipNRage.Game.Ecs.PlayerLink.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} killY={Application.Current.World.GetSingleton<RipNRage.Game.Ecs.KillHeight>().Y:0.0}");
                     break;
                 }
                 case "strafe":
                 {
                     // strafe left and right across the middle of the dock (never near an edge), with jumps: a player that
                     // ends up below the planks here went THROUGH them. Prints PASS/FAIL at the end.
-                    var p = PlayerState.Current;
-                    if (p == null) break;
+                    if (!RipNRage.Game.Ecs.PlayerLink.Alive) break;
                     // always steer back towards x = 0: with the controller's input smoothing that oscillates a few metres
                     // either side of the centre line (the dock is 32 m wide), on the ground and through bunny hops.
                     // The correction is in world space but the move input is player-relative, so it has to be rotated
@@ -891,20 +875,20 @@ namespace RipNRage.Game
                     // world-space (+1, ...) means "strafe towards -x" and the correction pushed the player further
                     // off centre every frame instead of back. That, not a collision bug, is why this script walked
                     // off the dock edge at x ≈ -19 on every platform.
-                    float x = p.transform.position.x;
+                    float x = RipNRage.Game.Ecs.PlayerLink.Position.x;
                     _strafeDir = x > 0f ? -1f : 1f;
                     // the sideways correction is world-space, the forward/back wiggle is player-relative, so only
                     // the first is rotated into the view's frame
-                    Vector3 localWish = Quaternion.Euler(0f, -(FPSCameraController.instance?.Yaw ?? 0f), 0f) * new Vector3(_strafeDir, 0f, 0f);
-                    input.overrideMove = new Vector2(localWish.x, localWish.z + (_frame % 90 < 45 ? 0.4f : -0.4f));
-                    if (_frame % 70 == 35 && Mathf.Abs(x) < 2f) input.OnJump();
+                    Vector3 localWish = Quaternion.Euler(0f, -(RipNRage.Game.Ecs.PlayerLink.Yaw), 0f) * new Vector3(_strafeDir, 0f, 0f);
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = new Vector2(localWish.x, localWish.z + (_frame % 90 < 45 ? 0.4f : -0.4f));
+                    if (_frame % 70 == 35 && Mathf.Abs(x) < 2f) RipNRage.Engine.Ecs.Input.InputOverride.JumpOnce();
                     var fr = RipNRage.Game.Ecs.FallSystem.Current;
-                    if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {p.transform.position} falls={fr.Count} last={RipNRage.Game.Ecs.Falls.Label(fr.LastKind)}");
+                    if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {RipNRage.Game.Ecs.PlayerLink.Position} falls={fr.Count} last={RipNRage.Game.Ecs.Falls.Label(fr.LastKind)}");
                     if (_frame == 600)
                     {
-                        bool ok = fr.Count == 0 && !p.IsDead;
+                        bool ok = fr.Count == 0 && !RipNRage.Game.Ecs.PlayerLink.IsDead;
                         Debug.LogWarning(ok ? "[test] strafe PASS: 600 frames of strafing and jumping on the dock, no fall"
-                                            : $"[test] strafe FAIL: falls={fr.Count} ({RipNRage.Game.Ecs.Falls.Label(fr.LastKind)}) dead={p.IsDead} (the fall report is in the log)");
+                                            : $"[test] strafe FAIL: falls={fr.Count} ({RipNRage.Game.Ecs.Falls.Label(fr.LastKind)}) dead={RipNRage.Game.Ecs.PlayerLink.IsDead} (the fall report is in the log)");
                     }
                     break;
                 }
@@ -914,20 +898,19 @@ namespace RipNRage.Game
                     // is static). Scene 1: walk into the dock's checkpoint, die at frame 90, RESTART at 260. Scene 2
                     // (the checkpoint load): report the pose, the state and the DeathEvent count.
                     if (_checkpointStage == 1 && _frame == 1) Input.SimulateKey(KeyCode.Return, false);
-                    var ps = PlayerState.Current;
-                    if (ps == null) break;
+                    if (!RipNRage.Game.Ecs.PlayerLink.Alive) break;
                     if (_checkpointStage == 0)
                     {
-                        if (_frame == 10) RipNRage.Game.Ecs.PlayerLink.Current?.Teleport(new Vector3(0f, 1.8f, -46f), 180f);
-                        input.overrideMove = _frame > 12 && _frame < 60 ? new Vector2(0f, 1f) : Vector2.zero;
-                        if (_frame == 100) Debug.LogWarning($"[test] checkpoint reached={RipNRage.Game.Ecs.Flows.Current.CheckpointReached} available={GameSaveSystem.CheckpointAvailable()} pos {ps.transform.position}");
-                        if (_frame == 90) ps.TakeDamage(10000f); // RESTART at 260: the death menu takes input after 2.4 s
-                        if (_frame == 200) Debug.LogWarning($"[test] dead={ps.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} canRespawnAtCheckpoint={GameSession.CanRespawnAtCheckpoint}");
+                        if (_frame == 10) RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(0f, 1.8f, -46f), 180f);
+                        RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame > 12 && _frame < 60 ? new Vector2(0f, 1f) : Vector2.zero;
+                        if (_frame == 100) Debug.LogWarning($"[test] checkpoint reached={RipNRage.Game.Ecs.Flows.Current.CheckpointReached} available={GameSaveSystem.CheckpointAvailable()} pos {RipNRage.Game.Ecs.PlayerLink.Position}");
+                        if (_frame == 90) RipNRage.Game.Ecs.PlayerLink.TakeDamage(10000f); // RESTART at 260: the death menu takes input after 2.4 s
+                        if (_frame == 200) Debug.LogWarning($"[test] dead={RipNRage.Game.Ecs.PlayerLink.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} canRespawnAtCheckpoint={GameSession.CanRespawnAtCheckpoint}");
                         if (_frame == 260) { _checkpointStage = 1; Input.SimulateKey(KeyCode.Return, true); }
                     }
                     else
                     {
-                        if (_frame == 60) Debug.LogWarning($"[test] respawned at {ps.transform.position} dead={ps.IsDead} hp={ps.Health} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} reached={RipNRage.Game.Ecs.Flows.Current.CheckpointReached} timeScale={Time.timeScale:0.00}");
+                        if (_frame == 60) Debug.LogWarning($"[test] respawned at {RipNRage.Game.Ecs.PlayerLink.Position} dead={RipNRage.Game.Ecs.PlayerLink.IsDead} hp={RipNRage.Game.Ecs.PlayerLink.Health} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} reached={RipNRage.Game.Ecs.Flows.Current.CheckpointReached} timeScale={Time.timeScale:0.00}");
                     }
                     break;
                 }
@@ -951,17 +934,17 @@ namespace RipNRage.Game
                     if (_f8Stage == 1)
                     {
                         if (_frame == 1) Input.SimulateKey(KeyCode.F8, false);
-                        if (_frame == 30) { FlowProbe(); Debug.LogWarning($"[test] after F8: hp={PlayerState.Current?.Health} pos {PlayerState.Current?.transform.position}"); }
+                        if (_frame == 30) { FlowProbe(); Debug.LogWarning($"[test] after F8: hp={RipNRage.Game.Ecs.PlayerLink.Health} pos {RipNRage.Game.Ecs.PlayerLink.Position}"); }
                         if (_frame == 30) MeshProbe(); // 9.1: the rebuilt level reuses its meshes
                         break;
                     }
-                    if (_frame == 20 && PlayerState.Current != null) PlayerState.Current.TakeDamage(10000f);
+                    if (_frame == 20 && RipNRage.Game.Ecs.PlayerLink.Alive) RipNRage.Game.Ecs.PlayerLink.TakeDamage(10000f);
                     if (_frame == 40) { FlowProbe(); MeshProbe(); } // Dying
                     if (_frame == 50) { _f8Stage = 1; Input.SimulateKey(KeyCode.F8, true); }
                     break;
                 case "pause":
                     // Esc opens the pause menu (world frozen), Esc again resumes
-                    input.overrideMove = new Vector2(0f, 1f);
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move = new Vector2(0f, 1f);
                     if (_frame == 60) Input.SimulateKey(KeyCode.Escape, true);
                     if (_frame == 61) Input.SimulateKey(KeyCode.Escape, false);
                     if (_frame == 60 || _frame == 61 || _frame == 151 || _frame == 152) FlowProbe(); // the press, and the frame the menu follows

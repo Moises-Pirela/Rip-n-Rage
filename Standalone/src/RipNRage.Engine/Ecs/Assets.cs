@@ -64,6 +64,22 @@ namespace RipNRage.Engine.Ecs
             return Intern(loader(name), name);
         }
 
+        /// <summary>Swaps the asset behind <paramref name="handle"/> (the editor's preview rebuilds reuse their handles —
+        /// the registry is append-only, and an edit must not intern a fresh copy). A reference swap: resolve stays lock-free.</summary>
+        public void Replace(AssetHandle<T> handle, T item)
+        {
+            if (handle.Id <= 0 || item == null) return;
+            lock (_gate)
+            {
+                if (handle.Id >= _items.Count) return;
+                var old = _items[handle.Id];
+                if (ReferenceEquals(old, item)) return;
+                if (old != null) _byRef.Remove(old);
+                _items[handle.Id] = item;
+                _byRef[item] = handle.Id;
+            }
+        }
+
         /// <summary>Entries interned so far (append-only: a count that grows on every level rebuild is a leak).</summary>
         public int Count { get { lock (_gate) return _items.Count - 1; } }
 

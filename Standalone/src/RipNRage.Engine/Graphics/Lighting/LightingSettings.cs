@@ -144,22 +144,4 @@ namespace RipNRage.Engine.Graphics.Lighting
 
     public enum LightType { Directional, Point }
 
-    /// <summary>
-    /// Scene light (UnityEngine.Light subset). One directional light overrides the sun from the
-    /// config; point lights are gathered per frame (nearest <c>max_point_lights</c> to the camera).
-    /// </summary>
-    public sealed class Light : Behaviour
-    {
-        public LightType type = LightType.Point;
-        public Color color = Color.white;
-        public float intensity = 1f;
-        public float range = 10f;
-
-        private static readonly List<Light> All = new List<Light>();
-        public static IReadOnlyList<Light> Lights => All;
-
-        protected override void OnEnable() { if (!All.Contains(this)) All.Add(this); }
-        protected override void OnDisable() => All.Remove(this);
-        protected override void OnDestroy() => All.Remove(this);
-    }
 }

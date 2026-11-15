@@ -26,13 +26,16 @@ namespace RipNRage.Game.Content
             GameAssets.Load();
             Materials.Load();
             Physics.SetCollisionMatrix(LayerCollisionMatrix);
+            // particles collide with the world, not with actors (9.4: was the VfxRuntime MonoBehaviour's Awake)
+            RipNRage.Engine.Graphics.Particles.ParticleWorld.CollisionMask =
+                ~((1 << Layers.Player) | (1 << Layers.Enemies) | (1 << Layers.Projectile) | (1 << Layers.VisionSensor) | (1 << Layers.Pickup) | (1 << Layers.IgnoreRaycast));
             // sun, sky, fog and shadows come from tunables.cfg ([lighting] / [sky] / [fog] / [shadows] / [volumetric_fog])
 
             var level = LevelLoader.Load(levelPath);
             Debug.LogWarning($"Level: {levelPath} ({level.document.Brushes.Count} brushes, {level.document.entities.Count} entities)");
             RipNRage.Game.Ecs.Sky.Spin(World, 1.2f);
             World.Singleton<RipNRage.Game.Ecs.KillHeight>().Y = level.killY;
-            if (spawnPlayer) PlayerPrefab.Player.Instantiate(level.playerStart, level.playerRotation);
+            if (spawnPlayer) PlayerPrefab.Spawn(level.playerStart, level.playerRotation.eulerAngles.y);
             else RipNRage.Game.Ecs.MenuViews.Spawn(World, level.playerStart, level.playerRotation); // 9.3: an entity
         }
     }

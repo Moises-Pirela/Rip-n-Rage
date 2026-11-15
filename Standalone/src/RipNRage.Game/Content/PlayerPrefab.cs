@@ -1,124 +1,51 @@
-using System.Collections.Generic;
+using RipNRage.Engine.Ecs;
 
 namespace RipNRage.Game.Content
 {
     /// <summary>
-    /// Builds the PlayerCharacter hierarchy from Assets/_Game/Prefabs/PlayerCharacter.prefab:
-    ///
-    /// PlayerCharacter [CapsuleCollider r0.4 h1.3 + RigidBody 80 kg + CharacterBody (ride 0.5 → 1.8 m tall, transform 0.9 m above the feet), AudioSource, FPSController, PlayerInputActions,
-    ///                  FPSCameraController, PlayerState, CombatController]
-    ///  ├ Orientation
-    ///  ├ Camera (0, 0.5, 0) [HeadBob]
-    ///  │   └ WorldCamera (fov 77) [Camera]
-    ///  │       ├ PlayerArms (0.017, -0.65, 2.36) [WeaponSway]
-    ///  │       │    ├ Weapon (scale 0.1) [SpriteRenderer, Animator, WeaponAnimationEvents, AudioSource]
-    ///  │       │    │    ├ MuzzleFlash (-0.5, 4.5, 0.05) scale 0.5 (inactive)
-    ///  │       │    │    └ ProjectileSpawn (1, 0, 0)
-    ///  │       │    ├ LeftFist (-0.35, 0.6, -0.8) scale (0.1, 0.1, 0.075) [SpriteRenderer, Animator]
-    ///  │       │    ├ RightFist (0.35, 0.6, -0.8)
-    ///  │       │    └ FistAudio [AudioSource]
-    ///  │       └ Muzzle_01 (0, 0, 2)
-    ///  ├ WeaponHolder (0, 0.8, 2)
-    ///  ├ Feet (0, -0.8, 0)
-    ///  └ PlayerHUD (canvas 1920x1080)
+    /// Builds the player (9.4: entities throughout — the PlayerCharacter GameObject hierarchy and its facade
+    /// MonoBehaviours are gone): the character and view rig (<see cref="RipNRage.Game.Ecs.PlayerLink.Spawn"/>), the
+    /// first-person viewmodel entities, the weapon tables and components, the muzzle light and the HUD screen.
     /// </summary>
     public static class PlayerPrefab
     {
-        public static readonly Prefab Player = new Prefab("PlayerCharacter", Build);
-
-        private static GameObject Build()
+        public static void Spawn(Vector3 position, float yaw)
         {
-            var player = new GameObject("PlayerCharacter");
-            player.tag = "Player";
-            player.layer = Layers.Player;
+            var world = Application.Current.World;
 
-
-            // ---- hierarchy ----
-            var orientation = Child(player, "Orientation", Vector3.zero);
-            var cameraGo = Child(player, "Camera", new Vector3(0, 0.5f, 0));
-            var worldCamera = Child(cameraGo, "WorldCamera", Vector3.zero);
-            worldCamera.tag = "MainCamera";
-            // The viewmodel sprites are entities now (ViewModel.Build below); these GameObjects remain only because
-            // scripts hang off them: WeaponAnimationEvents + the ProjectileSpawn point on "Weapon".
-            var arms = Child(worldCamera, "PlayerArms", new Vector3(0.017f, -0.65f, 2.36f));
-            var weapon = Child(arms, "Weapon", Vector3.zero, Vector3.one * 0.1f);
-            var projectileSpawn = Child(weapon, "ProjectileSpawn", new Vector3(1, 0, 0));
-            var fistAudioGo = Child(arms, "FistAudio", Vector3.zero);
-            Child(worldCamera, "Muzzle_01", new Vector3(0, 0, 2));
-            Child(player, "WeaponHolder", new Vector3(0, 0.8f, 2));
-            Child(player, "Feet", new Vector3(0, -0.8f, 0));
-
-            // the camera is the entity's lens alone since 9.3 (PlayerLink builds the rig below); the last
-            // Camera.main readers went with 9.0's probes
-
-            // ---- the character itself: an ECS entity (the force-driven capsule + locomotion + look + view rig) ----
-            // The entity is the body the solver moves; PlayerLink copies its pose back onto this hierarchy each frame
-            // so the scripts that are not ported yet keep reading the GameObject transform. The head bob is a ViewBob
-            // component on the camera pivot entity (values in PlayerLink).
-            RipNRage.Game.Ecs.PlayerLink.Attach(player, cameraGo.transform, worldCamera.transform, orientation.transform);
+            // ---- the character itself: the force-driven capsule + locomotion + look + view rig ----
+            RipNRage.Game.Ecs.PlayerLink.Spawn(world, position, yaw);
+            var player = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
 
             // ---- first-person viewmodel: entities under the camera entity (arms + WeaponSway, weapon, flash, fists)
-            var vm = RipNRage.Game.Ecs.ViewModel.Build(Application.Current.World);
-            var weaponEvents = weapon.AddComponent<WeaponAnimationEvents>();
-            weaponEvents.muzzleFlash = vm.MuzzleFlash;
-            // the weapon's clip events keep the SendMessage contract (WeaponAnimationEvents receives them by name)
-            vm.Weapon.OnEvent = n => weapon.SendMessage(n);
-
-            // ---- player scripts ----
-            var input = player.AddComponent<PlayerInputActions>();
-
-            var fps = player.AddComponent<FPSController>();
-
-            var camCtrl = player.AddComponent<FPSCameraController>();
-            camCtrl.playerCamera = cameraGo.transform;
-            camCtrl.orientation = orientation.transform;
-
-            var state = player.AddComponent<PlayerState>();
-
-            // the death (camera fall, slow motion, the death screen) is PlayerDeathSystem / DeathCamSystem since 8.3
+            var vm = RipNRage.Game.Ecs.ViewModel.Build(world);
+            // the weapon's clip events, by name (9.4: was a SendMessage onto the WeaponAnimationEvents MonoBehaviour)
+            vm.Weapon.OnEvent = n =>
+            {
+                if (n == "OnGlockAltFire") vm.MuzzleFlash.SetActive(true);
+                else if (n == "OnGlockBeginAltFire") vm.MuzzleFlash.SetActive(false);
+                // "OnFire" / "OnEndFire": nothing listens (the legacy sink was already empty)
+            };
 
             // ---- weapons: definitions as shared data, state as components, firing as a system (5.3) ----
             RipNRage.Game.Ecs.Combat.Weapons.All = new[]
                 { GameAssets.GlockData, GameAssets.M1887Data, GameAssets.MG338Data, GameAssets.RocketLauncherData };
-            RipNRage.Game.Ecs.Combat.WeaponFireSystem.ProjectileSpawn = projectileSpawn.transform;
-            var world = Application.Current.World;
-            world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Weapon { Sprite = vm.Weapon.Entity });
-            world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.Inventory());
-            world.Add(RipNRage.Game.Ecs.PlayerLink.PlayerEntity, new RipNRage.Game.Ecs.Combat.AltFire
+            world.Add(player, new RipNRage.Game.Ecs.Combat.Weapon { Sprite = vm.Weapon.Entity });
+            world.Add(player, new RipNRage.Game.Ecs.Combat.Inventory());
+            world.Add(player, new RipNRage.Game.Ecs.Combat.AltFire
                 { LeftFist = vm.LeftFist.Entity, RightFist = vm.RightFist.Entity });
 
-            var combat = player.AddComponent<CombatController>();
-            combat.cameraTransform = worldCamera.transform;
-            combat.weaponTransform = weapon.transform;
-            combat.weaponAnimator = vm.Weapon;
-            combat.leftFistAnimator = vm.LeftFist;
-            combat.rightFistAnimator = vm.RightFist;
+            // weapon switching and the viewmodel equip (9.4: a static — the new-game ammo, weapon 0)
+            CombatController.Bind(vm.Weapon);
 
             // ---- muzzle flash light (not in the Unity prefab; feeds the new lighting): an entity + system (9.3) ----
-            RipNRage.Game.Ecs.MuzzleFlashes.Spawn(Application.Current.World);
+            RipNRage.Game.Ecs.MuzzleFlashes.Spawn(world);
 
-            // ---- HUD (PlayerHUD canvas): a plain screen reading the components, not a component itself (8.7) ----
+            // ---- HUD (PlayerHUD canvas): a plain screen reading the components (8.7) ----
             HudLayout.Build(UiScreens.Add(new HudScreen()));
-
-            return player;
-        }
-
-        private static GameObject Child(GameObject parent, string name, Vector3 localPos, Vector3? scale = null)
-        {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent.transform, false);
-            go.transform.localPosition = localPos;
-            if (scale.HasValue) go.transform.localScale = scale.Value;
-            go.layer = parent.layer;
-            return go;
         }
     }
 
-    /// <summary>
-    /// The PlayerHUD canvas (reference resolution 1920x1080) rebuilt from the prefab's RectTransforms:
-    /// a portrait ring bottom-left (health = red radial fill, armor = blue radial fill) and the ammo
-    /// counter / ammo-type icon bottom-right, plus the crosshair.
-    /// </summary>
     public static class HudLayout
     {
         public static void Build(HudScreen hud)

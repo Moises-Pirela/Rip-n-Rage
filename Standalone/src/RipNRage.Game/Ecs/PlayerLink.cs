@@ -1,6 +1,5 @@
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
-using RipNRage.Engine.Ecs.Rendering;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Engine.Ecs.View;
 using RipNRage.Game.Content;
@@ -8,34 +7,17 @@ using RipNRage.Game.Content;
 namespace RipNRage.Game.Ecs
 {
     /// <summary>
-    /// MIGRATION BRIDGE (shrinks as layers 5–8 port the gameplay, gone in layer 9): ties the PlayerCharacter
-    /// GameObject to its ECS character entity. The entity is the truth — it is the body the solver moves — and this
-    /// copies its pose back onto the GameObject hierarchy every frame so the scripts that have not been ported yet
-    /// (combat, HUD, death sequence, save / load, the enemies' target lookups) keep reading
-    /// <c>PlayerState.Current.transform.position</c> and get the right answer.
-    ///
-    /// <para>The view is entities too (<see cref="PlayerViewRig"/>: a camera pivot and its camera child, carrying the
-    /// look angles, the head bob, the lens and the shake). The GameObject "Camera" / "WorldCamera" nodes follow those
-    /// entities from here, so the scripts that still read <c>Camera.main.transform</c> or the prefab's camera
-    /// transforms keep getting the real pose.</para>
+    /// The player (9.4: a static handle — the GameObject the facades hung off is gone). <see cref="Spawn"/> builds the
+    /// character entity (the force-driven capsule, locomotion, look, rage, health) and its view rig (pivot with the
+    /// bob, camera with the lens and shake); the statics are the scene-side surface the session, the save, the falls
+    /// and the automation probes use. Cleared by the scene reset (<see cref="Clear"/>).
     /// </summary>
-    public sealed class PlayerLink : MonoBehaviour
+    public static class PlayerLink
     {
-        /// <summary>The live player character entity (<see cref="Entity.Null"/> before the prefab finishes building).</summary>
+        /// <summary>The character entity (health, weapons, rage ride on it). Null when no level is up.</summary>
         public static Entity PlayerEntity { get; private set; } = Entity.Null;
-        public static PlayerLink Current { get; private set; }
-
-        public Entity entity { get; private set; }
-        /// <summary>The "Camera" pivot GameObject: follows <see cref="PivotEntity"/>.</summary>
-        public Transform cameraPivot;
-        /// <summary>The "WorldCamera" GameObject: follows <see cref="CameraEntity"/> (and carries the legacy Camera for unported scripts).</summary>
-        public Transform worldCamera;
-        /// <summary>The "Orientation" child: yaw only, the movement basis other scripts still read.</summary>
-        public Transform orientation;
-
-        /// <summary>The camera pivot entity (head bob + look angles); <see cref="Entity.Null"/> before the rig is built.</summary>
+        /// <summary>The view rig: the pivot carries the look angles and the bob, the camera the lens and the shake.</summary>
         public static Entity PivotEntity { get; private set; } = Entity.Null;
-        /// <summary>The camera entity the frame is rendered from (lens + shake).</summary>
         public static Entity CameraEntity { get; private set; } = Entity.Null;
 
         private static World W => Application.Current.World;
@@ -46,30 +28,25 @@ namespace RipNRage.Game.Ecs
         /// <summary>View rig values from the prefab: the "Camera" node sits 0.5 m above the body, lens fov 77.</summary>
         public const float PivotHeight = 0.5f, FieldOfView = 77f, BobFrequency = 15f, BobWaveLength = 0.1f;
 
-        /// <summary>
-        /// Creates the character entity for <paramref name="go"/> at its current transform: the force-driven capsule
-        /// (<see cref="Body"/> + <see cref="ColliderShape"/> + <see cref="CharacterMotor"/>) plus the player's own
-        /// locomotion and look components. Structural work goes through the command buffer, so the components are
-        /// not readable until the next sync point.
-        /// </summary>
-        public static PlayerLink Attach(GameObject go, Transform cameraPivot, Transform worldCamera, Transform orientation)
-        {
-            var link = go.AddComponent<PlayerLink>();
-            link.cameraPivot = cameraPivot;
-            link.worldCamera = worldCamera;
-            link.orientation = orientation;
+        public const float MaxHealthValue = 100f, MaxArmorValue = 100f;
 
-            // Created immediately: prefab building is not inside a system, and everything the build then does
-            // through checked accessors (PlayerState.Init on the Health component, the facades) must see a live
-            // entity — the AnimatedSprite lesson. The physics sync registers the body on its own next fixed step
-            // either way.
-            var cmd = W;
-            var e = cmd.CreateEntity();
-            cmd.Add(e, new LocalTransform { Position = go.transform.position, Rotation = Quaternion.identity, Scale = Vector3.one });
-            cmd.Add(e, new ColliderShape { Kind = ShapeKind.Capsule, Radius = Radius, Height = Height, Center = new Vector3(0f, CentreY, 0f) });
-            cmd.Add(e, new BodyConfig { mass = Mass, interpolate = true, freezeRotation = true, canSleep = false }.Bake());
-            cmd.Add(e, new BodyVelocity());
-            cmd.Add(e, new CollisionFilter { Layer = Layers.Player, Mask = ~0, UseLayerMatrix = true });
+        /// <summary>What the player stands on (the prefab's groundLayer 3895, as a collider-layer mask).</summary>
+        private const int GroundMask = ~0;
+        /// <summary>What the wall-run and roof probes treat as solid (the prefab's obstacleLayers 2304).</summary>
+        private const int ObstacleMask = (1 << Layers.Default) | (1 << Layers.Walkable) | (1 << Layers.Wall) | (1 << Layers.OnlyGroundCollision);
+
+        /// <summary>
+        /// Creates the character at <paramref name="position"/> facing <paramref name="yaw"/>. Entities are created
+        /// immediately (the build is not inside a system): everything the build does next must see them alive.
+        /// </summary>
+        public static void Spawn(World w, Vector3 position, float yaw)
+        {
+            var e = w.CreateEntity();
+            w.Add(e, new LocalTransform { Position = position, Rotation = Quaternion.identity, Scale = Vector3.one });
+            w.Add(e, new ColliderShape { Kind = ShapeKind.Capsule, Radius = Radius, Height = Height, Center = new Vector3(0f, CentreY, 0f) });
+            w.Add(e, new BodyConfig { mass = Mass, interpolate = true, freezeRotation = true, canSleep = false }.Bake());
+            w.Add(e, new BodyVelocity());
+            w.Add(e, new CollisionFilter { Layer = Layers.Player, Mask = ~0, UseLayerMatrix = true });
 
             var motor = new CharacterMotorConfig
             {
@@ -77,92 +54,99 @@ namespace RipNRage.Game.Ecs
                 rideHeight = RideHeight,
                 groundMask = GroundMask,
             }.Bake();
-            cmd.Add(e, motor);
+            w.Add(e, motor);
 
             var pm = new PlayerMotor { StandHeight = Height, ObstacleLayers = ObstacleMask, AirDashesLeft = 1, SettingsVersion = -1, PreviouslyGrounded = true };
             MovementSettings.Current.ApplyTo(ref pm);
-            cmd.Add(e, pm);
+            w.Add(e, pm);
 
-            cmd.Add(e, new PlayerLook
+            w.Add(e, new PlayerLook
             {
+                Yaw = yaw, // the look owns the whole view yaw; the body itself never rotates (freezeRotation)
                 Sensitivity = 5f, SensitivityMultiplier = 1f,
                 ZSwayAngle = 5f, ZSwayMultiplier = 100f, ZSmoothSway = -50f, ZSmoothLerp = 0f,
             });
-            cmd.Add(e, new PlayerTag());
+            w.Add(e, new PlayerTag());
             // falling out of the level is lethal (FallSystem, 8.4); the watch starts from the spawn, as if stood on
-            cmd.Add(e, new FallWatch { LastGrounded = go.transform.position, DropPosition = go.transform.position });
-            cmd.Add(e, new Rage()); // both meters empty, Normal
-            cmd.Add(e, new RageFx()); // what it looks and sounds like
+            w.Add(e, new FallWatch { LastGrounded = position, DropPosition = position });
+            w.Add(e, new Rage()); // both meters empty, Normal
+            w.Add(e, new RageFx()); // what it looks and sounds like
             // the player's trigger overlaps (checkpoints, water, pickups) have to be reported
-            cmd.Add(e, new ReportCollisions());
-            // hit points and armour (layer 5); PlayerState.Init overwrites both from the save data. Resistance 1:
-            // the player's armour eats a hit one for one, as the legacy PlayerState.TakeDamage override asked for.
-            cmd.Add(e, new RipNRage.Game.Ecs.Combat.Health { Current = PlayerState.MaxHealthValue, Max = PlayerState.MaxHealthValue });
-            cmd.Add(e, new RipNRage.Game.Ecs.Combat.Armor { Current = 0f, Max = PlayerState.MaxArmorValue, Resistance = 1f });
+            w.Add(e, new ReportCollisions());
+            // hit points and armour (layer 5). Resistance 1: the player's armour eats a hit one for one.
+            w.Add(e, new Combat.Health { Current = MaxHealthValue, Max = MaxHealthValue });
+            w.Add(e, new Combat.Armor { Current = MaxArmorValue, Max = MaxArmorValue, Resistance = 1f });
 
             // ---- the view rig: pivot (bob + look) -> camera (lens + shake), both children of the character ----
-            Vector3 pivotLocal = cameraPivot != null ? cameraPivot.localPosition : new Vector3(0f, PivotHeight, 0f);
-            var pivot = cmd.CreateEntity();
-            cmd.Add(pivot, new LocalTransform { Position = pivotLocal, Rotation = Quaternion.identity, Scale = Vector3.one });
-            cmd.Add(pivot, new Parent { Value = e });
-            cmd.Add(pivot, new ViewBob { Frequency = BobFrequency, WaveLength = BobWaveLength, BasePosition = pivotLocal });
+            Vector3 pivotLocal = new Vector3(0f, PivotHeight, 0f);
+            var pivot = w.CreateEntity();
+            w.Add(pivot, new LocalTransform { Position = pivotLocal, Rotation = Quaternion.identity, Scale = Vector3.one });
+            w.Add(pivot, new Parent { Value = e });
+            w.Add(pivot, new ViewBob { Frequency = BobFrequency, WaveLength = BobWaveLength, BasePosition = pivotLocal });
 
-            var camera = cmd.CreateEntity();
-            cmd.Add(camera, new LocalTransform { Position = Vector3.zero, Rotation = Quaternion.identity, Scale = Vector3.one });
-            cmd.Add(camera, new Parent { Value = pivot });
-            cmd.Add(camera, new CameraLensConfig { fov = FieldOfView, near = 0.05f, far = 2000f }.Bake());
-            cmd.Add(camera, CameraShake.Default);
+            var camera = w.CreateEntity();
+            w.Add(camera, new LocalTransform { Position = Vector3.zero, Rotation = Quaternion.identity, Scale = Vector3.one });
+            w.Add(camera, new Parent { Value = pivot });
+            w.Add(camera, new RipNRage.Engine.Ecs.Rendering.CameraLensConfig { fov = FieldOfView, near = 0.05f, far = 2000f }.Bake());
+            w.Add(camera, CameraShake.Default);
 
-            cmd.Add(e, new PlayerViewRig { Pivot = pivot, Camera = camera });
+            w.Add(e, new PlayerViewRig { Pivot = pivot, Camera = camera });
 
-            link.entity = e;
             PlayerEntity = e;
             PivotEntity = pivot;
             CameraEntity = camera;
-            Current = link;
-            EcsObjects.Register(e, go); // so trigger events naming this entity reach the player's GameObject
-            return link;
         }
 
-        /// <summary>What the player stands on (the prefab's groundLayer 3895, as a collider-layer mask).</summary>
-        private const int GroundMask = ~0;
-        /// <summary>What the wall-run and roof probes treat as solid (the prefab's obstacleLayers 2304).</summary>
-        private const int ObstacleMask = (1 << Layers.Default) | (1 << Layers.Walkable) | (1 << Layers.Wall) | (1 << Layers.OnlyGroundCollision);
+        /// <summary>The scene reset: the entities are destroyed with the world; the handles must not outlive them.</summary>
+        public static void Clear()
+        {
+            PlayerEntity = Entity.Null;
+            PivotEntity = Entity.Null;
+            CameraEntity = Entity.Null;
+        }
 
-        // ---------------------------------------------------------------- component access for the legacy scripts
+        // ---------------------------------------------------------------- the scene-side surface
 
-        public bool Alive => W != null && W.IsAlive(entity);
-        public ref PlayerMotor Motor => ref W.Get<PlayerMotor>(entity);
-        public ref CharacterMotor Character => ref W.Get<CharacterMotor>(entity);
-        public ref PlayerLook Look => ref W.Get<PlayerLook>(entity);
-        public bool HasMotor => Alive && W.Has<PlayerMotor>(entity) && W.Has<CharacterMotor>(entity);
+        public static bool Alive => !PlayerEntity.IsNull && W != null && W.IsAlive(PlayerEntity);
+        public static ref PlayerMotor Motor => ref W.Get<PlayerMotor>(PlayerEntity);
+        public static ref CharacterMotor Character => ref W.Get<CharacterMotor>(PlayerEntity);
+        public static ref PlayerLook Look => ref W.Get<PlayerLook>(PlayerEntity);
+        public static bool HasMotor => Alive && W.Has<PlayerMotor>(PlayerEntity) && W.Has<CharacterMotor>(PlayerEntity);
 
-        public Vector3 Velocity => Alive && W.Has<BodyVelocity>(entity) ? W.Get<BodyVelocity>(entity).Linear : Vector3.zero;
-        public bool IsGrounded => HasMotor && Character.IsGrounded;
+        public static Vector3 Velocity => Alive && W.Has<BodyVelocity>(PlayerEntity) ? W.Get<BodyVelocity>(PlayerEntity).Linear : Vector3.zero;
+        public static bool IsGrounded => HasMotor && Character.IsGrounded;
+        public static Vector3 Position => Alive && W.Has<LocalTransform>(PlayerEntity) ? W.Get<LocalTransform>(PlayerEntity).Position : Vector3.zero;
+        public static float Yaw => Alive && W.Has<PlayerLook>(PlayerEntity) ? W.Get<PlayerLook>(PlayerEntity).Yaw : 0f;
 
-        /// <summary>Puts the body somewhere else at rest (fall respawn, save load, teleports).</summary>
-        public void Teleport(Vector3 position, float yaw)
+        public static float Health => Alive && W.Has<Combat.Health>(PlayerEntity) ? W.Get<Combat.Health>(PlayerEntity).Current : 0f;
+        public static float Armor => Alive && W.Has<Combat.Armor>(PlayerEntity) ? W.Get<Combat.Armor>(PlayerEntity).Current : 0f;
+        public static bool IsDead => Alive && (W.Has<Combat.Dead>(PlayerEntity) || Health <= 0f);
+
+        /// <summary>Scripted damage from nowhere in particular (the probes; applied by HealthSystem at end of frame).</summary>
+        public static void TakeDamage(float amount)
         {
             if (!Alive) return;
-            if (W.Has<LocalTransform>(entity))
+            W.Post(new Combat.DamageEvent { Target = PlayerEntity, Amount = amount, Point = Position, Direction = Vector3.forward });
+        }
+
+        /// <summary>Puts the body somewhere else at rest (fall respawn, save load, teleports).</summary>
+        public static void Teleport(Vector3 position, float yaw)
+        {
+            if (!Alive) return;
+            if (W.Has<LocalTransform>(PlayerEntity))
             {
-                ref var lt = ref W.Get<LocalTransform>(entity);
+                ref var lt = ref W.Get<LocalTransform>(PlayerEntity);
                 lt.Position = position; // the physics sync reads a LocalTransform write as a teleport
             }
             ResetVelocity();
-            if (W.Has<PlayerLook>(entity)) { ref var l = ref W.Get<PlayerLook>(entity); l.Yaw = yaw; l.Pitch = 0f; }
-            transform.position = position;
-            // PlayerLook owns the whole view yaw now, and the camera pivot is a child of this transform: leaving the
-            // spawn rotation on the root would add it a second time, aiming the camera and the movement in different
-            // directions (the legacy controller kept the yaw relative to a rotated root instead).
-            transform.rotation = Quaternion.identity;
+            if (W.Has<PlayerLook>(PlayerEntity)) { ref var l = ref W.Get<PlayerLook>(PlayerEntity); l.Yaw = yaw; l.Pitch = 0f; }
         }
 
         /// <summary>Drops every accumulated velocity and cancels the special moves.</summary>
-        public void ResetVelocity()
+        public static void ResetVelocity()
         {
             if (!Alive) return;
-            if (W.Has<BodyVelocity>(entity)) { ref var v = ref W.Get<BodyVelocity>(entity); v.Linear = Vector3.zero; v.Angular = Vector3.zero; }
+            if (W.Has<BodyVelocity>(PlayerEntity)) { ref var v = ref W.Get<BodyVelocity>(PlayerEntity); v.Linear = Vector3.zero; v.Angular = Vector3.zero; }
             if (!HasMotor) return;
             ref var m = ref Motor;
             ref var c = ref Character;
@@ -172,56 +156,6 @@ namespace RipNRage.Game.Ecs
             m.InAirTimer = 0f;
             c.PendingStopDash = true;
             c.Desired = Vector3.zero;
-        }
-
-        /// <summary>Knockback / rocket jump as a velocity change on the body.</summary>
-        public void AddImpulse(Vector3 impulse)
-        {
-            const float maxImpulse = 40f; // defensive cap: a mistuned knockback must not fling the player into orbit
-            if (impulse.sqrMagnitude > maxImpulse * maxImpulse) impulse = impulse.normalized * maxImpulse;
-            if (!HasMotor) return;
-            ref var c = ref Character;
-            if (c.IsDashing) c.PendingStopDash = true;
-            c.PendingImpulse += impulse;
-        }
-
-        // ---------------------------------------------------------------- per-frame bridge
-
-        /// <summary>
-        /// The entity is created while the prefab is being built, before <c>Instantiate</c> places the GameObject, so
-        /// the spawn position only exists on the transform. The first frame hands it over (GameObject → entity);
-        /// after that the entity is the truth and the transform follows it.
-        /// </summary>
-        private bool _spawned;
-
-        protected override void LateUpdate()
-        {
-            if (!Alive || !W.Has<LocalTransform>(entity)) return;
-
-            if (!_spawned)
-            {
-                _spawned = true;
-                Teleport(transform.position, transform.rotation.eulerAngles.y);
-                return;
-            }
-
-            // the entity is the truth: the GameObject hierarchy follows it
-            transform.position = W.Get<LocalTransform>(entity).Position;
-
-            if (W.Has<PlayerLook>(entity) && orientation != null)
-                orientation.localRotation = Quaternion.Euler(0f, W.Get<PlayerLook>(entity).Yaw, 0f);
-
-            // The camera GameObjects are not copied here: the rig's pose is written later in the frame (the ECS
-            // LateTick runs after the scene), so PlayerViewFollowSystem does it at the end of the ECS frame instead
-            // and Camera.main is current rather than a frame behind.
-        }
-
-        protected override void OnDestroy()
-        {
-            EcsObjects.Unregister(entity);
-            // the rig entities are children of the character: destroying it destroys them (HierarchySystem)
-            if (Current == this) { Current = null; PlayerEntity = Entity.Null; PivotEntity = Entity.Null; CameraEntity = Entity.Null; }
-            if (Alive) W.Commands.DestroyEntity(entity);
         }
     }
 }

@@ -1615,14 +1615,42 @@ acceptable where drawing moves onto entities.
         `die` / `look` shots 0.000%, `menu` 0.021% (192 px: the swing camera's clock reads one tick apart);
         `vfx` and `rocket` clean under `--validate-access`. **Census: level 12 GameObjects, 8 behaviours, 0 meshes /
         sprites / lights / cameras; title 1 GameObject** (the session holder, `VfxRuntime`). Two sweeps identical.
-- [ ] 9.4 **The player's GameObject half**: `PlayerState` / `EntityState` (the hit kick a system), `CombatController`
-      (the viewmodel equip a function, `OnFireWeapon` an event), `PlayerInputActions`, `FPSController`,
-      `FPSCameraController`; `PlayerLink` a static helper; `EcsObjects`, `PlayerViewFollowSystem` and the probes'
-      facade reads go; the save applies straight after the build; the schedule re-pinned.
-- [ ] 9.5 **Session leftovers**: `VfxRuntime` off GameObjects; the "GameSession" holder goes.
-- [ ] 9.6 **The tools**: Editor, AnimEditor, SkeletonEditor and VfxEditor previews on entities, their controllers
-      screens or frame hooks; the Benchmark's GameObject camera.
-- [ ] 9.7 **Delete the legacy model**; `Application` runs only the `World`, which drives its own fixed loop.
+- [x] 9.4–9.7 **GameObject-land deleted, one pass** (done; taken together at review: "nuke it and see what breaks").
+      **Deleted from the engine**: `GameObject` / `Component`, `Behaviour`, `Transform`, `Scene` (the update passes,
+      the coroutines and the fixed loop), `Coroutine`, `Renderer` / `SpriteRenderer` / `MeshRenderer` / `Camera` /
+      `Light`, `LegacySceneProducer`, the `Transform` tween extensions, `ParticleWorld`'s legacy follow. What they
+      carried moved out first: `EngineObject` and `RenderLayer` to their own files, `RenderSettings` and the default
+      materials to `RenderDefaults.cs`, **the fixed-step loop into `Application`** (`MaxFixedSteps`, `FixedAlpha`,
+      `FixedStepsLastFrame`; `World.RunFixed` under the same "fixed physics" profiler stage the bench reads).
+      **Deleted from the game**: `PlayerState` / `EntityState`, `PlayerInputActions`, `FPSController`,
+      `FPSCameraController`, `WeaponAnimationEvents`, `EcsObjects`, `EnragedInjector`, `PlayerViewFollowSystem`,
+      `VfxRuntime` and the session holder, `MonoBehaviour` / `Prefab` / `ScriptableObject` / `UnityEvent` (the
+      inspector attributes stay; `WeaponData` is a plain class with its own `name`).
+      - **The player is `PlayerLink.Spawn`** (entities only, spawned facing its yaw — no first-frame hand-off) plus
+        statics for the scene side (`Teleport`, `ResetVelocity`, `Position` / `Health` / `IsDead` / `TakeDamage` for
+        the probes and the save; cleared by the scene reset). `CombatController` is a static (the equip retargets the
+        viewmodel sprite entity and computes **`WeaponFireSystem.ProjectileSpawnLocal`** — was the ProjectileSpawn
+        node); **`WeaponSelectSystem`** dispatches the weapon keys; **`HitFeedbackSystem`** (was the combat bridge)
+        kicks the camera and flashes the crosshair; the weapon clip events are a plain callback.
+      - **The tools run on screens and entities**: the level editor (an entity preview per class via
+        `EntityDefinition.previewEntity`, chunk handles reused through `AssetRegistry.Replace` so edits do not leak
+        meshes, picking through `CameraView`'s ray math), the anim / skeleton editors (previews are `AnimatedSprite`
+        entities — it gained `sprite` / `color` / `sortingOrder` / `SetParent`), the vfx editor (trail dummy an
+        entity) and the benchmark (scenario statics as entities, the camera a lens entity). Found on the way: screens
+        have no lifecycle, so `Start` must be called after wiring (the editor crashed with its document unset, the
+        benchmark with its config unset).
+      - **`InputOverride.Scripted`** (new): a scripted run never reads the real devices — an unset override is
+        neutral, not the mouse. Found by the gates: on this desktop other sessions' windows steal focus and a human
+        may touch the mouse, and one sweep's `evade` picked up real clicks (Fury from shots the script never fired),
+        another's `checkpoint` a look kick (x −0.87). Simulated keys still work (they go through the key state).
+      - **Gates**: 415 gameplay assertions; engine 190 (`TransformChecks` deleted with its subject); schedule
+        re-pinned **25 Tick / 9 LateTick** (`WeaponSelectSystem` last; `PlayerViewFollowSystem` gone). All 26
+        scripts pass; two sweeps byte-identical, all four shots 0.000% across runs. **Census: `legacy gone` — zero
+        GameObjects anywhere.** Re-baselined vs 9.3: the player spawns ~2 walking frames ahead (the GameObject
+        hand-off used to eat the first frames; `saveload` saves at z −15.13, was −14.66), AI distances ±0.3 m;
+        `walk` / `die` / `look` shots are the same picture at 9.5% / 7.5% / 2.9% past 8/255; `menu` pixel-identical.
+        The editor, anim, skeleton and vfx tools and the bench run clean (`crates` 11.2 ms/step, the known
+        over-budget verdict on this Mac).
 - [ ] 9.8 Close-out: every gate, the bench, README.
 
 ### Layer 10 — Editors on configs

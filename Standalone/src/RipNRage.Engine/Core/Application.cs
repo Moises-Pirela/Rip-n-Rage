@@ -62,7 +62,13 @@ namespace RipNRage.Engine
 
         public Window Window { get; private set; }
         public RenderPipeline Renderer { get; private set; }
-        public Scene Scene { get; private set; }
+        /// <summary>The fixed clock (9.7: was the Scene's): steps run before the variable-rate world update.</summary>
+        public static int MaxFixedSteps = 8;
+        private float _fixedAccumulator;
+        /// <summary>FixedTick steps run in the last frame (8 = the clamp hit: the simulation is falling behind real time).</summary>
+        public int FixedStepsLastFrame { get; private set; }
+        /// <summary>How far the frame is between fixed steps (0..1): the interpolation factor for fixed-step motion.</summary>
+        public float FixedAlpha => Time.fixedDeltaTime > 0f ? Mathf.Clamp01(_fixedAccumulator / Time.fixedDeltaTime) : 1f;
         /// <summary>The ECS world. Engine systems (transforms, hierarchy) are registered; games add theirs with AddSystemsFromAssemblies.</summary>
         public Ecs.World World { get; private set; }
         public ApplicationOptions Options { get; }
@@ -127,21 +133,15 @@ namespace RipNRage.Engine
             Renderer = new RenderPipeline();
             World = new Ecs.World();
             World.AddSystemsFromAssemblies(typeof(Ecs.World).Assembly); // engine systems
-            // One fixed clock: the scene's fixed loop runs the ECS FixedTick, whose PhysicsStepSystem steps the one
-            // simulation (sync -> step -> write-back). Scene no longer calls Physics.FixedStep itself here.
+            // One fixed clock, the application's (9.7: the Scene owned it): the loop below runs the ECS FixedTick,
+            // whose PhysicsStepSystem steps the one simulation (sync -> step -> write-back).
             World.DriveFixedInternally = false;
-            // Ragdoll pieces billboard towards the active camera: the ECS camera the frame is actually rendered from,
-            // falling back to a legacy Camera.main while a scene has no camera entity (the editors' preview rigs).
+            // Ragdoll pieces billboard towards the active camera: the camera entity the frame is rendered from.
             var cameraQuery = Ecs.View.ActiveCamera.BuildQuery(World);
             Ecs.Destruction.RagdollSystem.Viewer = () =>
-                Ecs.View.ActiveCamera.TryGet(cameraQuery, out var pose, out _) ? pose.Position
-                : Graphics.Camera.main != null ? Graphics.Camera.main.transform.position : Vector3.zero;
-            Scene.FixedPhysicsStep = dt => World.RunFixed(dt);
-            Renderer.Producers.Add(new Ecs.Rendering.EcsRenderProducer(World)); // first: an ECS camera wins over a legacy one
-            // ECS migration: the GameObject scene still feeds the renderer until gameplay is ported (see LegacySceneProducer)
-            Renderer.Producers.Add(new Graphics.LegacySceneProducer(() => Scene));
+                Ecs.View.ActiveCamera.TryGet(cameraQuery, out var pose, out _) ? pose.Position : Vector3.zero;
+            Renderer.Producers.Add(new Ecs.Rendering.EcsRenderProducer(World));
             if (!options.Mute) AudioEngine.Initialize();
-            Scene = new Scene();
 
             string cfg = TunablesFile.Locate(options.TunablesPath);
             if (cfg != null)
@@ -221,19 +221,16 @@ namespace RipNRage.Engine
 
         public static void Quit() { if (Current != null) Current._quit = true; }
 
-        /// <summary>Destroys every GameObject and starts a fresh scene (level restart / load game).</summary>
+        /// <summary>Destroys every entity, screen, effect and tween and resets the clock (level restart / load game).</summary>
         public void ResetScene()
         {
-            foreach (var go in new List<GameObject>(Scene.GameObjects))
-                if (!go.destroyed && go.transform.parent == null) GameObject.DestroyImmediate(go);
-            Graphics.Camera.main = null;
             Graphics.Particles.ParticleWorld.Clear();
             Renderer.GpuOcclusion?.Reset();
             InputSystem.ClearUiOwners();
             UiScreens.Clear();
-            Tweening.TweenRunner.Update(0f);
+            Tweening.TweenRunner.KillEverything();
             World.DestroyAllEntities();
-            Scene = new Scene();
+            _fixedAccumulator = 0f;
             Time.timeScale = 1f;
         }
 
@@ -276,15 +273,35 @@ namespace RipNRage.Engine
                 Profiler.End();
 
                 Profiler.Begin("scene");
-                UiScreens.UpdateAll(); // the non-GameObject screens and the session's deferred work, before the scene
-                Scene.Tick(dt);
+                UiScreens.UpdateAll(); // the screens and the session's deferred work, before the frame's simulation
+                Time.Advance(dt);
+                // the fixed steps (9.7: the application owns the clock the Scene used to)
+                _fixedAccumulator += Time.deltaTime;
+                int steps = 0;
+                float savedDt = Time.deltaTime;
+                int maxSteps = Math.Max(1, MaxFixedSteps);
+                while (_fixedAccumulator >= Time.fixedDeltaTime && steps < maxSteps)
+                {
+                    _fixedAccumulator -= Time.fixedDeltaTime;
+                    Time.fixedTime += Time.fixedDeltaTime;
+                    Time.inFixedTimeStep = true;
+                    Time.deltaTime = Time.fixedDeltaTime;
+                    Profiler.Begin("fixed physics"); // the stage the bench and the perf CSV have always timed steps under
+                    World.RunFixed(Time.fixedDeltaTime);
+                    Profiler.End();
+                    steps++;
+                }
+                Time.inFixedTimeStep = false;
+                Time.deltaTime = savedDt;
+                if (steps >= maxSteps) _fixedAccumulator = 0f;
+                FixedStepsLastFrame = steps;
                 Profiler.End();
                 Profiler.Begin("physics");
                 Physics.Step();
                 Profiler.End();
                 Profiler.Begin("ecs");
                 World.FixedDeltaTime = Time.fixedDeltaTime;
-                World.FixedAlpha = Scene.FixedAlpha;
+                World.FixedAlpha = FixedAlpha;
                 World.Update(Time.deltaTime);
                 Profiler.End();
                 Profiler.Begin("tweens");

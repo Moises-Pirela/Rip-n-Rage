@@ -8,17 +8,13 @@ namespace RipNRage.Game.Content.Level
     /// <summary>Result of loading a level into the scene.</summary>
     public sealed class LoadedLevel
     {
-        public GameObject root;
         public MapDocument document;
         public Vector3 playerStart = new Vector3(0, 2.6f, 0);
         public Quaternion playerRotation = Quaternion.identity;
         /// <summary>World Y below which the player is respawned (worldspawn kill_y, else 1 m under the water plane, else 5 m under the lowest brush).</summary>
         public float killY = -50f;
-        public readonly List<GameObject> entityObjects = new List<GameObject>();
-        /// <summary>Spawned preview objects by their <c>targetname</c> key (the editor; the game's are entities).</summary>
-        public readonly Dictionary<string, GameObject> named = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
-
-        public GameObject Find(string targetname) => !string.IsNullOrEmpty(targetname) && named.TryGetValue(targetname, out var go) && go != null && !go.IsDestroyed ? go : null;
+        /// <summary>The editor's preview entities (9.6: a rebuild destroys them; children follow their parents).</summary>
+        public readonly List<RipNRage.Engine.Ecs.Entity> previewEntities = new List<RipNRage.Engine.Ecs.Entity>();
 
         /// <summary>A named spawn and where it stood when the level was built (9.2: the connectors' pose math — the
         /// entity itself goes through the command buffer and is not alive until playback).</summary>
@@ -46,6 +42,7 @@ namespace RipNRage.Game.Content.Level
         }
 
         private static string _chunkKey;
+        private static readonly List<RipNRage.Engine.Ecs.AssetHandle<Mesh>> _previewChunkHandles = new List<RipNRage.Engine.Ecs.AssetHandle<Mesh>>();
         private static readonly Dictionary<string, (string tex, RipNRage.Engine.Ecs.AssetHandle<Mesh> mesh)[]> _chunks =
             new Dictionary<string, (string, RipNRage.Engine.Ecs.AssetHandle<Mesh>)[]>();
 
@@ -63,9 +60,8 @@ namespace RipNRage.Game.Content.Level
 
         public static LoadedLevel Load(MapDocument doc, bool preview = false)
         {
-            // the game is entities throughout (9.2); the root GameObject carries the editor's preview objects only
-            var level = new LoadedLevel { document = doc, root = preview ? new GameObject("Level") : null };
-            BuildBrushes(doc, level.root, preview);
+            var level = new LoadedLevel { document = doc };
+            BuildBrushes(doc, level, preview);
             ApplyWorldspawn(doc.worldspawn);
             level.killY = ComputeKillY(doc);
 
@@ -90,28 +86,11 @@ namespace RipNRage.Game.Content.Level
                         if (def.deferred != (pass == 1)) continue;
                         try
                         {
-                            if (!preview && def.spawnEntity != null)
-                            {
-                                var w = Application.Current.World;
-                                var ent = def.spawnEntity(e);
-                                if (w.IsAlive(ent) && w.Has<RipNRage.Game.Ecs.AI.LevelRef>(ent))
-                                    w.Get<RipNRage.Game.Ecs.AI.LevelRef>(ent).Index = index;
-                                continue;
-                            }
-                            if (!preview)
-                            {
-                                // every game class spawns entities now (9.2); a class with only a preview is editor-only
-                                if (def.spawn != null) Debug.LogWarning($"level: {e.classname} has no entity spawn (skipped in game)");
-                                continue;
-                            }
-                            var go = (def.preview ?? def.spawn)?.Invoke(e);
-                            if (go != null)
-                            {
-                                go.transform.SetParent(level.root.transform, true);
-                                level.entityObjects.Add(go);
-                                string targetname = e.Get("targetname");
-                                if (!string.IsNullOrEmpty(targetname)) level.named[targetname] = go;
-                            }
+                            var w = Application.Current.World;
+                            var ent = (preview ? (def.previewEntity ?? def.spawnEntity) : def.spawnEntity)?.Invoke(e) ?? RipNRage.Engine.Ecs.Entity.Null;
+                            if (!preview && w.IsAlive(ent) && w.Has<RipNRage.Game.Ecs.AI.LevelRef>(ent))
+                                w.Get<RipNRage.Game.Ecs.AI.LevelRef>(ent).Index = index;
+                            if (preview && !ent.IsNull) level.previewEntities.Add(ent);
                         }
                         catch (Exception ex) { Debug.LogError($"level: failed to spawn {e.classname}: {ex.Message}"); }
                     }
@@ -136,19 +115,11 @@ namespace RipNRage.Game.Content.Level
         /// <summary>Level meshes are split into cubes of this size (metres) for culling.</summary>
         public static float MeshChunkSize = 16f;
 
-        /// <summary>Brush geometry + collision only (used by the editor when rebuilding after edits).</summary>
-        public static GameObject BuildBrushes(MapDocument doc, GameObject parent, bool preview)
+        /// <summary>Brush geometry + collision (the editor's preview: visuals only, invisible textures shown pink,
+        /// chunk mesh handles reused per rebuild — an edit must not intern fresh copies).</summary>
+        public static void BuildBrushes(MapDocument doc, LoadedLevel level, bool preview)
         {
-            GameObject geo = null;
-            if (preview)
-            {
-                geo = new GameObject("Brushes");
-                geo.transform.SetParent(parent.transform, false);
-                geo.layer = Layers.Walkable;
-            }
-
-            // chunked so the renderer can frustum/occlusion-cull parts of the level; every opaque chunk is an occluder.
-            // The game draws them as entities (9.1); the editor's preview keeps GameObjects until the tools are ported.
+            // chunked so the renderer can frustum/occlusion-cull parts of the level; every opaque chunk is an occluder
             if (!preview)
             {
                 foreach (var (texName, handle) in Chunks(doc))
@@ -160,22 +131,26 @@ namespace RipNRage.Game.Content.Level
                     LevelVisuals.Spawn(Vector3.zero, in r);
                 }
             }
-            else foreach (var (texName, mesh) in LevelMeshBuilder.BuildChunked(doc.Brushes, MeshChunkSize))
+            else
             {
-                var tex = LevelTextures.Get(texName);
-                if (!tex.visible && !preview) continue;
-                var go = new GameObject("mesh_" + texName);
-                go.transform.SetParent(geo.transform, false);
-                go.layer = Layers.Walkable;
-                var mr = go.AddComponent<MeshRenderer>();
-                mr.mesh = mesh;
-                mr.texture = tex.Texture;
-                mr.color = tex.tint;
-                mr.uvScale = Vector2.one;
-                if (tex.material != null) mr.material = tex.material();
-                mr.occluder = tex.visible && !tex.transparent; // transparent materials (water, glass) are skipped by the renderer
-                if (tex.transparent) { mr.transparent = true; mr.castsShadow = false; }
-                if (!tex.visible) { mr.color = new Color(1f, 0.5f, 1f, 0.35f); mr.transparent = true; mr.castsShadow = false; }
+                int i = 0;
+                foreach (var (texName, mesh) in LevelMeshBuilder.BuildChunked(doc.Brushes, MeshChunkSize))
+                {
+                    RipNRage.Engine.Ecs.AssetHandle<Mesh> handle;
+                    if (i < _previewChunkHandles.Count)
+                    {
+                        handle = _previewChunkHandles[i];
+                        RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Replace(handle, mesh);
+                    }
+                    else _previewChunkHandles.Add(handle = RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Intern(mesh));
+                    i++;
+                    var tex = LevelTextures.Get(texName);
+                    bool hiddenTex = !tex.visible;
+                    var r = LevelVisuals.Render(handle, tex.Texture, hiddenTex ? new Color(1f, 0.5f, 1f, 0.35f) : tex.tint,
+                                              tex.material?.Invoke(), transparent: tex.transparent || hiddenTex,
+                                              castsShadow: !(tex.transparent || hiddenTex));
+                    level.previewEntities.Add(LevelVisuals.Spawn(Vector3.zero, in r));
+                }
             }
 
             if (!preview)
@@ -202,7 +177,6 @@ namespace RipNRage.Game.Content.Level
                     Surfaces.TagFaces(world, collider, new RipNRage.Game.Ecs.BrushFaces(normals, ids, ids.Length > 0 ? ids[0] : 0));
                 }
             }
-            return geo;
         }
 
         /// <summary>Optional worldspawn keys override the lighting config: sun_elevation, sun_azimuth, sun_color, sky_zenith, sky_horizon, fog_color.</summary>

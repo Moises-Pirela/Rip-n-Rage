@@ -17,7 +17,7 @@ namespace RipNRage.VfxEditor
     /// in the air, looping. Edits apply to the running instance immediately; files are written with Ctrl+S and a
     /// running game hot-reloads them.
     /// </summary>
-    public sealed partial class VfxEditor : Behaviour, IUiDrawer
+    public sealed partial class VfxEditor : RipNRage.Engine.Graphics.IUiScreen
     {
         public PreviewRig rig;
         public string startEffect;
@@ -74,7 +74,7 @@ namespace RipNRage.VfxEditor
 
         // ------------------------------------------------------------------ lifecycle
 
-        protected override void Start()
+        public void Start()
         {
             VfxLibrary.SuppressPolling = true; // the editor is the writer
             _imgui = new ImGuiController(layoutName: "vfx-editor");
@@ -87,7 +87,7 @@ namespace RipNRage.VfxEditor
             Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
         }
 
-        protected override void OnDestroy()
+        public void Close()
         {
             VfxLibrary.Reloaded -= RefreshNames;
             VfxLibrary.SuppressPolling = false;
@@ -144,15 +144,15 @@ namespace RipNRage.VfxEditor
         public void Respawn()
         {
             if (_instance != null) { ParticleWorld.Remove(_instance); _instance = null; }
-            if (rig?.trailDummy != null) rig.trailDummy.gameObject.SetActive(false);
+            if (rig?.trailDummy != null) rig.trailDummy.Active = false;
             if (_effect == null) return;
             if (IsTrail(_effect))
             {
                 var dummy = rig.trailDummy;
-                dummy.gameObject.SetActive(true);
+                dummy.Active = true;
                 dummy.center = new Vector3(0f, 1.6f, 1.8f);
-                _instance = ParticleWorld.Spawn(_effect, dummy.transform.position, -dummy.transform.forward);
-                _instance.Follow(dummy.transform, default, backwards: true);
+                _instance = ParticleWorld.Spawn(_effect, dummy.Position, -dummy.Forward);
+                _instance.Follow(dummy.Entity, default, backwards: true);
             }
             else if (IsTracer(_effect))
             {
@@ -340,7 +340,7 @@ namespace RipNRage.VfxEditor
 
         // ------------------------------------------------------------------ per-frame
 
-        protected override void Update()
+        public void Update()
         {
             // one ImGui frame per rendered frame; the panels are declared below, ImGui is drawn after the UI pass
             _imgui.NewFrame(Application.Current.Window);
@@ -399,7 +399,7 @@ namespace RipNRage.VfxEditor
                 if (_replayTimer > 0.6f) Respawn();
             }
             if (_respawn && !ImGui.IsAnyItemActive()) { _respawn = false; Respawn(); }
-            if (_instance != null && _instance.follow == null && !IsTrail(_effect) && !IsTracer(_effect))
+            if (_instance != null && _instance.followEntity.IsNull && !IsTrail(_effect) && !IsTracer(_effect))
             {
                 // keep a running instance glued to the anchor (it may have been moved by a click while dragging)
                 _instance.position = _anchorPos;
@@ -451,10 +451,10 @@ namespace RipNRage.VfxEditor
 
         private void UpdateCamera()
         {
-            var cam = rig.camera.transform;
             Quaternion rot = Quaternion.Euler(_pitch, _yaw, 0f);
-            cam.position = _orbitTarget - rot * Vector3.forward * _distance;
-            cam.rotation = rot;
+            rig.camera.Position = _orbitTarget - rot * Vector3.forward * _distance;
+            rig.camera.Rotation = rot;
+            rig.ApplyCamera();
         }
 
         private string SurfaceName() => _surfaceMode == 1 ? "FLOOR" : _surfaceMode == 2 ? "AIR" : "WALL";

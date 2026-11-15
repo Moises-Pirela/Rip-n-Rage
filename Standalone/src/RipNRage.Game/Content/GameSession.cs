@@ -38,8 +38,6 @@ namespace RipNRage.Game.Content
             InputSystem.LockCursorInGameplay = true; // the gameplay scheme locks the mouse; UI screens release it
             LevelBuild.Build(levelPath);
             UiScreens.Add(new PauseMenu());
-            var tools = CreateSessionObject();
-            tools.AddComponent<VfxRuntime>();
             OnSceneBuilt?.Invoke();
         }
 
@@ -56,8 +54,6 @@ namespace RipNRage.Game.Content
             LevelBuild.Build(level, spawnPlayer: false);
             RipNRage.Game.Ecs.Flows.BeginTitle();
             UiScreens.Add(new MainMenuScreen());
-            var tools = CreateSessionObject();
-            tools.AddComponent<VfxRuntime>();
             OnSceneBuilt?.Invoke(); // the debug overlay and the automation scripts drive the title screen too (8.8)
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
@@ -80,6 +76,7 @@ namespace RipNRage.Game.Content
             var move = RipNRage.Game.Ecs.Flows.TakePending();
             if (move != RipNRage.Game.Ecs.FlowAction.None) Carry(move);
             if (_afterBuild != null && !_afterBuild.MoveNext()) _afterBuild = null;
+            GameVfxReload.Poll(); // vfx_bindings.json hot reload (9.4: was the VfxRuntime MonoBehaviour)
         }
 
         /// <summary>
@@ -127,14 +124,11 @@ namespace RipNRage.Game.Content
         private static void ResetWorld()
         {
             Application.Current.ResetScene();
-            EnragedInjector<CombatController>.Reset();
-            EnragedInjector<PlayerInputActions>.Reset();
+            RipNRage.Game.Ecs.PlayerLink.Clear(); // the handles must not outlive their entities
             RenderSettings.drawSky = true; // EnterWaterCollision may have hidden it when the old scene died under water
             _afterBuild = null; // a load still waiting for the old scene's player is void
         }
 
-        /// <summary>The holder of the session's remaining GameObject tools (the VFX runtime, the debug overlay and the
-        /// automation scripts <see cref="OnSceneBuilt"/> adds, the title screen) — no behaviour of its own.</summary>
-        private static GameObject CreateSessionObject() => new GameObject("GameSession");
+
     }
 }

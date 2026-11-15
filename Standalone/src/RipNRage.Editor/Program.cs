@@ -52,16 +52,10 @@ namespace RipNRage.Editor
                 Materials.Load();
                 MovementSettings.Attach(app); // the physics panel edits tunables.cfg [movement] too
 
-                var camGo = new GameObject("EditorCamera");
-                var cam = camGo.AddComponent<Camera>();
-                cam.fieldOfView = 70f; cam.nearClipPlane = 0.1f; cam.farClipPlane = 3000f;
-                Camera.main = cam;
-                var fly = camGo.AddComponent<EditorCamera>();
-                camGo.transform.position = new Vector3(0f, 14f, 30f);
-                fly.yaw = 180f; fly.pitch = 22f;
+                var fly = UiScreens.Add(new EditorCamera { yaw = 180f, pitch = 22f, position = new Vector3(0f, 14f, 30f) });
+                fly.Apply();
 
-                var ctrlGo = new GameObject("Editor");
-                var editor = ctrlGo.AddComponent<EditorController>();
+                var editor = UiScreens.Add(new EditorController());
                 editor.cam = fly;
 
                 if (file != null)
@@ -77,7 +71,8 @@ namespace RipNRage.Editor
                     foreach (var b in MapFile.ImportObjBrushes(importObj, importScale, true, Vector3.zero, "planks", 8f)) editor.doc.Brushes.Add(b);
                     Debug.LogWarning($"Imported {editor.doc.Brushes.Count} brushes from {importObj}");
                 }
-                if (script != null) ctrlGo.AddComponent<EditorScript>().scriptName = script;
+                editor.Start(); // after the document is in place (9.6: the scene no longer calls lifecycle hooks)
+                if (script != null) UiScreens.Add(new EditorScript { scriptName = script, Editor = editor });
 
                 app.Run();
                 return 0;
@@ -91,11 +86,14 @@ namespace RipNRage.Editor
     }
 
     /// <summary>Scripted interactions for automated screenshots/tests of the editor (drives the real input paths).</summary>
-    public class EditorScript : Behaviour
+    public class EditorScript : IUiScreen
     {
         public string scriptName = "";
+        public EditorController Editor;
         private int _frame;
         private EditorController _ed;
+        public void DrawUi(UiBatch ui) { }
+        public void Close() { }
 
         private static Vector2 Px(float nx, float ny)
         {
@@ -106,10 +104,10 @@ namespace RipNRage.Editor
         private static void Tap(KeyCode k) { Input.SimulateKey(k, true); }
         private static void Release(KeyCode k) { Input.SimulateKey(k, false); }
 
-        protected override void Update()
+        public void Update()
         {
             _frame++;
-            _ed ??= GetComponent<EditorController>();
+            _ed ??= Editor;
             switch (scriptName)
             {
                 case "paint":

@@ -62,6 +62,14 @@ namespace RipNRage.Engine.Ecs.Input
         /// </summary>
         public static bool Blocked;
 
+        /// <summary>
+        /// A script is driving (9.7): the real devices are not read at all — an unset override is neutral, not the
+        /// mouse. The gate sweeps run on a desktop where other windows steal focus and a human may touch the mouse;
+        /// without this a focus switch or a stray click leaks into a "deterministic" run as a look kick or a shot.
+        /// Simulated keys (menus, developer keys) still work: they go through the key state, not the devices.
+        /// </summary>
+        public static bool Scripted;
+
         private static bool _jumpOnce;
         /// <summary>Queues a single jump press (the scripts' old <c>OnJump()</c>).</summary>
         public static void JumpOnce() => _jumpOnce = true;
@@ -95,7 +103,7 @@ namespace RipNRage.Engine.Ecs.Input
             s.Live = live;
             if (InputOverride.Blocked) return;
 
-            if (live)
+            if (live && !InputOverride.Scripted)
             {
                 Vector2 move = new Vector2(G["move_right"].Value - G["move_left"].Value, G["move_forward"].Value - G["move_back"].Value);
                 if (move.sqrMagnitude > 1f) move = move.normalized;

@@ -16,7 +16,7 @@ namespace RipNRage.Editor
     /// rotate, duplicate, texturing, entity placement, undo/redo, save and "play".
     /// Visuals come from the game's own LevelLoader in preview mode (WYSIWYG).
     /// </summary>
-    public partial class EditorController : Behaviour
+    public partial class EditorController : IUiScreen
     {
         public MapDocument doc = new MapDocument();
         public EditorCamera cam;
@@ -78,7 +78,7 @@ namespace RipNRage.Editor
         private LoadedLevel _preview;
         private string _status = ""; private float _statusTimer;
 
-        protected override void Start()
+        public void Start()
         {
             InitUi();
             _texNames = new List<string>(LevelTextures.Names);
@@ -124,7 +124,11 @@ namespace RipNRage.Editor
 
         private void Rebuild()
         {
-            if (_preview != null) GameObject.DestroyImmediate(_preview.root);
+            if (_preview != null)
+            {
+                var w = Application.Current.World;
+                foreach (var ent in _preview.previewEntities) if (w.IsAlive(ent)) w.DestroyEntity(ent); // children follow
+            }
             _preview = LevelLoader.Load(doc, preview: true);
         }
 
@@ -221,7 +225,7 @@ namespace RipNRage.Editor
 
         // ------------------------------------------------------------------ per frame
 
-        protected override void Update()
+        public void Update()
         {
             // one ImGui frame per rendered frame; ImGui is drawn after the engine's UI pass
             _imgui.NewFrame(Application.Current.Window);
@@ -235,7 +239,7 @@ namespace RipNRage.Editor
 
             // ---- the physics settings panel and the snapshot browser capture the keyboard while open
             // no fly-look while a panel has the pointer or a settings value is being dragged
-            if (cam != null) cam.enabled = !_physicsPanel.Open && !UiHasInput;
+            if (cam != null) cam.InputEnabled = !_physicsPanel.Open && !UiHasInput;
             if (_physicsPanel.Open) { _physicsPanel.HandleKeys(); DrawGizmos(); return; }
             if (UiHasInput) { DrawGizmos(); return; }
             if (_snapshotPanel) { SnapshotPanelInput(); DrawGizmos(); return; }
@@ -278,7 +282,7 @@ namespace RipNRage.Editor
             DrawGizmos();
         }
 
-        private Ray MouseRay(int w, int h) => Camera.main.ScreenPointToRay(Input.mousePosition, w, h);
+        private Ray MouseRay(int w, int h) => cam.View.ScreenPointToRay(Input.mousePosition, w, h);
 
         private void UpdateHover(int w, int h)
         {
@@ -376,7 +380,7 @@ namespace RipNRage.Editor
 
         private Vector3 NudgeFromArrows()
         {
-            Vector3 right = SnapAxis(cam.transform.right), fwd = SnapAxis(cam.transform.forward);
+            Vector3 right = SnapAxis(cam.Right), fwd = SnapAxis(cam.Forward);
             Vector3 n = Vector3.zero;
             if (Input.GetKeyDown(KeyCode.LeftArrow)) n -= right;
             if (Input.GetKeyDown(KeyCode.RightArrow)) n += right;
@@ -494,7 +498,7 @@ namespace RipNRage.Editor
             if (vertical)
             {
                 // vertical drag: plane facing the camera through the start point
-                Vector3 n = -new Vector3(cam.transform.forward.x, 0, cam.transform.forward.z).normalized;
+                Vector3 n = -new Vector3(cam.Forward.x, 0, cam.Forward.z).normalized;
                 var pl = new Plane(n, Vector3.Dot(n, _dragStartPoint));
                 if (!pl.Raycast(ray, out float t)) return;
                 delta = new Vector3(0, ray.GetPoint(t).y - _dragStartPoint.y, 0);
@@ -519,9 +523,8 @@ namespace RipNRage.Editor
         {
             if (_selFace == null || _selBrushes.Count == 0) return;
             // project the mouse movement onto the face normal's screen direction
-            var camT = Camera.main;
             Vector3 p0 = _dragStartPoint, p1 = _dragStartPoint + _selFace.plane.normal;
-            Vector3 s0 = camT.WorldToScreenPoint(p0, w, h), s1 = camT.WorldToScreenPoint(p1, w, h);
+            Vector3 s0 = cam.View.WorldToScreenPoint(p0, w, h), s1 = cam.View.WorldToScreenPoint(p1, w, h);
             Vector2 dir = new Vector2(s1.x - s0.x, s1.y - s0.y);
             if (dir.sqrMagnitude < 1f) return;
             Vector2 mouse = Input.mouseDelta;
@@ -590,7 +593,7 @@ namespace RipNRage.Editor
             if (_selBrushes.Count > 0) target = _selBrushes[0].Center;
             else if (_selEntities.Count > 0) target = _selEntities[0].origin;
             else { var (min, max) = doc.Bounds; target = (min + max) * 0.5f; }
-            cam.transform.position = target + new Vector3(0, 8f, 14f);
+            cam.position = target + new Vector3(0, 8f, 14f);
             cam.LookAt(target);
         }
 
@@ -668,7 +671,7 @@ namespace RipNRage.Editor
                 Vector3 delta = Vector3.zero;
                 if (shift)
                 {
-                    Vector3 n = -new Vector3(cam.transform.forward.x, 0, cam.transform.forward.z).normalized;
+                    Vector3 n = -new Vector3(cam.Forward.x, 0, cam.Forward.z).normalized;
                     var pl = new Plane(n, Vector3.Dot(n, _dragStartPoint));
                     if (pl.Raycast(ray, out float t)) delta = new Vector3(0, ray.GetPoint(t).y - _dragStartPoint.y, 0);
                 }
@@ -812,7 +815,7 @@ namespace RipNRage.Editor
         {
             // grid on the work plane around the camera
             float extent = 64f;
-            Vector3 c = BrushGeometry.Snap(new Vector3(cam.transform.position.x, workHeight, cam.transform.position.z), Mathf.Max(grid, 1f));
+            Vector3 c = BrushGeometry.Snap(new Vector3(cam.position.x, workHeight, cam.position.z), Mathf.Max(grid, 1f));
             var gridColor = new Color(1f, 1f, 1f, 0.10f);
             var majorColor = new Color(1f, 1f, 1f, 0.25f);
             float step = Mathf.Max(grid, 0.5f);
@@ -884,6 +887,7 @@ namespace RipNRage.Editor
 
         private readonly PhysicsPanel _physicsPanel = new PhysicsPanel();
 
-        protected override void OnDestroy() => ShutdownUi();
+        public void Close() => ShutdownUi();
+        public void DrawUi(UiBatch ui) { }
     }
 }

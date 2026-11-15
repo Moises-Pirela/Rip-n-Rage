@@ -77,34 +77,6 @@ namespace RipNRage.Game.Ecs
     }
 
     /// <summary>
-    /// MIGRATION BRIDGE (gone in layer 9): copies the view rig's local poses onto the prefab's "Camera" /
-    /// "WorldCamera" GameObjects at the end of the ECS frame — after the bob and the shake have been applied and
-    /// before the frame is rendered — so <c>Camera.main.transform</c> is the same pose the renderer uses this frame,
-    /// not last frame's. The nodes are children of the player GameObject, which <see cref="PlayerLink"/> already keeps
-    /// on the body, so the local pose is what has to be mirrored.
-    /// </summary>
-    [UpdateAfter(typeof(CameraShakeSystem))]
-    [Exclusive] // drives the camera GameObjects
-    public sealed class PlayerViewFollowSystem : SystemBase, ILateTick
-    {
-        public void LateTick(SystemContext ctx)
-        {
-            var link = PlayerLink.Current;
-            if (link == null || link.IsDestroyed) return;
-            Follow(link.cameraPivot, PlayerLink.PivotEntity, ctx.World);
-            Follow(link.worldCamera, PlayerLink.CameraEntity, ctx.World);
-        }
-
-        private static void Follow(Transform t, Entity e, World w)
-        {
-            if (t == null || !w.IsAlive(e) || !w.Has<LocalTransform>(e)) return;
-            ref readonly var lt = ref w.Get<LocalTransform>(e);
-            t.localPosition = lt.Position;
-            t.localRotation = lt.Rotation;
-        }
-    }
-
-    /// <summary>
     /// Where gameplay reaches the player's camera: the shake on the camera entity, and the rig's own switches.
     /// </summary>
     public static class PlayerCamera

@@ -183,16 +183,11 @@ public sealed class GraphicsMenu : IUiScreen, IUiLayer
         return best;
     }
 
-    private static int OverlayMode()
-    {
-        var o = Scene.Current?.FindObjectOfType<DebugOverlay>();
-        return o != null ? o.mode : GraphicsSettings.Current.overlayMode ?? 2;
-    }
+    private static int OverlayMode() => DebugOverlay.Current?.mode ?? GraphicsSettings.Current.overlayMode ?? 2;
 
     private static void SetOverlayMode(int v)
     {
-        var o = Scene.Current?.FindObjectOfType<DebugOverlay>();
-        if (o != null) o.mode = v;
+        if (DebugOverlay.Current != null) DebugOverlay.Current.mode = v;
     }
 
     // ------------------------------------------------------------------ per frame

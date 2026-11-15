@@ -31,7 +31,10 @@ namespace RipNRage.Benchmark
             return list;
         }
 
-        public static void PlaceCamera(Camera cam, string scenario)
+        /// <summary>Where the ragdoll pieces billboard towards (the runner's camera pose).</summary>
+        public static Vector3 ViewerPosition { get; private set; }
+
+        public static void PlaceCamera(RipNRage.Engine.Graphics.CameraView cam, string scenario)
         {
             switch (scenario)
             {
@@ -42,36 +45,39 @@ namespace RipNRage.Benchmark
             }
         }
 
-        private static void Look(Camera cam, Vector3 from, Vector3 at)
+        private static void Look(RipNRage.Engine.Graphics.CameraView cam, Vector3 from, Vector3 at)
         {
-            cam.transform.position = from;
-            cam.transform.rotation = Quaternion.LookRotation((at - from).normalized, Vector3.up);
+            cam.Position = from;
+            cam.Rotation = Quaternion.LookRotation((at - from).normalized, Vector3.up);
+            ViewerPosition = from;
         }
 
         /// <summary>A textured static box (floor slab, wall, pillar) with its base at <paramref name="basePos"/>.</summary>
-        public static GameObject StaticBox(GameObject parent, string name, Vector3 basePos, Vector3 size, Texture2D tex, float uvScale = 0.25f)
+        public static void StaticBox(string name, Vector3 basePos, Vector3 size, Texture2D tex, float uvScale = 0.25f)
         {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent.transform, false);
-            go.transform.position = basePos + new Vector3(0f, size.y * 0.5f, 0f);
-            go.layer = Layers.Walkable;
-            var mr = go.AddComponent<MeshRenderer>();
-            mr.mesh = Mesh.CreateBox(Vector3.zero, size, uvScale);
-            mr.texture = tex;
-            Track(RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(World, go.transform.position, Quaternion.identity, size, Layers.Walkable));
-            return go;
+            Vector3 center = basePos + new Vector3(0f, size.y * 0.5f, 0f);
+            var render = World.CreateEntity();
+            World.Add(render, LocalTransform.At(center));
+            World.Add(render, new RipNRage.Engine.Ecs.Rendering.MeshRender
+            {
+                Mesh = RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Intern(Mesh.CreateBox(Vector3.zero, size, uvScale), $"bench:{name}:{size}"),
+                Texture = RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Intern(tex),
+                UvScale = Vector2.one, Color = Color.white, CastsShadow = true, Layer = RipNRage.Engine.Graphics.RenderLayer.World,
+            });
+            Track(render);
+            Track(RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(World, center, Quaternion.identity, size, Layers.Walkable));
         }
 
         /// <summary>Floor slab (top at y = 0) and four walls around a square arena.</summary>
-        public static void Arena(GameObject root, float size, float wallHeight)
+        public static void Arena(float size, float wallHeight)
         {
-            StaticBox(root, "Floor", new Vector3(0f, -2f, 0f), new Vector3(size, 2f, size), GameAssets.Texture13, 1f / 8f);
+            StaticBox("Floor", new Vector3(0f, -2f, 0f), new Vector3(size, 2f, size), GameAssets.Texture13, 1f / 8f);
             if (wallHeight <= 0f) return;
             float h = size * 0.5f;
-            StaticBox(root, "WallN", new Vector3(0f, 0f, h), new Vector3(size, wallHeight, 1f), GameAssets.GreenProto);
-            StaticBox(root, "WallS", new Vector3(0f, 0f, -h), new Vector3(size, wallHeight, 1f), GameAssets.GreenProto);
-            StaticBox(root, "WallE", new Vector3(h, 0f, 0f), new Vector3(1f, wallHeight, size), GameAssets.GreenProto);
-            StaticBox(root, "WallW", new Vector3(-h, 0f, 0f), new Vector3(1f, wallHeight, size), GameAssets.GreenProto);
+            StaticBox("WallN", new Vector3(0f, 0f, h), new Vector3(size, wallHeight, 1f), GameAssets.GreenProto);
+            StaticBox("WallS", new Vector3(0f, 0f, -h), new Vector3(size, wallHeight, 1f), GameAssets.GreenProto);
+            StaticBox("WallE", new Vector3(h, 0f, 0f), new Vector3(1f, wallHeight, size), GameAssets.GreenProto);
+            StaticBox("WallW", new Vector3(-h, 0f, 0f), new Vector3(1f, wallHeight, size), GameAssets.GreenProto);
         }
 
         public static World World => Application.Current.World;
@@ -124,10 +130,10 @@ namespace RipNRage.Benchmark
         private BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(7);
         private int _sleeping;
 
-        public override void Build(GameObject root, BenchmarkConfig cfg)
+        public override void Build(BenchmarkConfig cfg)
         {
             int n = Target(cfg);
-            BenchmarkScene.Arena(root, 60f, 8f);
+            BenchmarkScene.Arena(60f, 8f);
             var mesh = Mesh.CreateBox(Vector3.zero, Vector3.one, 1f);
             int side = Math.Max(2, (int)MathF.Ceiling(MathF.Sqrt(n / 6f)));
             float spacing = 1.25f;
@@ -179,10 +185,10 @@ namespace RipNRage.Benchmark
         private readonly BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(11);
         private const float S = 2.25f;
 
-        public override void Build(GameObject root, BenchmarkConfig cfg)
+        public override void Build(BenchmarkConfig cfg)
         {
             int n = Target(cfg);
-            BenchmarkScene.Arena(root, 70f, 6f);
+            BenchmarkScene.Arena(70f, 6f);
             _skeleton = SkeletonLibrary.Get("rifleman") ?? DefaultSkeletons.Rifleman();
             _sprite = new DirectionalSpriteSheet(GameAssets.RiflemanIdle, 1, 4, 1f).GetSprite(0, 0);
             int side = Math.Max(2, (int)MathF.Ceiling(MathF.Sqrt(n)));
@@ -215,9 +221,8 @@ namespace RipNRage.Benchmark
             Vector3 dir = _rng.OnCircle(); dir.y = 0.3f;
             options.impulse = dir.normalized * _rng.Range(30f, 90f);
             options.impulsePoint = at + new Vector3(0f, _rng.Range(-0.5f, 0.8f), 0f);
-            var cam = Camera.main;
             var pieces = RipNRage.Engine.Ecs.Destruction.SpriteRagdolls.Spawn(BenchmarkScene.World, _skeleton, _sprite, at, Vector3.one * (S / 5.12f),
-                cam != null ? cam.transform.position : at + Vector3.back, options);
+                BenchmarkScene.ViewerPosition, options);
             foreach (var p in pieces) _pieces.Add(BenchmarkScene.Track(p));
             if (pieces.Count > 0) _ragdolls++;
         }
@@ -242,13 +247,13 @@ namespace RipNRage.Benchmark
         private readonly BenchmarkScene.Rng _rng = new BenchmarkScene.Rng(23);
         private const float Speed = 40f, Life = 3.2f;
 
-        public override void Build(GameObject root, BenchmarkConfig cfg)
+        public override void Build(BenchmarkConfig cfg)
         {
             _target = Target(cfg);
-            BenchmarkScene.Arena(root, 160f, 10f);
+            BenchmarkScene.Arena(160f, 10f);
             var pr = new BenchmarkScene.Rng(5);
             for (int i = 0; i < 80; i++)
-                BenchmarkScene.StaticBox(root, "Pillar" + i, new Vector3(pr.Range(-60f, 60f), 0f, pr.Range(-60f, 60f)), new Vector3(pr.Range(0.8f, 2.5f), pr.Range(2f, 7f), pr.Range(0.8f, 2.5f)), GameAssets.PurpleProto);
+                BenchmarkScene.StaticBox("Pillar" + i, new Vector3(pr.Range(-60f, 60f), 0f, pr.Range(-60f, 60f)), new Vector3(pr.Range(0.8f, 2.5f), pr.Range(2f, 7f), pr.Range(0.8f, 2.5f)), GameAssets.PurpleProto);
             _mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.16f, 0.16f, 0.5f), 1f);
         }
 
@@ -304,10 +309,10 @@ namespace RipNRage.Benchmark
         private readonly List<(Entity e, BenchmarkScene.Rng rng, float speed, Vector3 dir, float turnIn)> _runners = new List<(Entity, BenchmarkScene.Rng, float, Vector3, float)>();
         private int _grounded; private float _speed;
 
-        public override void Build(GameObject root, BenchmarkConfig cfg)
+        public override void Build(BenchmarkConfig cfg)
         {
             int n = Target(cfg);
-            BuildTerrain(root, 200f, 120);
+            BuildTerrain(200f, 120);
             var mesh = Mesh.CreateBox(Vector3.zero, new Vector3(0.6f, 1.6f, 0.6f), 1f);
             var rng = new BenchmarkScene.Rng(31);
             int side = Math.Max(2, (int)MathF.Ceiling(MathF.Sqrt(n)));
@@ -358,7 +363,7 @@ namespace RipNRage.Benchmark
             return h;
         }
 
-        private static void BuildTerrain(GameObject root, float size, int cells)
+        private static void BuildTerrain(float size, int cells)
         {
             var mesh = new Mesh();
             int vn = cells + 1;
@@ -381,10 +386,15 @@ namespace RipNRage.Benchmark
                 }
             mesh.vertices = verts; mesh.uv = uv; mesh.triangles = tris;
             mesh.RecalculateNormals(); mesh.RecalculateBounds();
-            var go = new GameObject("Terrain");
-            go.transform.SetParent(root.transform, false);
-            go.layer = Layers.Walkable;
-            var mr = go.AddComponent<MeshRenderer>(); mr.mesh = mesh; mr.texture = GameAssets.Texture13;
+            var render = BenchmarkScene.World.CreateEntity();
+            BenchmarkScene.World.Add(render, LocalTransform.At(Vector3.zero));
+            BenchmarkScene.World.Add(render, new RipNRage.Engine.Ecs.Rendering.MeshRender
+            {
+                Mesh = RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Intern(mesh, "bench-terrain"),
+                Texture = RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Intern(GameAssets.Texture13),
+                UvScale = Vector2.one, Color = Color.white, CastsShadow = true, Layer = RipNRage.Engine.Graphics.RenderLayer.World,
+            });
+            BenchmarkScene.Track(render);
             BenchmarkScene.Track(RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticMesh(BenchmarkScene.World, PhysicsAssets.AddMesh("bench-terrain", verts, tris), LocalTransform.At(Vector3.zero), Layers.Walkable));
         }
     }

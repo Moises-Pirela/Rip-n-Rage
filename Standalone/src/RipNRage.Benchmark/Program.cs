@@ -79,11 +79,11 @@ namespace RipNRage.Benchmark
                 Materials.Load();
                 Physics.SetCollisionMatrix(BenchmarkScene.CollisionMatrix);
                 if (cfg.threads >= 0) { Physics.World.Rigid.threads = cfg.threads; PhysicsSettings.Current.threads = cfg.threads; }
-                var go = new GameObject("Benchmark");
-                var runner = go.AddComponent<BenchmarkRunner>();
+                var runner = RipNRage.Engine.Graphics.UiScreens.Add(new BenchmarkRunner());
                 runner.config = cfg;
                 runner.scenarios = BenchmarkScene.Select(cfg.scenarios);
                 if (runner.scenarios.Count == 0) { Console.WriteLine("No such scenario: " + cfg.scenarios); return 1; }
+                runner.Start();
                 app.Run();
                 return cfg.strict && runner.Failed ? 3 : 0;
             }

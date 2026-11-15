@@ -20,10 +20,11 @@ namespace RipNRage.SkeletonEditor
     /// with the real <see cref="SpriteRagdoll"/> (Space = ragdoll, Ctrl+Space = gib, click a piece to tear it off).
     /// Files are <c>skeletons/*.json</c> (<see cref="SkeletonLibrary"/>); the game reloads saved changes live.
     /// </summary>
-    public sealed class SkeletonEditor : Behaviour
+    public sealed class SkeletonEditor : RipNRage.Engine.Graphics.IUiScreen
     {
-        public Camera cam;
-        public Transform anchor;
+        public RipNRage.Engine.Graphics.CameraView cam;
+        public RipNRage.Engine.Ecs.Entity lens;
+        public Vector3 anchorPosition;
         public string startSkeleton;
 
         // ---- document ----
@@ -70,8 +71,8 @@ namespace RipNRage.SkeletonEditor
         private bool _userMovedView;   // the view was zoomed or panned by hand: stop auto-fitting on resize
 
         // ---- preview ----
-        private GameObject _previewGo;
-        private SpriteRenderer _previewSr;
+        private RipNRage.Engine.Ecs.Animation.AnimatedSprite _previewSr;
+        private bool _previewLit = true, _previewShadow = true;
         // ragdoll preview: the game's ECS sprite ragdoll (piece entities)
         private List<RipNRage.Engine.Ecs.Entity> _ragdoll;
         private static RipNRage.Engine.Ecs.World EcsWorld => Application.Current.World;
@@ -88,7 +89,7 @@ namespace RipNRage.SkeletonEditor
 
         // ------------------------------------------------------------------ lifecycle
 
-        protected override void Start()
+        public void Start()
         {
             SkeletonLibrary.SuppressPolling = true;
             _imgui = new ImGuiController(layoutName: "skeleton-editor");
@@ -101,7 +102,9 @@ namespace RipNRage.SkeletonEditor
             else if (_names.Count > 0) Select(_names[0]);
         }
 
-        protected override void OnDestroy()
+        public void DrawUi(UiBatch ui) { }
+
+        public void Close()
         {
             SkeletonLibrary.SuppressPolling = false;
             if (Application.Current?.Renderer != null) Application.Current.Renderer.AfterUi -= OnAfterUi;
@@ -148,11 +151,9 @@ namespace RipNRage.SkeletonEditor
 
         private void BuildPreviewObject()
         {
-            _previewGo = new GameObject("PreviewSprite");
-            _previewGo.transform.SetParent(anchor, false);
-            _previewSr = _previewGo.AddComponent<SpriteRenderer>();
-            _previewSr.billboard = true; _previewSr.lit = true;
-            _previewSr.enabled = false;
+            _previewSr = new RipNRage.Engine.Ecs.Animation.AnimatedSprite(EcsWorld, null, RipNRage.Engine.Graphics.RenderLayer.World);
+            _previewSr.SetRender(RipNRage.Engine.Graphics.RenderLayer.World, billboard: true, lit: true);
+            _previewSr.SetActive(false);
         }
 
         // ------------------------------------------------------------------ document
@@ -179,8 +180,8 @@ namespace RipNRage.SkeletonEditor
                 float cellH = _cell.rect.height / MathF.Max(_cell.pixelsPerUnit, 1f);
                 _previewScale = cellH > 0f ? 2.25f / cellH : 1f;
                 _previewSr.sprite = _cell;
-                _previewGo.transform.localScale = Vector3.one * _previewScale;
-                _previewGo.transform.localPosition = new Vector3(0f, cellH * _previewScale * 0.5f, 0f);
+                _previewSr.LocalScale = Vector3.one * _previewScale;
+                _previewSr.LocalPosition = anchorPosition + new Vector3(0f, cellH * _previewScale * 0.5f, 0f);
             }
         }
 
@@ -320,7 +321,7 @@ namespace RipNRage.SkeletonEditor
 
         // ------------------------------------------------------------------ update
 
-        protected override void Update()
+        public void Update()
         {
             // one ImGui frame per rendered frame: the panels are declared here, the canvas is drawn later in DrawUi
             // and ImGui itself is rendered after the UI pass.
@@ -408,7 +409,7 @@ namespace RipNRage.SkeletonEditor
                 if (Input.GetKeyDown(KeyCode.Space)) SpawnRagdoll(Ctrl);
                 if (Input.GetKeyDown(KeyCode.R)) ResetPreview();
                 if (Input.GetKeyDown(KeyCode.K) && _ragdoll != null) foreach (var p in _ragdoll) RipNRage.Engine.Ecs.Destruction.SpriteRagdolls.Detach(EcsWorld, p);
-                if (Input.GetKeyDown(KeyCode.UpArrow) && _ragdoll != null) Physics.AddExplosionForce(40f, anchor.position + new Vector3(0f, -0.2f, 0.8f), 4f, 0.6f);
+                if (Input.GetKeyDown(KeyCode.UpArrow) && _ragdoll != null) Physics.AddExplosionForce(40f, anchorPosition + new Vector3(0f, -0.2f, 0.8f), 4f, 0.6f);
             }
         }
 
@@ -417,8 +418,8 @@ namespace RipNRage.SkeletonEditor
             if (_tool == Tool.Draw) FinishDraw();
             _tool = Tool.Select;
             _mode = m;
-            if (m == Mode.Preview) { _previewSr.enabled = _ragdoll == null && _cell != null; }
-            else { _previewSr.enabled = false; }
+            if (m == Mode.Preview) { _previewSr.SetActive(_ragdoll == null && _cell != null); }
+            else { _previewSr.SetActive(false); }
         }
 
         private void FinishDraw()
@@ -471,7 +472,7 @@ namespace RipNRage.SkeletonEditor
         private void ResetPreview()
         {
             if (_ragdoll != null) { foreach (var p in _ragdoll) if (EcsWorld.IsAlive(p)) EcsWorld.Commands.DestroyEntity(p); _ragdoll = null; }
-            if (_previewSr != null) _previewSr.enabled = _mode == Mode.Preview && _cell != null;
+            _previewSr?.SetActive(_mode == Mode.Preview && _cell != null);
         }
 
         private void SpawnRagdoll(bool gib)
@@ -482,16 +483,16 @@ namespace RipNRage.SkeletonEditor
             options.gib = gib;
             options.scatterImpulse = gib ? 6f : 0f;
             options.lifetime = 100000f; options.fadeOut = false; // stays until R
-            options.lit = _previewSr.lit; options.castsShadow = _previewSr.castsShadow; options.color = _previewSr.color;
+            options.lit = _previewLit; options.castsShadow = _previewShadow; options.color = _previewSr.color;
             // a shove through the torso from the camera side, like a shot
-            Vector3 from = cam.transform.position;
-            Vector3 hit = _previewGo.transform.position;
+            Vector3 from = cam.Position;
+            Vector3 hit = _previewSr.LocalPosition;
             options.impulse = (hit - from).normalized * (gib ? 0f : 12f);
             options.impulsePoint = hit + Vector3.up * 0.3f;
-            var pieces = RipNRage.Engine.Ecs.Destruction.SpriteRagdolls.Spawn(EcsWorld, _skel, _cell, _previewGo.transform.position, _previewGo.transform.lossyScale, from, options);
+            var pieces = RipNRage.Engine.Ecs.Destruction.SpriteRagdolls.Spawn(EcsWorld, _skel, _cell, _previewSr.LocalPosition, _previewSr.LocalScale, from, options);
             if (pieces.Count == 0) { Status("NOTHING TO SLICE: THE VIEW HAS NO PARTS WITH 3+ VERTICES"); return; }
             _ragdoll = pieces;
-            _previewSr.enabled = false;
+            _previewSr.SetActive(false);
             Status(gib ? "GIBBED — R = RESET" : "RAGDOLL — CLICK A PIECE TO TEAR IT OFF, K = BREAK ALL, UP = BLAST, R = RESET");
         }
 
@@ -507,10 +508,15 @@ namespace RipNRage.SkeletonEditor
             }
             _lastMouse = mouse;
             if (over && Input.mouseScrollDelta.y != 0f) _distance = Mathf.Clamp(_distance * (Input.mouseScrollDelta.y > 0f ? 0.9f : 1.1f), 1.5f, 20f);
-            Vector3 target = anchor.position + Vector3.up * 1f;
+            Vector3 target = anchorPosition + Vector3.up * 1f;
             Quaternion rot = Quaternion.Euler(_pitch, _yaw, 0f);
-            cam.transform.position = target - rot * Vector3.forward * _distance;
-            cam.transform.rotation = rot;
+            cam.Position = target - rot * Vector3.forward * _distance;
+            cam.Rotation = rot;
+            if (EcsWorld.IsAlive(lens))
+            {
+                ref var lt = ref EcsWorld.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(lens);
+                lt.Position = cam.Position; lt.Rotation = cam.Rotation;
+            }
 
             if (over && Input.GetMouseButtonDown(0) && _ragdoll != null)
             {

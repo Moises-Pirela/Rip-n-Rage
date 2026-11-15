@@ -61,13 +61,13 @@ namespace RipNRage.AnimEditor
                 }
 
                 BuildPreviewScene(out var cam, out var arms, out var anchor);
-                var edGo = new GameObject("AnimEditor");
-                var editor = edGo.AddComponent<AnimEditor>();
-                editor.cam = cam; editor.arms = arms; editor.worldAnchor = anchor;
-                if (script != null) edGo.AddComponent<AnimEditorScript>().scriptName = script;
+                var editor = RipNRage.Engine.Graphics.UiScreens.Add(new AnimEditor { cam = cam, arms = arms, worldAnchor = anchor });
+                editor.Start();
+                if (script != null) RipNRage.Engine.Graphics.UiScreens.Add(new AnimEditorScript { scriptName = script, Editor = editor });
 
-                // selection after Start(): queue it through a tiny helper behaviour
-                edGo.AddComponent<StartupSelection>().Set(editor, clipName, controllerName);
+                // the --clip / --controller selection, after Start
+                if (clipName != null) editor.SelectClip(clipName);
+                if (controllerName != null) editor.SelectController(controllerName);
 
                 app.Run();
                 return 0;
@@ -80,64 +80,55 @@ namespace RipNRage.AnimEditor
         }
 
         /// <summary>Camera at eye height over a plank floor with a few crates for depth; PlayerArms mirrors the player prefab.</summary>
-        private static void BuildPreviewScene(out Camera cam, out Transform arms, out Transform anchor)
+        private static void BuildPreviewScene(out RipNRage.Engine.Graphics.CameraView cam,
+            out RipNRage.Engine.Ecs.Entity arms, out RipNRage.Engine.Ecs.Entity anchor)
         {
-            var camGo = new GameObject("PreviewCamera");
-            camGo.transform.position = new Vector3(0f, 1.7f, 0f);
-            cam = camGo.AddComponent<Camera>();
-            cam.fieldOfView = 77f; cam.nearClipPlane = 0.05f; cam.farClipPlane = 500f;
-            Camera.main = cam;
+            var world = Application.Current.World;
+            cam = new RipNRage.Engine.Graphics.CameraView { Position = new Vector3(0f, 1.7f, 0f), fieldOfView = 77f, nearClipPlane = 0.05f, farClipPlane = 500f };
+            var lens = world.CreateEntity();
+            world.Add(lens, RipNRage.Engine.Ecs.Transforms.LocalTransform.At(cam.Position));
+            world.Add(lens, new RipNRage.Engine.Ecs.Rendering.CameraLens { FieldOfView = 77f, Near = 0.05f, Far = 500f });
 
-            var armsGo = new GameObject("PlayerArms");
-            armsGo.transform.SetParent(camGo.transform, false);
-            armsGo.transform.localPosition = new Vector3(0.017f, -0.65f, 2.36f);
-            arms = armsGo.transform;
+            arms = world.CreateEntity();
+            world.Add(arms, RipNRage.Engine.Ecs.Transforms.LocalTransform.At(AnimEditor.ArmsHome));
+            world.Add(arms, new RipNRage.Engine.Ecs.Transforms.Parent { Value = lens });
 
-            var anchorGo = new GameObject("WorldAnchor");
-            anchorGo.transform.position = new Vector3(0f, 5f, 20f);
-            anchor = anchorGo.transform;
+            anchor = world.CreateEntity();
+            world.Add(anchor, RipNRage.Engine.Ecs.Transforms.LocalTransform.At(new Vector3(0f, 5f, 20f)));
 
-            var floor = new GameObject("Floor");
-            var fmr = floor.AddComponent<MeshRenderer>();
-            fmr.mesh = Mesh.CreatePlane(Vector3.zero, 80f, 80f, 0.25f);
-            fmr.texture = ProceduralTextures.WoodPlanks();
-            fmr.occluder = true;
+            void StaticMesh(Mesh mesh, Texture2D tex, bool occluder)
+            {
+                var e = world.CreateEntity();
+                world.Add(e, RipNRage.Engine.Ecs.Transforms.LocalTransform.Identity);
+                world.Add(e, new RipNRage.Engine.Ecs.Rendering.MeshRender
+                {
+                    Mesh = RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Intern(mesh),
+                    Texture = RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Intern(tex),
+                    UvScale = Vector2.one, Color = Color.white, CastsShadow = true, Occluder = occluder,
+                    Layer = RipNRage.Engine.Graphics.RenderLayer.World,
+                });
+            }
+            StaticMesh(Mesh.CreatePlane(Vector3.zero, 80f, 80f, 0.25f), ProceduralTextures.WoodPlanks(), true);
             for (int i = 0; i < 5; i++)
             {
-                var crate = new GameObject("Crate" + i);
-                var mr = crate.AddComponent<MeshRenderer>();
                 float size = 1f + (i % 3) * 0.5f;
-                mr.mesh = Mesh.CreateBox(new Vector3(-6f + i * 3f, size * 0.5f, 9f + (i % 2) * 3f), Vector3.one * size, 1f);
-                mr.texture = i % 2 == 0 ? GameAssets.OrangeProto : GameAssets.GreenProto;
+                StaticMesh(Mesh.CreateBox(new Vector3(-6f + i * 3f, size * 0.5f, 9f + (i % 2) * 3f), Vector3.one * size, 1f),
+                           i % 2 == 0 ? GameAssets.OrangeProto : GameAssets.GreenProto, false);
             }
-            var back = new GameObject("BackWall");
-            var bmr = back.AddComponent<MeshRenderer>();
-            bmr.mesh = Mesh.CreateBox(new Vector3(0f, 3f, 22f), new Vector3(40f, 6f, 1f), 0.25f);
-            bmr.texture = GameAssets.Texture13;
-            bmr.occluder = true;
+            StaticMesh(Mesh.CreateBox(new Vector3(0f, 3f, 22f), new Vector3(40f, 6f, 1f), 0.25f), GameAssets.Texture13, true);
             RenderSettings.drawSky = true;
         }
     }
 
-    /// <summary>Applies the --clip / --controller selection once the editor has started.</summary>
-    public sealed class StartupSelection : Behaviour
-    {
-        private AnimEditor _ed; private string _clip, _ctrl; private bool _done;
-        public void Set(AnimEditor ed, string clip, string ctrl) { _ed = ed; _clip = clip; _ctrl = ctrl; }
-        protected override void Update()
-        {
-            if (_done) return;
-            _done = true;
-            if (_clip != null) _ed.SelectClip(_clip);
-            if (_ctrl != null) _ed.SelectController(_ctrl);
-        }
-    }
 
     /// <summary>Scripted sessions for screenshots/tests (drives the real input paths).</summary>
-    public sealed class AnimEditorScript : Behaviour
+    public sealed class AnimEditorScript : RipNRage.Engine.Graphics.IUiScreen
     {
         public string scriptName = "";
+        public AnimEditor Editor;
         private int _frame;
+        public void DrawUi(UiBatch ui) { }
+        public void Close() { }
         private AnimEditor _ed;
 
         private static Vector2 Px(float nx, float ny)
@@ -159,10 +150,10 @@ namespace RipNRage.AnimEditor
             foreach (char c in text) Input.SimulateChar(c);
         }
 
-        protected override void Update()
+        public void Update()
         {
             _frame++;
-            _ed ??= GetComponent<AnimEditor>();
+            _ed ??= Editor;
             switch (scriptName)
             {
                 case "play":

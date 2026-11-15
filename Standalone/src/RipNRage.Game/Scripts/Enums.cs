@@ -9,12 +9,6 @@ public enum AmmoType
 
 
 
-public enum EntityHealthState
-{
-    ALIVE,
-    DEAD
-}
-
 public enum AnimationState
 {
     IDLE,

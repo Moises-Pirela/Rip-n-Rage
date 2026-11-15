@@ -215,25 +215,22 @@ namespace RipNRage.Game.Content.Level
 
         private static IEnumerator ApplyWhenReady(GameSave save)
         {
-            // the player exists when the build returns (8.6), but the facades' Start — which equips weapon 0 and
-            // loads the new-game ammo — runs in the first scene tick after it: apply the frame after that, over the
-            // components, so nothing re-initialises over the save (the same frame the old wait landed on)
-            while (PlayerState.Current == null || EnragedInjector<CombatController>.GetInstance()?.CurrentWeaponData == null) yield return null;
+            // the player and its components exist when the build returns (9.4: nothing re-initialises after it);
+            // one yield keeps the apply on the frame it always landed on
             yield return null;
-            var combat = EnragedInjector<CombatController>.GetInstance();
             var world = Application.Current.World;
             var pe = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
             var p = save.player;
             // the character entity owns the position: a GameObject write was overwritten by the next sync (the load put
             // the player at the spawn since layer 4). Teleport writes the entity and zeroes the pitch; the pitch follows.
-            RipNRage.Game.Ecs.PlayerLink.Current?.Teleport(new Vector3(p.x, p.y, p.z), p.yaw);
+            RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(p.x, p.y, p.z), p.yaw);
             if (world.Has<RipNRage.Game.Ecs.PlayerLook>(pe))
                 world.Get<RipNRage.Game.Ecs.PlayerLook>(pe).Pitch = Mathf.Clamp(p.pitch, -90f, 90f);
             if (world.Has<Health>(pe)) { ref var h = ref world.Get<Health>(pe); h.Current = Mathf.Clamp(p.health, 0f, h.Max); }
             if (world.Has<Armor>(pe)) { ref var a = ref world.Get<Armor>(pe); a.Current = Mathf.Clamp(p.armor, 0f, a.Max); }
             RipNRage.Game.Ecs.Rages.Restore(p.rage, p.calm, (RipNRage.Game.Ecs.RageState)p.rageState);
             Weapons.LoadAmmo(ref world.Get<Inventory>(pe), p.ammo);
-            combat.EquipWeaponIndex(p.weaponIndex); // through the facade: the viewmodel animator is a GameObject still
+            CombatController.EquipWeaponIndex(p.weaponIndex); // retargets the viewmodel sprite entity
 
             var level = CurrentLevel;
             if (level != null)
@@ -294,7 +291,7 @@ namespace RipNRage.Game.Content.Level
                     if (m.health > 0f) { ref var h = ref w.Get<Health>(en); h.Current = Mathf.Min(m.health, h.Max); }
                 }
             }
-            Debug.LogWarning($"Loaded: player at {world.Get<LocalTransform>(pe).Position}, hp {world.Get<Health>(pe).Current}, ammo {combat.AmmoOf(AmmoType.LIGHT)}, weapon {combat.CurrentWeaponIndex}");
+            Debug.LogWarning($"Loaded: player at {world.Get<LocalTransform>(pe).Position}, hp {world.Get<Health>(pe).Current}, ammo {CombatController.AmmoOf(AmmoType.LIGHT)}, weapon {CombatController.CurrentWeaponIndex}");
             Message("Game loaded");
         }
 
