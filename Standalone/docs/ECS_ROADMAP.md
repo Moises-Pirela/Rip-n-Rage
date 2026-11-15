@@ -1450,9 +1450,12 @@ vector properties, see layer 4's notes).
       `Health` / `Armour` / `Rage` / the weapon components directly; `SaveData`, `PlayerStateData`,
       `ApplyWhenReady`'s polling and the `SaveData.Current` reset in `ResetWorld` deleted. v1 field names kept,
       `combatState` no longer written (Q1). Gate: the 8.0 `GameSave` diff is empty.
-- [ ] 8.6 **Level start is a function.** `GameManager` / `LevelManager`'s `IManager` coroutine chain replaced by
-      the build itself (the player exists when `TestArea.Build` returns, or `Flow` knows when it does).
-      `EnragedInjector` resets in `ResetWorld` shrink to what still exists.
+- [x] 8.6 **Level start is a function** (done; taken before 8.5 / 8.7 — a synchronous build is what both lean on).
+      `BuildDungeonMaster` instantiates the player prefab and returns; `GameManager` (74), `LevelManager` (42),
+      `IManager` and `ManagerInitState` deleted — the coroutine chain (`Init` → `WaitUntil` per child →
+      `OnBeginPlay`, no subscribers) staged nothing anyone waited for. The player's ECS half still arrives at the
+      next world sync (command buffer), so the save's apply-when-ready wait stays. Gates: **every script and both
+      shots byte-identical to 8.4b**, two sweeps identical.
 - [ ] 8.7 **HUD reads the ECS.** `HudController` reads components through a query; `PlayerState`'s remaining
       facade goes if this was its last reader (else layer 9). The rage meters get a real pass (still a drawer).
       `EnragedInjector<HudController>` deleted.

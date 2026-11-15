@@ -24,10 +24,3 @@ public enum AnimationState
     DEAD
 }
 
-public enum ManagerInitState
-{
-    PENDING,
-    IN_PROGRESS,
-    COMPLETE,
-    ERROR
-}

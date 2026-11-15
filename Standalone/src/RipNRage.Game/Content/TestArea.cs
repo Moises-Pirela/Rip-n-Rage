@@ -221,24 +221,12 @@ namespace RipNRage.Game.Content
             Surfaces.Tag(World, EcsPhysics.PhysicsEntities.StaticBox(World, go.transform.position, Quaternion.identity, Vector3.one * size, Layers.Walkable), Surfaces.Wood);
         }
 
-        // ------------------------------------------------------------------ managers
+        // ------------------------------------------------------------------ the player
 
-        private static void BuildDungeonMaster(Vector3 start, Quaternion rotation)
-        {
-            var root = new GameObject("---DungeonMaster---");
-            var spawn = new GameObject("PlayerSpawn");
-            spawn.transform.position = start;
-            spawn.transform.rotation = rotation;
-
-            var gmGo = new GameObject("GameManager");
-            gmGo.transform.SetParent(root.transform, false);
-            var lmGo = new GameObject("LevelManager");
-            lmGo.transform.SetParent(gmGo.transform, false);
-            lmGo.AddComponent<LevelManager>().playerStart = spawn.transform;
-            // GameManager.Awake starts the init coroutine, so the children must exist first.
-            var gm = gmGo.AddComponent<GameManager>();
-            gm.playerPrefab = PlayerPrefab.Player;
-        }
+        /// <summary>Spawns the player (8.6: a function — the GameManager / LevelManager coroutine chain that staged
+        /// this over several frames is gone; the ECS half still arrives at the next sync, through the command buffer).</summary>
+        private static void BuildDungeonMaster(Vector3 start, Quaternion rotation) =>
+            PlayerPrefab.Player.Instantiate(start, rotation);
 
         // ------------------------------------------------------------------ pickups & enemies
 

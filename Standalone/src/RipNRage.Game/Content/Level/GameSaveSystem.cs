@@ -221,7 +221,8 @@ namespace RipNRage.Game.Content.Level
 
         private static IEnumerator ApplyWhenReady(GameSave save)
         {
-            // wait for the player (spawned by the GameManager/LevelManager coroutines)
+            // wait for the player's ECS half (the build spawns the player synchronously since 8.6, but the entity
+            // arrives at the next world sync, and the facades bind in their Start)
             while (PlayerState.Current == null || EnragedInjector<CombatController>.GetInstance()?.CurrentWeaponData == null) yield return null;
             yield return null;
             var player = PlayerState.Current;
