@@ -50,42 +50,41 @@ then start at the first unchecked layer.
   table (title / playing / paused / dying / dead; every scene change is a request the flow accepts and the session
   carries out); the death, the falls, the HUD, the menus and the save are components, systems and plain screens;
   the gates are a script in the repo and hermetic (close-out below)
-- [ ] Layer 9 — Remove the legacy model
+- [x] **Layer 9 — Remove the legacy model**: GameObject, Behaviour, Transform, Scene, the renderer components and
+  the legacy producer are deleted; the application runs only the World, which drives its own fixed clock; the
+  player, the level, the props, cameras, lights, menus, HUD and all four editor tools are entities and screens
+  (close-out below)
 - [ ] Layer 10 — Editors on configs
 
-### Pick-up point for the next session (written 2026-11-15, after 8.9; layer 9 is next)
+### Pick-up point for the next session (written 2026-11-15, after 9.8; layer 10 is next)
 
-Layers 0–8 are done. **Run the gates with `./gates.sh OUT`** (builds the game and both check projects, runs both
-suites and 26 scripts under the gate rule, two pixel shots; `./gates.sh --compare A B` diffs two sweeps,
-`python3 tools/pngdiff.py a.png b.png [tolerance]` compares shots). The rules of layers 6–7 hold; layer 8 added:
+Layers 0–9 are done: **there is no GameObject-land** — the application runs one ECS `World`; components are
+structs, behaviour is systems, UI and tools are `IUiScreen`s. Run the gates with `./gates.sh OUT` (builds the game
+and both check projects, both suites, 26 scripts under the gate rule, four pixel shots, hermetic data dir; scripted
+runs never read the real devices). The rules of layers 6–8 hold; layer 9 added:
 
-- **The sweep is hermetic**: `RIPNRAGE_DATA_DIR` gives every sweep its own saves / graphics.json / controls.json.
-  Other worktrees on this machine run the game too and shared the per-user folder — one's checkpoint was read by
-  another mid-sweep. Run anything that saves with its own data dir.
-- **Scripts restart with every scene build** (`OnSceneBuilt` adds a fresh `DemoScript`): a script that crosses a
-  RESTART / load / title change keeps its stage in a static (`die`, `saveload`, `checkpoint`, `menu`, `flowmoves`,
-  `deathf8` do).
-- **Scene changes are requests**: `Flows.Ask(FlowAction)` from anything (menus, developer keys with `debug: true`,
-  systems); `Flows.Allows` is the table; the accepted move waits in `Flow.Pending` and `GameSession` carries it out
-  at the next frame start. Only `FlowSystem` moves `Flow.Phase` (the title build's `BeginTitle` aside); scene-side
-  writes to `Flow` are `CheckpointReached`, `BeginTitle` and the session's `TakePending`, nothing else.
-- **UI is `IUiScreen`** (engine `UiScreens`): plain objects, updated at frame start, drawn with the GameObject
-  drawers, closed by the scene reset. A screen reads components every frame — no change events.
-- **Profiling a phase**: `ECS_PROFILE_BATCHES=1` adds `ecs <phase> single / parallel / sync` stages (with
-  `--perf-csv`), the per-system profiler's blind spot. Machine load from other sessions makes frame times noisy:
-  take ≥ 5 interleaved samples and compare medians.
+- **Screens have no lifecycle.** An `IUiScreen` gets `Update` at frame start, `DrawUi` with the UI pass and
+  `Close` on removal or reset — nothing calls a `Start`; wire it fully, then call your own init (the editor and
+  the benchmark crashed on this).
+- **Entities from a build are immediate, entities from inside a system are not.** Level / player / preview builds
+  create entities directly; anything that may run inside a system (an effect spawned by a system, the particle
+  world's light) must create lazily between ticks or through a command buffer (`rocket` caught it).
+- **The asset registry is append-only**: name what you intern (`LevelVisuals.Box`, per-file chunk keys) or reuse
+  handles (`AssetRegistry.Replace`, the editor's per-edit rebuilds). `deathf8`'s asset probe pins it.
+- **Isolate the gates from the machine**: `RIPNRAGE_DATA_DIR` per sweep (other worktrees' saves) and
+  `InputOverride.Scripted` (other sessions' windows steal focus; the real mouse leaked into a sweep twice).
 
-What layer 9 inherits (the MonoBehaviours left, all facades or tools):
+What layer 10 (editors on configs) inherits:
 
-- **Player facades**: `PlayerLink` (the GameObject ↔ entity link, `Teleport`, `ResetVelocity`), `PlayerState` /
-  `EntityState` (49 / 104 lines: `TakeDamage` for the scripts, the hit kick via `CombatBridgeSystem.NotifyHit`),
-  `CombatController` (the viewmodel equip — `EquipWeaponIndex` sets the animator controller —, `OnFireWeapon` for
-  the muzzle light, ammo reads for the scripts), `PlayerInputActions` (the input mirror and the weapon-switch
-  dispatch), `FPSController`, `FPSCameraController`. The save's apply still waits one frame for the facades'
-  `Start` (`ApplyWhenReady`); with them gone it can run straight after the build.
-- **Cameras and tools**: `MenuCamera` (the title's legacy camera), `MuzzleFlashLight`, `VfxRuntime`,
-  `WeaponAnimationEvents`, the physics followers, `DebugOverlay` / `DemoScript`; `EcsObjects` (entity ↔ GameObject)
-  serves the combat bridge.
+- The level editor previews each class through `EntityDefinition.previewEntity` (visuals only), rebuilding the
+  whole preview on every edit (`LoadedLevel.previewEntities`); picking is geometric on the `MapDocument`
+  (`pickExtents`), not on entities. Layer 10's "place prefabs, edit `IComponentConfig` fields by reflection" can
+  build on `previewEntity` → prefab configs.
+- `.map` entities still name classes in `EntityRegistry` (code), not prefabs; worldspawn keys are parsed by the
+  loader, not a singleton config.
+- The player is `PlayerPrefab.Spawn` (code), not a prefab file; `CombatController` / `PlayerLink` statics are the
+  scene-side surface and could become configs + systems.
+- The anim / skeleton / vfx editors drive their previews through `AnimatedSprite` and `CameraView` helpers.
 - Still no melee damage path (Fury has no melee bonus).
 
 The notes below were written for layer 6 and still hold where they are not about enemies.
@@ -1651,7 +1650,33 @@ acceptable where drawing moves onto entities.
         `walk` / `die` / `look` shots are the same picture at 9.5% / 7.5% / 2.9% past 8/255; `menu` pixel-identical.
         The editor, anim, skeleton and vfx tools and the bench run clean (`crates` 11.2 ms/step, the known
         over-budget verdict on this Mac).
-- [ ] 9.8 Close-out: every gate, the bench, README.
+- [x] 9.8 Close-out (below).
+
+#### 9.8 — Layer close-out (done)
+
+- **Full sweep green, twice, hermetic and device-isolated**: 190 engine + 415 gameplay assertions; all 26 scripts
+  exit 0 and are byte-identical across runs; four shots 0.000% across runs. Combat gates at their values
+  (`killedAtFrame 97`, `rocket` hp 80 armour 0 y 3.82). Census: **zero GameObjects**.
+- **Tools**: the level editor (dock.map), anim, skeleton and vfx editors run 90 frames clean with screenshots; the
+  benchmark runs every scenario.
+- **Bench** (vs 8.9 `3890785`, `--scenario all --no-render --threads 1`, 3 interleaved, median ms/step): crates
+  11.78 / 12.27, ragdolls 16.07 / 16.27, projectiles 0.20 / 0.19, ground 0.94 / 0.87 — flat within the spread
+  (the machine went to load ~30 mid-run; ragdolls' 8.9 runs span 15.8–26.7). Bench allocation +0.5 / +1.0 KB on
+  crates / ragdolls (3.7 → 4.2, 4.8 → 5.8), within its run-to-run range; open, minor.
+- **Frame / alloc** (600 frames, medians from frame 60, 3 interleaved): walk 3.51 / 3.06 ms, fire 5.08 / 5.80,
+  approach 4.35 / 4.10 — flat inside the noise (single runs to 16 ms under load); **game allocation down 38%**:
+  walk 9.77 → 6.03, fire 9.91 → 6.20, approach 9.88 → 6.12 KB/frame — the GameObject scene's per-frame passes
+  and copies are gone. ECS time flat (0.161 / 0.174, 0.331 / 0.350, 0.215 / 0.217 ms).
+- **Layer totals** (`3890785..HEAD`, `src` + `tests`, 4 commits): +1,556 / −3,465 across 70 files, 18 deleted. The
+  layer is a net **−1,909 lines**: the engine's whole object model (`GameObject`, `Component`, `Behaviour`,
+  `Transform`, `Scene`, `Coroutine`, `Renderer` and its four components, `Light`, `LegacySceneProducer`), the six
+  player facades, `TestArea`, the followers, the injector and the compat classes.
+- **README** rewritten where it described the object model (the source tree, the death loop, the Unity
+  replacement table — `MonoBehaviour` / `GameObject` / `Transform` now map to "none: the World" — the renderer
+  component names, the level / arena note).
+- **Fixed on the way, not in the plan**: the per-prop mesh leak (since layer 2); the gates' exposure to other
+  worktrees' saves (8.8b) and to the real mouse (9.7); the editor and benchmark lifecycle order; the bench's lost
+  physics-timing column.
 
 ### Layer 10 — Editors on configs
 

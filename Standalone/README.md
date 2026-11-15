@@ -16,7 +16,8 @@ Standalone/
 ├── src/RipNRage.Engine/        custom engine (no external packages)
 │   ├── Platform/               GLFW + OpenGL 3.3 core bindings (P/Invoke, cross-platform loader)
 │   ├── Graphics/               render pipeline, PNG decoder, sprites/atlases, meshes, UI batch, font
-│   ├── Core/                   GameObject / Behaviour / Transform / Scene / coroutines / time
+│   ├── Core/                   Application (the frame loop and the fixed clock), time, profiler, asset base
+│   ├── Ecs/                    the World: entities, components, systems, queries, command buffers, the schedule
 │   ├── Animation/              sprite animation clips + Unity-style Animator state machine
 │   ├── Audio/                  OpenAL bindings, WAV loader, AudioSource
 │   ├── Physics/                collision world (grid broadphase), sphere/capsule/box/brush/mesh colliders, GJK + conservative-advancement sweeps, move-and-slide, KinematicBody, CharacterController, RigidBody (contact solver: soft / Baumgarte / NGS, static-dynamic friction, warm-start cache, CCD), joints (ball / distance / spring / hinge / slider / fixed constraints + Unity-style Joint components with limits, motors, springs, break force), physics materials, triggers, nav agent
@@ -26,9 +27,9 @@ Standalone/
 ├── src/RipNRage.Level/         level data model: brushes/entities, .map read/write, polygons, collision shapes
 ├── src/RipNRage.Game/
 │   ├── Scripts/                the ported game scripts (same files/classes as the Unity _Game/Scripts)
-│   ├── Tools/EnragedInjector.cs
-│   ├── Framework/              MonoBehaviour/ScriptableObject/attribute stand-ins, Prefab factories
-│   ├── Content/                prefabs, ScriptableObject data, animator graphs and the TestArea level
+│   ├── Ecs/                    the game's components and systems (player, combat, AI, rage, flow, falls, death)
+│   ├── Framework/              the inspector attributes the data classes still carry
+│   ├── Content/                the player build, data tables, animator graphs, the level build and loader,
 │   │                           rebuilt in code from the values in the .prefab/.asset/.anim/.controller files
 │   └── Program.cs              entry point, CLI options, debug overlay, automation scripts
 ├── src/RipNRage.ImGui/         Dear ImGui integration used by the editors (renderer, input, docking)
@@ -176,7 +177,7 @@ Example used for the screenshots in this document:
   range) is the **BehaviorTree2** graph as a value stepped by a pure function; steering (`Ecs/AI/Steering.cs`)
   walks the force-driven capsule on the intent with a ledge guard and turns a `Heading` (facing is data — the body
   never rotates). An attack in progress is itself an entity parented to the enemy (telegraph, burst, recovery;
-  a hit staggers it), and `AIState` is the GameObject half still being ported. 8-sided sprite sheets
+  a hit staggers it). 8-sided sprite sheets
   (`EnemyVisualSystem`), projectiles that damage the player through armour.
 * Level: the dock brush map (`dock.obj`, imported like Unity: X mirrored, 0.25 u/unit, y −3.09),
   AABB collision per brush (rotated brushes are grid-approximated), sand/water planes, sky,
@@ -233,7 +234,7 @@ How it works (`Engine/Graphics/Lighting/`, `PostFx/PostProcessStack.cs`):
   frame, but each draw only uploads the ones whose range sphere touches the object's bounds
   (`lights_per_draw`, at most 16; consecutive draws with the same set skip the upload), so a pixel
   pays for the 0–3 lights that can reach it instead of all 16. The weapon muzzle flash, rockets and
-  explosions spawn short-lived point lights; the TestArea has lamp posts and crates as casters.
+  explosions spawn short-lived point lights; the dock level has lamp posts and crates as casters.
 * **Shadows**: an orthographic depth map from the sun around the camera. The *static* casters
   (every mesh whose transform did not change — a cheap per-frame fingerprint detects changes) are
   rendered into a cached depth map only when the camera drifts `recenter × distance` from the last
@@ -312,7 +313,7 @@ TIME)` when that mode is on). F3 cycles: off → one line → full profiler:
   stage, making the CPU column the true cost of each stage at the price of serialising CPU and GPU.
 * **Frame-time graph**: the last 240 frames with 16.7 / 33.3 ms guides (green / yellow / red).
 * **Memory**: GC gen 0/1/2 collections per second, managed bytes allocated per frame on the main thread, heap
-  size. **Scene**: objects, behaviours, coroutines, fixed steps run this frame (`8 (CLAMPED)` means the
+  size. **Scene**: fixed steps run this frame (`8 (CLAMPED)` means the
   simulation cannot keep up with real time), draw calls, particles and their collision raycasts.
 * **Physics**: colliders in the world (static ones in the broadphase grid + dynamic ones), kinematic and rigid
   bodies (with their contact manifolds / points), movers (trigger-checked colliders) and the raycasts / shape
@@ -381,7 +382,7 @@ allocation-free scene loop and the sprite batching / mesh instancing above.
 | 0 | **Shadow map** | every caster (meshes + lit sprites), never culled — off-screen walls still cast shadows |
 | 1 | **Sky** | full-screen gradient, rotation-only view |
 | 2 | **World** | frustum + occlusion culling → opaque meshes by render queue → transparent meshes → world sprites back-to-front → debug lines; then the world post-fx stage (volumetric fog, motion blur) |
-| 3 | **Viewmodel** | everything with `renderLayer = RenderLayer.FirstPerson` (the weapon, hands, muzzle flash; meshes too). Same view matrix as the camera but its **own projection** (`[viewmodel] fov/near/far`) on a **cleared depth buffer**, drawn *after* the world post-fx so motion blur / fog never smear the gun. Optionally lit by the sun, point lights and the muzzle-flash light (`lit`, `wrap`, `exposure`); `SpriteRenderer.fullBright` opts a sprite out (the flash itself). |
+| 3 | **Viewmodel** | everything with `Layer = RenderLayer.FirstPerson` (the weapon, hands, muzzle flash; meshes too). Same view matrix as the camera but its **own projection** (`[viewmodel] fov/near/far`) on a **cleared depth buffer**, drawn *after* the world post-fx so motion blur / fog never smear the gun. Optionally lit by the sun, point lights and the muzzle-flash light (`lit`, `wrap`, `exposure`); `SpriteRender.FullBright` opts a sprite out (the flash itself). |
 | 4 | **Lens post-fx** | bloom, chromatic aberration, vignette, colour → default framebuffer |
 | 5 | **UI** | `IUiDrawer` components through `UiBatch` |
 
@@ -398,12 +399,12 @@ hides the weapon layer. All values hot-reload like the rest of the file; the deb
 
 **Culling** (`Engine/Graphics/Culling/`) runs on the world pass only:
 
-* **Frustum** — planes extracted from the view-projection matrix; every world `MeshRenderer`
-  (mesh bounds transformed to a world AABB), `SpriteRenderer` (quad corners; billboards use a
+* **Frustum** — planes extracted from the view-projection matrix; every world `MeshRender`
+  (mesh bounds transformed to a world AABB), `SpriteRender` (quad corners; billboards use a
   yaw-independent box) and point light (range sphere) is tested. Bounds get 0.3 m of padding so
   shader vertex animation (water waves) can never pop.
 * **Occlusion** — by default hardware occlusion queries (see above). In `cpu` mode a CPU `OcclusionBuffer` (default 192×96) rasterises the level chunks flagged
-  `MeshRenderer.occluder` (every opaque brush chunk from the level loader) with perspective-correct
+  `MeshRender.Occluder` (every opaque brush chunk from the level loader) with perspective-correct
   depth, near-plane clipping and back-face rejection. Occludees are tested with their AABB's screen
   rectangle against the box's nearest depth: an object is skipped only when every pixel it could
   touch is covered by nearer geometry (pixel-centre coverage for occluders + over-covering rectangles
@@ -426,7 +427,7 @@ hides the weapon layer. All values hot-reload like the rest of the file; the deb
 
 * **`Material`** — a shader + typed properties (`SetFloat/SetColor/SetVector/SetTexture`) + render
   state (`blend`, `cull`, `depthWrite`, `depthTest`, `renderQueue`, `alphaCutoff`). Assign to any
-  `MeshRenderer.material` / `SpriteRenderer.material` at runtime; change properties any time.
+  `MeshRender.Material` / `SpriteRender.Material` (asset handles) at runtime; change properties any time.
   Unassigned renderers use the engine defaults (`mesh`, `sprite` shaders).
 * **`MaterialPropertyBlock`** — per-object overrides on top of the material
   (`renderer.propertyBlock.SetFloat("_Flash", 1f)`).
@@ -496,9 +497,9 @@ effect is visible while you toggle it. Choices are saved to `<persistentDataPath
 **overrides on top of `tunables.cfg`** (`Content/GraphicsSettings.cs`): the file keeps hot-reloading and the
 player's choices are re-applied after every reload; RESET TO CONFIG DEFAULTS forgets them.
 
-**Death loop.** When the player's health reaches zero `PlayerState.Die()` runs the
-`PlayerDeathSequence` on the player prefab: input, combat (weapon and fists hidden), look, head-bob and
-recoil are switched off, the camera drops to floor level and rolls over while the world slows to 20 %,
+**Death loop.** Every death is a `DeathEvent` from `HealthSystem` (falls too: a fatal blow). For the player
+`PlayerDeathSystem` takes the view rig, holsters the gun and hides the viewmodel, the flow (`Flow`, a singleton)
+goes Dying and blocks the input, and `DeathCamSystem` drops the camera to floor level and rolls over while the world slows to 20 %,
 a synthesised thud plays (`Content/ProceduralSounds.cs` — no audio asset exists for it) and the
 **"YOU ARE DEAD" screen** (`DeathScreen`) fades in: blood-red tint and vignette, then the title, then
 RESTART / MAIN MENU ~2.4 s after death. RESTART respawns from the last checkpoint when the current run
@@ -766,7 +767,7 @@ kg and is shoved by blasts and by enemies, and enemies shove each other. The `FP
 feel (bunny hop, slide, wall run, dash, landing, rage / style speed) and only computes the velocity it wants;
 the `NavMeshAgent` drives a `CharacterBody` when the enemy has one. Rigid bodies are simulated at 50 Hz and a
 body with `interpolate` writes its transform every frame blended between the last two steps
-(`Scene.FixedAlpha`), so the player moves smoothly at any frame rate. The old kinematic `CharacterController` /
+(`Application.FixedAlpha`), so the player moves smoothly at any frame rate. The old kinematic `CharacterController` /
 `KinematicBody` movers remain for things that should not be part of the force simulation (projectiles).
 
 *Joints* come in two layers. The solver layer is `Constraint` and its subclasses (`Physics.World.AddConstraint`,
@@ -913,7 +914,7 @@ Dying sprites are **sliced like a ragdoll**: the enemy's billboard is cut into p
 skeleton*, each piece becomes a rigid body hung off its parent with a ball joint, the killing blow throws the
 part it hit, and explosions tear every joint and scatter the pieces. The pieces are real sprites (only their
 polygon of the texture is drawn, lit and shadowed like the original), they tumble in their billboard plane (the
-body's roll is read back into `SpriteRenderer.billboardRoll`), collide with the level but not with characters
+body's roll is read back into `SpriteRender.BillboardRoll`), collide with the level but not with characters
 or projectiles (layer `OnlyGroundCollision`), and fade out after the skeleton's `lifetime`.
 
 **Skeletons** (`skeletons/<name>.json`, `Engine/Destruction/SpriteSkeleton.cs`) are *not* animation
@@ -1080,16 +1081,16 @@ Not covered (different system): the enemy 4/8-direction sheets (`AnimationStateC
 
 | Unity | Standalone |
 |---|---|
-| `MonoBehaviour`, `Awake/Start/Update/FixedUpdate`, coroutines, `Instantiate/Destroy` | `RipNRage.Engine.Behaviour` + `Scene` (same callback order; prefab fields are assigned before `Awake`) |
-| `Transform`, `Vector3`, `Quaternion.Euler` (ZXY), `Mathf`, `Random`, `Time` | API-compatible engine types (see `Math/`) |
+| `MonoBehaviour`, `GameObject`, `Transform`, `Awake/Start/Update/FixedUpdate`, coroutines, `Instantiate/Destroy` | **none** (layer 9): the game is an ECS `World` — components are plain structs, behaviour is systems (`ITick` / `IFixedTick` / `ILateTick` / `IConsumes<Event>`), scheduled into batches from what each system declares it reads and writes; poses are `LocalTransform` / `Parent` / `LocalToWorld`; UI and tools are `IUiScreen`s updated at frame start |
+| `Vector3`, `Quaternion.Euler` (ZXY), `Mathf`, `Random`, `Time` | API-compatible engine types (see `Math/`) |
 | Prefabs / ScriptableObjects / `.anim` / `.controller` | code in `Content/` with the serialized values copied from the asset files |
-| `SpriteRenderer`, `Sprite`, TexturePacker importer | `Graphics/SpriteRenderer`, `Sprite`, `SpriteAtlas` (polygon meshes supported) |
+| `SpriteRenderer`, `MeshRenderer`, `Light`, `Camera`, `Sprite`, TexturePacker importer | `SpriteRender` / `MeshRender` / `LightSource` / `CameraLens` components drawn by `EcsRenderProducer`; `Sprite`, `SpriteAtlas` (polygon meshes supported) |
 | `Animator` / `AnimatorOverrideController` / animation events | `Animation/Animator` (bool, trigger, float params; exit-time & Any-State transitions; events); clips/controllers as JSON in `animations/` (hot reload, `anim.sh` editor) |
 | `CharacterController`, `Physics.Raycast/SphereCast(All)`, `OnTriggerEnter`, layers, `Rigidbody`, `MeshCollider`, `CharacterJoint` (ragdolls) | `Physics/` (collision world with a grid broadphase, exact box-vs-hull sweeps, `Physics.MoveAndSlide`, `KinematicBody`, `RigidBody` + contact solver, `Joint` components (`HingeJoint`, `SliderJoint`, `SpringJoint`, `DistanceJoint`, `BallJoint`, `FixedJoint` over the solver's `*Constraint`s), `PhysicsMaterial`, `MeshCollider` with an AABB tree, `ITriggerListener`, collision matrix); `Destruction/` slices sprites into jointed pieces |
 | `NavMeshAgent`, `NavMesh.SamplePosition` | straight-line steering agent that sticks to geometry (no baked navmesh yet) |
-| Unity Input System (`PlayerControls.inputactions`) | `InputSystem` action maps (gameplay / UI schemes, rebindable keyboard + gamepad slots, `controls.json`); `PlayerInputActions` dispatches the same On* callbacks |
+| Unity Input System (`PlayerControls.inputactions`) | `InputSystem` action maps (gameplay / UI schemes, rebindable keyboard + gamepad slots, `controls.json`); sampled once a frame into the `InputState` singleton by `EcsInputSystem`; automation drives `InputOverride` (`Scripted` runs never read the real devices) |
 | `AudioSource` / `AudioClip` | OpenAL-backed equivalents (WAV only for now) |
-| `UnityEngine.UI.Image`, TextMeshPro, Canvas 1920×1080 | `UiImage`/`UiText` drawn by `HudController` through `UiBatch` (built-in bitmap font) |
+| `UnityEngine.UI.Image`, TextMeshPro, Canvas 1920×1080 | `UiImage`/`UiText` drawn by `HudScreen` (reads the components each frame) through `UiBatch` (built-in bitmap font) |
 | DOTween (`DOLookAt`, `DOSizeDelta`) | `Tween/TweenRunner` |
 | URP post-processing volumes | `RagePostprocess` colour filter + vignette |
 | `BinaryFormatter` saves + surrogates | `System.Text.Json` (the surrogates are no longer needed) |
@@ -1114,8 +1115,9 @@ switching stay in sync; the `0` glyph of the built-in font is plain.
 * Katana and Sonic Shotgun have sprites/animations but no weapon class in the original project
   either; they are loaded but not in the inventory.
 * The EffectCore particle prefabs of the Unity project were replaced by the data-driven effects in `vfx/`.
-* The full TestArea scene (Dock.blend with materials, lighting, checkpoints, 48 grunts) is
-  approximated by the `dock.obj` brushes, a few pickups and riflemen.
+* The full Unity TestArea scene (Dock.blend with materials, lighting, checkpoints, 48 grunts) is
+  approximated by `levels/dock.map` (the `dock.obj` brushes, a few pickups and riflemen; `--export-dock`
+  regenerates it). A level is required; the old hard-coded arena is gone.
 * Enemy navigation is straight-line (no navmesh baking); the 8-direction sprite shader is done on
   the CPU with the 4-side sheets.
 * Particles have no soft depth fade against geometry and decals are long-lived particles (they do not
