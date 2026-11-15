@@ -349,12 +349,29 @@ namespace RipNRage.Engine.Ecs
         }
         private readonly BatchJob _batchJob = new BatchJob();
 
+        /// <summary>
+        /// 8.9: <c>ECS_PROFILE_BATCHES=1</c> splits each phase into three profiler stages — single-system batches,
+        /// parallel batches (whose systems the per-system profiler cannot see: they run on the workers), and the
+        /// playback + sync after every batch — so a phase's cost can be put on work or on scheduling.
+        /// </summary>
+        public static readonly bool ProfileBatches = Environment.GetEnvironmentVariable("ECS_PROFILE_BATCHES") == "1";
+        private static readonly Dictionary<string, string[]> _batchStageNames = new Dictionary<string, string[]>();
+        private static string[] BatchStages(string phase)
+        {
+            if (!_batchStageNames.TryGetValue(phase, out var n))
+                _batchStageNames[phase] = n = new[] { $"ecs {phase} single", $"ecs {phase} parallel", $"ecs {phase} sync" };
+            return n;
+        }
+
         private void RunPhase(Phase p, float dt, Action<ISystem, SystemContext> call)
         {
             if (_scheduleDirty) RebuildSchedule();
+            var stages = ProfileBatches ? BatchStages(p.Name) : null;
             foreach (var batch in p.Batches)
             {
                 foreach (var s in batch) { s.Context.DeltaTime = dt; s.Context.Time = _time; s.Context.Frame = _frame; }
+                bool parallel = !(batch.Count == 1 || Jobs.ThreadCount <= 1);
+                if (stages != null) Profiler.Begin(stages[parallel ? 1 : 0]);
                 BeginIteration();
                 try
                 {
@@ -375,9 +392,11 @@ namespace RipNRage.Engine.Ecs
                         if (_batchJob.Error != null) throw new AggregateException($"system failed in {p.Name}", _batchJob.Error);
                     }
                 }
-                finally { EndIteration(); InParallelBatch = false; }
+                finally { EndIteration(); InParallelBatch = false; if (stages != null) Profiler.End(); }
+                if (stages != null) Profiler.Begin(stages[2]);
                 foreach (var s in batch) PlaybackSystem(s);
                 Sync();
+                if (stages != null) Profiler.End();
             }
         }
 

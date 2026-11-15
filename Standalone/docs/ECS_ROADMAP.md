@@ -46,50 +46,47 @@ then start at the first unchecked layer.
   evasion under threat) and spends on ENRAGED / DEPRESSED, tuned live from tunables.cfg `[rage]`; the style meter
   retired; pickups, water, checkpoints, sky and impact surfaces are entities and systems; the trigger bridge and
   every trigger-listener MonoBehaviour deleted (close-out below)
-- [ ] Layer 8 — UI, HUD, save / load, game flow
+- [x] **Layer 8 — UI, HUD, save / load, game flow**: one door for death; the flow is a singleton with a transition
+  table (title / playing / paused / dying / dead; every scene change is a request the flow accepts and the session
+  carries out); the death, the falls, the HUD, the menus and the save are components, systems and plain screens;
+  the gates are a script in the repo and hermetic (close-out below)
 - [ ] Layer 9 — Remove the legacy model
 - [ ] Layer 10 — Editors on configs
 
-### Pick-up point for the next session (written 2026-11-14, after 7.8; layer 8 is next)
+### Pick-up point for the next session (written 2026-11-15, after 8.9; layer 9 is next)
 
-Layers 0–7 are done. **Compare scripts under `--fixed-dt 0.016667 --threads 1 --validate-access`** (default seed
-implied). The established rules hold as written in layer 6's notes below, plus what layer 7 added:
+Layers 0–8 are done. **Run the gates with `./gates.sh OUT`** (builds the game and both check projects, runs both
+suites and 26 scripts under the gate rule, two pixel shots; `./gates.sh --compare A B` diffs two sweeps,
+`python3 tools/pngdiff.py a.png b.png [tolerance]` compares shots). The rules of layers 6–7 hold; layer 8 added:
 
-- **Build the test project before running it.** `dotnet build RipNRage.sln` does *not* refresh
-  `tests/RipNRage.GameChecks`' copy of the game assembly, so `dotnet run --no-build` after a solution build can
-  test stale code — layer 7 read two false PASSes this way, one hiding a compile error. Run
-  `dotnet build tests/RipNRage.GameChecks` explicitly (the gate scripts should do it). `CHECKS_TRACE=1` prints the
-  stack of a non-assertion failure.
-- **Seed by placement, never by entity index** (`AiBrains.Seed`): an index depends on how many entities exist
-  before it, so every entity a later layer adds at load would reshuffle the AI (and a buffered entity's index is
-  not final until playback).
-- **Build level entities immediately when the loader must stamp them** (`LevelRef.Index`); `PhysicsEntities`
-  builds through the command buffer, so its entity is not alive when `spawnEntity` returns. Tags that ride on such
-  a collider go through the same buffer (`Surfaces.Tag`).
-- **`--threads 1` pins the rigid solver, not the ECS**: parallel batches still run on workers. Determinism holds
-  (command buffers), but the per-system profiler cannot see systems inside a parallel batch — use `--perf-csv`
-  and the `ecs` total.
-- A pixel gate needs its floor measured first: `look` is 0.000% same-build; `rage` and anything with muzzle
-  particles ~1.1–1.3%.
+- **The sweep is hermetic**: `RIPNRAGE_DATA_DIR` gives every sweep its own saves / graphics.json / controls.json.
+  Other worktrees on this machine run the game too and shared the per-user folder — one's checkpoint was read by
+  another mid-sweep. Run anything that saves with its own data dir.
+- **Scripts restart with every scene build** (`OnSceneBuilt` adds a fresh `DemoScript`): a script that crosses a
+  RESTART / load / title change keeps its stage in a static (`die`, `saveload`, `checkpoint`, `menu`, `flowmoves`,
+  `deathf8` do).
+- **Scene changes are requests**: `Flows.Ask(FlowAction)` from anything (menus, developer keys with `debug: true`,
+  systems); `Flows.Allows` is the table; the accepted move waits in `Flow.Pending` and `GameSession` carries it out
+  at the next frame start. Only `FlowSystem` moves `Flow.Phase` (the title build's `BeginTitle` aside); scene-side
+  writes to `Flow` are `CheckpointReached`, `BeginTitle` and the session's `TakePending`, nothing else.
+- **UI is `IUiScreen`** (engine `UiScreens`): plain objects, updated at frame start, drawn with the GameObject
+  drawers, closed by the scene reset. A screen reads components every frame — no change events.
+- **Profiling a phase**: `ECS_PROFILE_BATCHES=1` adds `ecs <phase> single / parallel / sync` stages (with
+  `--perf-csv`), the per-system profiler's blind spot. Machine load from other sessions makes frame times noisy:
+  take ≥ 5 interleaved samples and compare medians.
 
-What layer 8 inherits:
+What layer 9 inherits (the MonoBehaviours left, all facades or tools):
 
-- **Death has two doors** *(closed in 8.1: the fall is a fatal `DamageEvent`)*. `FallRespawn` calls `PlayerState.Die()` directly, so a fall posts no `DamageEvent` and no
-  `DeathEvent` reaches the ECS. Rage copes (empty health is its signal); anything new keyed on `DeathEvent` misses
-  falls. Layer 8 owns death and game flow — route the fall through `HealthSystem`.
-- **HUD**: the two rage meters are placeholder bars beside the portrait (`HudController.DrawRageMeters`); the
-  portrait reads `Rage`; the rage grade is `RageScreen` (a drawer, no state). The style meter's HUD is gone.
-- **Save format**: `PlayerSave.rage` holds Fury (name kept), `calm` is new, `combatState` unused; every saved level
-  entity is keyed by `LevelRef` (monsters, spawners, pickups) — `LevelEntityRef` is deleted. (The `object cycle`
-  save error was fixed in layer 4.)
-- **Controls**: Q / E and D-pad left / right are the rage meters; quick swap moved to Tab; weapons 2 / 4 have no
-  D-pad binding. `controls.json` is versioned (v2) with a one-time migration.
-- `EcsObjects` (`Ecs/EcsObjects.cs`) is the last entity ↔ GameObject directory, used by the combat bridge.
-- No melee damage path exists (the finisher deals none), so Fury has no melee bonus yet.
-- **Open performance item**: on `approach`, the Tick-phase `ecs` total is +0.05–0.17 ms (0.19–0.23 → 0.24–0.40
-  over 3 runs). Every new system that runs alone costs 1–2 µs a frame; the remainder sits outside per-system work —
-  the parallel batch the profiler cannot see into, and four more batch boundaries (15 → 19 Tick batches, each a
-  playback + sync). Under 1% of a 60 fps frame, inside the noise on `walk` / `fire`; a per-batch profile settles it.
+- **Player facades**: `PlayerLink` (the GameObject ↔ entity link, `Teleport`, `ResetVelocity`), `PlayerState` /
+  `EntityState` (49 / 104 lines: `TakeDamage` for the scripts, the hit kick via `CombatBridgeSystem.NotifyHit`),
+  `CombatController` (the viewmodel equip — `EquipWeaponIndex` sets the animator controller —, `OnFireWeapon` for
+  the muzzle light, ammo reads for the scripts), `PlayerInputActions` (the input mirror and the weapon-switch
+  dispatch), `FPSController`, `FPSCameraController`. The save's apply still waits one frame for the facades'
+  `Start` (`ApplyWhenReady`); with them gone it can run straight after the build.
+- **Cameras and tools**: `MenuCamera` (the title's legacy camera), `MuzzleFlashLight`, `VfxRuntime`,
+  `WeaponAnimationEvents`, the physics followers, `DebugOverlay` / `DemoScript`; `EcsObjects` (entity ↔ GameObject)
+  serves the combat bridge.
+- Still no melee damage path (Fury has no melee bonus).
 
 The notes below were written for layer 6 and still hold where they are not about enemies.
 
@@ -1488,16 +1485,62 @@ vector properties, see layer 4's notes).
       automation scripts drive the title screen too. The pause menu's stats line reads `Health` / `Armor` / `Rage`
       off the components (`PlayerState.Current` gone from the menus). `MenuCamera` stays a MonoBehaviour: it is the
       scene's legacy camera, not a menu (layer 9).
-      - The plan's "RESTART / MAIN MENU / Continue go through the `Flow` transition request" was superseded by 8.2's
-        review: scene transitions stay outside the world, in `GameSession`, and the menus call it directly.
+      - The plan's "RESTART / MAIN MENU / Continue go through the `Flow` transition request" was deferred here and
+        done in 8.8b (see the close-out): the flow decides, the session carries out.
       - **The `--menu` → NEW GAME gate** (deferred from 8.0): `menu` script under `--menu`, in the sweep (24
         scripts) — the title screen has no player (`state=MainMenu player=False`), Enter on NEW GAME starts a fresh
         run (`state=Playing hp=100 ammo=120 pos (0.00, 1.81, 8.00)`). The title screen and the graphics menu
         checked on screen; `graphicsmenu` script exits 0.
       - **Gates**: 398 gameplay assertions; every pre-existing script and both shots **byte-identical to 8.5**; two
         sweeps identical.
-- [ ] 8.9 Close-out: full sweep twice, byte-identical scripts, bench / frame / alloc vs 7.8 (and settle 7.8's open
-      `approach` scheduling item with a per-batch profile), layer totals, pick-up point for layer 9.
+- [x] 8.9 Close-out (below).
+
+#### 8.8b — Menu choices go through the flow (done, after 8.8)
+
+`Flow` gained a **Title** phase (set by the title build, `Flows.BeginTitle`) and **`Pending`**; one **`FlowRequest`**
+event replaced `PauseRequest`. **`Flows.Allows`** is the transition table — title: NEW GAME / CONTINUE / QUIT; paused:
+RESUME / RESTART / LOAD CHECKPOINT / MAIN MENU / QUIT; dead: RESPAWN / MAIN MENU; playing: PAUSE; dying: nothing;
+developer keys (F7 / F8 / F9, `debug`): restart and load in any phase of a level, never on the title. An accepted
+move waits in `Pending` with the phase untouched (a paused world stays frozen); **the first choice wins** — every
+request is refused while one is pending, which replaced the menus' `_done` / `Choose` guards. `GameSession` takes
+the move at the next frame start and carries it out, resolving what needs the disk (which save CONTINUE loads,
+whether RESPAWN has a checkpoint); a move that cannot be done changes nothing and the menu takes choices again
+(LOAD CHECKPOINT with no checkpoint stays paused instead of resuming). Deleted: `GameSession.Defer` /
+`RestartLevel` / `NewGame` / `Continue` / `Respawn` / `Quit`, `GameState`; boot still builds directly
+(`StartLevel`, `ShowMainMenu`, `GameSaveSystem.Load` → `GameSession.Rebuild`). Gates: +14 assertions (the whole table
+— every action × every phase × menu / key —, first-choice-wins, the system over a world); new `flowmoves`
+(MAIN MENU refused while playing; pause → MAIN MENU + RESTART in one frame → the title) and `deathf8` (F8 restarts
+mid-death); the moves land on the frames the direct calls did — every script byte-identical to 8.8 but the `menu`
+probe's wording (`flow=Title`). **Found on the way**: a sweep's `checkpoint` gate respawned at the level start
+because another worktree, sweeping at the same time, wrote its own checkpoint into the shared per-user folder —
+`RIPNRAGE_DATA_DIR` and a fresh data dir per sweep fixed it.
+
+#### 8.9 — Layer close-out (done)
+
+- **Full sweep green, twice, hermetic**: 199 engine + 412 gameplay assertions; all 26 scripts exit 0 and are
+  byte-identical across two runs; both shots 0.000%. Combat gates at their values: `killedAtFrame 97`, `rocket` hp
+  80 armour 0 y 3.82, `glockalt` step 0 / finisher none / ammo 120.
+- **Frame / alloc** (vs 7.8 `1786615`, built in a scratch worktree with the same opt-in batch profiler; 600 frames,
+  `--threads 1`, medians from frame 60, 3 interleaved; the machine was at load ~20 from other sessions, so single
+  runs reach 9–15 ms): walk 3.31 / 3.38 ms, fire 9.58 / 3.54 (noise), approach 4.02 / 4.00 ms over 5 more
+  interleaved samples. **Allocation lower everywhere**: walk 9.96 → 9.77, fire 10.17 → 9.91, approach 10.06 → 9.91
+  KB/frame.
+- **Bench** (`--scenario all --no-render --threads 1`, 3 interleaved, median ms/step 7.8 / now): crates 12.56 /
+  12.32, ragdolls 17.32 / 16.08, projectiles 0.19 / 0.19, ground 0.98 / 0.92 — flat; alloc equal or lower.
+- **7.8's open item, settled** (`ECS_PROFILE_BATCHES=1`, new in 8.9): on `approach` the whole Tick phase is ~0.10 ms
+  at 7.8 (single 0.048, parallel batches 0.035, playback + sync 0.017) and ~0.12 ms now (0.056 / 0.045 / 0.023, three
+  more systems). A batch boundary costs ~1 µs; the parallel batch is ~35–45 µs of real work. 7.8's +0.05–0.17 ms
+  is as large as the entire Tick phase — it was noise in single-sample wall-clock totals, not scheduling. Closed.
+- **Layer totals** (`1786615..HEAD`, `src` + `tests`, 13 commits): +1,541 / −1,281 across 46 files. **Deleted**:
+  `PlayerDeathSequence`, `FallRespawn`, `HudController`, `GameManager`, `LevelManager`, `IManager`, `ICrosshair`,
+  `SaveData`, `PlayerStateData`, `InventoryData`; `SessionBehaviour`; the `PauseMenu` / `DeathScreen` /
+  `MainMenuScreen` / `GraphicsMenu` / `ControlsMenu` / `GlockCrosshair` GameObjects; `PlayerState` 89 → 49 lines.
+  **Is**: `Flow` / `FlowSystem` (the transition table), `PlayerDeathSystem` / `DeathCam`, `FallSystem` /
+  `FallWatch` / `KillHeight`, `HudScreen`, `IUiScreen` / `UiScreens`; `gates.sh`, `tools/pngdiff.py`; 107 new
+  gameplay assertions (305 → 412), 6 new scripts (20 → 26).
+- **Fixed on the way, not in the plan**: a save load and a checkpoint respawn put the player at the level start
+  (since layer 4); `die` / `saveload` never printed their last line (scripts restart per scene); a dead body drifted
+  after a fall; a default fall watch judged falls against y 0; the sweep read other worktrees' saves.
 
 ### Layer 9 — Remove the legacy model
 
