@@ -22,6 +22,10 @@ fi
 
 OUT="${1:-gates-out}"
 mkdir -p "$OUT"
+# hermetic: every sweep gets its own saves / graphics.json / controls.json (other worktrees run the game too, and
+# share the per-user folder — a checkpoint written by one was read by another)
+export RIPNRAGE_DATA_DIR="$(cd "$OUT" && pwd)/data"
+rm -rf "$RIPNRAGE_DATA_DIR"; mkdir -p "$RIPNRAGE_DATA_DIR"
 fail=0
 
 dotnet build -c Release --nologo -v q src/RipNRage.Game/RipNRage.Game.csproj || exit 1
@@ -36,7 +40,7 @@ tail -1 "$OUT/game-checks.log"
 # script:frames — the 20 of the 7.8 sweep, then fall / pause (in the sweep since 8.0) and checkpoint (new in 8.0)
 ALL="walk:400 fire:400 weapons:400 rage:400 saveload:400 jab:400 m1887:400 glockfire:400 rocket:400 glockalt:400
 killenemy:400 style:400 die:400 peek:400 close:400 approach:400 pickup:400 water:400 surface:400 evade:400
-fall:620 pause:400 checkpoint:400 menu:400"
+fall:620 pause:400 checkpoint:400 menu:400 flowmoves:400 deathf8:400"
 
 for entry in $ALL; do
     name=${entry%%:*}; frames=${entry##*:}

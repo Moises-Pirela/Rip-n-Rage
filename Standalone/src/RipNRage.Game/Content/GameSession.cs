@@ -4,15 +4,14 @@ using RipNRage.Game.Content.Vfx;
 
 namespace RipNRage.Game.Content
 {
-    /// <summary>Where the game is: on the title screen or in a level.</summary>
-    public enum GameState { None, MainMenu, Playing }
-
     /// <summary>
-    /// Owns the game flow: main menu ↔ level, level (re)loading, respawning after death and quitting.
-    /// Every transition resets the scene, clears the singletons the ported scripts use, rebuilds the
-    /// level and the session tools (pause menu, debug overlay). Transitions requested while the scene
-    /// is running (from an Update, a coroutine or a UI draw) are deferred to the start of the next
-    /// frame so no behaviour is torn down mid-callback.
+    /// Carries out the flow's moves (8.8b): the menus, the developer keys and the systems <i>ask</i> the flow
+    /// (<c>Flows.Ask</c>); <c>FlowSystem</c> decides against the transition table and records the accepted move in
+    /// <c>Flow.Pending</c>; at the start of the next frame this class takes it and changes the scene — a scene change
+    /// destroys the world, so no system can perform one. Every scene change resets the scene, clears the singletons
+    /// the ported scripts use and rebuilds the level (or the title screen) and the session tools. It also resolves
+    /// what needs the disk (which save CONTINUE loads, whether RESTART after death has a checkpoint). Boot builds the
+    /// first scene directly: there is no world to ask yet.
     /// </summary>
     public static class GameSession
     {
@@ -20,7 +19,6 @@ namespace RipNRage.Game.Content
         public static string LevelPath { get; private set; }
         /// <summary>Level "New game" starts (set by Program from the command line).</summary>
         public static string DefaultLevelPath;
-        public static GameState State { get; private set; }
         /// <summary>True when RESTART after death will load the checkpoint rather than the level start: this run
         /// passed a checkpoint or was loaded from a save (<c>Flow.CheckpointReached</c>, reset with the scene), and the
         /// checkpoint file belongs to this level — a run that never reached one restarts the level even if an older
@@ -36,7 +34,7 @@ namespace RipNRage.Game.Content
         {
             LevelPath = levelPath;
             GameSaveSystem.CurrentLevelPath = levelPath;
-            State = GameState.Playing;
+            UiScreens.BeforeFrame = RunFrameStart;
             InputSystem.LockCursorInGameplay = true; // the gameplay scheme locks the mouse; UI screens release it
             TestArea.Build(levelPath);
             UiScreens.Add(new PauseMenu());
@@ -45,92 +43,84 @@ namespace RipNRage.Game.Content
             OnSceneBuilt?.Invoke(tools);
         }
 
-        /// <summary>Shows the title screen over an attract-mode view of <paramref name="backdropLevelPath"/> (default: the current / default level).</summary>
+        /// <summary>Builds the title screen over an attract-mode view of <paramref name="backdropLevelPath"/> (default: the
+        /// current / default level), now — boot, and the MainMenu move.</summary>
         public static void ShowMainMenu(string backdropLevelPath = null)
         {
             string level = backdropLevelPath ?? LevelPath ?? DefaultLevelPath;
-            Defer(() => DoShowMainMenu(level));
-        }
-
-        /// <summary>Tears the scene down and builds the level again; <paramref name="afterBuild"/> runs on the new scene.</summary>
-        public static void RestartLevel(string levelPath, Action afterBuild = null)
-        {
-            Defer(() => DoRestart(levelPath, afterBuild));
-        }
-
-        /// <summary>Starts the default level from the beginning.</summary>
-        public static void NewGame() => RestartLevel(DefaultLevelPath);
-
-        /// <summary>Loads the most recent save (checkpoint, else quick save). Returns false when there is none.</summary>
-        public static bool Continue()
-        {
-            string slot = GameSaveSystem.ContinueSlot();
-            return slot != null && GameSaveSystem.Load(slot);
-        }
-
-        /// <summary>
-        /// Respawns after death: from the last checkpoint when this run reached one (and the checkpoint
-        /// save belongs to the current level), otherwise from the start of the level.
-        /// </summary>
-        public static void Respawn()
-        {
-            if (CanRespawnAtCheckpoint && GameSaveSystem.Load("checkpoint")) return;
-            RestartLevel(LevelPath);
-        }
-
-        public static void Quit() => Application.Quit();
-
-        // ------------------------------------------------------------------ internals
-
-        // ------------------------------------------------------------------ frame-start work (8.4b: no SessionBehaviour)
-
-        private static Action _pending;
-        private static System.Collections.IEnumerator _afterBuild;
-
-        /// <summary>Runs <paramref name="action"/> at the start of the next frame when a scene is live (a transition
-        /// requested from a screen, a system or a UI draw must not tear the scene down mid-callback), otherwise right away.</summary>
-        private static void Defer(Action action)
-        {
-            if (State == GameState.None) { action(); return; }
-            _pending = action;
-            UiScreens.BeforeFrame = RunFrameStart;
-        }
-
-        /// <summary>Steps <paramref name="routine"/> once per frame, at frame start, until it ends or the scene is reset
-        /// (the save's "apply once the player exists"; it yields only <c>null</c>).</summary>
-        public static void RunAfterBuild(System.Collections.IEnumerator routine)
-        {
-            _afterBuild = routine;
-            UiScreens.BeforeFrame = RunFrameStart;
-        }
-
-        private static void RunFrameStart()
-        {
-            if (_pending != null) { var r = _pending; _pending = null; r(); }
-            if (_afterBuild != null && !_afterBuild.MoveNext()) _afterBuild = null;
-        }
-
-        private static void DoRestart(string levelPath, Action afterBuild)
-        {
             ResetWorld();
-            StartLevel(levelPath);
-            afterBuild?.Invoke();
-        }
-
-        private static void DoShowMainMenu(string backdropLevelPath)
-        {
-            ResetWorld();
-            LevelPath = backdropLevelPath;
-            GameSaveSystem.CurrentLevelPath = backdropLevelPath;
-            State = GameState.MainMenu;
+            LevelPath = level;
+            GameSaveSystem.CurrentLevelPath = level;
+            UiScreens.BeforeFrame = RunFrameStart;
             InputSystem.LockCursorInGameplay = false;
-            TestArea.Build(backdropLevelPath, spawnPlayer: false);
+            TestArea.Build(level, spawnPlayer: false);
+            RipNRage.Game.Ecs.Flows.BeginTitle();
             UiScreens.Add(new MainMenuScreen());
             var tools = CreateSessionObject();
             tools.AddComponent<VfxRuntime>();
             OnSceneBuilt?.Invoke(tools); // the debug overlay and the automation scripts drive the title screen too (8.8)
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+        }
+
+        /// <summary>Tears the scene down and builds <paramref name="levelPath"/> again, now; <paramref name="afterBuild"/>
+        /// runs on the new scene (the save's load).</summary>
+        public static void Rebuild(string levelPath, Action afterBuild = null)
+        {
+            ResetWorld();
+            StartLevel(levelPath);
+            afterBuild?.Invoke();
+        }
+
+        // ------------------------------------------------------------------ the moves
+
+        /// <summary>Frame start: the pending move, if any, then the save's apply-when-ready step.</summary>
+        private static void RunFrameStart()
+        {
+            var move = RipNRage.Game.Ecs.Flows.TakePending();
+            if (move != RipNRage.Game.Ecs.FlowAction.None) Carry(move);
+            if (_afterBuild != null && !_afterBuild.MoveNext()) _afterBuild = null;
+        }
+
+        /// <summary>
+        /// Carries out an accepted move. A move that cannot be done (no save, an unreadable one) changes nothing: the
+        /// pending move is already taken, the phase is where it was, the menu that asked takes choices again, and the
+        /// save system has said why.
+        /// </summary>
+        private static void Carry(RipNRage.Game.Ecs.FlowAction move)
+        {
+            switch (move)
+            {
+                case RipNRage.Game.Ecs.FlowAction.NewGame: Rebuild(DefaultLevelPath); break;
+                case RipNRage.Game.Ecs.FlowAction.Continue:
+                {
+                    string slot = GameSaveSystem.ContinueSlot();
+                    if (slot != null) GameSaveSystem.Load(slot);
+                    break;
+                }
+                case RipNRage.Game.Ecs.FlowAction.Restart: Rebuild(LevelPath); break;
+                case RipNRage.Game.Ecs.FlowAction.Respawn:
+                    // from the checkpoint when this run reached one (and it belongs to this level), else the level start
+                    if (!(CanRespawnAtCheckpoint && GameSaveSystem.Load("checkpoint"))) Rebuild(LevelPath);
+                    break;
+                case RipNRage.Game.Ecs.FlowAction.LoadCheckpoint: GameSaveSystem.Load("checkpoint"); break;
+                case RipNRage.Game.Ecs.FlowAction.LoadQuick: GameSaveSystem.Load("quick"); break;
+                case RipNRage.Game.Ecs.FlowAction.MainMenu: ShowMainMenu(); break;
+                case RipNRage.Game.Ecs.FlowAction.Quit: Application.Quit(); break;
+            }
+        }
+
+        // ------------------------------------------------------------------ internals
+
+        // ------------------------------------------------------------------ frame-start work (8.4b: no SessionBehaviour)
+
+        private static System.Collections.IEnumerator _afterBuild;
+
+        /// <summary>Steps <paramref name="routine"/> once per frame, at frame start, until it ends or the scene is reset
+        /// (the save's "apply once the player exists"; it yields only <c>null</c>).</summary>
+        public static void RunAfterBuild(System.Collections.IEnumerator routine)
+        {
+            _afterBuild = routine;
         }
 
         /// <summary>Destroys everything and clears the per-level singletons / legacy save cache.</summary>

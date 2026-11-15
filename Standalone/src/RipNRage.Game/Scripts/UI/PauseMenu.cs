@@ -5,7 +5,7 @@ using RipNRage.Game.Content;
 using RipNRage.Game.Content.Level;
 
 /// <summary>
-/// Escape during play: asks the flow to pause (<see cref="RipNRage.Game.Ecs.PauseRequest"/>); once
+/// Escape during play: asks the flow to pause (<see cref="RipNRage.Game.Ecs.FlowRequest"/>); once
 /// <see cref="RipNRage.Game.Ecs.FlowSystem"/> has frozen the world (Paused), releases the mouse and shows
 /// RESUME / RESTART LEVEL / LOAD CHECKPOINT / MAIN MENU / QUIT. Lives on the session object of every
 /// level (<see cref="GameSession.StartLevel"/>) as a plain <see cref="IUiScreen"/>. The flow refuses a pause while the player is dying or
@@ -19,7 +19,8 @@ public sealed class PauseMenu : IUiScreen, IUiLayer
     private readonly MenuList _menu = new MenuList();
     private MenuItem _loadCheckpoint;
     private bool _open;
-    private bool _done;
+    /// <summary>A move is pending (the flow took a choice): the menu stays up, frozen, until the scene goes.</summary>
+    private static bool Busy => RipNRage.Game.Ecs.Flows.Busy;
     private float _anim;
 
     public PauseMenu()
@@ -27,12 +28,13 @@ public sealed class PauseMenu : IUiScreen, IUiLayer
         _menu.itemHeight = 56f;
         _menu.labelScale = 3.5f;
         _menu.Add("RESUME", Resume);
-        _menu.Add("RESTART LEVEL", () => Choose(() => GameSession.RestartLevel(GameSession.LevelPath)));
-        _loadCheckpoint = _menu.Add("LOAD CHECKPOINT", () => Choose(() => { if (!GameSaveSystem.Load("checkpoint")) Resume(); }), null, false);
+        _menu.Add("RESTART LEVEL", () => Ask(RipNRage.Game.Ecs.FlowAction.Restart));
+        // a checkpoint that cannot be loaded changes nothing: the menu stays up and takes choices again (8.8b)
+        _loadCheckpoint = _menu.Add("LOAD CHECKPOINT", () => Ask(RipNRage.Game.Ecs.FlowAction.LoadCheckpoint), null, false);
         _menu.Add("GRAPHICS", OpenGraphics, "TOGGLE EVERY VISUAL EFFECT, SEE THE FRAME TIME LIVE");
         _menu.Add("CONTROLS", OpenControls, "REBIND KEYS, MOUSE AND GAMEPAD");
-        _menu.Add("MAIN MENU", () => Choose(() => GameSession.ShowMainMenu()));
-        _menu.Add("QUIT", () => Choose(GameSession.Quit));
+        _menu.Add("MAIN MENU", () => Ask(RipNRage.Game.Ecs.FlowAction.MainMenu));
+        _menu.Add("QUIT", () => Ask(RipNRage.Game.Ecs.FlowAction.Quit));
         _menu.onSelectionChanged = _ => Play(ProceduralSounds.MenuMove);
     }
 
@@ -75,11 +77,12 @@ public sealed class PauseMenu : IUiScreen, IUiLayer
 
         // gameplay scheme: "pause" (Esc / Start); UI scheme while open: "cancel" (Esc / B) or "menu" (Esc / Start)
         bool wantToggle = _open ? (InputSystem.UI["cancel"].Pressed || InputSystem.UI["menu"].Pressed) : InputSystem.Gameplay["pause"].Pressed;
-        if (wantToggle && !_done) RipNRage.Game.Ecs.Flows.RequestPause(!_open);
+        if (wantToggle && !Busy) RipNRage.Game.Ecs.Flows.RequestPause(!_open);
 
         _anim = Mathf.MoveTowards(_anim, _open ? 1f : 0f, Time.unscaledDeltaTime / 0.18f);
 
-        if (_open && !_done)
+        _menu.interactable = !Busy;
+        if (_open && !Busy)
         {
             var item = _menu.HandleKeyboard();
             if (item != null) Activate(item);
@@ -109,7 +112,6 @@ public sealed class PauseMenu : IUiScreen, IUiLayer
     private void HideMenu()
     {
         _open = false;
-        _done = false;
         InputSystem.ReleaseUi(this);
         _menu.interactable = true;
         if (RipNRage.Game.Ecs.Flows.Current.Phase == RipNRage.Game.Ecs.FlowPhase.Playing)
@@ -120,13 +122,8 @@ public sealed class PauseMenu : IUiScreen, IUiLayer
         Play(ProceduralSounds.MenuBack);
     }
 
-    /// <summary>Runs a scene transition: the menu stays visible (frozen) until GameSession rebuilds the scene next frame.</summary>
-    private void Choose(Action action)
-    {
-        _done = true;
-        _menu.interactable = false;
-        action?.Invoke();
-    }
+    /// <summary>Asks the flow for a move; it is carried out at the start of the next frame, the menu frozen meanwhile.</summary>
+    private static void Ask(RipNRage.Game.Ecs.FlowAction a) => RipNRage.Game.Ecs.Flows.Ask(a);
 
     private void Activate(MenuItem item)
     {
@@ -168,6 +165,6 @@ public sealed class PauseMenu : IUiScreen, IUiLayer
         using (c.Box(ClayScreen.FloatingColumn(0.4f * ClayScreen.RefHeight))) clicked = _menu.Build(c);
         ClayScreen.Footer(c, "ESC RESUME   UP/DOWN SELECT   ENTER CONFIRM", 84f, ClayScreen.Line(2f, new Color(0.7f, 0.7f, 0.72f, 0.7f)));
         c.End(a);
-        if (clicked != null && _open && !_done) Activate(clicked);
+        if (clicked != null && _open && !Busy) Activate(clicked);
     }
 }

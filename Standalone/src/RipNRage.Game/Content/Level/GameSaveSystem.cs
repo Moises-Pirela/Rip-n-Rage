@@ -205,7 +205,7 @@ namespace RipNRage.Game.Content.Level
             string levelPath = LevelLoader.Locate(save.level) ?? save.level;
             if (!File.Exists(levelPath)) { Message("Level of the save not found: " + save.level); return false; }
 
-            GameSession.RestartLevel(levelPath, () =>
+            GameSession.Rebuild(levelPath, () => // now: boot (--load) or the session carrying out a flow move
             {
                 RipNRage.Game.Ecs.Flows.SetCheckpointReached(); // the run continues from a save: dying goes back to the checkpoint
                 GameSession.RunAfterBuild(ApplyWhenReady(save));

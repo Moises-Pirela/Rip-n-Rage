@@ -216,9 +216,10 @@ namespace RipNRage.Game
         {
             if (_messageTimer > 0f) _messageTimer -= Time.unscaledDeltaTime;
             if (InputSystem.Gameplay["quick_save"].Pressed) RipNRage.Game.Content.Level.GameSaveSystem.Save("quick");
-            if (InputSystem.Gameplay["quick_load"].Pressed) RipNRage.Game.Content.Level.GameSaveSystem.Load("quick");
-            if (Input.GetKeyDown(KeyCode.F7)) RipNRage.Game.Content.Level.GameSaveSystem.Load("checkpoint");
-            if (Input.GetKeyDown(KeyCode.F8) && GameSession.LevelPath != null) GameSession.RestartLevel(GameSession.LevelPath);
+            // the developer keys ask the flow like the menus do: allowed in any phase of a level, never on the title (8.8b)
+            if (InputSystem.Gameplay["quick_load"].Pressed) RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.LoadQuick, debug: true);
+            if (Input.GetKeyDown(KeyCode.F7)) RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.LoadCheckpoint, debug: true);
+            if (Input.GetKeyDown(KeyCode.F8)) RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.Restart, debug: true);
             if (Input.GetKeyDown(KeyCode.F3)) { mode = (mode + 1) % 3; RipNRage.Game.Content.GraphicsSettings.Current.overlayMode = mode; RipNRage.Game.Content.GraphicsSettings.Save(); }
             if (Input.GetKeyDown(KeyCode.F4)) Application.Current.Renderer.PostFx.Enabled = !Application.Current.Renderer.PostFx.Enabled;
             if (Input.GetKeyDown(KeyCode.F5)) { Application.Current.Tunables?.Reload(); ShaderLibrary.ReloadAll(); }
@@ -488,6 +489,8 @@ namespace RipNRage.Game
         private static int _dieStage;
         /// <summary>menu: 1 once NEW GAME was pressed (static, as above).</summary>
         private static int _menuStage;
+        /// <summary>flowmoves / deathf8: 1 once the move was accepted (static, as above).</summary>
+        private static int _movesStage, _f8Stage;
 
         /// <summary>8.8 (deferred from 8.0): the title screen → NEW GAME path, under <c>--menu --script menu</c>.
         /// Scene 1 is the title screen (no player); NEW GAME is the selected item, Enter starts the run.</summary>
@@ -495,14 +498,14 @@ namespace RipNRage.Game
         {
             if (_menuStage == 0)
             {
-                if (_frame == 40) Debug.LogWarning($"[test] menu state={GameSession.State} player={(PlayerState.Current != null)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} timeScale {Time.timeScale:0.00}");
+                if (_frame == 40) Debug.LogWarning($"[test] menu flow={RipNRage.Game.Ecs.Flows.Current.Phase} player={(PlayerState.Current != null)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} timeScale {Time.timeScale:0.00}");
                 if (_frame == 60) { _menuStage = 1; Input.SimulateKey(KeyCode.Return, true); } // NEW GAME (the fade takes input from frame 28)
             }
             else
             {
                 if (_frame == 1) Input.SimulateKey(KeyCode.Return, false);
                 if (_frame == 60 && PlayerState.Current != null)
-                    Debug.LogWarning($"[test] new game state={GameSession.State} player=True hp={PlayerState.Current.Health} ammo={EnragedInjector<CombatController>.GetInstance()?.AmmoOf(AmmoType.LIGHT)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} pos {PlayerState.Current.transform.position}");
+                    Debug.LogWarning($"[test] new game flow={RipNRage.Game.Ecs.Flows.Current.Phase} player=True hp={PlayerState.Current.Health} ammo={EnragedInjector<CombatController>.GetInstance()?.AmmoOf(AmmoType.LIGHT)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} pos {PlayerState.Current.transform.position}");
             }
         }
 
@@ -539,6 +542,7 @@ namespace RipNRage.Game
             _frame++;
             // the title screen has no player, so the menu script runs before the player-facade guard (8.8)
             if (scriptName == "menu") { MenuScript(); return; }
+            if (scriptName == "flowmoves" && _movesStage == 1) { if (_frame == 30) FlowProbe(); return; } // the title scene: no player
             var input = EnragedInjector<PlayerInputActions>.GetInstance();
             var combat = EnragedInjector<CombatController>.GetInstance();
             if (input == null || combat == null) return;
@@ -900,6 +904,33 @@ namespace RipNRage.Game
                     }
                     break;
                 }
+                case "flowmoves":
+                    // 8.8b: a move refused while playing, then pause → MAIN MENU with a second choice in the same frame
+                    // (refused: the first wins), carried out at the next frame start → the title scene (stage 1, above)
+                    if (_frame == 30) { RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.MainMenu); }
+                    if (_frame == 32) FlowProbe(); // still Playing, nothing pending
+                    if (_frame == 60) Input.SimulateKey(KeyCode.Escape, true);
+                    if (_frame == 61) Input.SimulateKey(KeyCode.Escape, false);
+                    if (_frame == 90)
+                    {
+                        _movesStage = 1;
+                        RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.MainMenu);
+                        RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.Restart);
+                    }
+                    if (_frame == 90) FlowProbe(); // asked, not yet decided (end of frame)
+                    break;
+                case "deathf8":
+                    // 8.8b: the developer keys ask the flow too, and restart even mid-death
+                    if (_f8Stage == 1)
+                    {
+                        if (_frame == 1) Input.SimulateKey(KeyCode.F8, false);
+                        if (_frame == 30) { FlowProbe(); Debug.LogWarning($"[test] after F8: hp={PlayerState.Current?.Health} pos {PlayerState.Current?.transform.position}"); }
+                        break;
+                    }
+                    if (_frame == 20 && PlayerState.Current != null) PlayerState.Current.TakeDamage(10000f);
+                    if (_frame == 40) FlowProbe(); // Dying
+                    if (_frame == 50) { _f8Stage = 1; Input.SimulateKey(KeyCode.F8, true); }
+                    break;
                 case "pause":
                     // Esc opens the pause menu (world frozen), Esc again resumes
                     input.overrideMove = new Vector2(0f, 1f);

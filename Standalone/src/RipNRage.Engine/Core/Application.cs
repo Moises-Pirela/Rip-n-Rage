@@ -70,11 +70,15 @@ namespace RipNRage.Engine
         public TunablesFile Tunables { get; private set; }
 
         public static string dataPath { get; private set; } = AppContext.BaseDirectory;
+        /// <summary>Saves, graphics.json, controls.json. <c>RIPNRAGE_DATA_DIR</c> overrides the per-user folder: the gate
+        /// sweep gives every run its own, so worktrees running at once cannot read each other's saves.</summary>
         public static string persistentDataPath
         {
             get
             {
-                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RipNRage");
+                string dir = Environment.GetEnvironmentVariable("RIPNRAGE_DATA_DIR");
+                if (string.IsNullOrEmpty(dir))
+                    dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RipNRage");
                 Directory.CreateDirectory(dir);
                 return dir;
             }

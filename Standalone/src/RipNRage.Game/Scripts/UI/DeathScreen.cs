@@ -34,7 +34,8 @@ public sealed class DeathScreen : IUiScreen, IUiLayer
     private bool _menuReady;
     /// <summary>The flow's death clock: every fade on this screen is timed from it.</summary>
     private static float T => RipNRage.Game.Ecs.Flows.Current.DeathClock;
-    private bool _done;
+    /// <summary>The flow took a choice: the screen stays, frozen, until the scene goes (8.8b; was a local flag).</summary>
+    private static bool Busy => RipNRage.Game.Ecs.Flows.Busy;
     private bool _fromCheckpoint;
 
     public static DeathScreen Current { get; private set; }
@@ -48,8 +49,8 @@ public sealed class DeathScreen : IUiScreen, IUiLayer
         Current = this;
         causeText = NextCause; NextCause = null;
         _fromCheckpoint = GameSession.CanRespawnAtCheckpoint;
-        _menu.Add("RESTART", GameSession.Respawn, _fromCheckpoint ? "FROM THE LAST CHECKPOINT" : "FROM THE START OF THE LEVEL");
-        _menu.Add("MAIN MENU", () => GameSession.ShowMainMenu());
+        _menu.Add("RESTART", () => RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.Respawn), _fromCheckpoint ? "FROM THE LAST CHECKPOINT" : "FROM THE START OF THE LEVEL");
+        _menu.Add("MAIN MENU", () => RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.MainMenu));
         _menu.selected = 0;
         _menu.onSelectionChanged = _ => Play(ProceduralSounds.MenuMove);
     }
@@ -71,7 +72,7 @@ public sealed class DeathScreen : IUiScreen, IUiLayer
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
-        if (_menuReady && !_done)
+        if (_menuReady && !Busy)
         {
             var item = _menu.HandleKeyboard();
             if (item != null) Activate(item);
@@ -80,9 +81,7 @@ public sealed class DeathScreen : IUiScreen, IUiLayer
 
     private void Activate(MenuItem item)
     {
-        if (_done) return;
-        _done = true;
-        _menu.interactable = false;
+        if (Busy) return;
         Play(ProceduralSounds.MenuSelect);
         item.onActivate?.Invoke();
     }
@@ -128,6 +127,6 @@ public sealed class DeathScreen : IUiScreen, IUiLayer
             ClayScreen.Footer(c, "UP/DOWN OR MOUSE TO SELECT   ENTER / CLICK TO CONFIRM", 84f, ClayScreen.Line(2f, new Color(0.7f, 0.7f, 0.72f, 0.7f * ma)));
         }
         c.End();
-        if (clicked != null && !_done) Activate(clicked);
+        if (clicked != null && !Busy) Activate(clicked);
     }
 }

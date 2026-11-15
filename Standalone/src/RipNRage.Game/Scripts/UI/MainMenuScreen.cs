@@ -28,13 +28,13 @@ public sealed class MainMenuScreen : IUiScreen, IUiLayer
         _continueSlot = GameSaveSystem.ContinueSlot();
         bool canContinue = _continueSlot != null;
 
-        _menu.Add("NEW GAME", GameSession.NewGame, "START FROM THE BEGINNING");
-        _menu.Add("CONTINUE", OnContinue,
+        _menu.Add("NEW GAME", () => RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.NewGame), "START FROM THE BEGINNING");
+        _menu.Add("CONTINUE", () => RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.Continue),
             canContinue ? (_continueSlot == "checkpoint" ? "FROM THE LAST CHECKPOINT" : "FROM THE QUICK SAVE") : "NO SAVED GAME",
             canContinue);
         _menu.Add("GRAPHICS", OpenGraphics, "TOGGLE EVERY VISUAL EFFECT");
         _menu.Add("CONTROLS", OpenControls, "REBIND KEYS, MOUSE AND GAMEPAD");
-        _menu.Add("QUIT", GameSession.Quit);
+        _menu.Add("QUIT", () => RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.Quit));
         _menu.selected = 0;
         _menu.onSelectionChanged = _ => Play(ProceduralSounds.MenuMove);
         _menu.ResetMouse();
@@ -54,16 +54,17 @@ public sealed class MainMenuScreen : IUiScreen, IUiLayer
     {
         _t += Time.unscaledDeltaTime;
         if (SubmenuOpen) return;
-        if (_done || _t < fadeInDuration * 0.5f) return;
+        _menu.interactable = !RipNRage.Game.Ecs.Flows.Busy; // a move is pending: the first choice won (8.8b)
+        if (_done || !_menu.interactable || _t < fadeInDuration * 0.5f) return;
         var item = _menu.HandleKeyboard();
         if (item != null) Activate(item);
     }
 
+    /// <summary>A choice: the transitions ask the flow (which takes the first and refuses the rest); the submenus
+    /// lock this screen until they close.</summary>
     private void Activate(MenuItem item)
     {
-        if (_done) return;
-        _done = true;
-        _menu.interactable = false;
+        if (_done || RipNRage.Game.Ecs.Flows.Busy) return;
         Play(ProceduralSounds.MenuSelect);
         item.onActivate?.Invoke();
     }
@@ -73,6 +74,7 @@ public sealed class MainMenuScreen : IUiScreen, IUiLayer
 
     private void OpenControls()
     {
+        _done = true;
         _controls = ControlsMenu.Open(() =>
         {
             _controls = null;
@@ -86,6 +88,7 @@ public sealed class MainMenuScreen : IUiScreen, IUiLayer
 
     private void OpenGraphics()
     {
+        _done = true;
         _graphics = GraphicsMenu.Open(() =>
         {
             _graphics = null;
@@ -93,15 +96,6 @@ public sealed class MainMenuScreen : IUiScreen, IUiLayer
             _menu.interactable = true;
             _menu.ResetMouse();
         });
-    }
-
-    private void OnContinue()
-    {
-        if (GameSession.Continue()) return;
-        // the save vanished or is unreadable: stay on the menu
-        _done = false;
-        _menu.interactable = true;
-        Play(ProceduralSounds.MenuBack);
     }
 
     private void Play(AudioClip clip)
@@ -137,7 +131,7 @@ public sealed class MainMenuScreen : IUiScreen, IUiLayer
         {
             MenuItem clicked;
             using (c.Box(ClayScreen.FloatingColumn(0.44f * ClayScreen.RefHeight))) clicked = _menu.Build(c);
-            if (clicked != null && !_done && _t >= fadeInDuration * 0.5f) Activate(clicked);
+            if (clicked != null && _t >= fadeInDuration * 0.5f) Activate(clicked);
         }
         ClayScreen.Footer(c, "UP/DOWN OR MOUSE TO SELECT   ENTER / CLICK TO CONFIRM", 84f, ClayScreen.Line(2f, dim));
         ClayScreen.Footer(c, "WASD MOVE   MOUSE LOOK   LMB FIRE   RMB JAB   1-4 WEAPONS   SPACE JUMP   ESC PAUSE", 54f, ClayScreen.Line(2f, dim));

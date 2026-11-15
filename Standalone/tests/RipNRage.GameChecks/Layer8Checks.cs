@@ -21,6 +21,8 @@ internal static class Layer8Checks
         FallRules(True, Equal);
         FallSystemOverAWorld(True, Equal);
         HudReads(True, Equal);
+        Moves(True, Equal);
+        MovesOverAWorld(True, Equal);
         Time.timeScale = 1f; // the system writes the engine statics: leave them as the next checks expect
         RipNRage.Engine.Ecs.Input.InputOverride.Blocked = false;
     }
@@ -32,12 +34,12 @@ internal static class Layer8Checks
         Equal(1f, Flows.TimeScale(in f), "and runs at full speed");
 
         // pause / resume
-        var p = Flows.Request(in f, true);
+        var p = Flows.Request(in f, FlowAction.Pause);
         True(p.Phase == FlowPhase.Paused, "a pause request from Playing pauses");
         Equal(0f, Flows.TimeScale(in p), "and freezes the world");
-        True(Flows.Request(in p, true).Phase == FlowPhase.Paused, "a second pause request changes nothing");
-        True(Flows.Request(in f, false).Phase == FlowPhase.Playing, "a resume request while playing changes nothing");
-        var r = Flows.Request(in p, false);
+        True(Flows.Request(in p, FlowAction.Pause).Phase == FlowPhase.Paused, "a second pause request changes nothing");
+        True(Flows.Request(in f, FlowAction.Resume).Phase == FlowPhase.Playing, "a resume request while playing changes nothing");
+        var r = Flows.Request(in p, FlowAction.Resume);
         True(r.Phase == FlowPhase.Playing, "a resume request from Paused resumes");
         Equal(1f, Flows.TimeScale(in r), "at full speed again");
 
@@ -46,8 +48,8 @@ internal static class Layer8Checks
         True(d.Phase == FlowPhase.Dying, "the player's death starts Dying");
         Equal(0f, d.DeathClock, "with the death clock at zero");
         True(Flows.PlayerDied(in p).Phase == FlowPhase.Dying, "a death while paused (a blow in flight) starts Dying too");
-        True(Flows.Request(in d, true).Phase == FlowPhase.Dying, "a pause request while dying is refused");
-        True(Flows.Request(in d, false).Phase == FlowPhase.Dying, "and so is a resume request");
+        True(Flows.Request(in d, FlowAction.Pause).Phase == FlowPhase.Dying, "a pause request while dying is refused");
+        True(Flows.Request(in d, FlowAction.Resume).Phase == FlowPhase.Dying, "and so is a resume request");
 
         // the clock: real time, through Dying and Dead
         True(Flows.Step(in f, 1f).DeathClock == 0f, "the death clock does not run while playing");
@@ -61,7 +63,7 @@ internal static class Layer8Checks
         var dead = Flows.Step(in s, 0.5f);
         Equal(Flows.DeathMenuDelay + 0.5f, dead.DeathClock, "the clock keeps running while dead (the screen's fades read it)");
         True(dead.Phase == FlowPhase.Dead, "and Dead stays Dead");
-        True(Flows.Request(in dead, true).Phase == FlowPhase.Dead, "a pause request while dead is refused");
+        True(Flows.Request(in dead, FlowAction.Pause).Phase == FlowPhase.Dead, "a pause request while dead is refused");
         var again = Flows.PlayerDied(in dead);
         True(again.Phase == FlowPhase.Dead && again.DeathClock == dead.DeathClock, "a second death changes nothing, the clock included");
 
@@ -100,11 +102,11 @@ internal static class Layer8Checks
         w.FixedDeltaTime = 1f / 60f;
         True(w.HasSingleton<Flow>() && w.GetSingleton<Flow>().Phase == FlowPhase.Playing, "the system claims a Playing flow when it is created");
 
-        w.Post(new PauseRequest { Pause = true });
+        w.Post(new FlowRequest { Action = FlowAction.Pause });
         w.Update(1f / 60f);
         True(w.GetSingleton<Flow>().Phase == FlowPhase.Paused, "a posted pause request pauses");
         Equal(0f, Time.timeScale, "and the system freezes the engine time scale in the same frame");
-        w.Post(new PauseRequest { Pause = false });
+        w.Post(new FlowRequest { Action = FlowAction.Resume });
         w.Update(0f);
         True(w.GetSingleton<Flow>().Phase == FlowPhase.Playing, "a posted resume request resumes");
         Equal(1f, Time.timeScale, "at full speed");
@@ -129,7 +131,7 @@ internal static class Layer8Checks
         w.Post(new DamageEvent { Target = player, Fatal = true });
         w.Update(1f / 60f);
         True(w.GetSingleton<Flow>().Phase == FlowPhase.Dying, "the player's DeathEvent starts Dying");
-        w.Post(new PauseRequest { Pause = true });
+        w.Post(new FlowRequest { Action = FlowAction.Pause });
         w.Update(1f / 60f);
         True(w.GetSingleton<Flow>().Phase == FlowPhase.Dying, "a pause request while dying is refused by the system");
         Equal(1f, Time.timeScale, "and the world is not frozen");
@@ -257,4 +259,68 @@ internal static class Layer8Checks
 
     private static RipNRage.Engine.Graphics.Sprite F() => new RipNRage.Engine.Graphics.Sprite(null, new Rect(), Vector2.zero, 100f, "face");
     private static RipNRage.Engine.Graphics.Sprite[] Faces() => new[] { F(), F(), F(), F(), F() };
+
+    // ---------------------------------------------------------------- 8.8b: the moves (the flow transition requests)
+
+    private static void Moves(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        // the whole table: every action against every phase, menus and developer keys
+        var phases = (FlowPhase[])Enum.GetValues(typeof(FlowPhase));
+        var actions = (FlowAction[])Enum.GetValues(typeof(FlowAction));
+        bool Menu(FlowPhase ph, FlowAction a) => ph switch
+        {
+            FlowPhase.Playing => a == FlowAction.Pause,
+            FlowPhase.Paused => a is FlowAction.Resume or FlowAction.Restart or FlowAction.LoadCheckpoint or FlowAction.MainMenu or FlowAction.Quit,
+            FlowPhase.Dead => a is FlowAction.Respawn or FlowAction.MainMenu,
+            FlowPhase.Title => a is FlowAction.NewGame or FlowAction.Continue or FlowAction.Quit,
+            _ => false,
+        };
+        bool Key(FlowPhase ph, FlowAction a) =>
+            ph != FlowPhase.Title && a is FlowAction.Restart or FlowAction.LoadCheckpoint or FlowAction.LoadQuick;
+        int wrong = 0;
+        foreach (var ph in phases)
+            foreach (var a in actions)
+            {
+                if (Flows.Allows(ph, a) != Menu(ph, a)) wrong++;
+                if (Flows.Allows(ph, a, debug: true) != Key(ph, a)) wrong++;
+            }
+        True(wrong == 0, $"the transition table, every action in every phase, menu and developer key ({wrong} wrong)");
+
+        // a move is accepted into Pending and leaves the phase alone; the first choice wins
+        var paused = new Flow { Phase = FlowPhase.Paused };
+        var m = Flows.Request(in paused, FlowAction.MainMenu);
+        True(m.Pending == FlowAction.MainMenu && m.Phase == FlowPhase.Paused, "an accepted move waits in Pending; the world stays paused");
+        True(Flows.Request(in m, FlowAction.Quit).Pending == FlowAction.MainMenu, "a second move is refused: the first choice wins");
+        True(Flows.Request(in m, FlowAction.Resume).Phase == FlowPhase.Paused, "and so is resuming, with a move pending");
+        True(Flows.Request(in m, FlowAction.Restart, debug: true).Pending == FlowAction.MainMenu, "and a developer key");
+        True(Flows.Request(new Flow(), FlowAction.MainMenu).Pending == FlowAction.None, "MAIN MENU is not offered while playing");
+        True(Flows.Request(new Flow { Phase = FlowPhase.Dying }, FlowAction.Restart, debug: true).Pending == FlowAction.Restart,
+            "a developer key restarts even mid-death");
+        True(Flows.Request(new Flow { Phase = FlowPhase.Title }, FlowAction.LoadQuick, debug: true).Pending == FlowAction.None,
+            "but never on the title");
+        var title = new Flow { Phase = FlowPhase.Title };
+        True(Flows.PlayerDied(in title).Phase == FlowPhase.Title, "a death on the title changes nothing");
+        Equal(1f, Flows.TimeScale(in title), "the title runs at full speed");
+        True(Flows.InputBlocked(in title), "and takes no gameplay input");
+    }
+
+    private static void MovesOverAWorld(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        using var w = new World(0);
+        w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(PlayerLink).Assembly);
+        w.FixedDeltaTime = 1f / 60f;
+        w.Post(new FlowRequest { Action = FlowAction.MainMenu });
+        w.Update(1f / 60f);
+        True(w.GetSingleton<Flow>().Pending == FlowAction.None, "the system refuses MAIN MENU while playing");
+        w.Post(new FlowRequest { Action = FlowAction.Pause });
+        w.Update(1f / 60f);
+        w.Post(new FlowRequest { Action = FlowAction.Restart });
+        w.Post(new FlowRequest { Action = FlowAction.Quit });
+        w.Update(0f);
+        var f = w.GetSingleton<Flow>();
+        True(f.Pending == FlowAction.Restart && f.Phase == FlowPhase.Paused, "two choices in one frame: the first is pending, the world stays paused");
+        Equal(0f, Time.timeScale, "still frozen while the move waits");
+        Time.timeScale = 1f;
+        RipNRage.Engine.Ecs.Input.InputOverride.Blocked = false;
+    }
 }
