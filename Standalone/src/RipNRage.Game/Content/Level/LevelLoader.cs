@@ -27,7 +27,29 @@ namespace RipNRage.Game.Content.Level
     /// </summary>
     public static class LevelLoader
     {
-        public static LoadedLevel Load(string path) => Load(MapFile.Load(path));
+        public static LoadedLevel Load(string path)
+        {
+            // the level's chunk meshes are cached per file version (LevelVisuals: the asset registry is append-only)
+            _chunkKey = path + "@" + System.IO.File.GetLastWriteTimeUtc(path).Ticks;
+            try { return Load(MapFile.Load(path)); }
+            finally { _chunkKey = null; }
+        }
+
+        private static string _chunkKey;
+        private static readonly Dictionary<string, (string tex, RipNRage.Engine.Ecs.AssetHandle<Mesh> mesh)[]> _chunks =
+            new Dictionary<string, (string, RipNRage.Engine.Ecs.AssetHandle<Mesh>)[]>();
+
+        /// <summary>The level's render chunks, built once per file version (anonymous when loaded from a document).</summary>
+        private static (string tex, RipNRage.Engine.Ecs.AssetHandle<Mesh> mesh)[] Chunks(MapDocument doc)
+        {
+            if (_chunkKey != null && _chunks.TryGetValue(_chunkKey, out var cached)) return cached;
+            var built = new List<(string, RipNRage.Engine.Ecs.AssetHandle<Mesh>)>();
+            foreach (var (texName, mesh) in LevelMeshBuilder.BuildChunked(doc.Brushes, MeshChunkSize))
+                built.Add((texName, RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Intern(mesh)));
+            var arr = built.ToArray();
+            if (_chunkKey != null) _chunks[_chunkKey] = arr;
+            return arr;
+        }
 
         public static LoadedLevel Load(MapDocument doc, bool preview = false)
         {
@@ -104,8 +126,20 @@ namespace RipNRage.Game.Content.Level
             geo.transform.SetParent(parent.transform, false);
             geo.layer = Layers.Walkable;
 
-            // chunked so the renderer can frustum/occlusion-cull parts of the level; every opaque chunk is an occluder
-            foreach (var (texName, mesh) in LevelMeshBuilder.BuildChunked(doc.Brushes, MeshChunkSize))
+            // chunked so the renderer can frustum/occlusion-cull parts of the level; every opaque chunk is an occluder.
+            // The game draws them as entities (9.1); the editor's preview keeps GameObjects until the tools are ported.
+            if (!preview)
+            {
+                foreach (var (texName, handle) in Chunks(doc))
+                {
+                    var tex = LevelTextures.Get(texName);
+                    if (!tex.visible) continue;
+                    var r = LevelVisuals.Render(handle, tex.Texture, tex.tint, tex.material?.Invoke(),
+                                              occluder: !tex.transparent, transparent: tex.transparent, castsShadow: !tex.transparent);
+                    LevelVisuals.Spawn(Vector3.zero, in r);
+                }
+            }
+            else foreach (var (texName, mesh) in LevelMeshBuilder.BuildChunked(doc.Brushes, MeshChunkSize))
             {
                 var tex = LevelTextures.Get(texName);
                 if (!tex.visible && !preview) continue;
@@ -129,10 +163,6 @@ namespace RipNRage.Game.Content.Level
                 {
                     if (!b.IsValid) continue;
                     if (b.IsSky) continue;
-                    var go = new GameObject("brush");
-                    go.transform.SetParent(geo.transform, false);
-                    go.transform.position = b.Center;
-                    go.layer = Layers.Walkable;
                     // collision: an ECS static collider, tagged with the surface of every face for the impact effects
                     // (hit normal → face → texture → surface)
                     var world = Application.Current.World;

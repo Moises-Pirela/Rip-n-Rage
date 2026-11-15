@@ -437,6 +437,11 @@ namespace RipNRage.Game
             return _pickups.Count;
         }
 
+        /// <summary>9.1: interned meshes / textures / materials — the same before and after a level rebuild, or it leaks
+        /// (the physics props' 13 boxes per build still do, until 9.2).</summary>
+        private static void MeshProbe() =>
+            Debug.LogWarning($"[test] assets meshes {RipNRage.Engine.Ecs.Rendering.RenderAssets.Meshes.Count} textures {RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Count} materials {RipNRage.Engine.Ecs.Rendering.RenderAssets.Materials.Count}");
+
         /// <summary>9.0: what is left of the legacy model in this scene — the number layer 9 drives to zero.</summary>
         private static void Census(string scene)
         {
@@ -947,10 +952,11 @@ namespace RipNRage.Game
                     {
                         if (_frame == 1) Input.SimulateKey(KeyCode.F8, false);
                         if (_frame == 30) { FlowProbe(); Debug.LogWarning($"[test] after F8: hp={PlayerState.Current?.Health} pos {PlayerState.Current?.transform.position}"); }
+                        if (_frame == 30) MeshProbe(); // 9.1: the rebuilt level reuses its meshes
                         break;
                     }
                     if (_frame == 20 && PlayerState.Current != null) PlayerState.Current.TakeDamage(10000f);
-                    if (_frame == 40) FlowProbe(); // Dying
+                    if (_frame == 40) { FlowProbe(); MeshProbe(); } // Dying
                     if (_frame == 50) { _f8Stage = 1; Input.SimulateKey(KeyCode.F8, true); }
                     break;
                 case "pause":

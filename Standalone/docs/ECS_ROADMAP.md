@@ -1579,8 +1579,19 @@ acceptable where drawing moves onto entities.
         shots `walk` 9.5% / `die` 7.5% past 8/255 (the same picture, offset poses and props). Starting the script's
         clock a frame later was tried and made it worse (`die` 98%) — it is the order within the frame, not the
         clock; 9.8 decides it again when the world drives its own fixed loop. Deleting the arena moved no gate.
-- [ ] 9.1 **Level rendering to entities**: brushes as `MeshRender` entities; `EntityRegistry`'s classes build
-      entities (sprites, meshes, `LightSource`) — the editor `preview` builders stay GameObjects until 9.7.
+- [x] 9.1 **Level rendering to entities** (done; `Content/Level/LevelVisuals.cs`). The brush chunks are
+      `MeshRender` entities (the per-brush holder GameObjects were empty — the colliders were entities already — and
+      are gone); `light` is a `LightSource` entity, `lamp_post` a pole entity with a head child (lamp material) and a
+      light child, `water_plane` / `floor_plane` render entities next to their collider / water volume. The editor
+      `preview` builders stay GameObjects until the tools step; physics props are 9.2.
+      - **Meshes are interned under what they are** (`box:<centre>:<size>`, `plane:<w>x<l>@<uv>`) and the level's
+        chunk meshes are cached per file + timestamp: the asset registry is append-only, so a level rebuilt on every
+        RESTART / respawn / load must reuse them. `AssetRegistry.Count` and a `deathf8` probe across its F8 rebuild
+        pin it — and found the physics props interning a fresh box per prop per build (13 per rebuild,
+        `PhysicsEntities` since layer 2), fixed with them in 9.2.
+      - **Gates**: every probe unchanged and **all four shots pixel-identical (0.000%)** to 9.0 — the move from the
+        legacy producer to the ECS one changed nothing on screen. Census: **level 80 → 34 GameObjects** (meshes 44 → 15,
+        lights 7 → 1: what is left is the physics props and the muzzle light), **title 69 → 23**. Two sweeps identical.
 - [ ] 9.2 **Physics props** render on their own entities; `EntityFollower` / `RodFollower` go.
 - [ ] 9.3 **Cameras and lights**: the player camera is a `CameraLens` only; `MenuCamera` an entity and a system;
       `ParticleWorld`'s effect lights `LightSource` entities and its follow target an entity; `MuzzleFlashLight` an

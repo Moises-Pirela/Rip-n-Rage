@@ -156,7 +156,8 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = new Color(1f, 1f, 0.6f, 1f), pickExtents = new Vector3(0.35f, 0.35f, 0.35f),
                 defaults = { ["color"] = "1 0.85 0.6", ["intensity"] = "1.5", ["range"] = "18" },
                 numericProps = { ("intensity", 0.25f), ("range", 1f) },
-                spawn = e => PointLight(e, false),
+                spawnEntity = e => LevelVisuals.PointLight(e.origin, e.GetColor("color", new Color(1f, 0.85f, 0.6f, 1f)),
+                                                           e.GetFloat("intensity", 1.5f), e.GetFloat("range", 18f)), // 9.1
                 preview = e => PointLight(e, true),
             });
 
@@ -166,7 +167,7 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = new Color(1f, 0.8f, 0.4f, 1f), pickExtents = new Vector3(0.4f, 2.8f, 0.4f),
                 defaults = { ["intensity"] = "1.4", ["range"] = "24" },
                 numericProps = { ("intensity", 0.2f), ("range", 1f) },
-                spawn = e => LampPost(e),
+                spawnEntity = e => LampPostEntity(e), // 9.1
                 preview = e => LampPost(e),
             });
 
@@ -176,7 +177,7 @@ namespace RipNRage.Game.Content.Level
                 gizmoColor = new Color(0.3f, 0.6f, 1f, 1f), pickExtents = new Vector3(2f, 0.2f, 2f),
                 defaults = { ["size"] = "200 200" },
                 numericProps = { ("height", 0.25f) },
-                spawn = e => Plane(e, "WaterPlane", Materials.Water, Texture2D.White, Color.white, 1f / 16f, transparent: true, collider: false, water: true),
+                spawnEntity = e => PlaneEntity(e, Materials.Water, Texture2D.White, 1f / 16f, transparent: true, collider: false, water: true), // 9.1
                 preview = e => Plane(e, "WaterPlane", Materials.Water, Texture2D.White, Color.white, 1f / 16f, transparent: true, collider: false, water: false),
             });
 
@@ -185,8 +186,8 @@ namespace RipNRage.Game.Content.Level
                 classname = "floor_plane", description = "Large textured ground plane (size w l, texture)",
                 gizmoColor = new Color(0.9f, 0.8f, 0.5f, 1f), pickExtents = new Vector3(2f, 0.2f, 2f),
                 defaults = { ["size"] = "200 200", ["texture"] = "sand" },
-                spawn = e => Plane(e, "FloorPlane", null, LevelTextures.Get(e.Get("texture", "sand")).Texture, Color.white, 1f / 4f, transparent: false, collider: true, water: false,
-                                   surface: LevelTextures.Get(e.Get("texture", "sand")).surface),
+                spawnEntity = e => PlaneEntity(e, null, LevelTextures.Get(e.Get("texture", "sand")).Texture, 1f / 4f, transparent: false, collider: true, water: false,
+                                               surface: LevelTextures.Get(e.Get("texture", "sand")).surface), // 9.1
                 preview = e => Plane(e, "FloorPlane", null, LevelTextures.Get(e.Get("texture", "sand")).Texture, Color.white, 1f / 4f, transparent: false, collider: false, water: false),
             });
 
@@ -255,16 +256,51 @@ namespace RipNRage.Game.Content.Level
             return post;
         }
 
-        private static GameObject Plane(MapEntity e, string name, Material material, Texture2D texture, Color color, float uvScale, bool transparent, bool collider, bool water, string surface = null)
+        /// <summary>A plane's width and length: "w l" (what the maps write) or "w h l". MapEntity.GetVector wants three
+        /// numbers and falls back to its default otherwise — which is how dock.map's 1732 x 1000 water and sand were built
+        /// 200 x 200 (found in 7.6: the water volume did not reach where the player goes in).</summary>
+        private static (float w, float l) PlaneSize(MapEntity e)
         {
-            // "w l" (what the maps write) or "w h l". MapEntity.GetVector wants three numbers and falls back to its
-            // default otherwise — which is how dock.map's 1732 x 1000 water and sand were built 200 x 200 (found in
-            // 7.6: the water volume did not reach where the player goes in)
             var parts = e.Get("size", "200 200").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
             float Num(int i) => i < parts.Length && float.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0f;
             float w = Num(0), l = parts.Length >= 3 ? Num(2) : Num(1);
             if (w <= 0f) w = 200f;
             if (l <= 0f) l = w;
+            return (w, l);
+        }
+
+        /// <summary>The game's plane (9.1): a render entity, plus its collider (floor) or water volume (water).</summary>
+        private static RipNRage.Engine.Ecs.Entity PlaneEntity(MapEntity e, Material material, Texture2D texture, float uvScale, bool transparent, bool collider, bool water, string surface = null)
+        {
+            var (w, l) = PlaneSize(e);
+            var ent = LevelVisuals.Spawn(e.origin, LevelVisuals.Render(LevelVisuals.Plane(w, l, uvScale), texture, Color.white, material,
+                                                                    castsShadow: false, transparent: transparent));
+            if (collider)
+            {
+                var floor = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(w, 2f, l), Layers.Walkable);
+                if (surface != null) Surfaces.Tag(Application.Current.World, floor, surface); // what a bullet kicks up off it
+            }
+            if (water) RipNRage.Game.Ecs.Waters.Spawn(Application.Current.World, e.origin, new Vector3(w, 100f, l)); // the view under it hides the sky
+            return ent;
+        }
+
+        /// <summary>The game's lamp post (9.1): the pole and its collider, the head (lamp material), the light in it.</summary>
+        private static RipNRage.Engine.Ecs.Entity LampPostEntity(MapEntity e)
+        {
+            var post = LevelVisuals.Spawn(e.origin, LevelVisuals.Render(LevelVisuals.Box(new Vector3(0, 2.6f, 0), new Vector3(0.28f, 5.2f, 0.28f)),
+                                                                     GameAssets.Texture13, new Color(0.35f, 0.35f, 0.38f, 1f)));
+            var poleCollider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, 2.6f, 0), Quaternion.identity, new Vector3(0.4f, 5.2f, 0.4f), Layers.Walkable);
+            Surfaces.Tag(Application.Current.World, poleCollider, Surfaces.Metal);
+            var head = LevelVisuals.Spawn(new Vector3(0, 5.4f, 0), LevelVisuals.Render(LevelVisuals.Box(Vector3.zero, new Vector3(0.7f, 0.5f, 0.7f)),
+                                                                                    Texture2D.White, new Color(1f, 0.85f, 0.55f, 1f), Materials.Lamp, castsShadow: false), post);
+            LevelVisuals.PointLight(Vector3.zero, e.GetColor("color", new Color(1f, 0.78f, 0.5f, 1f)), e.GetFloat("intensity", 1.4f), e.GetFloat("range", 24f), head);
+            return post;
+        }
+
+        /// <summary>The editor's preview plane (a GameObject until the tools are ported).</summary>
+        private static GameObject Plane(MapEntity e, string name, Material material, Texture2D texture, Color color, float uvScale, bool transparent, bool collider, bool water, string surface = null)
+        {
+            var (w, l) = PlaneSize(e);
             var go = new GameObject(name);
             go.transform.position = e.origin;
             go.layer = water ? Layers.Water : Layers.Walkable;

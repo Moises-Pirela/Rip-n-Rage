@@ -64,6 +64,9 @@ namespace RipNRage.Engine.Ecs
             return Intern(loader(name), name);
         }
 
+        /// <summary>Entries interned so far (append-only: a count that grows on every level rebuild is a leak).</summary>
+        public int Count { get { lock (_gate) return _items.Count - 1; } }
+
         /// <summary>The asset behind a handle (null for None). Lock-free: entries are append-only.</summary>
         public T Resolve(AssetHandle<T> handle)
         {
