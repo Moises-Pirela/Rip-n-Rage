@@ -4,6 +4,7 @@ using System;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Content;
+using RipNRage.Game.Content.Level;
 using RipNRage.Game.Ecs.AI;
 using RipNRage.Game.Ecs.Combat;
 
@@ -474,6 +475,40 @@ namespace RipNRage.Game
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;
         private float _strafeDir;
+        /// <summary>checkpoint: which scene of the loop this is (static: the script is rebuilt with each scene).</summary>
+        private static int _checkpointStage;
+        /// <summary>saveload: the quick load was pressed (static: the load rebuilds the scene and this script).</summary>
+        private static bool _saveLoaded;
+        /// <summary>die: 1 once RESTART was pressed (static, as above).</summary>
+        private static int _dieStage;
+
+        /// <summary>saveload: saves the restored game to "roundtrip" and prints every line that differs from "quick".</summary>
+        private static void SaveRoundTrip()
+        {
+            GameSaveSystem.Save("roundtrip");
+            var a = System.IO.File.ReadAllLines(GameSaveSystem.SlotPath("quick"));
+            var b = System.IO.File.ReadAllLines(GameSaveSystem.SlotPath("roundtrip"));
+            int diffs = 0;
+            for (int i = 0; i < Math.Max(a.Length, b.Length); i++)
+            {
+                string x = i < a.Length ? a[i].Trim() : "<none>", y = i < b.Length ? b[i].Trim() : "<none>";
+                if (x == y || x.StartsWith("\"time\"") || SameNumber(x, y)) continue;
+                diffs++;
+                Debug.LogWarning($"[test] round-trip line {i + 1}: saved {x} restored {y}");
+            }
+            Debug.LogWarning($"[test] round-trip: {a.Length} lines, {diffs} differ (numbers within 0.05)");
+        }
+
+        /// <summary>Two `"key": number` lines whose numbers agree within 0.05 (the restored body settles a little).</summary>
+        private static bool SameNumber(string x, string y)
+        {
+            int i = x.IndexOf(':'), j = y.IndexOf(':');
+            if (i < 0 || j < 0 || x.Substring(0, i) != y.Substring(0, j)) return false;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            return double.TryParse(x.Substring(i + 1).TrimEnd(','), System.Globalization.NumberStyles.Float, ci, out var p)
+                && double.TryParse(y.Substring(j + 1).TrimEnd(','), System.Globalization.NumberStyles.Float, ci, out var q)
+                && Math.Abs(p - q) <= 0.05;
+        }
 
         protected override void Update()
         {
@@ -679,15 +714,23 @@ namespace RipNRage.Game
                     break;
                 case "saveload":
                     // walk, save (F6), walk more, load (F9): the player must be back at the saved spot with the saved ammo
+                    if (_saveLoaded) // the scene the load rebuilt: stand still, check the round trip, stop
+                    {
+                        if (_frame == 1) Input.SimulateKey(KeyCode.F9, false);
+                        if (_frame == 30) SaveRoundTrip();
+                        break;
+                    }
                     input.overrideMove = (_frame < 100 || (_frame > 120 && _frame < 200)) ? new Vector2(0f, 1f) : Vector2.zero;
                     input.overrideFiring = _frame > 60 && _frame < 66;
                     if (_frame == 110) { Input.SimulateKey(KeyCode.F6, true); Debug.LogWarning($"[test] saved at {PlayerState.Current.transform.position} ammo {combat.AmmoOf(AmmoType.LIGHT)}"); }
                     if (_frame == 111) Input.SimulateKey(KeyCode.F6, false);
                     if (_frame == 205) Debug.LogWarning($"[test] before load at {PlayerState.Current.transform.position}");
-                    if (_frame == 210) Input.SimulateKey(KeyCode.F9, true);
-                    if (_frame == 211) Input.SimulateKey(KeyCode.F9, false);
+                    if (_frame == 210) { _saveLoaded = true; Input.SimulateKey(KeyCode.F9, true); }
                     if (_frame % 20 == 0 && PlayerState.Current != null) LogRage();
                     if (_frame == 240 && PlayerState.Current != null) Debug.LogWarning($"[test] after load at {PlayerState.Current.transform.position} ammo {EnragedInjector<CombatController>.GetInstance().AmmoOf(AmmoType.LIGHT)} hp {PlayerState.Current.Health}");
+                    // 8.0: the whole save, not three fields. The load rebuilds the scene and this script restarts its
+                    // count there (so the frame-240 line above never prints): 30 frames into the rebuilt scene, save
+                    // again and diff the two files line by line, the wall-clock stamp aside.
                     break;
                 case "glockalt":
                     // Three right clicks: jab, jab, then the Glock grapple finisher — which needs a victim within
@@ -705,11 +748,19 @@ namespace RipNRage.Game
                 case "die":
                     // the death loop: walk, take lethal damage at frame 40, watch the camera fall and the
                     // "You are dead" screen fade in, pick RESTART at frame 260 and confirm the respawn
+                    // 8.0: RESTART rebuilds the scene and this script with it, so the frame-300 line below never printed
+                    // and the new scene died again at its frame 40; the stage is static now and the respawned scene
+                    // only reports
+                    if (_dieStage == 1)
+                    {
+                        if (_frame == 1) Input.SimulateKey(KeyCode.Return, false);
+                        if (_frame == 40) Debug.LogWarning($"[test] after respawn: player={(PlayerState.Current != null)} dead={PlayerState.Current?.IsDead} hp={PlayerState.Current?.Health} deathEvents={PlayerState.DeathEvents} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
+                        break;
+                    }
                     input.overrideMove = _frame < 40 ? new Vector2(0f, 1f) : Vector2.zero;
                     if (_frame == 40 && PlayerState.Current != null) PlayerState.Current.TakeDamage(10000f);
-                    if (_frame == 120 && PlayerState.Current != null) Debug.LogWarning($"[test] dead={PlayerState.Current.IsDead} hp={PlayerState.Current.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
-                    if (_frame == 260) Input.SimulateKey(KeyCode.Return, true);
-                    if (_frame == 261) Input.SimulateKey(KeyCode.Return, false);
+                    if (_frame == 120 && PlayerState.Current != null) Debug.LogWarning($"[test] dead={PlayerState.Current.IsDead} deathEvents={PlayerState.DeathEvents} hp={PlayerState.Current.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
+                    if (_frame == 260) { _dieStage = 1; Input.SimulateKey(KeyCode.Return, true); }
                     if (_frame == 300) Debug.LogWarning($"[test] after respawn: player={(PlayerState.Current != null)} dead={PlayerState.Current?.IsDead} hp={PlayerState.Current?.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
                     break;
                 case "vfx":
@@ -764,7 +815,7 @@ namespace RipNRage.Game
                     // the player (default mode) or put them back on the planks (--fall-mode respawn)
                     input.overrideMove = _frame < 150 ? new Vector2(1f, 0f) : Vector2.zero;
                     var fr = PlayerState.Current?.GetComponent<FallRespawn>();
-                    if (_frame % 30 == 0 && PlayerState.Current != null) Debug.LogWarning($"[test] frame {_frame} pos {PlayerState.Current.transform.position} falls={fr?.Falls} last={fr?.LastFallKind} dead={PlayerState.Current.IsDead} killY={FallRespawn.KillY:0.0} mode={FallRespawn.Mode}");
+                    if (_frame % 30 == 0 && PlayerState.Current != null) Debug.LogWarning($"[test] frame {_frame} pos {PlayerState.Current.transform.position} falls={fr?.Falls} last={fr?.LastFallKind} dead={PlayerState.Current.IsDead} deathEvents={PlayerState.DeathEvents} killY={FallRespawn.KillY:0.0} mode={FallRespawn.Mode}");
                     break;
                 }
                 case "strafe":
@@ -794,6 +845,29 @@ namespace RipNRage.Game
                         bool ok = (fr == null || fr.Falls == 0) && !p.IsDead;
                         Debug.LogWarning(ok ? "[test] strafe PASS: 600 frames of strafing and jumping on the dock, no fall"
                                             : $"[test] strafe FAIL: falls={fr?.Falls} ({fr?.LastFallKind}) dead={p.IsDead} — {fr?.LastFallReport}");
+                    }
+                    break;
+                }
+                case "checkpoint":
+                {
+                    // 8.0: the checkpoint loop across scenes (this script restarts with every scene build, so the stage
+                    // is static). Scene 1: walk into the dock's checkpoint, die at frame 90, RESTART at 260. Scene 2
+                    // (the checkpoint load): report the pose, the state and the DeathEvent count.
+                    if (_checkpointStage == 1 && _frame == 1) Input.SimulateKey(KeyCode.Return, false);
+                    var ps = PlayerState.Current;
+                    if (ps == null) break;
+                    if (_checkpointStage == 0)
+                    {
+                        if (_frame == 10) RipNRage.Game.Ecs.PlayerLink.Current?.Teleport(new Vector3(0f, 1.8f, -46f), 180f);
+                        input.overrideMove = _frame > 12 && _frame < 60 ? new Vector2(0f, 1f) : Vector2.zero;
+                        if (_frame == 100) Debug.LogWarning($"[test] checkpoint reached={GameSession.CheckpointReached} available={GameSaveSystem.CheckpointAvailable()} pos {ps.transform.position}");
+                        if (_frame == 90) ps.TakeDamage(10000f); // RESTART at 260: the death menu takes input after 2.4 s
+                        if (_frame == 200) Debug.LogWarning($"[test] dead={ps.IsDead} deathEvents={PlayerState.DeathEvents} canRespawnAtCheckpoint={GameSession.CanRespawnAtCheckpoint}");
+                        if (_frame == 260) { _checkpointStage = 1; Input.SimulateKey(KeyCode.Return, true); }
+                    }
+                    else
+                    {
+                        if (_frame == 60) Debug.LogWarning($"[test] respawned at {ps.transform.position} dead={ps.IsDead} hp={ps.Health} deathEvents={PlayerState.DeathEvents} reached={GameSession.CheckpointReached} timeScale={Time.timeScale:0.00}");
                     }
                     break;
                 }

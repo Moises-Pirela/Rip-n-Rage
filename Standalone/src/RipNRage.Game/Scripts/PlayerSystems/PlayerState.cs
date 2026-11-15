@@ -49,6 +49,16 @@ public class PlayerState : EntityState
         OnArmorChanged?.Invoke();
     }
 
+    /// <summary>DeathEvents delivered to the player since start-up (8.0 probe: a death that bypasses HealthSystem
+    /// does not count — the gate that tells the two doors apart). Read by the die / fall / checkpoint scripts.</summary>
+    public static int DeathEvents;
+
+    internal override void NotifyDied(in RipNRage.Game.Ecs.Combat.DeathEvent e)
+    {
+        DeathEvents++;
+        base.NotifyDied(in e);
+    }
+
     internal override void NotifyHit(in RipNRage.Game.Ecs.Combat.HitEvent e)
     {
         base.NotifyHit(in e);

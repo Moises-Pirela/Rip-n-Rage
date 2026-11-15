@@ -111,7 +111,7 @@ public abstract class EntityState : MonoBehaviour
     }
 
     /// <summary>The blow that emptied the health.</summary>
-    internal void NotifyDied(in DeathEvent e) => Die();
+    internal virtual void NotifyDied(in DeathEvent e) => Die();
 
     protected override void OnDestroy() => EcsObjects.Unregister(entity);
 }

@@ -6,3 +6,4 @@ screenshot_*.png
 .idea/
 .dotnet/
 dist/
+gates-out/

@@ -1286,16 +1286,35 @@ vector properties, see layer 4's notes).
 
 **Steps**
 
-- [ ] 8.0 **Instrument the gates.** Before anything moves:
-      - `die`: print `DeathEvent` count, `Flow`-to-be state, time scale at frames after death; add a `falldie` probe
-        (the `fall` script in die mode) that prints the `DeathEvent` count — **0 today**, the gate 8.1 flips.
-      - `saveload`: dump the whole `GameSave` at save and immediately after load and diff them (today it prints
-        position / ammo / hp only); add a checkpoint-respawn script (cross a checkpoint, die, RESTART, assert the
-        checkpoint pose and state).
-      - `pause`: already prints `paused` / `timeScale`; add the main-menu → new game path under `--menu`.
-      - HUD: a screenshot gate on `walk` (measure the same-build floor first) and a GameChecks assertion per
-        HUD value read (health, armour, ammo, both meters).
-      - Make the gate scripts run `dotnet build tests/RipNRage.GameChecks` (the stale-binary trap).
+- [x] 8.0 **Instrument the gates** (done). **`gates.sh`** is the sweep now, in the repo: it builds the game *and*
+      both check projects (the stale-binary trap), runs both suites, then 23 scripts under the gate rule (the 20 of
+      7.8 plus `fall` 620 frames, `pause` and the new `checkpoint`), writes each log and its probe lines
+      (`[test]` / exceptions) to `OUT/<name>.test`, and two pixel shots; `./gates.sh --compare A B` diffs two sweeps.
+      `tools/pngdiff.py` is the pixel gate (standard library only; there is no PIL / ImageMagick on the Mac).
+      - **Death**: `PlayerState.DeathEvents` counts the `DeathEvent`s the bridge delivers to the player (the `Dead`
+        tag cannot tell the doors apart: `Die()` sets it through the facade). `die` prints it; `fall` prints it on
+        every line — **`dead=True deathEvents=0`** from frame 120, the gate 8.1 flips (the planned `falldie` *is*
+        `fall`, whose default mode is lethal).
+      - **Scripts restart with every scene build** (`OnSceneBuilt` adds a fresh `DemoScript`, frame 0). Two gates
+        never printed their last line because of it: `die`'s "after respawn" (frame 300, and the rebuilt scene died
+        again at its frame 40) and `saveload`'s "after load" (frame 240). Both carry a static stage now and the
+        rebuilt scene only reports: `die` → `after respawn: player=True dead=False hp=100 deathEvents=1`.
+      - **Save round trip**: `saveload` saves again 30 frames into the scene the load rebuilt and diffs the two files
+        line by line (numbers within 0.05, the time stamp aside): **117 lines, 1 differs — `z` saved −15.42,
+        restored 8** (the spawn). Health, armour, ammo, weapon, rage, every level entity round-trip.
+      - **`checkpoint`** (new): teleport short of the dock's checkpoint, walk through it (`reached=True`), lethal damage
+        at frame 90, RESTART at 260 (the death menu takes input after 2.4 s), report in the rebuilt scene:
+        **`respawned at (0.00, 1.81, 8.00)`** — the level start, not the checkpoint at z −50.
+      - **Both pose failures are one bug**, older than layer 8: `GameSaveSystem.ApplyWhenReady` restores the pose
+        by writing `player.transform.position` ("the ECS character warp replaces this in layer 4" — it never did),
+        and the character entity owns the position. Pinned here as found; fixed in its own commit before 8.1.
+      - **Pixel floors** (640×360 requested, 1280×720 written on the Retina Mac): `walk` frame 120 (the HUD) and
+        `die` frame 120 (mid camera fall, the 8.3 gate) are **0.000%** same-build.
+      - **Deferred, with the step that gives them a reader**: the `--menu` → NEW GAME path (the title screen is built
+        without `OnSceneBuilt`, so no script can drive it today — 8.8); GameChecks assertions per HUD value (there is
+        no pure HUD read to assert on until 8.7 writes one).
+      - Sweep green twice: 199 engine + 305 gameplay assertions, 23 scripts exit 0, probe lines byte-identical
+        across the two sweeps, both shots 0.000%.
 - [ ] 8.1 **Death has one door.** The lethal fall posts a `DamageEvent` (damage = remaining health + armour,
       cause `Fall`) instead of calling `Die()`; `HealthSystem` produces the `DeathEvent`. Gate: `falldie` shows 1
       `DeathEvent`; `die` unchanged; rage's empty-health fallback can go if nothing else needs it.
