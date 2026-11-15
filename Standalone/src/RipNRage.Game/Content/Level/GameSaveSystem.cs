@@ -227,7 +227,9 @@ namespace RipNRage.Game.Content.Level
             var player = PlayerState.Current;
             var combat = EnragedInjector<CombatController>.GetInstance();
             var p = save.player;
-            player.transform.position = new Vector3(p.x, p.y, p.z); // the ECS character warp replaces this in layer 4
+            // the character entity owns the position: a GameObject write was overwritten by the next sync (the load put
+            // the player at the spawn since layer 4). Teleport writes the entity and zeroes the pitch; the look follows.
+            RipNRage.Game.Ecs.PlayerLink.Current?.Teleport(new Vector3(p.x, p.y, p.z), p.yaw);
             FPSCameraController.instance?.SetLook(p.yaw, p.pitch);
             player.RestoreState(p.health, p.armor);
             RipNRage.Game.Ecs.Rages.Restore(p.rage, p.calm, (RipNRage.Game.Ecs.RageState)p.rageState);

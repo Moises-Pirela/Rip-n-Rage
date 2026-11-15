@@ -1308,6 +1308,10 @@ vector properties, see layer 4's notes).
       - **Both pose failures are one bug**, older than layer 8: `GameSaveSystem.ApplyWhenReady` restores the pose
         by writing `player.transform.position` ("the ECS character warp replaces this in layer 4" — it never did),
         and the character entity owns the position. Pinned here as found; fixed in its own commit before 8.1.
+      - **Fixed** (own commit, after 8.0): `ApplyWhenReady` teleports the character entity (`PlayerLink.Teleport`,
+        then the saved look). `saveload` round trip **0 of 117 lines differ**; `checkpoint` **respawned at
+        (−0.00, 1.81, −47.66)**, where the player entered the trigger (box z −52..−48). Every other script
+        byte-identical, both shots 0.000%.
       - **Pixel floors** (640×360 requested, 1280×720 written on the Retina Mac): `walk` frame 120 (the HUD) and
         `die` frame 120 (mid camera fall, the 8.3 gate) are **0.000%** same-build.
       - **Deferred, with the step that gives them a reader**: the `--menu` → NEW GAME path (the title screen is built
