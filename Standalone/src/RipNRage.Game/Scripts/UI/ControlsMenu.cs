@@ -12,13 +12,13 @@ using RipNRage.Game.Content;
 /// A control already used by another action is taken away from it. Plus look sensitivity / inversion for mouse
 /// and stick, deadzone and stick response. Everything is saved to controls.json by <see cref="InputSystem"/>.
 /// </summary>
-public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
+public sealed class ControlsMenu : IUiScreen, IUiLayer
 {
     private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Modal + 10;
 
     public static ControlsMenu Current { get; private set; }
-    public static bool IsOpen => Current != null && !Current.IsDestroyed;
+    public static bool IsOpen => Current != null;
 
     public Action onClose;
     private readonly MenuList _menu = new MenuList();
@@ -30,13 +30,12 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
     public static ControlsMenu Open(Action onClose)
     {
         if (IsOpen) return Current;
-        var go = new GameObject("ControlsMenu");
-        var m = go.AddComponent<ControlsMenu>();
+        var m = UiScreens.Add(new ControlsMenu());
         m.onClose = onClose;
         return m;
     }
 
-    protected override void Awake()
+    private ControlsMenu()
     {
         Current = this;
         _menu.itemWidth = 860f; _menu.itemHeight = 40f; _menu.itemGap = 5f; _menu.labelScale = 2.6f; _menu.hintScale = 1.8f;
@@ -48,13 +47,6 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
         InputSystem.AcquireUi(this);
     }
 
-    protected override void OnDestroy()
-    {
-        _clay.Dispose();
-        if (InputSystem.Rebinding) InputSystem.CancelRebind();
-        InputSystem.ReleaseUi(this);
-        if (Current == this) Current = null;
-    }
 
     private void Build()
     {
@@ -102,7 +94,7 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
         }, hint);
     }
 
-    protected override void Update()
+    public void Update()
     {
         _anim = Mathf.MoveTowards(_anim, 1f, Time.unscaledDeltaTime / 0.15f);
         _blink += Time.unscaledDeltaTime;
@@ -114,6 +106,7 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
         if (item != null && !item.IsSetting) { Play(ProceduralSounds.MenuSelect); item.onActivate?.Invoke(); }
     }
 
+    /// <summary>Esc / BACK, or the scene reset (UiScreens.Clear): one teardown for both, idempotent.</summary>
     public void Close()
     {
         if (_closed) return;
@@ -121,7 +114,10 @@ public class ControlsMenu : MonoBehaviour, IUiDrawer, IUiLayer
         if (InputSystem.Rebinding) InputSystem.CancelRebind();
         InputSystem.Save();
         Play(ProceduralSounds.MenuBack);
-        GameObject.Destroy(gameObject);
+        _clay.Dispose();
+        InputSystem.ReleaseUi(this);
+        if (Current == this) Current = null;
+        UiScreens.Remove(this);
         onClose?.Invoke();
     }
 

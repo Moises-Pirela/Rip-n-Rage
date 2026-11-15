@@ -1481,9 +1481,21 @@ vector properties, see layer 4's notes).
       - **Gates**: 398 gameplay assertions; **every script and both shots byte-identical to 8.6** (the HUD shows the
         same values on the same frames — a value now lands the frame after the event used to paint it, visible
         nowhere the gates look since the screens update first), two sweeps identical.
-- [ ] 8.8 **Menus read the ECS** (pause and death screens moved off GameObjects in 8.4b). `MainMenuScreen`,
-      `GraphicsMenu`, `ControlsMenu` become `IUiScreen`s; the pause menu's stats line reads components;
-      RESTART / MAIN MENU / Continue go through the `Flow` transition request.
+- [x] 8.8 **The menus are plain screens and read the ECS** (done). `MainMenuScreen`, `GraphicsMenu` and
+      `ControlsMenu` are `IUiScreen`s (constructor / `Close`, one idempotent teardown for Esc and the scene reset —
+      a submenu's parent updates before it, added first, so the Esc edge that closes the child is already spent);
+      `GameSession.ShowMainMenu` puts the title screen up and invokes `OnSceneBuilt`, so the overlay and the
+      automation scripts drive the title screen too. The pause menu's stats line reads `Health` / `Armor` / `Rage`
+      off the components (`PlayerState.Current` gone from the menus). `MenuCamera` stays a MonoBehaviour: it is the
+      scene's legacy camera, not a menu (layer 9).
+      - The plan's "RESTART / MAIN MENU / Continue go through the `Flow` transition request" was superseded by 8.2's
+        review: scene transitions stay outside the world, in `GameSession`, and the menus call it directly.
+      - **The `--menu` → NEW GAME gate** (deferred from 8.0): `menu` script under `--menu`, in the sweep (24
+        scripts) — the title screen has no player (`state=MainMenu player=False`), Enter on NEW GAME starts a fresh
+        run (`state=Playing hp=100 ammo=120 pos (0.00, 1.81, 8.00)`). The title screen and the graphics menu
+        checked on screen; `graphicsmenu` script exits 0.
+      - **Gates**: 398 gameplay assertions; every pre-existing script and both shots **byte-identical to 8.5**; two
+        sweeps identical.
 - [ ] 8.9 Close-out: full sweep twice, byte-identical scripts, bench / frame / alloc vs 7.8 (and settle 7.8's open
       `approach` scheduling item with a per-batch profile), layer totals, pick-up point for layer 9.
 

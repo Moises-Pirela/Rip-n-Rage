@@ -125,9 +125,10 @@ namespace RipNRage.Game.Content
             State = GameState.MainMenu;
             InputSystem.LockCursorInGameplay = false;
             TestArea.Build(backdropLevelPath, spawnPlayer: false);
+            UiScreens.Add(new MainMenuScreen());
             var tools = CreateSessionObject();
-            tools.AddComponent<MainMenuScreen>();
             tools.AddComponent<VfxRuntime>();
+            OnSceneBuilt?.Invoke(tools); // the debug overlay and the automation scripts drive the title screen too (8.8)
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }

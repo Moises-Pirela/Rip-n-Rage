@@ -6,10 +6,10 @@ using RipNRage.Game.Content.Level;
 
 /// <summary>
 /// Title screen: NEW GAME / CONTINUE / QUIT over an attract-mode view of the level (<see cref="MenuCamera"/>).
-/// Created by <see cref="GameSession.ShowMainMenu"/> on the session object; every choice goes back through
-/// <see cref="GameSession"/>, which rebuilds the scene at the start of the next frame.
+/// A plain screen (8.8), put up by <see cref="GameSession.ShowMainMenu"/>; every choice goes back through
+/// <see cref="GameSession"/>, which rebuilds the scene at the start of the next frame — the scene reset closes it.
 /// </summary>
-public class MainMenuScreen : MonoBehaviour, IUiDrawer, IUiLayer
+public sealed class MainMenuScreen : IUiScreen, IUiLayer
 {
     private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Menu;
@@ -23,7 +23,7 @@ public class MainMenuScreen : MonoBehaviour, IUiDrawer, IUiLayer
     private bool _done;
     private string _continueSlot;
 
-    protected override void Awake()
+    public MainMenuScreen()
     {
         _continueSlot = GameSaveSystem.ContinueSlot();
         bool canContinue = _continueSlot != null;
@@ -44,13 +44,13 @@ public class MainMenuScreen : MonoBehaviour, IUiDrawer, IUiLayer
         Cursor.visible = true;
     }
 
-    protected override void OnDestroy()
+    public void Close()
     {
         _clay.Dispose();
         InputSystem.ReleaseUi(this);
     }
 
-    protected override void Update()
+    public void Update()
     {
         _t += Time.unscaledDeltaTime;
         if (SubmenuOpen) return;

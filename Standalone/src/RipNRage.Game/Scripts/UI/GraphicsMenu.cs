@@ -11,13 +11,13 @@ using RipNRage.Engine.Graphics.Particles;
 /// real frame time while you toggle so the cost of each effect is visible immediately. Opened from the pause
 /// menu and the title screen; Esc / BACK closes it.
 /// </summary>
-public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
+public sealed class GraphicsMenu : IUiScreen, IUiLayer
 {
     private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Modal + 10;
 
     public static GraphicsMenu Current { get; private set; }
-    public static bool IsOpen => Current != null && !Current.IsDestroyed;
+    public static bool IsOpen => Current != null;
 
     public Action onClose;
     private readonly MenuList _menu = new MenuList();
@@ -27,13 +27,12 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
     public static GraphicsMenu Open(Action onClose)
     {
         if (IsOpen) return Current;
-        var go = new GameObject("GraphicsMenu");
-        var m = go.AddComponent<GraphicsMenu>();
+        var m = UiScreens.Add(new GraphicsMenu());
         m.onClose = onClose;
         return m;
     }
 
-    protected override void Awake()
+    private GraphicsMenu()
     {
         Current = this;
         _menu.itemWidth = 820f; _menu.itemHeight = 42f; _menu.itemGap = 6f; _menu.labelScale = 2.8f; _menu.hintScale = 1.8f;
@@ -47,12 +46,6 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
         Cursor.visible = true;
     }
 
-    protected override void OnDestroy()
-    {
-        _clay.Dispose();
-        InputSystem.ReleaseUi(this);
-        if (Current == this) Current = null;
-    }
 
     private void Build()
     {
@@ -204,7 +197,7 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     // ------------------------------------------------------------------ per frame
 
-    protected override void Update()
+    public void Update()
     {
         _anim = Mathf.MoveTowards(_anim, 1f, Time.unscaledDeltaTime / 0.15f);
         if (_closed) return;
@@ -213,13 +206,18 @@ public class GraphicsMenu : MonoBehaviour, IUiDrawer, IUiLayer
         if (item != null && !item.IsSetting) { Play(ProceduralSounds.MenuSelect); item.onActivate?.Invoke(); }
     }
 
+    /// <summary>Esc / BACK, or the scene reset (UiScreens.Clear): one teardown for both, idempotent — the parent
+    /// updated before this screen this frame (added first), so its Esc edge is already spent.</summary>
     public void Close()
     {
         if (_closed) return;
         _closed = true;
         GraphicsSettings.Save();
         Play(ProceduralSounds.MenuBack);
-        GameObject.Destroy(gameObject); // Current stays set until the object is gone, so parents ignore this frame's Esc
+        _clay.Dispose();
+        InputSystem.ReleaseUi(this);
+        if (Current == this) Current = null;
+        UiScreens.Remove(this);
         onClose?.Invoke();
     }
 

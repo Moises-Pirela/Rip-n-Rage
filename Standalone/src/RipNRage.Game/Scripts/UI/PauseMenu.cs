@@ -153,12 +153,15 @@ public sealed class PauseMenu : IUiScreen, IUiLayer
         using (c.Box(ClayScreen.Column(0.22f * ClayScreen.RefHeight)))
         {
             c.Text("PAUSED", ClayScreen.Line(9f, new Color(0.95f, 0.85f, 0.55f, 1f), shadow: true));
-            var ps = PlayerState.Current;
-            if (ps != null)
+            var w = Application.Current?.World;
+            var pe = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
+            if (w != null && !pe.IsNull && w.IsAlive(pe) && w.Has<RipNRage.Game.Ecs.Combat.Health>(pe))
             {
                 ClayScreen.Gap(c, 8f);
                 RipNRage.Game.Ecs.Rages.TryGet(out var rage);
-            c.Text($"HEALTH {ps.Health:0}   ARMOR {ps.Armor:0}   FURY {rage.Fury * 100f:0}%   CALM {rage.Calm * 100f:0}%", ClayScreen.Line(2.4f, new Color(0.8f, 0.8f, 0.82f, 0.85f)));
+                float hp = w.Get<RipNRage.Game.Ecs.Combat.Health>(pe).Current;
+                float armor = w.Has<RipNRage.Game.Ecs.Combat.Armor>(pe) ? w.Get<RipNRage.Game.Ecs.Combat.Armor>(pe).Current : 0f;
+                c.Text($"HEALTH {hp:0}   ARMOR {armor:0}   FURY {rage.Fury * 100f:0}%   CALM {rage.Calm * 100f:0}%", ClayScreen.Line(2.4f, new Color(0.8f, 0.8f, 0.82f, 0.85f)));
             }
         }
         MenuItem clicked;

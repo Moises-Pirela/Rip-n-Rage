@@ -36,13 +36,14 @@ tail -1 "$OUT/game-checks.log"
 # script:frames — the 20 of the 7.8 sweep, then fall / pause (in the sweep since 8.0) and checkpoint (new in 8.0)
 ALL="walk:400 fire:400 weapons:400 rage:400 saveload:400 jab:400 m1887:400 glockfire:400 rocket:400 glockalt:400
 killenemy:400 style:400 die:400 peek:400 close:400 approach:400 pickup:400 water:400 surface:400 evade:400
-fall:620 pause:400 checkpoint:400"
+fall:620 pause:400 checkpoint:400 menu:400"
 
 for entry in $ALL; do
     name=${entry%%:*}; frames=${entry##*:}
     if [ -n "${GATES:-}" ] && [[ " $GATES " != *" $name "* ]]; then continue; fi
     log="$OUT/$name.log"
-    dotnet src/RipNRage.Game/bin/Release/net10.0/RipNRage.dll --script "$name" --frames "$frames" \
+    extra=""; [ "$name" = menu ] && extra="--menu" # the title-screen gate starts on the title screen (8.8)
+    dotnet src/RipNRage.Game/bin/Release/net10.0/RipNRage.dll $extra --script "$name" --frames "$frames" \
         --fixed-dt 0.016667 --threads 1 --validate-access --no-vsync --width 640 --height 360 --overlay 0 \
         > "$log" 2>&1
     code=$?

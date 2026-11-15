@@ -486,6 +486,25 @@ namespace RipNRage.Game
         private static bool _saveLoaded;
         /// <summary>die: 1 once RESTART was pressed (static, as above).</summary>
         private static int _dieStage;
+        /// <summary>menu: 1 once NEW GAME was pressed (static, as above).</summary>
+        private static int _menuStage;
+
+        /// <summary>8.8 (deferred from 8.0): the title screen → NEW GAME path, under <c>--menu --script menu</c>.
+        /// Scene 1 is the title screen (no player); NEW GAME is the selected item, Enter starts the run.</summary>
+        private void MenuScript()
+        {
+            if (_menuStage == 0)
+            {
+                if (_frame == 40) Debug.LogWarning($"[test] menu state={GameSession.State} player={(PlayerState.Current != null)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} timeScale {Time.timeScale:0.00}");
+                if (_frame == 60) { _menuStage = 1; Input.SimulateKey(KeyCode.Return, true); } // NEW GAME (the fade takes input from frame 28)
+            }
+            else
+            {
+                if (_frame == 1) Input.SimulateKey(KeyCode.Return, false);
+                if (_frame == 60 && PlayerState.Current != null)
+                    Debug.LogWarning($"[test] new game state={GameSession.State} player=True hp={PlayerState.Current.Health} ammo={EnragedInjector<CombatController>.GetInstance()?.AmmoOf(AmmoType.LIGHT)} flow {RipNRage.Game.Ecs.Flows.Current.Phase} pos {PlayerState.Current.transform.position}");
+            }
+        }
 
         /// <summary>saveload: saves the restored game to "roundtrip" and prints every line that differs from "quick".</summary>
         private static void SaveRoundTrip()
@@ -518,6 +537,8 @@ namespace RipNRage.Game
         protected override void Update()
         {
             _frame++;
+            // the title screen has no player, so the menu script runs before the player-facade guard (8.8)
+            if (scriptName == "menu") { MenuScript(); return; }
             var input = EnragedInjector<PlayerInputActions>.GetInstance();
             var combat = EnragedInjector<CombatController>.GetInstance();
             if (input == null || combat == null) return;
