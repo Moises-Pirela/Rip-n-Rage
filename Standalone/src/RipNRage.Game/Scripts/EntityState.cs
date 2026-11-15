@@ -8,14 +8,13 @@ using HealthComponent = RipNRage.Game.Ecs.Combat.Health;
 // MIGRATION FACADE (layer 5; gone in layer 9). Health and armour live in the Health component on the thing's ECS
 // entity, damage is a DamageEvent consumed by HealthSystem at the end of the frame, and death is the Dead tag — this
 // class only keeps the surface the not-yet-ported scripts talk to (the HUD's bars, the AI's "was I hit" probe, the
-// save system, the weapons until 5.3). Subclasses bind their entity with Bind(); CombatBridgeSystem calls NotifyHit /
-// NotifyDied when the events land, which is where the legacy change callbacks and Die() now fire.
+// save system, the weapons until 5.3). Subclasses bind their entity with Bind(); CombatBridgeSystem calls NotifyHit
+// when a blow lands, which is where the legacy change callbacks fire. Death has no facade half since 8.3.
 //
 // Semantics that changed with the port, on purpose:
 //  - damage is applied at the end of the frame, not inside TakeDamage — a reader in the same scene update still sees
 //    the old value (the weapons' synchronous "did this kill" checks are rewritten on top of HitEvent in 5.3);
-//  - death latches (the Dead tag): a second lethal blow no longer calls Die() again. The legacy base class did, and
-//    left the guard to each subclass.
+//  - death latches (the Dead tag): a second lethal blow does nothing.
 public abstract class EntityState : MonoBehaviour
 {
     /// <summary>The entity carrying this thing's <see cref="Health"/> (bound by the subclass).</summary>
@@ -59,7 +58,6 @@ public abstract class EntityState : MonoBehaviour
     public Action OnArmorChanged;
 
     public abstract void Init();
-    public abstract void Die();
 
     /// <summary>Posts the blow as a <see cref="DamageEvent"/> (applied by HealthSystem at the end of the frame),
     /// with no circumstances: scripted damage from nowhere in particular (the weapons post their own events).</summary>
@@ -109,9 +107,6 @@ public abstract class EntityState : MonoBehaviour
         OnHealthChanged?.Invoke();
         OnArmorChanged?.Invoke();
     }
-
-    /// <summary>The blow that emptied the health.</summary>
-    internal virtual void NotifyDied(in DeathEvent e) => Die();
 
     protected override void OnDestroy() => EcsObjects.Unregister(entity);
 }

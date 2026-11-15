@@ -96,7 +96,6 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
         _menu.ResetMouse();
         _loadCheckpoint.enabled = GameSaveSystem.CheckpointAvailable(GameSession.LevelPath);
         _loadCheckpoint.hint = _loadCheckpoint.enabled ? null : "NO CHECKPOINT REACHED";
-        SetPlayerInput(false);
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
         Play(ProceduralSounds.MenuSelect);
@@ -115,7 +114,6 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
         _menu.interactable = true;
         if (RipNRage.Game.Ecs.Flows.Current.Phase == RipNRage.Game.Ecs.FlowPhase.Playing)
         {
-            SetPlayerInput(true);
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
@@ -134,12 +132,6 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
     {
         Play(ProceduralSounds.MenuSelect);
         item.onActivate?.Invoke();
-    }
-
-    private static void SetPlayerInput(bool on)
-    {
-        var input = EnragedInjector<PlayerInputActions>.GetInstance();
-        if (input != null && !input.IsDestroyed) input.enabled = on;
     }
 
     private void Play(AudioClip clip)

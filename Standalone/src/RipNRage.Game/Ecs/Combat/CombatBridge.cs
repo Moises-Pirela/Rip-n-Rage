@@ -5,12 +5,12 @@ namespace RipNRage.Game.Ecs.Combat
     /// <summary>
     /// MIGRATION BRIDGE (shrinks through layers 5–8, gone in layer 9): delivers the combat events to the
     /// GameObject-side listeners that are not ported yet. A <see cref="HitEvent"/> becomes the target
-    /// <see cref="EntityState"/>'s change notifications (HUD bars, hit flash, the player's damage shake); a
-    /// <see cref="DeathEvent"/> becomes its <c>Die()</c> — the player's death sequence (enemies have no GameObject
-    /// half since 6.6: their death effects are <see cref="RipNRage.Game.Ecs.AI.EnemyDeathSystem"/>'s). Entities are
+    /// <see cref="EntityState"/>'s change notifications (HUD bars, hit flash, the player's damage shake). Deaths need
+    /// no bridge: enemies' are <see cref="RipNRage.Game.Ecs.AI.EnemyDeathSystem"/>'s (6.6), the player's
+    /// <see cref="RipNRage.Game.Ecs.PlayerDeathSystem"/>'s (8.3). Entities are
     /// mapped to their GameObjects through <see cref="EcsObjects"/>, the directory the trigger bridge already keeps.
     /// </summary>
-    public sealed class CombatBridgeSystem : SystemBase, IConsumes<HitEvent>, IConsumes<DeathEvent>
+    public sealed class CombatBridgeSystem : SystemBase, IConsumes<HitEvent>
     {
         public void Consume(SystemContext ctx, System.ReadOnlySpan<HitEvent> events)
         {
@@ -26,15 +26,6 @@ namespace RipNRage.Game.Ecs.Combat
                 {
                     EnragedInjector<HudController>.GetInstance()?.CurrentCrosshair?.OnHit();
                 }
-            }
-        }
-
-        public void Consume(SystemContext ctx, System.ReadOnlySpan<DeathEvent> events)
-        {
-            foreach (ref readonly var e in events)
-            {
-                var state = StateOf(e.Entity);
-                if (state != null) state.NotifyDied(in e);
             }
         }
 

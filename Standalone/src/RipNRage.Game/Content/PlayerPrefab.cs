@@ -6,7 +6,7 @@ namespace RipNRage.Game.Content
     /// Builds the PlayerCharacter hierarchy from Assets/_Game/Prefabs/PlayerCharacter.prefab:
     ///
     /// PlayerCharacter [CapsuleCollider r0.4 h1.3 + RigidBody 80 kg + CharacterBody (ride 0.5 → 1.8 m tall, transform 0.9 m above the feet), AudioSource, FPSController, PlayerInputActions,
-    ///                  FPSCameraController, PlayerState, PlayerDeathSequence, CombatController, HudController]
+    ///                  FPSCameraController, PlayerState, CombatController, HudController]
     ///  ├ Orientation
     ///  ├ Camera (0, 0.5, 0) [HeadBob]
     ///  │   └ WorldCamera (fov 77) [Camera]
@@ -84,10 +84,7 @@ namespace RipNRage.Game.Content
 
             // ---- fall safety net: respawn at the last safe spot below the level's kill height (standalone addition) ----
             player.AddComponent<FallRespawn>();
-            // ---- death: camera fall + slow motion + "You are dead" screen (standalone addition) ----
-            var death = player.AddComponent<PlayerDeathSequence>();
-            death.cameraPivot = cameraGo.transform;
-            death.worldCamera = worldCamera.transform;
+            // the death (camera fall, slow motion, the death screen) is PlayerDeathSystem / DeathCamSystem since 8.3
 
             // ---- weapons: definitions as shared data, state as components, firing as a system (5.3) ----
             RipNRage.Game.Ecs.Combat.Weapons.All = new[]

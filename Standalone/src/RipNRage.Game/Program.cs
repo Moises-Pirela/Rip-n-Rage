@@ -438,7 +438,7 @@ namespace RipNRage.Game
         private void FlowProbe()
         {
             var f = RipNRage.Game.Ecs.Flows.Current;
-            Debug.LogWarning($"[test] frame {_frame} flow {f.Phase} clock {f.DeathClock:0.000} slow {f.SlowMotion:0.00} checkpoint {f.CheckpointReached}"
+            Debug.LogWarning($"[test] frame {_frame} flow {f.Phase} clock {f.DeathClock:0.000} checkpoint {f.CheckpointReached}"
                              + $" timeScale {Time.timeScale:0.00} deathMenu {(DeathScreen.Current != null)}");
         }
 
@@ -763,12 +763,12 @@ namespace RipNRage.Game
                     {
                         if (_frame == 1) Input.SimulateKey(KeyCode.Return, false);
                         if (_frame == 40) FlowProbe();
-                        if (_frame == 40) Debug.LogWarning($"[test] after respawn: player={(PlayerState.Current != null)} dead={PlayerState.Current?.IsDead} hp={PlayerState.Current?.Health} deathEvents={PlayerState.DeathEvents} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
+                        if (_frame == 40) Debug.LogWarning($"[test] after respawn: player={(PlayerState.Current != null)} dead={PlayerState.Current?.IsDead} hp={PlayerState.Current?.Health} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
                         break;
                     }
                     input.overrideMove = _frame < 40 ? new Vector2(0f, 1f) : Vector2.zero;
                     if (_frame == 40 && PlayerState.Current != null) PlayerState.Current.TakeDamage(10000f);
-                    if (_frame == 120 && PlayerState.Current != null) Debug.LogWarning($"[test] dead={PlayerState.Current.IsDead} deathEvents={PlayerState.DeathEvents} hp={PlayerState.Current.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
+                    if (_frame == 120 && PlayerState.Current != null) Debug.LogWarning($"[test] dead={PlayerState.Current.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} hp={PlayerState.Current.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
                     // 8.2: the flow through the death — Dying at once, Dead 2.4 real seconds (144 frames) after it
                     if (_frame == 41 || _frame == 120 || _frame == 183 || _frame == 185 || _frame == 259) FlowProbe();
                     if (_frame == 260) { _dieStage = 1; Input.SimulateKey(KeyCode.Return, true); }
@@ -826,7 +826,7 @@ namespace RipNRage.Game
                     // the player (default mode) or put them back on the planks (--fall-mode respawn)
                     input.overrideMove = _frame < 150 ? new Vector2(1f, 0f) : Vector2.zero;
                     var fr = PlayerState.Current?.GetComponent<FallRespawn>();
-                    if (_frame % 30 == 0 && PlayerState.Current != null) Debug.LogWarning($"[test] frame {_frame} pos {PlayerState.Current.transform.position} falls={fr?.Falls} last={fr?.LastFallKind} dead={PlayerState.Current.IsDead} deathEvents={PlayerState.DeathEvents} killY={FallRespawn.KillY:0.0} mode={FallRespawn.Mode}");
+                    if (_frame % 30 == 0 && PlayerState.Current != null) Debug.LogWarning($"[test] frame {_frame} pos {PlayerState.Current.transform.position} falls={fr?.Falls} last={fr?.LastFallKind} dead={PlayerState.Current.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} killY={FallRespawn.KillY:0.0} mode={FallRespawn.Mode}");
                     break;
                 }
                 case "strafe":
@@ -873,12 +873,12 @@ namespace RipNRage.Game
                         input.overrideMove = _frame > 12 && _frame < 60 ? new Vector2(0f, 1f) : Vector2.zero;
                         if (_frame == 100) Debug.LogWarning($"[test] checkpoint reached={RipNRage.Game.Ecs.Flows.Current.CheckpointReached} available={GameSaveSystem.CheckpointAvailable()} pos {ps.transform.position}");
                         if (_frame == 90) ps.TakeDamage(10000f); // RESTART at 260: the death menu takes input after 2.4 s
-                        if (_frame == 200) Debug.LogWarning($"[test] dead={ps.IsDead} deathEvents={PlayerState.DeathEvents} canRespawnAtCheckpoint={GameSession.CanRespawnAtCheckpoint}");
+                        if (_frame == 200) Debug.LogWarning($"[test] dead={ps.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} canRespawnAtCheckpoint={GameSession.CanRespawnAtCheckpoint}");
                         if (_frame == 260) { _checkpointStage = 1; Input.SimulateKey(KeyCode.Return, true); }
                     }
                     else
                     {
-                        if (_frame == 60) Debug.LogWarning($"[test] respawned at {ps.transform.position} dead={ps.IsDead} hp={ps.Health} deathEvents={PlayerState.DeathEvents} reached={RipNRage.Game.Ecs.Flows.Current.CheckpointReached} timeScale={Time.timeScale:0.00}");
+                        if (_frame == 60) Debug.LogWarning($"[test] respawned at {ps.transform.position} dead={ps.IsDead} hp={ps.Health} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} reached={RipNRage.Game.Ecs.Flows.Current.CheckpointReached} timeScale={Time.timeScale:0.00}");
                     }
                     break;
                 }

@@ -24,10 +24,9 @@ public class CombatController : MonoBehaviour
     [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite leftFistAnimator;
     [SerializeField] public RipNRage.Engine.Ecs.Animation.AnimatedSprite rightFistAnimator;
 
-    private PlayerInputActions _playerInputActions;
-    /// <summary>Set by <see cref="DisableCombat"/> (player death): no input path may fire, jab or switch weapons any more.</summary>
-    private bool _combatDisabled;
-    public bool IsCombatDisabled => _combatDisabled;
+    /// <summary>Only a Playing run may jab or switch weapons (8.3: the flow's phase replaces the death's
+    /// DisableCombat flag and the input block); firing itself is gated by the input, which the flow blocks.</summary>
+    private static bool Live => RipNRage.Game.Ecs.Flows.Playing;
 
 
     // ---------------------------------------------------------------- the components (the HUD / save surface)
@@ -53,29 +52,8 @@ public class CombatController : MonoBehaviour
 
     protected override void Start()
     {
-        _playerInputActions = EnragedInjector<PlayerInputActions>.GetInstance();
         LoadAmmo(SaveData.Current.inventoryData.ammo);
         EquipWeapon(0);
-    }
-
-    /// <summary>
-    /// Player death (standalone addition): stops every combat coroutine, blocks firing / jabbing /
-    /// weapon switching for good and hides the first-person weapon and fists.
-    /// </summary>
-    public void DisableCombat()
-    {
-        if (_combatDisabled) return;
-        _combatDisabled = true;
-        StopAllCoroutines();
-        // no combo or finisher may continue past death (the finisher entity would keep driving the gun)
-        if (!Combo.Finisher.IsNull && W.IsAlive(Combo.Finisher) && !W.IsIterating) W.DestroyEntity(Combo.Finisher);
-        Combo = default;
-        Gun.Holstered = true;
-        if (weaponAnimator != null) weaponAnimator.SetActive(false);
-        if (leftFistAnimator != null) leftFistAnimator.SetActive(false);
-        if (rightFistAnimator != null) rightFistAnimator.SetActive(false);
-        if (cameraTransform != null) cameraTransform.DOKill();
-        if (_playerInputActions != null) _playerInputActions.SetIsBlockingInput(true);
     }
 
     #region Input Events
@@ -83,14 +61,13 @@ public class CombatController : MonoBehaviour
     /// <summary>The automation scripts' alt-fire press; the real input is read by <see cref="AltFireSystem"/> itself.</summary>
     public void OnAltFire(bool isPressed)
     {
-        if (_combatDisabled || !isPressed || _playerInputActions.GetIsBlockingInput()) return;
+        if (!Live || !isPressed) return;
         Combo.Requested = true;
     }
 
     public void OnSwapWeapon(float value)
     {
-        if (_combatDisabled) return;
-        if (_playerInputActions.GetIsBlockingInput()) return;
+        if (!Live) return;
 
         int step = value > 0f ? 1 : value < 0f ? -1 : 0;
         if (step == 0) return;
@@ -122,8 +99,7 @@ public class CombatController : MonoBehaviour
 
     private void ChangeWeapon(int index)
     {
-        if (_combatDisabled) return;
-        if (_playerInputActions.GetIsBlockingInput()) return;
+        if (!Live) return;
         if (index < 0 || index >= Weapons.All.Length) return;
         EquipWeapon(index);
     }

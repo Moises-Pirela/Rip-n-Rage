@@ -25,9 +25,8 @@ namespace RipNRage.Game.Ecs
     public struct Flow : IComponent
     {
         public FlowPhase Phase;
-        /// <summary>The death's slow motion (the time scale the death sequence ramps to); 0 = none, full speed.</summary>
-        public float SlowMotion;
-        /// <summary>Real seconds since the player died (Dying and Dead): the death screen's timing, and Dying → Dead.</summary>
+        /// <summary>Real seconds since the player died (Dying and Dead): the death screen's timing, the death camera's
+        /// fall, the slow motion, and Dying → Dead.</summary>
         public float DeathClock;
         /// <summary>This run passed a checkpoint or was loaded from a save: dying respawns at the checkpoint.</summary>
         public bool CheckpointReached;
@@ -78,18 +77,30 @@ namespace RipNRage.Game.Ecs
             return n;
         }
 
-        /// <summary>The engine time scale the flow asks for: frozen while paused, else the death's slow motion, else 1.</summary>
-        public static float TimeScale(in Flow f) =>
-            f.Phase == FlowPhase.Paused ? 0f : f.SlowMotion > 0f ? f.SlowMotion : 1f;
+        /// <summary>The engine time scale the flow asks for: frozen while paused; after the death, slowing from 1 to
+        /// <see cref="DeathCams.SlowMotion"/> over the camera's fall (8.3: a function of the clock — nothing writes it);
+        /// else 1.</summary>
+        public static float TimeScale(in Flow f) => f.Phase switch
+        {
+            FlowPhase.Paused => 0f,
+            FlowPhase.Dying or FlowPhase.Dead => Mathf.Lerp(1f, DeathCams.SlowMotion, DeathCams.Progress(f.DeathClock)),
+            _ => 1f,
+        };
+
+        /// <summary>The player has the controls only while Playing: paused, dying and dead block the input.</summary>
+        public static bool InputBlocked(in Flow f) => f.Phase != FlowPhase.Playing;
 
         private static World W => Application.Current?.World;
 
         /// <summary>The current flow, for the scene side (menus, the death screen, the session). Default outside a level.</summary>
         public static Flow Current => W != null ? W.GetSingleton<Flow>() : default;
 
-        /// <summary>Scene-side writes between ticks (the death sequence's slow motion, the save system's checkpoint
-        /// flag) — never the phase, which only <see cref="FlowSystem"/> moves.</summary>
-        public static void SetSlowMotion(float scale) { if (W != null) W.Singleton<Flow>().SlowMotion = scale; }
+        /// <summary>The run may act: the scene-side input paths (the automation scripts' presses, weapon switching)
+        /// check this, as the ECS ones are gated by <see cref="InputBlocked"/>.</summary>
+        public static bool Playing => Current.Phase == FlowPhase.Playing;
+
+        /// <summary>The save system's checkpoint flag, written between ticks — never the phase, which only
+        /// <see cref="FlowSystem"/> moves.</summary>
         public static void SetCheckpointReached() { if (W != null) W.Singleton<Flow>().CheckpointReached = true; }
 
         /// <summary>The pause menu asks; the answer is in <see cref="Current"/> from the next frame on.</summary>
@@ -97,14 +108,14 @@ namespace RipNRage.Game.Ecs
     }
 
     /// <summary>
-    /// Moves the run through its phases and is the only writer of the engine time scale. Consumes the player's
-    /// <see cref="DeathEvent"/> (→ Dying) and <see cref="PauseRequest"/>s; ticks the death clock on real time
-    /// (Dying → Dead at <see cref="Flows.DeathMenuDelay"/>). The time scale is applied on every change, in the
-    /// same frame — the frame's delta was taken before the world ran, so a pause freezes from the next frame, as
-    /// the menu's own write did — and every tick, which carries the death sequence's slow motion.
+    /// Moves the run through its phases and owns the two engine gates the phase decides: the time scale and the
+    /// input block (<c>InputOverride.Blocked</c>). Consumes the player's <see cref="DeathEvent"/> (→ Dying) and
+    /// <see cref="PauseRequest"/>s; ticks the death clock on real time (Dying → Dead at
+    /// <see cref="Flows.DeathMenuDelay"/>). The gates are applied on every change, in that frame — the frame's delta
+    /// was taken before the world ran, so a pause freezes from the next frame — and every tick (the slow motion
+    /// follows the clock).
     /// </summary>
-    [UpdateAfter(typeof(CombatBridgeSystem))] // the death sequence starts inside the bridge's dispatch (a coroutine's first step runs at once) and sets the first slow-motion value there: the scale is applied after it
-    [Exclusive] // Time.timeScale and Time.unscaledDeltaTime: engine statics, not components
+    [Exclusive] // Time.timeScale, Time.unscaledDeltaTime and InputOverride.Blocked: engine statics, not components
     public sealed class FlowSystem : SystemBase, ITick, IConsumes<DeathEvent>, IConsumes<PauseRequest>
     {
         public override void OnCreate() => World.SingletonEntity<Flow>(); // claimed outside a phase
@@ -113,7 +124,7 @@ namespace RipNRage.Game.Ecs
         {
             ref var f = ref ctx.World.Singleton<Flow>();
             f = Flows.Step(in f, Time.unscaledDeltaTime);
-            Time.timeScale = Flows.TimeScale(in f);
+            Apply(in f);
         }
 
         public void Consume(SystemContext ctx, System.ReadOnlySpan<DeathEvent> events)
@@ -122,14 +133,20 @@ namespace RipNRage.Game.Ecs
             ref var f = ref w.Singleton<Flow>();
             foreach (ref readonly var e in events)
                 if (w.IsAlive(e.Entity) && w.Has<PlayerTag>(e.Entity)) f = Flows.PlayerDied(in f);
-            Time.timeScale = Flows.TimeScale(in f);
+            Apply(in f);
         }
 
         public void Consume(SystemContext ctx, System.ReadOnlySpan<PauseRequest> events)
         {
             ref var f = ref ctx.World.Singleton<Flow>();
             foreach (ref readonly var e in events) f = Flows.Request(in f, e.Pause);
+            Apply(in f);
+        }
+
+        private static void Apply(in Flow f)
+        {
             Time.timeScale = Flows.TimeScale(in f);
+            RipNRage.Engine.Ecs.Input.InputOverride.Blocked = Flows.InputBlocked(in f);
         }
     }
 }

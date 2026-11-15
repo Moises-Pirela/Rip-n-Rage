@@ -1371,10 +1371,38 @@ vector properties, see layer 4's notes).
         flow's clock); two sweeps identical.
       - The death screen's menu opens one frame later than before (it reads Dead in the frame after the system
         sets it); RESTART in `die` / `checkpoint` comes 76 / 26 frames after, unaffected.
-- [ ] 8.3 **The death sequence is a component**, ported as it is (Q4). `DeathCam { T, Roll, StartPose }` on the
-      pivot, stepped on unscaled time, same curve, timings and ×0.2 slow motion; input / combat / look are switched off by `Flow.Phase` (systems already read it) instead of
-      disabling MonoBehaviours. `PlayerDeathSequence` deleted; `PlayerState.Die` / `OnDied` deleted if nothing
-      else reads them.
+- [x] 8.3 **The death is ECS** (done; `Ecs/PlayerDeath.cs`). Ported as it is (Q4), and **no MonoBehaviour is
+      switched off any more** — the survey found two of the three the old sequence disabled did nothing disabled
+      (`FPSCameraController`, and `FPSController` in the fall, have no `Update`); the input block and
+      `DisableCombat` were the real ones.
+      - **`DeathCam { Start/End Position, Start/End Rotation }`** on the pivot; the pose is a pure function of
+        `Flow.DeathClock` (`DeathCams.Pose`: k = clock / 1.15 s, drop k², the thud past 0.85, the roll smoothstepped).
+        **`DeathCamSystem`** poses it, `[UpdateAfter(FlowSystem)]` so the fall, the slow motion and the death screen
+        read the same tick's clock, and drops the leftover shake at the floor.
+      - **`PlayerDeathSystem`** (`[Exclusive]`: audio, the death screen) consumes the player's `DeathEvent`: rig
+        `External`, bob off, shake cleared, gun holstered, a finisher destroyed and the combo reset (the fists kept —
+        the old `Combo = default` dropped their entities too), the gun and fists `Hidden`, the thud, the death screen,
+        the pivot's `DeathCam`. `PlayerDeathSystem.Deaths` replaces `PlayerState.DeathEvents` as the gates' probe.
+      - **The slow motion is the clock's**: `Flows.TimeScale` while Dying / Dead is `Lerp(1, 0.2, k)` — the
+        `SlowMotion` field and every scene-side write gone. **The controls are the flow's**: `FlowSystem` sets
+        `InputOverride.Blocked` for every phase but Playing (`Flows.InputBlocked`); `CombatController` and
+        `PlayerInputActions.OnJump` check `Flows.Playing` for their scene-side paths.
+      - **Deleted**: `PlayerDeathSequence` (113); `PlayerState.Die` / `OnDied` / `_dieRan` / the counter;
+        `EntityState.Die` / `NotifyDied`; `CombatBridgeSystem`'s `DeathEvent` path (deaths need no bridge now);
+        `CombatController.DisableCombat` / `_combatDisabled` / `IsCombatDisabled` and its two dead `DOKill`s (nothing
+        tweens any more); `PlayerInputActions`' `OnEnable` / `OnDisable` gating and `isBlockingInput` /
+        `Get` / `SetIsBlockingInput`; `PauseMenu.SetPlayerInput`.
+      - **Gates**: 372 gameplay assertions (+26: the slow motion and the block by phase, the fall's pose at 0 / ½ /
+        thud / 1 and both roll sides, the system over a world — rig, gun, viewmodel, combo, the cam, the block, the
+        pivot posed off a set clock, no second death). Schedule: still 21 Tick batches, `DeathCamSystem` joins
+        `NearMiss + PlayerLook + RageCalm`. Two sweeps identical; `walk` shot 0.000%.
+      - **What moved, and why**: the coroutine's first step ran *inside* the death's dispatch, so it slowed the world
+        to 0.99 on the death frame; the clock is 0 on that frame, so the slow motion now starts one frame later
+        (`die` frame 41 `timeScale 0.99 → 1.00`, later values unchanged at 0.20). The dying world therefore runs a
+        fraction of a frame ahead: `fall` / `water` sink a few cm differently and rest where they did (`fall`
+        −14.60 / −14.61); the `die` shot is the same picture — same roll side, pose, screen — at 2.5% of pixels past
+        a tolerance of 8/255 (51% at 0, the world-time shading). The death screen's timing, Dead at frame 185, the
+        respawns and every other script are byte-identical.
 - [ ] 8.4 **Falls as a system.** Kill height as a singleton from the loader; the lethal check and the EDGE /
       THROUGH classifier as a system (its overlay line becomes a drawer read). The arcade respawn is dropped (Q2):
       `FallMode`, `--fall-mode` and worldspawn `fall_mode` deleted with it. `FallRespawn` deleted.

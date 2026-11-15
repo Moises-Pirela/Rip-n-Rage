@@ -7,7 +7,8 @@ using RipNRage.Game.Ecs;
 // no longer polls anything: it mirrors that snapshot onto the fields the not-yet-ported scripts expect, and keeps
 // dispatching the weapon actions to the CombatController the way Unity's PlayerInput "Send Messages" did.
 //
-// Disabling the component (pause menu, death) silences the mirrored input for those scripts.
+// Pause and death silence it through the flow (8.3): FlowSystem sets InputOverride.Blocked for every phase but
+// Playing, the snapshot reads neutral and not Live, and the mirror below follows it.
 public class PlayerInputActions : MonoBehaviour
 {
     public Vector2 MovementInput { get; set; }
@@ -21,8 +22,6 @@ public class PlayerInputActions : MonoBehaviour
     public bool SlideHeld { get; private set; }
     public bool DashPressed { get; private set; }
 
-    private bool isBlockingInput;
-    private bool _enabled;
     private PlayerLink _link;
 
     /// <summary>Automation hooks (DemoScript): forwarded to the engine-wide <see cref="InputOverride"/>.</summary>
@@ -32,33 +31,16 @@ public class PlayerInputActions : MonoBehaviour
 
     protected override void Awake() => EnragedInjector<PlayerInputActions>.SetInstance(this);
 
-    protected override void OnEnable()
-    {
-        _enabled = true;
-        InputOverride.Blocked = isBlockingInput;
-    }
-
-    protected override void OnDisable()
-    {
-        _enabled = false;
-        InputOverride.Blocked = true; // pause menu / death: the player's systems go quiet too
-        MovementInput = Vector2.zero;
-        LookInput = Vector2.zero;
-        IsFiring = false;
-        SlidePressed = SlideHeld = DashPressed = false;
-    }
-
     protected override void Update()
     {
-        if (!_enabled) return;
         var s = Application.Current.World.GetSingleton<InputState>();
 
-        MovementInput = isBlockingInput ? Vector2.zero : s.Move;
-        LookInput = isBlockingInput ? Vector2.zero : s.Look;
+        MovementInput = s.Move;
+        LookInput = s.Look;
         IsFiring = s.FireHeld;
-        SlidePressed = !isBlockingInput && s.SlidePressed;
-        SlideHeld = !isBlockingInput && s.SlideHeld;
-        DashPressed = !isBlockingInput && s.DashPressed;
+        SlidePressed = s.SlidePressed;
+        SlideHeld = s.SlideHeld;
+        DashPressed = s.DashPressed;
         IsJumping = s.JumpQueued;
         _link ??= GetComponent<PlayerLink>();
         IsGrounded = _link != null && _link.IsGrounded;
@@ -77,17 +59,6 @@ public class PlayerInputActions : MonoBehaviour
         }
     }
 
-    public bool GetIsBlockingInput() => isBlockingInput;
-
-    public void SetIsBlockingInput(bool shouldBlock)
-    {
-        isBlockingInput = shouldBlock;
-        InputOverride.Blocked = shouldBlock; // the systems read the singleton, so the gate has to be there too
-        if (!isBlockingInput) return;
-        LookInput = Vector2.zero;
-        MovementInput = Vector2.zero;
-    }
-
     /// <summary>Queues a jump (the automation scripts).</summary>
-    public void OnJump() { if (!isBlockingInput) InputOverride.JumpOnce(); }
+    public void OnJump() { if (RipNRage.Game.Ecs.Flows.Playing) InputOverride.JumpOnce(); }
 }
