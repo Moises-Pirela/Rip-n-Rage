@@ -18,6 +18,8 @@ internal static class Layer8Checks
     {
         Rules(True, Equal);
         System(True, Equal);
+        FallRules(True, Equal);
+        FallSystemOverAWorld(True, Equal);
         Time.timeScale = 1f; // the system writes the engine statics: leave them as the next checks expect
         RipNRage.Engine.Ecs.Input.InputOverride.Blocked = false;
     }
@@ -173,5 +175,51 @@ internal static class Layer8Checks
         var fresh = w.GetSingleton<Flow>();
         True(fresh.Phase == FlowPhase.Playing && !fresh.CheckpointReached && fresh.DeathClock == 0f,
             "the scene reset gives a fresh flow: Playing, no checkpoint, no death clock");
+    }
+
+    // ---------------------------------------------------------------- 8.4: falls
+
+    private static void FallRules(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        var f = Falls.Track(default, new Vector3(1f, 2f, 3f), true, 0f);
+        True(f.LastGrounded == new Vector3(1f, 2f, 3f) && !f.DropRecorded, "standing records where the player stood");
+        var air = Falls.Track(in f, new Vector3(1f, 1.7f, 3f), false, 1f);
+        True(!air.DropRecorded, "a hop or a step down is not a drop (within the margin)");
+        var drop = Falls.Track(in air, new Vector3(4f, 1.4f, 3f), false, 2f);
+        True(drop.DropRecorded && drop.DropPosition == new Vector3(4f, 1.4f, 3f), "half a metre under the last footing is the drop spot");
+        Equal(2f, drop.DropTime, "timed");
+        var later = Falls.Track(in drop, new Vector3(9f, -5f, 3f), false, 3f);
+        True(later.DropPosition == drop.DropPosition, "the first drop spot is kept while the fall goes on");
+        True(!Falls.Track(in later, new Vector3(9f, 0f, 3f), true, 4f).DropRecorded, "landing clears it");
+        True(Falls.Label(FallKind.Edge) == "EDGE" && Falls.Label(FallKind.None) == "-", "the overlay's labels");
+    }
+
+    private static void FallSystemOverAWorld(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        using var w = new World(0);
+        w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(PlayerLink).Assembly);
+        w.FixedDeltaTime = 1f / 60f;
+        w.Singleton<KillHeight>().Y = -1.5f;
+        var p = w.CreateEntity();
+        w.Add(p, LocalTransform.At(new Vector3(0f, 1f, 0f)));
+        w.Add(p, new RipNRage.Engine.Ecs.Physics.CharacterMotor());
+        w.Add(p, new PlayerTag());
+        w.Add(p, new FallWatch { LastGrounded = new Vector3(0f, -1.8f, 0f) }); // as if spawned just above the line
+        w.Add(p, new Health { Current = 100f, Max = 100f });
+        w.Add(p, new Armor { Current = 100f, Max = 100f, Resistance = 1f });
+        w.Update(1f / 60f);
+        True(!w.Has<Dead>(p) && w.Get<FallWatch>(p).Count == 0, "above the kill height nothing happens");
+
+        int deaths = PlayerDeathSystem.Deaths;
+        w.Get<LocalTransform>(p).Position = new Vector3(0f, -2f, 0f);
+        w.Update(1f / 60f);
+        var fw = w.Get<FallWatch>(p);
+        True(fw.Count == 1 && fw.LastKind == FallKind.Unknown, "below it the fall is counted and classified (never stood: unknown)");
+        True(w.Has<Dead>(p) && w.Get<Health>(p).Current == 0f && PlayerDeathSystem.Deaths == deaths + 1,
+            "and the player dies by the one door, through full armour");
+        w.Update(1f / 60f);
+        True(w.Get<FallWatch>(p).Count == 1, "a dead player is not watched: one fall, one death");
+        Time.timeScale = 1f;
+        RipNRage.Engine.Ecs.Input.InputOverride.Blocked = false;
     }
 }

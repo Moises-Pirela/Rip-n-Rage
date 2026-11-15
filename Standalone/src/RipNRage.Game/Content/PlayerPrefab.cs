@@ -82,8 +82,6 @@ namespace RipNRage.Game.Content
 
             var state = player.AddComponent<PlayerState>();
 
-            // ---- fall safety net: respawn at the last safe spot below the level's kill height (standalone addition) ----
-            player.AddComponent<FallRespawn>();
             // the death (camera fall, slow motion, the death screen) is PlayerDeathSystem / DeathCamSystem since 8.3
 
             // ---- weapons: definitions as shared data, state as components, firing as a system (5.3) ----

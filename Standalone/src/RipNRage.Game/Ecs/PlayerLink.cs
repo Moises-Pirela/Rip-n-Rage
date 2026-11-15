@@ -89,6 +89,8 @@ namespace RipNRage.Game.Ecs
                 ZSwayAngle = 5f, ZSwayMultiplier = 100f, ZSmoothSway = -50f, ZSmoothLerp = 0f,
             });
             cmd.Add(e, new PlayerTag());
+            // falling out of the level is lethal (FallSystem, 8.4); the watch starts from the spawn, as if stood on
+            cmd.Add(e, new FallWatch { LastGrounded = go.transform.position, DropPosition = go.transform.position });
             cmd.Add(e, new Rage()); // both meters empty, Normal
             cmd.Add(e, new RageFx()); // what it looks and sounds like
             // the player's trigger overlaps (checkpoints, water, pickups) have to be reported

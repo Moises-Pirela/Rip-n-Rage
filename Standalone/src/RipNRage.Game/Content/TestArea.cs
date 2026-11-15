@@ -44,10 +44,7 @@ namespace RipNRage.Game.Content
                 var level = LevelLoader.Load(levelPath);
                 Debug.LogWarning($"Level: {levelPath} ({level.document.Brushes.Count} brushes, {level.document.entities.Count} entities)");
                 RipNRage.Game.Ecs.Sky.Spin(World, 1.2f);
-                FallRespawn.KillY = level.killY;
-                FallRespawn.SpawnPosition = level.playerStart;
-                FallRespawn.SpawnRotation = level.playerRotation;
-                if (level.fallMode.HasValue) FallRespawn.Mode = level.fallMode.Value;
+                World.Singleton<RipNRage.Game.Ecs.KillHeight>().Y = level.killY;
                 if (spawnPlayer) BuildDungeonMaster(level.playerStart, level.playerRotation);
                 else MenuCamera.Create(level.playerStart, level.playerRotation);
                 return;
@@ -55,9 +52,7 @@ namespace RipNRage.Game.Content
 
             BuildEnvironment();
             BuildProps();
-            FallRespawn.KillY = -1.5f; // the legacy arena's water surface is at -0.5
-            FallRespawn.SpawnPosition = new Vector3(0f, 2.6f, 8f);
-            FallRespawn.SpawnRotation = Quaternion.Euler(0f, 180f, 0f);
+            World.Singleton<RipNRage.Game.Ecs.KillHeight>().Y = -1.5f; // the legacy arena's water surface is at -0.5
             if (spawnPlayer) BuildDungeonMaster(new Vector3(0f, 2.6f, 8f), Quaternion.Euler(0f, 180f, 0f));
             else MenuCamera.Create(new Vector3(0f, 2.6f, 8f), Quaternion.Euler(0f, 180f, 0f));
             BuildPickups();

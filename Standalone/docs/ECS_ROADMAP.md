@@ -1403,9 +1403,27 @@ vector properties, see layer 4's notes).
         −14.60 / −14.61); the `die` shot is the same picture — same roll side, pose, screen — at 2.5% of pixels past
         a tolerance of 8/255 (51% at 0, the world-time shading). The death screen's timing, Dead at frame 185, the
         respawns and every other script are byte-identical.
-- [ ] 8.4 **Falls as a system.** Kill height as a singleton from the loader; the lethal check and the EDGE /
-      THROUGH classifier as a system (its overlay line becomes a drawer read). The arcade respawn is dropped (Q2):
-      `FallMode`, `--fall-mode` and worldspawn `fall_mode` deleted with it. `FallRespawn` deleted.
+- [x] 8.4 **Falls are a system** (done; `Ecs/Falls.cs`; pulled forward with 8.3 at review: "remove the legacy
+      MonoBehaviours of these features").
+      - **`KillHeight { Y }`** singleton (the level build writes it; replaces `FallRespawn.KillY`).
+        **`FallWatch { LastGrounded, DropPosition, DropTime, DropRecorded, Count, LastKind }`** on the player, seeded
+        with the spawn position (`PlayerLink`) — the 8.4 checks caught that a default watch judged a fall from an
+        air spawn against y 0. `Falls.Track` is the pure record (footing, the first spot 0.5 m under it).
+      - **`FallSystem`** (`[Exclusive]`: the raycast, the log, the cause line, the HUD message; alone, right before
+        `FlowSystem`): below the kill height it counts and classifies the fall (EDGE / THROUGH GEOMETRY / UNKNOWN,
+        the same probe and report text), stops the body **and this frame's input** — the fixed steps run after Tick
+        and before the end-of-frame death, and moved the corpse ~0.4 m sideways until the snapshot was cleared — and
+        posts the fatal `DamageEvent`. A dead player is not watched (`Without<Dead>`).
+      - **Deleted** (Q2): `FallRespawn` (249) and with it `FallMode`, `--fall-mode`, worldspawn `fall_mode`,
+        `SpawnPosition` / `SpawnRotation`, the safe-spot history, the footprint probes, the repeat-fall fallback,
+        the fade drawer, and the cooldown (one death per life needs none). The overlay's MOVER line and the
+        `fall` / `strafe` probes read `FallSystem.Current`.
+      - **Gates**: 384 gameplay assertions (+12: the record rules; the system kills through full armour by the one
+        door, once). Schedule re-pinned: **22 Tick batches** (`FallSystem` alone after `WeaponFireSystem`). Two sweeps
+        identical; both shots 0.000%; `strafe` PASS. **Moved**: `fall` / `water` — the fall is seen one frame earlier
+        (the system reads the entity, the MonoBehaviour read the GameObject a frame behind): `fall` last footing
+        x −16.0 → −16.4, the body stops at x −27.23 (was −27.75) and rests at the same −14.60; `water` −15.60 at its
+        last line. Still EDGE; the probe lost its `mode=` field.
 - [ ] 8.5 **Save captures and applies.** `Saves.Capture` / `Saves.Apply` over components; the player half reads
       `Health` / `Armour` / `Rage` / the weapon components directly; `SaveData`, `PlayerStateData`,
       `ApplyWhenReady`'s polling and the `SaveData.Current` reset in `ResetWorld` deleted. v1 field names kept,

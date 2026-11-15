@@ -14,8 +14,6 @@ namespace RipNRage.Game.Content.Level
         public Quaternion playerRotation = Quaternion.identity;
         /// <summary>World Y below which the player is respawned (worldspawn kill_y, else 1 m under the water plane, else 5 m under the lowest brush).</summary>
         public float killY = -50f;
-        /// <summary>Worldspawn <c>fall_mode</c> ("die" / "respawn"); null keeps the game's default (<see cref="FallRespawn.Mode"/>).</summary>
-        public FallMode? fallMode;
         public readonly List<GameObject> entityObjects = new List<GameObject>();
         /// <summary>Spawned entities by their <c>targetname</c> key.</summary>
         public readonly Dictionary<string, GameObject> named = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
@@ -37,12 +35,6 @@ namespace RipNRage.Game.Content.Level
             BuildBrushes(doc, level.root, preview);
             ApplyWorldspawn(doc.worldspawn);
             level.killY = ComputeKillY(doc);
-            if (doc.worldspawn.properties.TryGetValue("fall_mode", out var fm))
-            {
-                if (fm.Equals("respawn", StringComparison.OrdinalIgnoreCase)) level.fallMode = FallMode.Respawn;
-                else if (fm.Equals("die", StringComparison.OrdinalIgnoreCase)) level.fallMode = FallMode.Die;
-                else Debug.LogWarning($"level: unknown fall_mode '{fm}' (expected die or respawn)");
-            }
 
             if (!preview) GameSaveSystem.CurrentLevel = level;
             Loading = level;

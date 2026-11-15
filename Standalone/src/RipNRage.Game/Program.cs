@@ -46,8 +46,6 @@ namespace RipNRage.Game
     ///   --profile              glFinish after every GPU stage so CPU stage times include the GPU work (RIPNRAGE_PROFILE=1)
     ///   --gpu auto|high|software  GPU preference: high = discrete GPU on hybrid systems (Linux PRIME offload), software = accept a CPU rasterizer silently
     ///   --gpu-info             print the OpenGL renderer / vendor / version and whether it is a software rasterizer, then exit (code 3 if it is)
-    ///   --fall-mode die|respawn  what falling off the level does: lethal (default; the death screen, RESTART = checkpoint / level start)
-    ///                          or an arcade respawn on a spot stood on before the fall (a level's worldspawn "fall_mode" overrides this)
     /// </summary>
     public static class Program
     {
@@ -123,7 +121,6 @@ namespace RipNRage.Game
                         break;
                     }
                     case "--gpu-info": gpuInfoOnly = true; break;
-                    case "--fall-mode": FallRespawn.Mode = Next().ToLowerInvariant() == "respawn" ? FallMode.Respawn : FallMode.Die; break;
                     case "--no-menu": startInMenu = false; break;
                     case "--animations": RipNRage.Game.Content.GameAssets.AnimationsPath = Next(); break;
                     case "--vfx": RipNRage.Game.Content.GameAssets.VfxPath = Next(); break;
@@ -329,8 +326,8 @@ namespace RipNRage.Game
                 Vector3 vel = plink.Velocity;
                 string move = pm.IsDashing ? "DASH" : pm.IsSliding ? "SLIDE" : pm.IsWallRunning ? $"WALLRUN {(pm.WallSide < 0 ? "L" : "R")}" : cm.IsGrounded ? "GROUND" : "AIR";
                 float slope = Mathf.Acos(Mathf.Clamp(cm.GroundNormal.y, -1f, 1f)) * Mathf.Rad2Deg;
-                var fall = PlayerState.Current?.GetComponent<FallRespawn>();
-                text += $"MOVER {move}  SPEED {new Vector3(vel.x, 0f, vel.z).magnitude:0.0} / {pm.CurrentSpeed:0.0} M/S  VSPEED {vel.y:0.0}  RIDE {cm.GroundDistance:0.00} / {cm.RideHeight:0.00}  SLOPE {slope:0}°  FALLS {fall?.Falls ?? 0} ({fall?.LastFallKind ?? "-"})\n";
+                var fall = RipNRage.Game.Ecs.FallSystem.Current;
+                text += $"MOVER {move}  SPEED {new Vector3(vel.x, 0f, vel.z).magnitude:0.0} / {pm.CurrentSpeed:0.0} M/S  VSPEED {vel.y:0.0}  RIDE {cm.GroundDistance:0.00} / {cm.RideHeight:0.00}  SLOPE {slope:0}°  FALLS {fall.Count} ({RipNRage.Game.Ecs.Falls.Label(fall.LastKind)})\n";
             }
             text += "WASD MOVE  MOUSE LOOK  LMB FIRE  RMB JAB  1-4/WHEEL WEAPONS  SPACE JUMP  F3 OVERLAY  F11 GPU SYNC  ESC PAUSE\n";
             text += "F6 QUICK SAVE  F9 QUICK LOAD  F7 LOAD CHECKPOINT  F8 RESTART LEVEL";
@@ -823,10 +820,10 @@ namespace RipNRage.Game
                 case "fall":
                 {
                     // walk sideways off the dock into the water: the fall must be classified as EDGE and then either kill
-                    // the player (default mode) or put them back on the planks (--fall-mode respawn)
+                    // the player (falls are always lethal since 8.4)
                     input.overrideMove = _frame < 150 ? new Vector2(1f, 0f) : Vector2.zero;
-                    var fr = PlayerState.Current?.GetComponent<FallRespawn>();
-                    if (_frame % 30 == 0 && PlayerState.Current != null) Debug.LogWarning($"[test] frame {_frame} pos {PlayerState.Current.transform.position} falls={fr?.Falls} last={fr?.LastFallKind} dead={PlayerState.Current.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} killY={FallRespawn.KillY:0.0} mode={FallRespawn.Mode}");
+                    var fr = RipNRage.Game.Ecs.FallSystem.Current;
+                    if (_frame % 30 == 0 && PlayerState.Current != null) Debug.LogWarning($"[test] frame {_frame} pos {PlayerState.Current.transform.position} falls={fr.Count} last={RipNRage.Game.Ecs.Falls.Label(fr.LastKind)} dead={PlayerState.Current.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} killY={Application.Current.World.GetSingleton<RipNRage.Game.Ecs.KillHeight>().Y:0.0}");
                     break;
                 }
                 case "strafe":
@@ -849,13 +846,13 @@ namespace RipNRage.Game
                     Vector3 localWish = Quaternion.Euler(0f, -(FPSCameraController.instance?.Yaw ?? 0f), 0f) * new Vector3(_strafeDir, 0f, 0f);
                     input.overrideMove = new Vector2(localWish.x, localWish.z + (_frame % 90 < 45 ? 0.4f : -0.4f));
                     if (_frame % 70 == 35 && Mathf.Abs(x) < 2f) input.OnJump();
-                    var fr = p.GetComponent<FallRespawn>();
-                    if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {p.transform.position} falls={fr?.Falls} last={fr?.LastFallKind}");
+                    var fr = RipNRage.Game.Ecs.FallSystem.Current;
+                    if (_frame % 30 == 0) Debug.LogWarning($"[test] frame {_frame} pos {p.transform.position} falls={fr.Count} last={RipNRage.Game.Ecs.Falls.Label(fr.LastKind)}");
                     if (_frame == 600)
                     {
-                        bool ok = (fr == null || fr.Falls == 0) && !p.IsDead;
+                        bool ok = fr.Count == 0 && !p.IsDead;
                         Debug.LogWarning(ok ? "[test] strafe PASS: 600 frames of strafing and jumping on the dock, no fall"
-                                            : $"[test] strafe FAIL: falls={fr?.Falls} ({fr?.LastFallKind}) dead={p.IsDead} — {fr?.LastFallReport}");
+                                            : $"[test] strafe FAIL: falls={fr.Count} ({RipNRage.Game.Ecs.Falls.Label(fr.LastKind)}) dead={p.IsDead} (the fall report is in the log)");
                     }
                     break;
                 }
