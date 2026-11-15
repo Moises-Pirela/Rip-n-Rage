@@ -1337,9 +1337,40 @@ vector properties, see layer 4's notes).
         direct `Die()` tagged the player dead before that frame's ECS tick, the fatal event is applied inside it,
         so the ECS sees the death one tick later. That is the one-door rule, not a regression. Every other script
         byte-identical.
-- [ ] 8.2 **`Flow` singleton and system.** `Phase`, `CheckpointReached`, a transition request; `FlowSystem`
-      consumes `DeathEvent` (→ Dying) and the pause action (Playing ↔ Paused), owns the time scale. `PauseMenu.IsPaused`
-      and `GameSession.CheckpointReached` become reads of `Flow`. Re-pin `ScheduleChecks` in its own commit.
+- [x] 8.2 **The flow is a singleton, stepped by a system** (done; `Ecs/Flow.cs`).
+      - **`Flow { Phase, SlowMotion, DeathClock, CheckpointReached }`**, `Phase` ∈ **Playing / Paused / Dying /
+        Dead**. Every default is the start-of-level value: `DestroyAllEntities` puts the singleton carrier back at
+        `default`, so a new level is Playing, full speed, no checkpoint — the hand resets (`CheckpointReached =
+        false`, `Time.timeScale = 1f` in `StartLevel`, the menu's `_savedTimeScale` restore on destroy) are gone.
+        `SlowMotion` is 0 for "none" rather than a `TimeScale` of 1 for that reason.
+      - **The rules** (`Flows`, pure): pause only from Playing, resume only from Paused; the player's death goes
+        Playing **or Paused** (a blow already in flight when the pause landed) → Dying with the clock at 0, and a
+        second death changes nothing; the clock runs on real time through Dying and Dead; **Dying → Dead at
+        `DeathMenuDelay` 2.4 s** (the old `DeathScreen.menuDelay`); time scale = 0 when Paused, else `SlowMotion`
+        if set, else 1 (a resume gives the slow motion back with nothing saved).
+      - **`FlowSystem`** (`[Exclusive]`: `Time.timeScale` / `unscaledDeltaTime`) consumes the player's
+        `DeathEvent` (an enemy's is ignored) and `PauseRequest`, steps the clock, and is the **only gameplay writer
+        of the time scale** — applied on every change, in that frame, and every tick (carrying the slow motion).
+        `[UpdateAfter(CombatBridgeSystem)]`: the death sequence starts inside the bridge's dispatch and the engine
+        runs a coroutine's first step at once, so the first slow-motion value (0.99) is written there and must be
+        applied after it.
+      - **Readers moved onto it**: `PauseMenu` posts `PauseRequest` and opens / closes on the phase (one frame
+        after the press, accepted at review; it also closes if the player dies while it is up, and gives control
+        back only to a Playing run) — `IsPaused`, `_savedTimeScale` and its `PlayerState.IsDead` / `GameSession.State`
+        test deleted. `DeathScreen` times every fade off `Flow.DeathClock` and opens its menu at **Dead** — its own
+        clock and `menuDelay` deleted. `PlayerDeathSequence` writes `SlowMotion` (until 8.3). `GameSession.CheckpointReached`
+        deleted: the checkpoint save and a load set `Flow.CheckpointReached`; `CanRespawnAtCheckpoint` reads it.
+      - **Gates**: 346 gameplay assertions (+37: every rule and phase pure, the system over a world — claim, pause
+        round trip with the engine scale, an enemy death ignored, the player's → Dying, pause refused while dying,
+        the scene reset's fresh flow; Dying → Dead is pinned on the pure step, the harness cannot advance real time,
+        and end to end by `die`). **`ScheduleChecks` re-pinned: 21 Tick batches** — `FlowSystem` alone between
+        `WeaponFireSystem` and `NearMiss + PlayerLook + RageCalm`; FixedTick / LateTick unchanged. New flow probes
+        on `die` (frame 41 Dying slow 0.99 → 183 Dying clock 2.367 → **185 Dead clock 2.400** → after RESTART
+        Playing) and `pause` (Esc at 60 → Paused, accepted at the end of 61; Esc at 150 → Playing at 152). **Every
+        existing probe line byte-identical** to 8.1, both shots 0.000% (the death screen draws the same off the
+        flow's clock); two sweeps identical.
+      - The death screen's menu opens one frame later than before (it reads Dead in the frame after the system
+        sets it); RESTART in `die` / `checkpoint` comes 76 / 26 frames after, unaffected.
 - [ ] 8.3 **The death sequence is a component**, ported as it is (Q4). `DeathCam { T, Roll, StartPose }` on the
       pivot, stepped on unscaled time, same curve, timings and ×0.2 slow motion; input / combat / look are switched off by `Flow.Phase` (systems already read it) instead of
       disabling MonoBehaviours. `PlayerDeathSequence` deleted; `PlayerState.Die` / `OnDied` deleted if nothing

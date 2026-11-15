@@ -29,6 +29,7 @@ internal static class Program
             Layer5Checks.Run(True, Equal);
             Layer6Checks.Run(True, Equal);
             Layer7Checks.Run(True, Equal);
+            Layer8Checks.Run(True, Equal);
             ScheduleChecks.Run(True); // last: the layout is judged after every system has declared itself
             Console.WriteLine($"PASS: {_assertions} gameplay assertions");
             return 0;

@@ -434,6 +434,14 @@ namespace RipNRage.Game
             return _pickups.Count;
         }
 
+        /// <summary>8.2: the flow singleton and what the menus made of it.</summary>
+        private void FlowProbe()
+        {
+            var f = RipNRage.Game.Ecs.Flows.Current;
+            Debug.LogWarning($"[test] frame {_frame} flow {f.Phase} clock {f.DeathClock:0.000} slow {f.SlowMotion:0.00} checkpoint {f.CheckpointReached}"
+                             + $" timeScale {Time.timeScale:0.00} deathMenu {(DeathScreen.Current != null)}");
+        }
+
         private void LogRage()
         {
             RipNRage.Game.Ecs.Rages.TryGet(out var rage);
@@ -754,12 +762,15 @@ namespace RipNRage.Game
                     if (_dieStage == 1)
                     {
                         if (_frame == 1) Input.SimulateKey(KeyCode.Return, false);
+                        if (_frame == 40) FlowProbe();
                         if (_frame == 40) Debug.LogWarning($"[test] after respawn: player={(PlayerState.Current != null)} dead={PlayerState.Current?.IsDead} hp={PlayerState.Current?.Health} deathEvents={PlayerState.DeathEvents} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
                         break;
                     }
                     input.overrideMove = _frame < 40 ? new Vector2(0f, 1f) : Vector2.zero;
                     if (_frame == 40 && PlayerState.Current != null) PlayerState.Current.TakeDamage(10000f);
                     if (_frame == 120 && PlayerState.Current != null) Debug.LogWarning($"[test] dead={PlayerState.Current.IsDead} deathEvents={PlayerState.DeathEvents} hp={PlayerState.Current.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
+                    // 8.2: the flow through the death — Dying at once, Dead 2.4 real seconds (144 frames) after it
+                    if (_frame == 41 || _frame == 120 || _frame == 183 || _frame == 185 || _frame == 259) FlowProbe();
                     if (_frame == 260) { _dieStage = 1; Input.SimulateKey(KeyCode.Return, true); }
                     if (_frame == 300) Debug.LogWarning($"[test] after respawn: player={(PlayerState.Current != null)} dead={PlayerState.Current?.IsDead} hp={PlayerState.Current?.Health} timeScale={Time.timeScale:0.00} deathScreen={(DeathScreen.Current != null)}");
                     break;
@@ -860,14 +871,14 @@ namespace RipNRage.Game
                     {
                         if (_frame == 10) RipNRage.Game.Ecs.PlayerLink.Current?.Teleport(new Vector3(0f, 1.8f, -46f), 180f);
                         input.overrideMove = _frame > 12 && _frame < 60 ? new Vector2(0f, 1f) : Vector2.zero;
-                        if (_frame == 100) Debug.LogWarning($"[test] checkpoint reached={GameSession.CheckpointReached} available={GameSaveSystem.CheckpointAvailable()} pos {ps.transform.position}");
+                        if (_frame == 100) Debug.LogWarning($"[test] checkpoint reached={RipNRage.Game.Ecs.Flows.Current.CheckpointReached} available={GameSaveSystem.CheckpointAvailable()} pos {ps.transform.position}");
                         if (_frame == 90) ps.TakeDamage(10000f); // RESTART at 260: the death menu takes input after 2.4 s
                         if (_frame == 200) Debug.LogWarning($"[test] dead={ps.IsDead} deathEvents={PlayerState.DeathEvents} canRespawnAtCheckpoint={GameSession.CanRespawnAtCheckpoint}");
                         if (_frame == 260) { _checkpointStage = 1; Input.SimulateKey(KeyCode.Return, true); }
                     }
                     else
                     {
-                        if (_frame == 60) Debug.LogWarning($"[test] respawned at {ps.transform.position} dead={ps.IsDead} hp={ps.Health} deathEvents={PlayerState.DeathEvents} reached={GameSession.CheckpointReached} timeScale={Time.timeScale:0.00}");
+                        if (_frame == 60) Debug.LogWarning($"[test] respawned at {ps.transform.position} dead={ps.IsDead} hp={ps.Health} deathEvents={PlayerState.DeathEvents} reached={RipNRage.Game.Ecs.Flows.Current.CheckpointReached} timeScale={Time.timeScale:0.00}");
                     }
                     break;
                 }
@@ -876,10 +887,11 @@ namespace RipNRage.Game
                     input.overrideMove = new Vector2(0f, 1f);
                     if (_frame == 60) Input.SimulateKey(KeyCode.Escape, true);
                     if (_frame == 61) Input.SimulateKey(KeyCode.Escape, false);
-                    if (_frame == 90) Debug.LogWarning($"[test] paused={PauseMenu.IsPaused} timeScale={Time.timeScale:0.00}");
+                    if (_frame == 60 || _frame == 61 || _frame == 151 || _frame == 152) FlowProbe(); // the press, and the frame the menu follows
+                    if (_frame == 90) Debug.LogWarning($"[test] paused={RipNRage.Game.Ecs.Flows.Current.Phase == RipNRage.Game.Ecs.FlowPhase.Paused} timeScale={Time.timeScale:0.00}");
                     if (_frame == 150) Input.SimulateKey(KeyCode.Escape, true);
                     if (_frame == 151) Input.SimulateKey(KeyCode.Escape, false);
-                    if (_frame == 180) Debug.LogWarning($"[test] paused={PauseMenu.IsPaused} timeScale={Time.timeScale:0.00}");
+                    if (_frame == 180) Debug.LogWarning($"[test] paused={RipNRage.Game.Ecs.Flows.Current.Phase == RipNRage.Game.Ecs.FlowPhase.Paused} timeScale={Time.timeScale:0.00}");
                     break;
             }
         }

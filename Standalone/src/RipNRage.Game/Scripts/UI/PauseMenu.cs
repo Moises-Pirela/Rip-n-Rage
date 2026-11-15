@@ -5,28 +5,25 @@ using RipNRage.Game.Content;
 using RipNRage.Game.Content.Level;
 
 /// <summary>
-/// Escape during play: freezes the world (<c>Time.timeScale = 0</c>), releases the mouse and shows
+/// Escape during play: asks the flow to pause (<see cref="RipNRage.Game.Ecs.PauseRequest"/>); once
+/// <see cref="RipNRage.Game.Ecs.FlowSystem"/> has frozen the world (Paused), releases the mouse and shows
 /// RESUME / RESTART LEVEL / LOAD CHECKPOINT / MAIN MENU / QUIT. Lives on the session object of every
-/// level (<see cref="GameSession.StartLevel"/>). Ignored while the player is dead: the
-/// <see cref="DeathScreen"/> owns the screen then.
+/// level (<see cref="GameSession.StartLevel"/>). The flow refuses a pause while the player is dying or
+/// dead: the <see cref="DeathScreen"/> owns the screen then.
 /// </summary>
 public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
 {
     private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Menu;
 
-    public static bool IsPaused { get; private set; }
-
     private readonly MenuList _menu = new MenuList();
     private MenuItem _loadCheckpoint;
     private bool _open;
     private bool _done;
     private float _anim;
-    private float _savedTimeScale = 1f;
 
     protected override void Awake()
     {
-        IsPaused = false;
         _menu.itemHeight = 56f;
         _menu.labelScale = 3.5f;
         _menu.Add("RESUME", Resume);
@@ -43,7 +40,7 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
     {
         _clay.Dispose();
         InputSystem.ReleaseUi(this);
-        if (_open) { IsPaused = false; Time.timeScale = _savedTimeScale; }
+        // the scene is going: the fresh Flow it builds is Playing at full speed, so there is nothing to undo
     }
 
     private void OpenGraphics()
@@ -70,15 +67,15 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
             _anim = Mathf.MoveTowards(_anim, _open ? 1f : 0f, Time.unscaledDeltaTime / 0.18f);
             return; // the graphics screen owns the input (including Esc) while it is up
         }
+        // 8.2: the menu follows the flow — FlowSystem decides whether a pause is allowed (only while Playing) and
+        // the menu opens or closes on the phase it settled on, one frame after the press
+        bool paused = RipNRage.Game.Ecs.Flows.Current.Phase == RipNRage.Game.Ecs.FlowPhase.Paused;
+        if (paused && !_open) Open();
+        else if (!paused && _open) Close();
+
         // gameplay scheme: "pause" (Esc / Start); UI scheme while open: "cancel" (Esc / B) or "menu" (Esc / Start)
         bool wantToggle = _open ? (InputSystem.UI["cancel"].Pressed || InputSystem.UI["menu"].Pressed) : InputSystem.Gameplay["pause"].Pressed;
-        if (wantToggle && !_done)
-        {
-            var player = PlayerState.Current;
-            bool canPause = player != null && !player.IsDead && GameSession.State == GameState.Playing;
-            if (_open) Resume();
-            else if (canPause) Open();
-        }
+        if (wantToggle && !_done) RipNRage.Game.Ecs.Flows.RequestPause(!_open);
 
         _anim = Mathf.MoveTowards(_anim, _open ? 1f : 0f, Time.unscaledDeltaTime / 0.18f);
 
@@ -89,14 +86,11 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
         }
     }
 
+    /// <summary>The flow went Paused (the world is already frozen): the UI side of opening.</summary>
     private void Open()
     {
-        if (_open) return;
         _open = true;
-        IsPaused = true;
         InputSystem.AcquireUi(this); // UI scheme takes over: gameplay actions idle, cursor free
-        _savedTimeScale = Time.timeScale;
-        Time.timeScale = 0f;
         _menu.selected = 0;
         _menu.interactable = true;
         _menu.ResetMouse();
@@ -108,17 +102,18 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
         Play(ProceduralSounds.MenuSelect);
     }
 
-    private void Resume()
+    /// <summary>RESUME: asks the flow; the menu closes when it answers.</summary>
+    private void Resume() => RipNRage.Game.Ecs.Flows.RequestPause(false);
+
+    /// <summary>The flow left Paused — resumed, or the player died while it was up (a blow already in flight): the
+    /// UI side of closing. Control goes back to the player only when the run is Playing.</summary>
+    private void Close()
     {
-        if (!_open) return;
         _open = false;
-        IsPaused = false;
         _done = false;
         InputSystem.ReleaseUi(this);
         _menu.interactable = true;
-        Time.timeScale = _savedTimeScale;
-        var player = PlayerState.Current;
-        if (player != null && !player.IsDead)
+        if (RipNRage.Game.Ecs.Flows.Current.Phase == RipNRage.Game.Ecs.FlowPhase.Playing)
         {
             SetPlayerInput(true);
             Cursor.lockState = CursorLockMode.Locked;

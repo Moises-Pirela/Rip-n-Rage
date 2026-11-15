@@ -145,7 +145,7 @@ namespace RipNRage.Game.Content.Level
                 // keep the original checkpoint data in sync
                 SaveData.Current.playerStateData = new PlayerStateData(player.transform.position, player.transform.rotation, player.Health, player.Armor);
                 SaveData.Current.inventoryData = new InventoryData(combat.AmmoArray(), combat.CurrentWeaponIndex);
-                if (slot == "checkpoint") GameSession.CheckpointReached = true;
+                if (slot == "checkpoint") RipNRage.Game.Ecs.Flows.SetCheckpointReached();
                 Message($"Game saved ({slot})");
                 return true;
             }
@@ -213,7 +213,7 @@ namespace RipNRage.Game.Content.Level
                     playerStateData = new PlayerStateData(new Vector3(save.player.x, save.player.y, save.player.z), Quaternion.identity, save.player.health, save.player.armor),
                     inventoryData = new InventoryData((int[])save.player.ammo.Clone(), save.player.weaponIndex),
                 };
-                GameSession.CheckpointReached = true; // the run continues from a save: dying goes back to the checkpoint
+                RipNRage.Game.Ecs.Flows.SetCheckpointReached(); // the run continues from a save: dying goes back to the checkpoint
                 GameSession.Behaviour.StartCoroutine(ApplyWhenReady(save));
             });
             return true;

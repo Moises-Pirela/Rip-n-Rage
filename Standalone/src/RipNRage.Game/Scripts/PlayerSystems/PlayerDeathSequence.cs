@@ -94,12 +94,12 @@ public class PlayerDeathSequence : MonoBehaviour
             float fall = k * k;                                                       // accelerates like gravity
             float thud = k > 0.85f ? Mathf.Sin((k - 0.85f) / 0.15f * Mathf.PI) * 0.05f : 0f; // tiny bounce at the end
             SetPivot(Vector3.Lerp(startPos, endPos, fall) + Vector3.up * thud, Quaternion.Slerp(startRot, endRot, Mathf.SmoothStep(0f, 1f, k)));
-            Time.timeScale = Mathf.Lerp(1f, slowMotion, k);
+            RipNRage.Game.Ecs.Flows.SetSlowMotion(Mathf.Lerp(1f, slowMotion, k)); // FlowSystem applies it (8.2: the one writer of the time scale)
             yield return null;
         }
         SetPivot(endPos, endRot);
         RipNRage.Game.Ecs.PlayerCamera.ClearShake(); // drop any leftover recoil on the camera child
-        Time.timeScale = slowMotion;
+        RipNRage.Game.Ecs.Flows.SetSlowMotion(slowMotion);
     }
 
     /// <summary>Writes the pivot entity's local pose (the fall owns it while <c>PlayerViewRig.External</c> is set).</summary>

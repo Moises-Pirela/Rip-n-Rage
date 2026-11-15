@@ -9,7 +9,8 @@ using RipNRage.Game.Content.Level;
 /// still falling): the screen darkens to blood red, the title fades in, then RESTART / MAIN MENU
 /// appear and the mouse is released. RESTART respawns at the last checkpoint when the checkpoint save
 /// belongs to this level, otherwise at the level start; both go through <see cref="GameSession"/>.
-/// All timing uses unscaled time because the death sequence slows the world down.
+/// All timing is <c>Flow.DeathClock</c> (real seconds since the death — the death sequence slows the world down),
+/// and the menu opens when the flow reaches Dead (8.2: the clock and the Dying → Dead rule are FlowSystem's).
 /// </summary>
 public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
 {
@@ -21,7 +22,6 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
     public float fadeDuration = 1.6f;
     public float titleDelay = 1.1f;
     public float titleDuration = 1.0f;
-    public float menuDelay = 2.4f;
     public float menuFadeDuration = 0.45f;
 
     public string titleText = "YOU ARE DEAD";
@@ -31,8 +31,9 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
     public static string NextCause;
 
     private readonly MenuList _menu = new MenuList();
-    private float _t;
     private bool _menuReady;
+    /// <summary>The flow's death clock: every fade on this screen is timed from it.</summary>
+    private static float T => RipNRage.Game.Ecs.Flows.Current.DeathClock;
     private bool _done;
     private bool _fromCheckpoint;
 
@@ -66,8 +67,7 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
 
     protected override void Update()
     {
-        _t += Time.unscaledDeltaTime;
-        if (!_menuReady && _t >= menuDelay)
+        if (!_menuReady && RipNRage.Game.Ecs.Flows.Current.Phase == RipNRage.Game.Ecs.FlowPhase.Dead)
         {
             _menuReady = true;
             InputSystem.AcquireUi(this);
@@ -99,7 +99,7 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
     public void DrawUi(UiBatch ui)
     {
         // 1. the world drains to blood red, then to near black (full-screen effects, outside the layout)
-        float fade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((_t - fadeDelay) / fadeDuration));
+        float fade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((T - fadeDelay) / fadeDuration));
         if (fade > 0f)
         {
             var tint = Color.Lerp(new Color(0.45f, 0.02f, 0.02f, 0f), new Color(0.04f, 0f, 0f, 0.84f), fade);
@@ -110,7 +110,7 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
         var c = _clay;
         c.Begin(ui);
         // 2. the title settles in (slight shrink + fade), centred on 34% from the top
-        float tt = Mathf.Clamp01((_t - titleDelay) / titleDuration);
+        float tt = Mathf.Clamp01((T - titleDelay) / titleDuration);
         if (tt > 0f)
         {
             float ease = 1f - (1f - tt) * (1f - tt);
@@ -127,7 +127,7 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
         MenuItem clicked = null;
         if (_menuReady)
         {
-            float ma = Mathf.Clamp01((_t - menuDelay) / menuFadeDuration);
+            float ma = Mathf.Clamp01((T - RipNRage.Game.Ecs.Flows.DeathMenuDelay) / menuFadeDuration);
             using (c.Box(ClayScreen.FloatingColumn(0.54f * ClayScreen.RefHeight))) clicked = _menu.Build(c, ma);
             ClayScreen.Footer(c, "UP/DOWN OR MOUSE TO SELECT   ENTER / CLICK TO CONFIRM", 84f, ClayScreen.Line(2f, new Color(0.7f, 0.7f, 0.72f, 0.7f * ma)));
         }

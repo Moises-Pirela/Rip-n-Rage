@@ -21,14 +21,11 @@ namespace RipNRage.Game.Content
         /// <summary>Level "New game" starts (set by Program from the command line).</summary>
         public static string DefaultLevelPath;
         public static GameState State { get; private set; }
-        /// <summary>
-        /// True once the current run passed a checkpoint (or was loaded from a save). Dying then respawns
-        /// at the checkpoint; a run that never reached one restarts the level even if an older
-        /// checkpoint file for this level exists on disk.
-        /// </summary>
-        public static bool CheckpointReached { get; set; }
-        /// <summary>True when RESTART after death will load the checkpoint rather than the level start.</summary>
-        public static bool CanRespawnAtCheckpoint => CheckpointReached && GameSaveSystem.CheckpointAvailable(LevelPath);
+        /// <summary>True when RESTART after death will load the checkpoint rather than the level start: this run
+        /// passed a checkpoint or was loaded from a save (<c>Flow.CheckpointReached</c>, reset with the scene), and the
+        /// checkpoint file belongs to this level — a run that never reached one restarts the level even if an older
+        /// checkpoint file for it exists on disk.</summary>
+        public static bool CanRespawnAtCheckpoint => RipNRage.Game.Ecs.Flows.Current.CheckpointReached && GameSaveSystem.CheckpointAvailable(LevelPath);
         public static Behaviour Behaviour { get; private set; }
         /// <summary>Called with the session tools object after a level was built (the game adds its debug overlay / demo scripts).</summary>
         public static Action<GameObject> OnSceneBuilt;
@@ -41,9 +38,7 @@ namespace RipNRage.Game.Content
             LevelPath = levelPath;
             GameSaveSystem.CurrentLevelPath = levelPath;
             State = GameState.Playing;
-            CheckpointReached = false;
             InputSystem.LockCursorInGameplay = true; // the gameplay scheme locks the mouse; UI screens release it
-            Time.timeScale = 1f;
             TestArea.Build(levelPath);
             var tools = CreateSessionObject();
             tools.AddComponent<PauseMenu>();
