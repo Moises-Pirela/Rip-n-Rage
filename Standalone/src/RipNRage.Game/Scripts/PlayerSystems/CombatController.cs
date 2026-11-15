@@ -50,7 +50,7 @@ public class CombatController : MonoBehaviour
 
     protected override void Start()
     {
-        LoadAmmo(SaveData.Current.inventoryData.ammo);
+        LoadAmmo(Weapons.NewGameAmmo); // a load overwrites the Inventory the frame after this (8.5)
         EquipWeapon(0);
     }
 

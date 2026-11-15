@@ -26,7 +26,7 @@ namespace RipNRage.Game.Content.Level
     {
         public float x, y, z, yaw, pitch;
         public float health, armor, rage, calm; // rage = the Fury meter (the field name is the save format's)
-        public int rageState, combatState, weaponIndex; // combatState: unused since the two meters replaced VIOLENT
+        public int rageState, weaponIndex; // combatState was dropped in 8.5 (saves are not a compatibility promise)
         public int[] ammo = new int[5];
     }
 
@@ -48,10 +48,11 @@ namespace RipNRage.Game.Content.Level
     }
 
     /// <summary>
-    /// Full game save/load on top of the ported SaveData/SaveManager: level, player transform/look,
-    /// health/armour/rage, inventory, every level entity's state (monsters alive + health, pickups
-    /// taken, spawner progress) and monsters created at runtime. Loading rebuilds the level and
-    /// re-applies the state once the player exists. Files: &lt;persistentDataPath&gt;/saves/&lt;slot&gt;.json.
+    /// Full game save/load (8.5: captured from and applied to the components, by hand — the SaveData /
+    /// PlayerStateData static round trip is gone): level, player pose/look, health/armour/rage, inventory, every
+    /// level entity's state (monsters alive + health, pickups taken, spawner progress) and monsters created at
+    /// runtime. Loading rebuilds the level and applies the save the frame after the build (the facades'
+    /// Start has run by then, so nothing re-initialises over it). Files: &lt;persistentDataPath&gt;/saves/&lt;slot&gt;.json.
     /// </summary>
     public static class GameSaveSystem
     {
@@ -67,27 +68,30 @@ namespace RipNRage.Game.Content.Level
 
         public static bool Save(string slot)
         {
-            var player = PlayerState.Current;
-            var combat = EnragedInjector<CombatController>.GetInstance();
-            var camCtrl = FPSCameraController.instance;
-            if (player == null || combat == null || CurrentLevel == null) { Message("Nothing to save"); return false; }
-            if (player.IsDead) { Message("Cannot save: you are dead"); return false; }
+            var w = Application.Current.World;
+            var pe = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
+            bool alive = !pe.IsNull && w.IsAlive(pe) && w.Has<Health>(pe);
+            if (!alive || CurrentLevel == null) { Message("Nothing to save"); return false; }
+            if (w.Has<Dead>(pe) || w.Get<Health>(pe).Current <= 0f) { Message("Cannot save: you are dead"); return false; }
 
+            // the player, off their components (8.5)
             var save = new GameSave { level = CurrentLevelPath, time = DateTime.Now.ToString("s") };
             var p = save.player;
-            p.x = player.transform.position.x; p.y = player.transform.position.y; p.z = player.transform.position.z;
-            p.yaw = camCtrl != null ? camCtrl.Yaw : 0f; p.pitch = camCtrl != null ? camCtrl.Pitch : 0f;
-            p.health = player.Health; p.armor = player.Armor;
+            var playerPos = w.Get<LocalTransform>(pe).Position;
+            p.x = playerPos.x; p.y = playerPos.y; p.z = playerPos.z;
+            var look = w.Has<RipNRage.Game.Ecs.PlayerLook>(pe) ? w.Get<RipNRage.Game.Ecs.PlayerLook>(pe) : default;
+            p.yaw = look.Yaw; p.pitch = look.Pitch;
+            p.health = w.Get<Health>(pe).Current;
+            p.armor = w.Has<Armor>(pe) ? w.Get<Armor>(pe).Current : 0f;
             RipNRage.Game.Ecs.Rages.TryGet(out var rage);
             p.rage = rage.Fury; p.calm = rage.Calm; p.rageState = (int)rage.State;
-            p.weaponIndex = combat.CurrentWeaponIndex;
-            p.ammo = combat.AmmoArray();
+            p.weaponIndex = w.Has<Weapon>(pe) ? w.Get<Weapon>(pe).Slot : 0;
+            p.ammo = Weapons.AmmoArray(w.Get<Inventory>(pe));
 
             // level entities
             var doc = CurrentLevel.document;
             // every saved level entity is an entity now (monsters 6.6, spawners 6.7, pickups 7.5), keyed by LevelRef;
             // monsters are entities (6.6): level-placed ones keyed by their LevelRef, runtime ones saved dynamic
-            var w = Application.Current.World;
             var monstersByIndex = new Dictionary<int, Entity>();
             var dynamic = new List<MonsterSave>();
             var enemies = new List<Entity>();
@@ -142,9 +146,6 @@ namespace RipNRage.Game.Content.Level
             {
                 Directory.CreateDirectory(SaveDir);
                 File.WriteAllText(SlotPath(slot), JsonSerializer.Serialize(save, Json));
-                // keep the original checkpoint data in sync
-                SaveData.Current.playerStateData = new PlayerStateData(player.transform.position, player.transform.rotation, player.Health, player.Armor);
-                SaveData.Current.inventoryData = new InventoryData(combat.AmmoArray(), combat.CurrentWeaponIndex);
                 if (slot == "checkpoint") RipNRage.Game.Ecs.Flows.SetCheckpointReached();
                 Message($"Game saved ({slot})");
                 return true;
@@ -206,13 +207,6 @@ namespace RipNRage.Game.Content.Level
 
             GameSession.RestartLevel(levelPath, () =>
             {
-                // The ported PlayerState/Inventory read their initial values from SaveData.Current in Start();
-                // GameManager.Init (run during the build) replaces SaveData.Current, so set it after the build.
-                SaveData.Current = new SaveData
-                {
-                    playerStateData = new PlayerStateData(new Vector3(save.player.x, save.player.y, save.player.z), Quaternion.identity, save.player.health, save.player.armor),
-                    inventoryData = new InventoryData((int[])save.player.ammo.Clone(), save.player.weaponIndex),
-                };
                 RipNRage.Game.Ecs.Flows.SetCheckpointReached(); // the run continues from a save: dying goes back to the checkpoint
                 GameSession.RunAfterBuild(ApplyWhenReady(save));
             });
@@ -221,22 +215,25 @@ namespace RipNRage.Game.Content.Level
 
         private static IEnumerator ApplyWhenReady(GameSave save)
         {
-            // wait for the player's ECS half (the build spawns the player synchronously since 8.6, but the entity
-            // arrives at the next world sync, and the facades bind in their Start)
+            // the player exists when the build returns (8.6), but the facades' Start — which equips weapon 0 and
+            // loads the new-game ammo — runs in the first scene tick after it: apply the frame after that, over the
+            // components, so nothing re-initialises over the save (the same frame the old wait landed on)
             while (PlayerState.Current == null || EnragedInjector<CombatController>.GetInstance()?.CurrentWeaponData == null) yield return null;
             yield return null;
-            var player = PlayerState.Current;
             var combat = EnragedInjector<CombatController>.GetInstance();
+            var world = Application.Current.World;
+            var pe = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
             var p = save.player;
             // the character entity owns the position: a GameObject write was overwritten by the next sync (the load put
-            // the player at the spawn since layer 4). Teleport writes the entity and zeroes the pitch; the look follows.
+            // the player at the spawn since layer 4). Teleport writes the entity and zeroes the pitch; the pitch follows.
             RipNRage.Game.Ecs.PlayerLink.Current?.Teleport(new Vector3(p.x, p.y, p.z), p.yaw);
-            FPSCameraController.instance?.SetLook(p.yaw, p.pitch);
-            player.RestoreState(p.health, p.armor);
+            if (world.Has<RipNRage.Game.Ecs.PlayerLook>(pe))
+                world.Get<RipNRage.Game.Ecs.PlayerLook>(pe).Pitch = Mathf.Clamp(p.pitch, -90f, 90f);
+            if (world.Has<Health>(pe)) { ref var h = ref world.Get<Health>(pe); h.Current = Mathf.Clamp(p.health, 0f, h.Max); }
+            if (world.Has<Armor>(pe)) { ref var a = ref world.Get<Armor>(pe); a.Current = Mathf.Clamp(p.armor, 0f, a.Max); }
             RipNRage.Game.Ecs.Rages.Restore(p.rage, p.calm, (RipNRage.Game.Ecs.RageState)p.rageState);
-            // GameManager.Init re-reads the legacy "Save1" file during the build, so apply the inventory explicitly
-            combat.LoadAmmo(p.ammo);
-            combat.EquipWeaponIndex(p.weaponIndex);
+            Weapons.LoadAmmo(ref world.Get<Inventory>(pe), p.ammo);
+            combat.EquipWeaponIndex(p.weaponIndex); // through the facade: the viewmodel animator is a GameObject still
 
             var level = CurrentLevel;
             if (level != null)
@@ -297,7 +294,7 @@ namespace RipNRage.Game.Content.Level
                     if (m.health > 0f) { ref var h = ref w.Get<Health>(en); h.Current = Mathf.Min(m.health, h.Max); }
                 }
             }
-            Debug.LogWarning($"Loaded: player at {player.transform.position}, hp {player.Health}, ammo {combat.AmmoOf(AmmoType.LIGHT)}, weapon {combat.CurrentWeaponIndex}");
+            Debug.LogWarning($"Loaded: player at {world.Get<LocalTransform>(pe).Position}, hp {world.Get<Health>(pe).Current}, ammo {combat.AmmoOf(AmmoType.LIGHT)}, weapon {combat.CurrentWeaponIndex}");
             Message("Game loaded");
         }
 

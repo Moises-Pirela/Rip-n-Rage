@@ -82,6 +82,9 @@ namespace RipNRage.Game.Ecs.Combat
             return true;
         }
 
+        /// <summary>What a fresh run carries (the old SaveData default).</summary>
+        public static readonly int[] NewGameAmmo = { 120, 240, 64, 100, 10 }; // light, heavy, shell, energy, explosive
+
         public static int[] AmmoArray(in Inventory inv)
         {
             var a = new int[AmmoTypes];

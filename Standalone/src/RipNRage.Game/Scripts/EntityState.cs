@@ -54,9 +54,6 @@ public abstract class EntityState : MonoBehaviour
         set { if (Bound && W.Has<Armor>(entity)) { ref var a = ref W.Get<Armor>(entity); a.Current = Mathf.Clamp(value, 0f, a.Max); } }
     }
 
-    public Action OnHealthChanged;
-    public Action OnArmorChanged;
-
     public abstract void Init();
 
     /// <summary>Posts the blow as a <see cref="DamageEvent"/> (applied by HealthSystem at the end of the frame),
@@ -79,7 +76,6 @@ public abstract class EntityState : MonoBehaviour
         if (!Bound) return;
         ref var h = ref W.Get<HealthComponent>(entity);
         h.Current = Mathf.Clamp(h.Current + value, 0f, h.Max);
-        OnHealthChanged?.Invoke();
     }
 
 
@@ -102,11 +98,7 @@ public abstract class EntityState : MonoBehaviour
     // ---------------------------------------------------------------- event bridge (CombatBridgeSystem)
 
     /// <summary>A blow landed on this entity this frame (HealthSystem already applied it).</summary>
-    internal virtual void NotifyHit(in HitEvent e)
-    {
-        OnHealthChanged?.Invoke();
-        OnArmorChanged?.Invoke();
-    }
+    internal virtual void NotifyHit(in HitEvent e) { }
 
     protected override void OnDestroy() => EcsObjects.Unregister(entity);
 }

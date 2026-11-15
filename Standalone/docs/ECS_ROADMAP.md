@@ -1446,10 +1446,20 @@ vector properties, see layer 4's notes).
         `MenuCamera`, `GraphicsMenu`, `ControlsMenu` — 8.8 (the `IUiScreen` host is ready for them);
         `GameManager` / `LevelManager` — 8.6; `VfxRuntime`, `MuzzleFlashLight`, `WeaponAnimationEvents`, the
         physics followers, `DebugOverlay` / `DemoScript` — other features / tools.
-- [ ] 8.5 **Save captures and applies.** `Saves.Capture` / `Saves.Apply` over components; the player half reads
-      `Health` / `Armour` / `Rage` / the weapon components directly; `SaveData`, `PlayerStateData`,
-      `ApplyWhenReady`'s polling and the `SaveData.Current` reset in `ResetWorld` deleted. v1 field names kept,
-      `combatState` no longer written (Q1). Gate: the 8.0 `GameSave` diff is empty.
+- [x] 8.5 **The save captures and applies components** (done; after 8.6 / 8.7, which it leans on). `Save` reads the
+      player off `LocalTransform` / `PlayerLook` / `Health` / `Armor` / `Rage` / `Weapon` / `Inventory` (the dead
+      check is the `Dead` tag); `ApplyWhenReady` writes the same components the frame after the facades' `Start`
+      (which equips weapon 0 and loads `Weapons.NewGameAmmo` — the old SaveData default, now a table) — only the
+      viewmodel equip still goes through `CombatController`. v1 field names kept; **`combatState` is no longer
+      written** (Q1: the field is gone from the model — saves are not a compatibility promise).
+      - **Deleted**: `SaveData`, `PlayerStateData`, `InventoryData` (the whole static round trip and its reset in
+        `ResetWorld`); `PlayerState.RestoreState` and the `SaveData` reads in `Init`; `EntityState`'s
+        `OnHealthChanged` / `OnArmorChanged` (8.7 removed their last subscriber); `FPSCameraController.SetLook`'s
+        save use.
+      - **Gates**: 398 gameplay assertions; two sweeps identical; both shots 0.000%. **Moved**: `saveload` — the
+        round trip is 116 lines (the `combatState` line gone), **0 differ**; `checkpoint` — the respawn lands 0.18 m
+        earlier (z −47.48, was −47.66): the capture reads the entity at the trigger's consume, not the GameObject
+        mirror. Everything else byte-identical.
 - [x] 8.6 **Level start is a function** (done; taken before 8.5 / 8.7 — a synchronous build is what both lean on).
       `BuildDungeonMaster` instantiates the player prefab and returns; `GameManager` (74), `LevelManager` (42),
       `IManager` and `ManagerInitState` deleted — the coroutine chain (`Init` → `WaitUntil` per child →
