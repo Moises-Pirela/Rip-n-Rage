@@ -8,10 +8,10 @@ using RipNRage.Game.Content.Level;
 /// Escape during play: asks the flow to pause (<see cref="RipNRage.Game.Ecs.PauseRequest"/>); once
 /// <see cref="RipNRage.Game.Ecs.FlowSystem"/> has frozen the world (Paused), releases the mouse and shows
 /// RESUME / RESTART LEVEL / LOAD CHECKPOINT / MAIN MENU / QUIT. Lives on the session object of every
-/// level (<see cref="GameSession.StartLevel"/>). The flow refuses a pause while the player is dying or
+/// level (<see cref="GameSession.StartLevel"/>) as a plain <see cref="IUiScreen"/>. The flow refuses a pause while the player is dying or
 /// dead: the <see cref="DeathScreen"/> owns the screen then.
 /// </summary>
-public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
+public sealed class PauseMenu : IUiScreen, IUiLayer
 {
     private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Menu;
@@ -22,7 +22,7 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
     private bool _done;
     private float _anim;
 
-    protected override void Awake()
+    public PauseMenu()
     {
         _menu.itemHeight = 56f;
         _menu.labelScale = 3.5f;
@@ -36,7 +36,7 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
         _menu.onSelectionChanged = _ => Play(ProceduralSounds.MenuMove);
     }
 
-    protected override void OnDestroy()
+    public void Close()
     {
         _clay.Dispose();
         InputSystem.ReleaseUi(this);
@@ -60,7 +60,7 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     private bool SubmenuOpen => _graphics != null || GraphicsMenu.IsOpen || _controls != null || ControlsMenu.IsOpen;
 
-    protected override void Update()
+    public void Update()
     {
         if (SubmenuOpen)
         {
@@ -71,7 +71,7 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
         // the menu opens or closes on the phase it settled on, one frame after the press
         bool paused = RipNRage.Game.Ecs.Flows.Current.Phase == RipNRage.Game.Ecs.FlowPhase.Paused;
         if (paused && !_open) Open();
-        else if (!paused && _open) Close();
+        else if (!paused && _open) HideMenu();
 
         // gameplay scheme: "pause" (Esc / Start); UI scheme while open: "cancel" (Esc / B) or "menu" (Esc / Start)
         bool wantToggle = _open ? (InputSystem.UI["cancel"].Pressed || InputSystem.UI["menu"].Pressed) : InputSystem.Gameplay["pause"].Pressed;
@@ -106,7 +106,7 @@ public class PauseMenu : MonoBehaviour, IUiDrawer, IUiLayer
 
     /// <summary>The flow left Paused — resumed, or the player died while it was up (a blow already in flight): the
     /// UI side of closing. Control goes back to the player only when the run is Playing.</summary>
-    private void Close()
+    private void HideMenu()
     {
         _open = false;
         _done = false;

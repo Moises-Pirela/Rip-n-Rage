@@ -214,7 +214,7 @@ namespace RipNRage.Game.Content.Level
                     inventoryData = new InventoryData((int[])save.player.ammo.Clone(), save.player.weaponIndex),
                 };
                 RipNRage.Game.Ecs.Flows.SetCheckpointReached(); // the run continues from a save: dying goes back to the checkpoint
-                GameSession.Behaviour.StartCoroutine(ApplyWhenReady(save));
+                GameSession.RunAfterBuild(ApplyWhenReady(save));
             });
             return true;
         }

@@ -656,6 +656,7 @@ namespace RipNRage.Engine.Graphics
             foreach (var mr in _frame.Meshes)
                 if (mr.renderLayer == RenderLayer.FirstPerson) _fpMeshes.Add(mr); else _meshes.Add(mr);
             _uiDrawers.AddRange(_frame.UiDrawers);
+            foreach (var s in UiScreens.All) _uiDrawers.Add(s); // the screens that are not GameObject components
         }
 
         private readonly Dictionary<SpriteDraw, float> _depthCache = new Dictionary<SpriteDraw, float>();

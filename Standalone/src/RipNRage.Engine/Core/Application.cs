@@ -226,6 +226,7 @@ namespace RipNRage.Engine
             Graphics.Particles.ParticleWorld.Clear();
             Renderer.GpuOcclusion?.Reset();
             InputSystem.ClearUiOwners();
+            UiScreens.Clear();
             Tweening.TweenRunner.Update(0f);
             World.DestroyAllEntities();
             Scene = new Scene();
@@ -271,6 +272,7 @@ namespace RipNRage.Engine
                 Profiler.End();
 
                 Profiler.Begin("scene");
+                UiScreens.UpdateAll(); // the non-GameObject screens and the session's deferred work, before the scene
                 Scene.Tick(dt);
                 Profiler.End();
                 Profiler.Begin("physics");

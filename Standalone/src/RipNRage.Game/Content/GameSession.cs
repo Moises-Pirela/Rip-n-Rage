@@ -26,7 +26,6 @@ namespace RipNRage.Game.Content
         /// checkpoint file belongs to this level — a run that never reached one restarts the level even if an older
         /// checkpoint file for it exists on disk.</summary>
         public static bool CanRespawnAtCheckpoint => RipNRage.Game.Ecs.Flows.Current.CheckpointReached && GameSaveSystem.CheckpointAvailable(LevelPath);
-        public static Behaviour Behaviour { get; private set; }
         /// <summary>Called with the session tools object after a level was built (the game adds its debug overlay / demo scripts).</summary>
         public static Action<GameObject> OnSceneBuilt;
 
@@ -40,8 +39,8 @@ namespace RipNRage.Game.Content
             State = GameState.Playing;
             InputSystem.LockCursorInGameplay = true; // the gameplay scheme locks the mouse; UI screens release it
             TestArea.Build(levelPath);
+            UiScreens.Add(new PauseMenu());
             var tools = CreateSessionObject();
-            tools.AddComponent<PauseMenu>();
             tools.AddComponent<VfxRuntime>();
             OnSceneBuilt?.Invoke(tools);
         }
@@ -83,12 +82,32 @@ namespace RipNRage.Game.Content
 
         // ------------------------------------------------------------------ internals
 
-        /// <summary>Runs <paramref name="action"/> at the start of the next frame when a scene is live, otherwise right away.</summary>
+        // ------------------------------------------------------------------ frame-start work (8.4b: no SessionBehaviour)
+
+        private static Action _pending;
+        private static System.Collections.IEnumerator _afterBuild;
+
+        /// <summary>Runs <paramref name="action"/> at the start of the next frame when a scene is live (a transition
+        /// requested from a screen, a system or a UI draw must not tear the scene down mid-callback), otherwise right away.</summary>
         private static void Defer(Action action)
         {
-            var b = Behaviour as SessionBehaviour;
-            if (b != null && !b.IsDestroyed && b.isActiveAndEnabled) b.pending = action;
-            else action();
+            if (State == GameState.None) { action(); return; }
+            _pending = action;
+            UiScreens.BeforeFrame = RunFrameStart;
+        }
+
+        /// <summary>Steps <paramref name="routine"/> once per frame, at frame start, until it ends or the scene is reset
+        /// (the save's "apply once the player exists"; it yields only <c>null</c>).</summary>
+        public static void RunAfterBuild(System.Collections.IEnumerator routine)
+        {
+            _afterBuild = routine;
+            UiScreens.BeforeFrame = RunFrameStart;
+        }
+
+        private static void RunFrameStart()
+        {
+            if (_pending != null) { var r = _pending; _pending = null; r(); }
+            if (_afterBuild != null && !_afterBuild.MoveNext()) _afterBuild = null;
         }
 
         private static void DoRestart(string levelPath, Action afterBuild)
@@ -125,23 +144,11 @@ namespace RipNRage.Game.Content
             // Load() fills this in again, after the build, when restoring a game).
             SaveData.Current = new SaveData();
             RenderSettings.drawSky = true; // EnterWaterCollision may have hidden it when the old scene died under water
-            Behaviour = null;
+            _afterBuild = null; // a load still waiting for the old scene's player is void
         }
 
-        private static GameObject CreateSessionObject()
-        {
-            var tools = new GameObject("GameSession");
-            Behaviour = tools.AddComponent<SessionBehaviour>();
-            return tools;
-        }
-
-        private class SessionBehaviour : MonoBehaviour
-        {
-            public Action pending;
-            protected override void Update()
-            {
-                if (pending != null) { var r = pending; pending = null; r(); }
-            }
-        }
+        /// <summary>The holder of the session's remaining GameObject tools (the VFX runtime, the debug overlay and the
+        /// automation scripts <see cref="OnSceneBuilt"/> adds, the title screen) — no behaviour of its own.</summary>
+        private static GameObject CreateSessionObject() => new GameObject("GameSession");
     }
 }

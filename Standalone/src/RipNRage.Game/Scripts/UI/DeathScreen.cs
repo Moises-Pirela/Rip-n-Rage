@@ -12,7 +12,7 @@ using RipNRage.Game.Content.Level;
 /// All timing is <c>Flow.DeathClock</c> (real seconds since the death — the death sequence slows the world down),
 /// and the menu opens when the flow reaches Dead (8.2: the clock and the Dying → Dead rule are FlowSystem's).
 /// </summary>
-public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
+public sealed class DeathScreen : IUiScreen, IUiLayer
 {
     private readonly ClayUi _clay = new ClayUi();
     public int UiLayer => UiLayers.Modal;
@@ -39,15 +39,11 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
 
     public static DeathScreen Current { get; private set; }
 
-    /// <summary>Creates the screen on its own object (drawn above everything through <see cref="UiLayers.Modal"/>).</summary>
-    public static DeathScreen Show()
-    {
-        if (Current != null && !Current.IsDestroyed) return Current;
-        var go = new GameObject("DeathScreen");
-        return go.AddComponent<DeathScreen>();
-    }
+    /// <summary>Puts the screen up (drawn above everything through <see cref="UiLayers.Modal"/>); a plain screen since 8.4b,
+    /// closed by the scene reset like every other.</summary>
+    public static DeathScreen Show() => Current ?? UiScreens.Add(new DeathScreen());
 
-    protected override void Awake()
+    private DeathScreen()
     {
         Current = this;
         causeText = NextCause; NextCause = null;
@@ -58,14 +54,14 @@ public class DeathScreen : MonoBehaviour, IUiDrawer, IUiLayer
         _menu.onSelectionChanged = _ => Play(ProceduralSounds.MenuMove);
     }
 
-    protected override void OnDestroy()
+    public void Close()
     {
         _clay.Dispose();
         InputSystem.ReleaseUi(this);
         if (Current == this) Current = null;
     }
 
-    protected override void Update()
+    public void Update()
     {
         if (!_menuReady && RipNRage.Game.Ecs.Flows.Current.Phase == RipNRage.Game.Ecs.FlowPhase.Dead)
         {

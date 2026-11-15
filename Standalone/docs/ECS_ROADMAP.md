@@ -1424,6 +1424,28 @@ vector properties, see layer 4's notes).
         (the system reads the entity, the MonoBehaviour read the GameObject a frame behind): `fall` last footing
         x −16.0 → −16.4, the body stops at x −27.23 (was −27.75) and rests at the same −14.60; `water` −15.60 at its
         last line. Still EDGE; the probe lost its `mode=` field.
+- [x] 8.4b **The pause menu, the death screen and the session leave their GameObjects** (done; pulled forward from
+      8.8 with 8.3 / 8.4). **`IUiScreen`** (engine, `Graphics/UiScreens.cs`): a UI-boundary screen that is not a
+      component — `Update` at frame start, `DrawUi` with the GameObject drawers (same `IUiLayer` sort, added by the
+      render pipeline), `Close` on removal or on the scene reset (`Application.ResetScene` → `UiScreens.Clear`).
+      `UiScreens.BeforeFrame` runs the session's frame-start work.
+      - **`PauseMenu`** and **`DeathScreen`** are plain `IUiScreen`s (`Awake` → constructor, `OnDestroy` →
+        `Close`); the menu's private close became `HideMenu`. `GameSession.StartLevel` adds the pause menu,
+        `PlayerDeathSystem` the death screen.
+      - **`SessionBehaviour` deleted**: the deferred transition and the save's "apply once the player exists"
+        (`GameSaveSystem.ApplyWhenReady`, now `GameSession.RunAfterBuild` — stepped at frame start, dropped by the
+        scene reset) run from the frame hook; `GameSession.Behaviour` deleted. The "GameSession" GameObject stays as
+        a plain holder for what is not these features (`VfxRuntime`, the debug overlay / scripts `OnSceneBuilt`
+        adds, `MainMenuScreen`).
+      - **Gates**: 384 gameplay assertions; **every script and both shots byte-identical to 8.4** (the
+        transitions, RESTART and the load's apply land on the same frames); two sweeps identical; the pause and
+        death menus checked on screen.
+      - **MonoBehaviours left in the game after 8.4b**, none of them death / falls / flow: the player facades
+        (`PlayerState` / `EntityState`, `CombatController`, `PlayerInputActions`, `FPSController`,
+        `FPSCameraController`, `PlayerLink`) — layer 9; `HudController`, `GlockCrosshair` — 8.7; `MainMenuScreen` /
+        `MenuCamera`, `GraphicsMenu`, `ControlsMenu` — 8.8 (the `IUiScreen` host is ready for them);
+        `GameManager` / `LevelManager` — 8.6; `VfxRuntime`, `MuzzleFlashLight`, `WeaponAnimationEvents`, the
+        physics followers, `DebugOverlay` / `DemoScript` — other features / tools.
 - [ ] 8.5 **Save captures and applies.** `Saves.Capture` / `Saves.Apply` over components; the player half reads
       `Health` / `Armour` / `Rage` / the weapon components directly; `SaveData`, `PlayerStateData`,
       `ApplyWhenReady`'s polling and the `SaveData.Current` reset in `ResetWorld` deleted. v1 field names kept,
@@ -1434,7 +1456,8 @@ vector properties, see layer 4's notes).
 - [ ] 8.7 **HUD reads the ECS.** `HudController` reads components through a query; `PlayerState`'s remaining
       facade goes if this was its last reader (else layer 9). The rage meters get a real pass (still a drawer).
       `EnragedInjector<HudController>` deleted.
-- [ ] 8.8 **Menus read the ECS.** `PauseMenu` / `DeathScreen` / `MainMenuScreen` read `Flow` and components;
+- [ ] 8.8 **Menus read the ECS** (pause and death screens moved off GameObjects in 8.4b). `MainMenuScreen`,
+      `GraphicsMenu`, `ControlsMenu` become `IUiScreen`s; the pause menu's stats line reads components;
       RESTART / MAIN MENU / Continue go through the `Flow` transition request.
 - [ ] 8.9 Close-out: full sweep twice, byte-identical scripts, bench / frame / alloc vs 7.8 (and settle 7.8's open
       `approach` scheduling item with a per-batch profile), layer totals, pick-up point for layer 9.
