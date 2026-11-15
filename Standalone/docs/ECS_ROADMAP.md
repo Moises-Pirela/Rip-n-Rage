@@ -1456,9 +1456,21 @@ vector properties, see layer 4's notes).
       `OnBeginPlay`, no subscribers) staged nothing anyone waited for. The player's ECS half still arrives at the
       next world sync (command buffer), so the save's apply-when-ready wait stays. Gates: **every script and both
       shots byte-identical to 8.4b**, two sweeps identical.
-- [ ] 8.7 **HUD reads the ECS.** `HudController` reads components through a query; `PlayerState`'s remaining
-      facade goes if this was its last reader (else layer 9). The rage meters get a real pass (still a drawer).
-      `EnragedInjector<HudController>` deleted.
+- [x] 8.7 **The HUD reads the ECS** (done; `Scripts/UI/HudScreen.cs`). `HudScreen` is a plain `IUiScreen` built by
+      the player prefab and closed by the scene reset: every frame it reads `Health` / `Armor` (the portrait ring's
+      fills), `Rage` (the portrait and the meters), `Weapon` + `Inventory` (the ammo counter — the string only
+      re-made when the count changes) and `Flow` (no crosshair while dying / dead); the spread comes off the
+      `Weapon` component (`Weapons.CurrentSpread`), not the combat facade. The reads are pure and pinned
+      (`BarFill`, `PortraitDamageIndex`, `Portrait` — the 8.0-deferred HUD assertions, +14).
+      - **Deleted**: `HudController` (204) and its five change-event subscriptions; `EnragedInjector<HudController>`
+        (the crosshair flashes go through `HudScreen.Current`); `ICrosshair` (`GlockCrosshair` is a plain object
+        owned by the screen, no GameObject); `CombatController.OnEquipWeapon` / `OnAmmoChanged` and every invoke
+        (`OnFireWeapon` stays — the muzzle light); the pickup's HUD poke — **`PickupSystem` is pure components now**
+        (`[Reads(Pickup, PlayerTag)] [Writes(Inventory)]` instead of `[Exclusive]`; consume-only, so the pinned
+        schedule is untouched).
+      - **Gates**: 398 gameplay assertions; **every script and both shots byte-identical to 8.6** (the HUD shows the
+        same values on the same frames — a value now lands the frame after the event used to paint it, visible
+        nowhere the gates look since the screens update first), two sweeps identical.
 - [ ] 8.8 **Menus read the ECS** (pause and death screens moved off GameObjects in 8.4b). `MainMenuScreen`,
       `GraphicsMenu`, `ControlsMenu` become `IUiScreen`s; the pause menu's stats line reads components;
       RESTART / MAIN MENU / Continue go through the `Flow` transition request.

@@ -24,7 +24,7 @@ namespace RipNRage.Game.Ecs.Combat
                 var w = ctx.World;
                 if (w.IsAlive(e.Target) && w.Has<RipNRage.Game.Ecs.AI.Enemy>(e.Target))
                 {
-                    EnragedInjector<HudController>.GetInstance()?.CurrentCrosshair?.OnHit();
+                    HudScreen.Current?.Crosshair?.OnHit();
                 }
             }
         }

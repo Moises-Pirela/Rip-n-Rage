@@ -10,9 +10,7 @@ using RipNRage.Game.Ecs.Combat;
 // component-backed accessors the HUD / save system read until layer 8.
 public class CombatController : MonoBehaviour
 {
-    public Action OnEquipWeapon;
     public Action OnFireWeapon;
-    public Action OnAmmoChanged;
 
     [Header("Weapon setup")]
     [SerializeField] public Transform cameraTransform;
@@ -120,8 +118,6 @@ public class CombatController : MonoBehaviour
             weaponTransform.localScale = Vector3.one * data.weaponScale;
         }
 
-        OnEquipWeapon?.Invoke();
-        OnAmmoChanged?.Invoke();
     }
 
 }

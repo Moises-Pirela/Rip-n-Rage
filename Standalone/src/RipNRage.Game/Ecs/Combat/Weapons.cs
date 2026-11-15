@@ -165,8 +165,8 @@ namespace RipNRage.Game.Ecs.Combat
             RipNRage.Engine.Ecs.Audio.Sfx.Play(data.fireSound);
             AI.Noises.Emit(ctx.Commands, eye.Position, player, data.noise); // the enemies hear it
             var combat = EnragedInjector<CombatController>.GetInstance();
-            if (combat != null) { combat.OnFireWeapon?.Invoke(); combat.OnAmmoChanged?.Invoke(); }
-            EnragedInjector<HudController>.GetInstance()?.CurrentCrosshair?.OnShoot();
+            if (combat != null) combat.OnFireWeapon?.Invoke();
+            HudScreen.Current?.Crosshair?.OnShoot();
 
             if (data.projectileKind >= 0) LaunchProjectile(data, in eye, spread * st.projectileSpreadScale);
             else Hitscan(ctx, player, data, in eye, spread);

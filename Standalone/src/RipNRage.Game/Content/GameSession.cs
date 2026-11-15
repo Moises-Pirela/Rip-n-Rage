@@ -138,7 +138,6 @@ namespace RipNRage.Game.Content
             Application.Current.ResetScene();
             EnragedInjector<CombatController>.Reset();
             EnragedInjector<PlayerInputActions>.Reset();
-            EnragedInjector<HudController>.Reset();
             // The ported PlayerState / Inventory read their starting values from SaveData.Current; a
             // fresh level must not inherit the health or ammo of the previous run (the save system's
             // Load() fills this in again, after the build, when restoring a game).

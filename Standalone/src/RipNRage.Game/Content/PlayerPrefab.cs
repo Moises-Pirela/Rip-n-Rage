@@ -6,7 +6,7 @@ namespace RipNRage.Game.Content
     /// Builds the PlayerCharacter hierarchy from Assets/_Game/Prefabs/PlayerCharacter.prefab:
     ///
     /// PlayerCharacter [CapsuleCollider r0.4 h1.3 + RigidBody 80 kg + CharacterBody (ride 0.5 → 1.8 m tall, transform 0.9 m above the feet), AudioSource, FPSController, PlayerInputActions,
-    ///                  FPSCameraController, PlayerState, CombatController, HudController]
+    ///                  FPSCameraController, PlayerState, CombatController]
     ///  ├ Orientation
     ///  ├ Camera (0, 0.5, 0) [HeadBob]
     ///  │   └ WorldCamera (fov 77) [Camera]
@@ -105,10 +105,8 @@ namespace RipNRage.Game.Content
             var muzzleLightGo = Child(player, "MuzzleLight", Vector3.zero);
             muzzleLightGo.AddComponent<MuzzleFlashLight>().cameraTransform = worldCamera.transform;
 
-            // ---- HUD (PlayerHUD canvas) ----
-            var hud = player.AddComponent<HudController>();
-            hud.playerState = state;
-            HudLayout.Build(hud, player);
+            // ---- HUD (PlayerHUD canvas): a plain screen reading the components, not a component itself (8.7) ----
+            HudLayout.Build(UiScreens.Add(new HudScreen()));
 
             return player;
         }
@@ -131,7 +129,7 @@ namespace RipNRage.Game.Content
     /// </summary>
     public static class HudLayout
     {
-        public static void Build(HudController hud, GameObject player)
+        public static void Build(HudScreen hud)
         {
             var general = GameAssets.HudGeneral;
             var portraits = GameAssets.HudPortrait;
@@ -169,9 +167,10 @@ namespace RipNRage.Game.Content
             hud.playerPortrait = face;
             hud.ammoTypeIcon = ammoIcon;
             hud.ammoText = ammoText;
+            hud.healthBar.fillAmount = HudScreen.BarFill(100f); hud.armorBar.fillAmount = HudScreen.BarFill(100f);
             hud.ammoTypeIcons = new[] { ammoIcons["ammo_light"], ammoIcons["ammo_heavy"], ammoIcons["ammo_shell"], ammoIcons["ammo_energy"], ammoIcons["ammo_misile"] };
 
-            hud._portraitData = new PlayerPortraitData
+            hud.portraitData = new PlayerPortraitData
             {
                 deathPortrait = portraits["portrait_death01"],
                 defaultPortrait = new[] { portraits["portrait_default01"], portraits["portrait_default_damage01"], portraits["portrait_default_damageb01"], portraits["portrait_default_damagec01"], portraits["portrait_default_damaged01"] },
@@ -180,13 +179,10 @@ namespace RipNRage.Game.Content
                 inCombatPortrait = new[] { portraits["portrait_fight01"], portraits["portrait_fight_damage01"], portraits["portrait_fight_damageb01"], portraits["portrait_fight_damagec01"], portraits["portrait_fight_damaged01"] },
             };
 
-            // Crosshair object (GlockCrosshair): outer ring 10x10 (frame_portrait sprite), inner 5x5 white square.
-            var crosshairGo = new GameObject("Crosshair");
-            crosshairGo.transform.SetParent(player.transform, false);
-            var crosshair = crosshairGo.AddComponent<GlockCrosshair>();
-            crosshair.CrosshairImage.sprite = general["frame_portrait"];
-            crosshair.innerCrosshairImage.sprite = general["white-square-th"];
-            hud.crossHairObject = crosshairGo;
+            // Crosshair (GlockCrosshair): outer ring 10x10 (frame_portrait sprite), inner 5x5 white square.
+            hud.Crosshair = new GlockCrosshair();
+            hud.Crosshair.CrosshairImage.sprite = general["frame_portrait"];
+            hud.Crosshair.innerCrosshairImage.sprite = general["white-square-th"];
         }
 
         private static UiImage Image(string name, Sprite sprite, Vector2 anchor, Vector2 pos, Vector2 size, Vector2? pivot = null)

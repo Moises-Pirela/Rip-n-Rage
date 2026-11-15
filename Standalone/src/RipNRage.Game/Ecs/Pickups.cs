@@ -90,9 +90,9 @@ namespace RipNRage.Game.Ecs
     /// <summary>
     /// The player walks into a pickup: the ammo goes into their <see cref="Inventory"/>, the pickup goes (its sprite
     /// with it, through the hierarchy). A full pocket refuses it and the pickup stays. Replaces <c>AmmoPickup</c>
-    /// and its trip through the trigger bridge. Runs alone: it tells the HUD (a GameObject) the ammo changed.
+    /// and its trip through the trigger bridge. Pure components since 8.7: the HUD reads the Inventory itself.
     /// </summary>
-    [Exclusive] // CombatController.OnAmmoChanged (the HUD's ammo counter)
+    [Reads(typeof(Pickup), typeof(PlayerTag)), Writes(typeof(Inventory))]
     public sealed class PickupSystem : SystemBase, IConsumes<TriggerEnterEvent>
     {
         /// <summary>Taken in this dispatch: the entity only goes at playback, so a second overlap must not pay twice.</summary>
@@ -110,7 +110,6 @@ namespace RipNRage.Game.Ecs
                 if (!Weapons.AddAmmo(ref w.Get<Inventory>(e.Other), p.Ammo, p.Amount)) continue; // full: it stays
                 _taken.Add(e.Trigger);
                 ctx.Commands.DestroyEntity(e.Trigger); // the sprite child goes with it
-                EnragedInjector<CombatController>.GetInstance()?.OnAmmoChanged?.Invoke();
             }
         }
     }

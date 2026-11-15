@@ -237,7 +237,6 @@ namespace RipNRage.Game.Content.Level
             // GameManager.Init re-reads the legacy "Save1" file during the build, so apply the inventory explicitly
             combat.LoadAmmo(p.ammo);
             combat.EquipWeaponIndex(p.weaponIndex);
-            combat.OnAmmoChanged?.Invoke();
 
             var level = CurrentLevel;
             if (level != null)

@@ -20,6 +20,7 @@ internal static class Layer8Checks
         System(True, Equal);
         FallRules(True, Equal);
         FallSystemOverAWorld(True, Equal);
+        HudReads(True, Equal);
         Time.timeScale = 1f; // the system writes the engine statics: leave them as the next checks expect
         RipNRage.Engine.Ecs.Input.InputOverride.Blocked = false;
     }
@@ -222,4 +223,38 @@ internal static class Layer8Checks
         Time.timeScale = 1f;
         RipNRage.Engine.Ecs.Input.InputOverride.Blocked = false;
     }
+
+    // ---------------------------------------------------------------- 8.7: the HUD's reads (deferred from 8.0: now they are pure)
+
+    private static void HudReads(Action<bool, string> True, Action<float, float, string> Equal)
+    {
+        Equal(0.5f, HudScreen.BarFill(100f), "full health is half the portrait ring");
+        Equal(0.25f, HudScreen.BarFill(50f), "half health is a quarter");
+        Equal(0f, HudScreen.BarFill(0f), "empty is empty");
+        Equal(0.5f, HudScreen.BarFill(150f), "an overfull value is clamped to its half");
+
+        True(HudScreen.PortraitDamageIndex(100f) == 0 && HudScreen.PortraitDamageIndex(81f) == 0, "unhurt above 80");
+        True(HudScreen.PortraitDamageIndex(80f) == 1 && HudScreen.PortraitDamageIndex(61f) == 1, "bruised at 80");
+        True(HudScreen.PortraitDamageIndex(60f) == 2 && HudScreen.PortraitDamageIndex(40f) == 3, "worse at 60 and 40");
+        True(HudScreen.PortraitDamageIndex(20f) == 4 && HudScreen.PortraitDamageIndex(1f) == 4, "beaten below 20");
+
+        var faces = new PlayerPortraitData
+        {
+            deathPortrait = F(), defaultPortrait = Faces(), enragedPortrait = Faces(),
+            depressedPortrait = Faces(), inCombatPortrait = Faces(),
+        };
+        True(HudScreen.Portrait(in faces, 0f, new Rage()) == faces.deathPortrait, "no health is the death portrait");
+        True(HudScreen.Portrait(in faces, 100f, new Rage()) == faces.defaultPortrait[0], "calm and unhurt is the default face");
+        True(HudScreen.Portrait(in faces, 70f, new Rage { Fury = 0.3f }) == faces.inCombatPortrait[1], "banked Fury is the fighting face, in its damage column");
+        True(HudScreen.Portrait(in faces, 50f, new Rage { State = RageState.Enraged }) == faces.enragedPortrait[2], "ENRAGED face");
+        True(HudScreen.Portrait(in faces, 10f, new Rage { State = RageState.Depressed }) == faces.depressedPortrait[4], "DEPRESSED face");
+
+        // the ammo the HUD shows is the Inventory's count for the equipped weapon's ammo type
+        var inv = new Inventory();
+        Weapons.LoadAmmo(ref inv, new[] { 120, 240, 64, 100, 10 });
+        True(inv.Ammo[(int)AmmoType.SHELL] == 64, "the HUD's ammo read: the Inventory's count per type");
+    }
+
+    private static RipNRage.Engine.Graphics.Sprite F() => new RipNRage.Engine.Graphics.Sprite(null, new Rect(), Vector2.zero, 100f, "face");
+    private static RipNRage.Engine.Graphics.Sprite[] Faces() => new[] { F(), F(), F(), F(), F() };
 }

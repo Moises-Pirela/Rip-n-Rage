@@ -1,18 +1,16 @@
 using RipNRage.Engine.UI;
-// Ported from Assets/_Game/Scripts/UI/GlockCrosshair.cs.
+// Ported from Assets/_Game/Scripts/UI/GlockCrosshair.cs; a plain object owned by HudScreen since 8.7.
 // Image -> UiImage; DOTween DOSizeDelta -> engine TweenRunner (same durations/easing).
-public class GlockCrosshair : MonoBehaviour, ICrosshair
+public sealed class GlockCrosshair
 {
-    public UiImage CrosshairImage { get; set; } = new UiImage("Crosshair");
+    public UiImage CrosshairImage { get; } = new UiImage("Crosshair");
 
-    [SerializeField] public UiImage innerCrosshairImage = new UiImage("InnerCrosshair");
+    public UiImage innerCrosshairImage = new UiImage("InnerCrosshair");
 
-    [SerializeField] public Vector2 onHitSize = new Vector2(20, 20);
-    [SerializeField] public Vector2 regularSize = new Vector2(10, 10);
+    public Vector2 onHitSize = new Vector2(20, 20);
+    public Vector2 regularSize = new Vector2(10, 10);
 
-    private Coroutine _resetCrosshairStateCoroutine;
-    
-    protected override void Awake()
+    public GlockCrosshair()
     {
         CrosshairImage.rectTransform.sizeDelta = regularSize;
         innerCrosshairImage.rectTransform.sizeDelta = new Vector2(5, 5);
