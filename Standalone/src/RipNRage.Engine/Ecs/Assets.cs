@@ -33,6 +33,8 @@ namespace RipNRage.Engine.Ecs
         private readonly Dictionary<string, int> _byName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private readonly object _gate = new object();
 
+        public AssetRegistry() => AssetRegistries.Register(typeof(T), id => NameOf(new AssetHandle<T>(id)));
+
         /// <summary>Intern an asset (optionally under a name) and get its handle; the same reference always returns the same handle.</summary>
         public AssetHandle<T> Intern(T item, string name = null)
         {

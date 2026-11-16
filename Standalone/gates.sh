@@ -13,7 +13,8 @@ source tools/env.sh
 
 if [ "${1:-}" = "--compare" ]; then
     status=0
-    for f in "$2"/*.test; do
+    for f in "$2"/*.test "$2"/*.level; do
+        [ -e "$f" ] || continue
         n=$(basename "$f")
         if ! diff -q "$f" "$3/$n" >/dev/null 2>&1; then echo "== $n differs"; diff "$f" "$3/$n" | head -20; status=1; fi
     done
@@ -47,6 +48,8 @@ for entry in $ALL; do
     if [ -n "${GATES:-}" ] && [[ " $GATES " != *" $name "* ]]; then continue; fi
     log="$OUT/$name.log"
     extra=""; [ "$name" = menu ] && extra="--menu" # the title-screen gate starts on the title screen (8.8)
+    # 10.0: the level manifest — what the scene built, entity by entity (the gate for moving a class onto a prefab)
+    case "$name" in walk|menu) extra="$extra --dump-level $OUT/$name.level" ;; esac
     dotnet src/RipNRage.Game/bin/Release/net10.0/RipNRage.dll $extra --script "$name" --frames "$frames" \
         --fixed-dt 0.016667 --threads 1 --validate-access --no-vsync --width 640 --height 360 --overlay 0 \
         > "$log" 2>&1
@@ -67,4 +70,16 @@ for shot in walk:120 die:120 look:60 menu:50; do
         --fixed-dt 0.016667 --threads 1 --no-vsync --width 640 --height 360 --overlay 0 \
         --screenshot "$OUT/shot-$name.png" > /dev/null 2>&1 || { echo "FAIL shot-$name"; fail=1; }
 done
+
+# the level editor (10.0): the tools are gates too — 10.6 edits entity properties through its panels. The script
+# saves, so it runs on a copy of the level inside OUT: a sweep never writes the repo's dock.map.
+if [ -z "${GATES:-}" ] || [[ " $GATES " == *" edit "* ]]; then
+    cp levels/dock.map "$OUT/dock.map"
+    dotnet build -c Release --nologo -v q src/RipNRage.Editor/RipNRage.Editor.csproj > "$OUT/edit-build.log" 2>&1 || fail=1
+    dotnet src/RipNRage.Editor/bin/Release/net10.0/RipNRageEditor.dll "$OUT/dock.map" --script session --frames 90 \
+        --fixed-dt 0.016667 --width 640 --height 360 --screenshot "$OUT/shot-edit.png" > "$OUT/edit.log" 2>&1
+    code=$?
+    grep -E '\[test\]|Exception|Fatal' "$OUT/edit.log" > "$OUT/edit.test"
+    if [ $code -ne 0 ]; then echo "FAIL edit (exit $code)"; fail=1; else echo "ok   edit"; fi
+fi
 exit $fail

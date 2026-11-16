@@ -97,6 +97,13 @@ namespace RipNRage.Engine.Ecs
             EntityCount++;
         }
 
+        /// <summary>Every living entity, in index order (debug dumps and <see cref="EntityManifest"/>; not a query).</summary>
+        public IEnumerable<Entity> AllEntities()
+        {
+            for (int i = 0; i < _recordCount; i++)
+                if (_records[i].Alive) yield return new Entity(i, _records[i].Generation);
+        }
+
         public bool IsAlive(Entity e) => e.Index < _recordCount && _records[e.Index].Alive && _records[e.Index].Generation == e.Generation;
         public Signature SignatureOf(Entity e) { Check(e); return _records[e.Index].Signature; }
 

@@ -19,6 +19,7 @@ namespace RipNRage.Game
     ///   --width W --height H   window size (default 1280x720)
     ///   --no-vsync             disable vertical sync
     ///   --ecs-demo             spawn the prefabs/demo ECS scene (camera, parented spinning meshes, sprite, light)
+    ///   --dump-level FILE      write the built scene's entity manifest (10.0: the prefab-port gate) and report it
     ///   --overlay 0|1|2        debug overlay mode for this run (off / frame stats / full profiler)
     ///   --windowed / --borderless / --fullscreen   display mode (default: the one saved in graphics.json, else windowed)
     ///   --monitor N            monitor index for borderless / fullscreen (0 = first; default: primary)
@@ -56,6 +57,7 @@ namespace RipNRage.Game
             int? seed = null;
             int threads = -1;
             string level = null;
+            string dumpLevel = null;
             string exportDock = null, exportAnims = null;
             string loadSlot = null;
             bool? startInMenu = null;
@@ -104,6 +106,7 @@ namespace RipNRage.Game
                     case "--tunables": options.TunablesPath = Next(); break;
                     case "--shaders": options.ShaderDir = Next(); break;
                     case "--level": level = Next(); break;
+                    case "--dump-level": dumpLevel = Next(); break;
                     case "--export-dock": exportDock = Next(); break;
                     case "--load": loadSlot = Next(); break;
                     case "--no-postfx": options.DisablePostFx = true; break;
@@ -164,10 +167,19 @@ namespace RipNRage.Game
                 string levelPath = RipNRage.Game.Content.Level.LevelLoader.Locate(level ?? "dock.map");
                 if (levelPath == null) { Console.Error.WriteLine("Level not found: " + (level ?? "dock.map")); return 1; }
                 RipNRage.Engine.Ecs.Input.InputOverride.Scripted = script != null; // the devices stay out of a scripted run
+                bool dumped = false;
                 GameSession.OnSceneBuilt = () =>
                 {
                     UiScreens.Add(new DebugOverlay());
                     if (script != null) UiScreens.Add(new DemoScript { scriptName = script });
+                    if (dumpLevel == null) return;
+                    // 10.0: what this scene built, as text — the gate a prefab port is compared against. The file is
+                    // the first build's; every build reports its line (a rebuild that differs is the news).
+                    string summary = dumped
+                        ? RipNRage.Engine.Ecs.EntityManifest.Summary(RipNRage.Engine.Ecs.EntityManifest.Build(app.World))
+                        : RipNRage.Engine.Ecs.EntityManifest.Write(app.World, dumpLevel);
+                    dumped = true;
+                    Debug.LogWarning($"[test] level: {summary}");
                 };
                 app.World.AddSystemsFromAssemblies(typeof(Program).Assembly); // game ECS systems
                 InputSystem.Initialize();          // rebindable gameplay / UI schemes (controls.json)
