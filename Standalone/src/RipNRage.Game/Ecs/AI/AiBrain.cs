@@ -23,7 +23,7 @@ namespace RipNRage.Game.Ecs.AI
     /// The enemy's mind: one leaf, how long it has been there, who it is after and where it is going. Replaces the
     /// behaviour tree (a cloned node graph + blackboard per enemy) with a value the system steps.
     /// </summary>
-    public struct AiBrain : IComponent
+    [NotInPreview] public struct AiBrain : IComponent
     {
         public AiState State;
         public float StateTime;
@@ -38,7 +38,7 @@ namespace RipNRage.Game.Ecs.AI
     /// body side acts on it — <see cref="SteeringSystem"/> walks and turns, <see cref="EnemyAttackSystem"/> shoots —
     /// and the brain never calls anyone.
     /// </summary>
-    public struct AiIntent : IComponent
+    [NotInPreview] public struct AiIntent : IComponent
     {
         public bool Move, Attack;
         public Vector3 MoveTo;

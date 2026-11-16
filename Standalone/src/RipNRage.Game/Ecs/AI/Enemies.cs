@@ -11,7 +11,7 @@ namespace RipNRage.Game.Ecs.AI
     /// the spawner that made it (<see cref="SpawnerIndex"/>, -1 = placed directly). The save system keys monsters
     /// by it — the save's key for every level-placed entity.
     /// </summary>
-    public struct LevelRef : IComponent
+    [NotInPreview] public struct LevelRef : IComponent
     {
         public int Index;
         public int SpawnerIndex;

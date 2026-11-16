@@ -1769,13 +1769,23 @@ that changes what the level builds.
 
 **Steps** (one commit + review stop each)
 
-- [ ] 10.0 **Instrument** — the level manifest. `--dump-level OUT.level` (and the `[test]` line `level: N entities,
-      manifest <hash>`) writes every entity of the built level sorted by `LevelRef.Index` / classname / position:
-      its components in registry order, each public field by reflection (asset handles as `NameOf`, entities as
-      `root` / child paths, floats to 4 places). `gates.sh` writes `walk.level` and `menu.level` and compares them
-      across sweeps like the probes. The editor joins the sweep: `edit` (dock.map, 90 frames, screenshot) and the
-      existing `session` script, their `[test]` lines and shots compared like the game's. **Baseline**: the manifest
-      of `dock.map` as the code spawns build it — the truth the ports reproduce.
+- [x] 10.0 **Instrument — the level manifest** (done; `Ecs/Manifest.cs`, `--dump-level`, `gates.sh`).
+      `EntityManifest.Build(world)` is a text dump of everything a world holds: one block per entity, every component
+      with every public field. **Ordered by content, not by entity id** — blocks are sorted, and an entity-valued
+      field prints the *rank* of the entity it points at, so the hierarchy and the cross-references are part of the
+      comparison while creation order is not. Asset handles print the name they were interned under
+      (`AssetRegistries`: every `AssetRegistry<T>` announces itself, so a dump resolves a handle without knowing which
+      registry owns it); floats print to four places without a negative zero; `Matrix4x4` fields are skipped (derived,
+      16 floats of noise). The file ends with `manifest <fnv1a>`, the one line a log needs.
+      - `--dump-level FILE` writes it when the scene is built and prints `[test] level: entities N, manifest <hash>`;
+        the file is the first build's, every later build (a RESTART, an F8 rebuild) reports its own line — a rebuild
+        that differs is the news. `World.AllEntities()` is the walk (exact, unlike an empty query).
+      - **gates.sh**: `walk` and `menu` dump theirs (`OUT/<name>.level`), and `--compare` diffs `*.level` next to
+        `*.test`. **The editor joins the sweep**: `edit` builds the level editor and runs its `session` script for 90
+        frames with a screenshot, on a **copy of dock.map inside OUT** — the script saves, and a sweep must never
+        write the repo's level.
+      - **Baseline**: dock.map builds **69 entities, manifest `2b1e8134`**; the title screen 61, `8aac8c46`. Identical
+        across runs and across output directories. That is the truth 10.3 and 10.4 must reproduce byte for byte.
 - [x] 10.1 **Prefab trees, references, overrides (engine)** (done; `Ecs/Prefab.cs`, `Ecs/Core.cs`).
       - **Trees**: `children` (an object: name → node with `components` / `children`), merged by name under `base`;
         every child is parented to the node above and gets the identity `LocalTransform` when it declares none.
@@ -1807,13 +1817,28 @@ that changes what the level builds.
         preview strip, the buffered spawn equal to the immediate one, the pose reaching a config, the layer-0 API,
         reserved and duplicate names, the two-files clash. Game checks 415 unchanged; `walk` / `saveload` / `rocket` /
         `menu` gates and the four shots pass; `--ecs-demo` spawns its 129 entities through the old API.
-- [ ] 10.2 **Configs for the game components the level places.** `Health`, `Armor`, `Hitbox`, `Enemy` (kind by
-      classname), `Heading`, `Perception`, `AiBrain` (seeded from the instance pose — the placement seed of 7.5 stays
-      exact), `AiIntent`, `EnemyWeapon`, `EnemyVisual` (`sprite` ref), `SpriteFx`, `Spawner` (monster by classname),
-      `Pickup` (ammo by name, amount from the table when 0), `Bob` (phase from the pose), `Checkpoint`,
-      `WaterVolume` (min / max from the pose and a size), `ImpactSurface` (surface by name), `LevelRef`. Runtime-only
-      components stay without (the registry allows it). GameChecks: each config's bake equals the code spawn's
-      struct field by field, over a world. No level change yet; the manifest is untouched.
+- [x] 10.2 **Configs for the game components the level places** (done; `Game/Ecs/Configs.cs`).
+      `Health`, `Armor`, `Hitbox`, `Enemy`, `Heading`, `Perception`, `AiBrain`, `AiIntent`, `EnemyWeapon`,
+      `EnemyVisual`, `Spawner`, `Pickup`, `Bob`, `Checkpoint`, `WaterVolume`, `ImpactSurface`, `LevelRef` — plus
+      `SpriteFx` engine-side, next to its component. **One file**, not one per component's home: they are one subject
+      (what a `.map` entity may say) and 10.3 reads them as a set. Components written only by systems stay
+      runtime-only.
+      - **Three rules the bakes follow**, so a prefab reproduces the code spawn: the instance pose is the map origin,
+        so `AiBrain`'s and `Bob`'s **placement seeds** (7.5) and the water box are taken from it; a **facing comes
+        from the instance rotation** (the map's `angle`), not a field of its own; an **enemy kind is a classname**
+        through `Enemies.KindByClassname` — a file never names a table index. An unknown classname throws; an unknown
+        one while the table is empty (the checks, an editor before `GameAssets`) resolves to 0.
+      - Conveniences the old code had implicitly: `Health` / `Armor` bake full unless `current` says otherwise,
+        `Pickup`'s amount comes from `Pickups.ByType` unless overridden, `Hitbox` defaults to the rifleman sprite's
+        own numbers, `Armor` at the enemies' 0.75 resistance (the player's prefab will say 1).
+      - `[NotInPreview]` on the game's own: `AiBrain`, `AiIntent`, `Perception`, `EnemyWeapon`, `Spawner`, `Pickup`,
+        `Checkpoint`, `WaterVolume`, `LevelRef`.
+      - **Checks** (`GameChecks/Layer10Checks.cs`, +52 → 467): every bake against the values the code spawn uses, and
+        two against an actual spawn — a pickup prefab tree vs `Pickups.Spawn` (type, amount, lift, the hover's seeded
+        phase, the sprite child's scale, the trigger sphere) and a water prefab vs `Waters.Spawn` (both corners) —
+        plus the enemy's halves vs `Enemies.Spawn` at the same placement (seed, facing, health, hitbox), the preview
+        strip on a pickup and an enemy, and a sweep asserting every component a level places now has a config.
+      - Level untouched this step: `walk` / `menu` manifests still `2b1e8134` / `8aac8c46`.
 - [ ] 10.3 **Data classes become prefab files** (`prefabs/level/`). `light`, `lamp_post` (post → head → light),
       `item_ammo` + five children-of-`base`, `monster_rifleman` (body + sprite child), `monster_spawner`,
       `trigger_checkpoint`, `prop_physics`, `phys_fixed`. `EntityDefinition.prefab`; the loader spawns

@@ -131,6 +131,9 @@ namespace RipNRage.Engine.Ecs.Rendering
 
     public sealed class HiddenConfig : ComponentConfig<Hidden> { public override Hidden Bake() => default; }
 
+    /// <summary>Per-entity sprite parameters: a fresh entity flashes and dissolves not at all.</summary>
+    public sealed class SpriteFxConfig : ComponentConfig<SpriteFx> { public override SpriteFx Bake() => default; }
+
     internal static class ConfigUtil
     {
         public static Color Color(float[] c) => c == null || c.Length < 3 ? RipNRage.Engine.Color.white : new Color(c[0], c[1], c[2], c.Length > 3 ? c[3] : 1f);

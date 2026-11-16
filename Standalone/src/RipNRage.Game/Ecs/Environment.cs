@@ -13,7 +13,7 @@ namespace RipNRage.Game.Ecs
     /// an entity with no body — a trigger volume waiting for it to overlap never fires, which is exactly how the old
     /// sky swap died when the camera became an entity in layer 4. A point-in-box test needs no physics at all.
     /// </summary>
-    public struct WaterVolume : IComponent
+    [NotInPreview] public struct WaterVolume : IComponent
     {
         public Vector3 Min, Max;
 
@@ -87,7 +87,7 @@ namespace RipNRage.Game.Ecs
     // ================================================================= checkpoints
 
     /// <summary>A checkpoint volume: saves the game the first time the player walks in.</summary>
-    public struct Checkpoint : IComponent
+    [NotInPreview] public struct Checkpoint : IComponent
     {
         public bool Used;
     }

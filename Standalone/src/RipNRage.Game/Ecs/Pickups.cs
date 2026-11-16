@@ -10,7 +10,7 @@ using RipNRage.Game.Ecs.Combat;
 namespace RipNRage.Game.Ecs
 {
     /// <summary>An ammo pickup: what it gives. The entity is its own trigger sphere; the sprite is a bobbing child.</summary>
-    public struct Pickup : IComponent
+    [NotInPreview] public struct Pickup : IComponent
     {
         public AmmoType Ammo;
         public int Amount;

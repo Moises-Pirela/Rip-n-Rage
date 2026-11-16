@@ -11,7 +11,7 @@ namespace RipNRage.Game.Ecs.AI
     /// and for how long it has not been. Written by <see cref="SightSystem"/> and <see cref="HearingSystem"/>, read by
     /// the brain. <see cref="Target"/> is <see cref="Entity.Null"/> while unaware.
     /// </summary>
-    public struct Perception : IComponent
+    [NotInPreview] public struct Perception : IComponent
     {
         public Entity Target;
         public Vector3 LastKnown;

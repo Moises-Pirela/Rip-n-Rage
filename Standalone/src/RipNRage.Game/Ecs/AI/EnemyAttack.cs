@@ -12,7 +12,7 @@ namespace RipNRage.Game.Ecs.AI
     /// The enemy's gun between attacks: when it may fire again, the flinch a hit buys, the one-per-life alert beat,
     /// and the attack it currently has in progress.
     /// </summary>
-    public struct EnemyWeapon : IComponent
+    [NotInPreview] public struct EnemyWeapon : IComponent
     {
         /// <summary>Until the next attack may start (the definition's fireRate after a burst).</summary>
         public float Refire;

@@ -14,7 +14,7 @@ namespace RipNRage.Game.Ecs.AI
     /// once. The running half (Spawned, Timer, Active, the scatter dice) lives in the same value; the save system
     /// round-trips <see cref="Spawned"/>.
     /// </summary>
-    public struct Spawner : IComponent
+    [NotInPreview] public struct Spawner : IComponent
     {
         public int Kind;
         /// <summary>Total monsters this spawner ever makes.</summary>
