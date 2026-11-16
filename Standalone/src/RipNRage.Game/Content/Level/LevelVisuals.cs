@@ -18,24 +18,23 @@ namespace RipNRage.Game.Content.Level
     {
         private static World W => Application.Current.World;
 
-        /// <summary>A box mesh, built once per centre, size and UV scale.</summary>
+        /// <summary>A box mesh, built once per centre, size and UV scale — under the <see cref="MeshLibrary"/> name a prefab writes.</summary>
         public static AssetHandle<Mesh> Box(Vector3 center, Vector3 size, float uvScale = 1f) =>
-            RenderAssets.Meshes.GetOrLoad(FormattableString.Invariant($"box:{center.x},{center.y},{center.z}:{size.x},{size.y},{size.z}@{uvScale}"),
-                _ => Mesh.CreateBox(center, size, uvScale));
+            RenderAssets.Meshes.GetOrLoad(MeshLibrary.BoxName(center, size, uvScale), MeshLibrary.Get);
 
-        /// <summary>A flat plane mesh, built once per extent and UV scale.</summary>
+        /// <summary>A flat plane mesh, built once per extent and UV scale (the same rule).</summary>
         public static AssetHandle<Mesh> Plane(float width, float length, float uvScale) =>
-            RenderAssets.Meshes.GetOrLoad(FormattableString.Invariant($"plane:{width}x{length}@{uvScale}"),
-                _ => Mesh.CreatePlane(Vector3.zero, width, length, uvScale));
+            RenderAssets.Meshes.GetOrLoad(MeshLibrary.PlaneName(width, length, uvScale), MeshLibrary.Get);
 
         /// <summary>A textured mesh's render data (the legacy MeshRenderer's defaults: white, shadow-casting, opaque).</summary>
         public static MeshRender Render(AssetHandle<Mesh> mesh, Texture2D texture, Color color, Material material = null,
                                       float emissive = 0f, bool castsShadow = true, bool transparent = false, bool occluder = false) =>
             new MeshRender
             {
-                Mesh = mesh, Texture = RenderAssets.Textures.Intern(texture), UvScale = Vector2.one, Emissive = emissive,
+                Mesh = mesh, Texture = RenderAssets.Textures.Intern(texture, ReferenceEquals(texture, Texture2D.White) ? "white" : null), // "white" is the name MeshRenderConfig gives it
+                UvScale = Vector2.one, Emissive = emissive,
                 CastsShadow = castsShadow, Transparent = transparent, Occluder = occluder, Color = color,
-                Layer = RenderLayer.World, Material = RenderAssets.Materials.Intern(material),
+                Layer = RenderLayer.World, Material = RenderAssets.Materials.Intern(material, material?.name),
             };
 
         /// <summary>An entity at <paramref name="position"/> (under <paramref name="parent"/> when given) drawing <paramref name="render"/>.</summary>

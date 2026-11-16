@@ -45,7 +45,9 @@ namespace RipNRage.Engine.Ecs
     /// parented to the node above and get an identity <see cref="LocalTransform"/> when they declare none. A config
     /// field of type <see cref="EntityRef"/> names a child, <c>root</c>, or an entity the spawner resolves.
     /// <c>keys</c> are the short names a <c>.map</c> may use for field paths (<c>Config.field</c>, or
-    /// <c>child/Config.field</c> for a child's).
+    /// <c>child/Config.field</c> for a child's). A child with <c>"detached": true</c> is spawned with the instance but
+    /// not parented (a collider: physics entities are roots); one with <c>"previewOnly": true</c> exists only in the
+    /// editor's preview (a pad, a ghost).
     /// </summary>
     public sealed class Prefab
     {
@@ -56,6 +58,11 @@ namespace RipNRage.Engine.Ecs
         public readonly List<Prefab> Children = new List<Prefab>();
         /// <summary>Short key → field path (root node only).</summary>
         public readonly Dictionary<string, string> Keys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>A child spawned with the instance but with **no** <see cref="Parent"/>: posed by composing the instance
+        /// pose like the root. Physics entities must be roots (2.4) — a prefab's collider is one.</summary>
+        public bool Detached;
+        /// <summary>A child that exists only in <see cref="SpawnPreview"/> (an editor stand-in: a pad, a ghost, a volume's box).</summary>
+        public bool PreviewOnly;
 
         public T Get<T>() where T : class, IComponentConfig => Components.Find(c => c is T) as T;
         public Prefab Child(string name) => Children.Find(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -99,6 +106,7 @@ namespace RipNRage.Engine.Ecs
             foreach (var (node, entity, parent) in nodes)
             {
                 bool isRoot = parent.IsNull;
+                bool worldPosed = isRoot || node.Detached; // composes with the instance pose instead of hanging under a parent
                 var ctx = new BakeContext(entity, inst.Root, position, rotation, lookup, Name);
                 bool hasTransform = false;
                 foreach (var cfg in node.Components)
@@ -108,20 +116,21 @@ namespace RipNRage.Engine.Ecs
                     {
                         hasTransform = true;
                         var t = ltc.Bake();
-                        if (isRoot && posed) { t.Position = position + rotation * t.Position; t.Rotation = rotation * t.Rotation; }
+                        if (worldPosed && posed) { t.Position = position + rotation * t.Position; t.Rotation = rotation * t.Rotation; }
                         Add(entity, t);
                         continue;
                     }
                     if (commands != null) cfg.BakeInto(commands, entity, in ctx); else cfg.BakeInto(world, entity, in ctx);
                 }
-                if (!hasTransform && (!isRoot || posed))
-                    Add(entity, isRoot ? LocalTransform.At(position, rotation) : LocalTransform.Identity);
-                if (!isRoot) Add(entity, new Parent { Value = parent });
+                if (!hasTransform && (!worldPosed || posed))
+                    Add(entity, worldPosed ? LocalTransform.At(position, rotation) : LocalTransform.Identity);
+                if (!isRoot && !node.Detached) Add(entity, new Parent { Value = parent });
             }
             return inst;
 
             void Create(Prefab node, Entity parent, bool isRoot)
             {
+                if (node.PreviewOnly && !preview) return; // an editor stand-in: not part of the game's build
                 var e = commands != null ? commands.CreateEntity() : world.CreateEntity();
                 if (!isRoot)
                 {
@@ -152,10 +161,11 @@ namespace RipNRage.Engine.Ecs
             public readonly List<string> ChildOrder = new List<string>();
             public readonly Dictionary<string, string> Keys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             public string Description;
+            public bool Detached, PreviewOnly;
 
             public Node Clone()
             {
-                var n = new Node { Description = Description };
+                var n = new Node { Description = Description, Detached = Detached, PreviewOnly = PreviewOnly };
                 foreach (var kv in Components) n.Components[kv.Key] = (JsonObject)kv.Value.DeepClone();
                 foreach (var name in ChildOrder) { n.Children[name] = Children[name].Clone(); n.ChildOrder.Add(name); }
                 foreach (var kv in Keys) n.Keys[kv.Key] = kv.Value;
@@ -251,6 +261,8 @@ namespace RipNRage.Engine.Ecs
         private static void MergeInto(Node target, JsonObject json, string prefabName)
         {
             if (json["description"] is JsonValue d) target.Description = (string)d;
+            if (json["detached"] is JsonValue det) target.Detached = (bool)det;
+            if (json["previewOnly"] is JsonValue po) target.PreviewOnly = (bool)po;
             if (json["keys"] is JsonObject keys)
                 foreach (var kv in keys) target.Keys[kv.Key] = (string)kv.Value;
             if (json["components"] is JsonObject comps)
@@ -271,7 +283,7 @@ namespace RipNRage.Engine.Ecs
 
         private static Prefab Build(Node node, string name, string prefabName)
         {
-            var p = new Prefab { Name = name, Description = node.Description };
+            var p = new Prefab { Name = name, Description = node.Description, Detached = node.Detached, PreviewOnly = node.PreviewOnly };
             foreach (var kv in node.Keys) p.Keys[kv.Key] = kv.Value;
             foreach (var kv in node.Components)
             {

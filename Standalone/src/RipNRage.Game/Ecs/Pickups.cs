@@ -44,7 +44,7 @@ namespace RipNRage.Game.Ecs
         /// is the map origin, the pickup floats <see cref="Lift"/> above it.
         /// </summary>
         public static Entity Spawn(World w, AmmoType type, Vector3 floor) =>
-            Spawn(w, type, floor, RenderAssets.Sprites.Intern(GameAssets.Pickups[ByType[(int)type].Sprite]));
+            Spawn(w, type, floor, RenderAssets.Sprites.Intern(GameAssets.Pickups[ByType[(int)type].Sprite], "Pickups/" + ByType[(int)type].Sprite)); // 10.3a: the name a prefab writes
 
         /// <summary>The same, with the sprite already resolved (the checks have no atlases to look it up in).</summary>
         public static Entity Spawn(World w, AmmoType type, Vector3 floor, AssetHandle<Sprite> sprite)

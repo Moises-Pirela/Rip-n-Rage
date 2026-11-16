@@ -105,6 +105,8 @@ namespace RipNRage.Engine.Ecs.Rendering
         public string mesh = "box";
         /// <summary>Texture path under assets (null = white).</summary>
         public string texture;
+        /// <summary>A <see cref="MaterialLibrary"/> name (null = the default lit material). 10.3a: the lamp head's pulse.</summary>
+        public string material;
         public float[] color = { 1, 1, 1, 1 };
         public float[] uvScale = { 1, 1 };
         public float emissive;
@@ -116,9 +118,15 @@ namespace RipNRage.Engine.Ecs.Rendering
             Texture = string.IsNullOrEmpty(texture)
                 ? RenderAssets.Textures.Intern(Texture2D.White, "white")
                 : RenderAssets.Textures.GetOrLoad(texture, t => Texture2D.Load(Application.AssetPath(t), FilterMode.Trilinear, TextureWrapMode.Repeat)),
+            Material = MaterialByName(material),
             Color = ConfigUtil.Color(color), UvScale = new Vector2(uvScale[0], uvScale[1]), Emissive = emissive,
             CastsShadow = castsShadow, Transparent = transparent, Occluder = occluder, Layer = layer,
         };
+
+        /// <summary>The render handle of a <see cref="MaterialLibrary"/> name (null / empty = none; unregistered = an error).</summary>
+        public static AssetHandle<Material> MaterialByName(string name) => string.IsNullOrEmpty(name)
+            ? AssetHandle<Material>.None
+            : RenderAssets.Materials.GetOrLoad(name, n => MaterialLibrary.Get(n) ?? throw new KeyNotFoundException($"material '{n}' is not registered"));
     }
 
     public sealed class LightSourceConfig : ComponentConfig<LightSource>
@@ -139,15 +147,32 @@ namespace RipNRage.Engine.Ecs.Rendering
         public static Color Color(float[] c) => c == null || c.Length < 3 ? RipNRage.Engine.Color.white : new Color(c[0], c[1], c[2], c.Length > 3 ? c[3] : 1f);
     }
 
-    /// <summary>Named meshes for configs: unit "box" and "plane" built in; register others (or give an .obj path under assets).</summary>
+    /// <summary>
+    /// Named meshes for configs: unit <c>box</c> and <c>plane</c>, a sized box <c>box:cx,cy,cz:sx,sy,sz@uv</c>, a sized
+    /// plane <c>plane:WxL@uv</c> (10.3a: the forms the level has always interned its meshes under, so a prefab names
+    /// the very entry a code spawn made), a registered name, or an .obj path under assets.
+    /// </summary>
     public static class MeshLibrary
     {
         private static readonly Dictionary<string, Mesh> _meshes = new Dictionary<string, Mesh>(StringComparer.OrdinalIgnoreCase);
+        private static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+
         public static void Register(string name, Mesh mesh) => _meshes[name] = mesh;
+
+        /// <summary>The name of a box mesh with this centre, size and UV scale (what <see cref="Get"/> parses).</summary>
+        public static string BoxName(Vector3 center, Vector3 size, float uvScale = 1f) =>
+            FormattableString.Invariant($"box:{center.x},{center.y},{center.z}:{size.x},{size.y},{size.z}@{uvScale}");
+
+        /// <summary>The name of a flat plane mesh with this extent and UV scale.</summary>
+        public static string PlaneName(float width, float length, float uvScale) =>
+            FormattableString.Invariant($"plane:{width}x{length}@{uvScale}");
+
         public static Mesh Get(string name)
         {
             if (_meshes.TryGetValue(name, out var m)) return m;
-            m = name.ToLowerInvariant() switch
+            if (name.StartsWith("box:", StringComparison.OrdinalIgnoreCase)) m = ParseBox(name);
+            else if (name.StartsWith("plane:", StringComparison.OrdinalIgnoreCase)) m = ParsePlane(name);
+            else m = name.ToLowerInvariant() switch
             {
                 "box" => Mesh.CreateBox(Vector3.zero, Vector3.one),
                 "plane" => Mesh.CreatePlane(Vector3.zero, 1f, 1f),
@@ -156,5 +181,39 @@ namespace RipNRage.Engine.Ecs.Rendering
             };
             return _meshes[name] = m;
         }
+
+        // box:cx,cy,cz:sx,sy,sz@uv
+        private static Mesh ParseBox(string name)
+        {
+            var (body, uv) = SplitUv(name.Substring(4), name);
+            var parts = body.Split(':');
+            if (parts.Length != 2) throw new FormatException($"mesh '{name}': expected box:cx,cy,cz:sx,sy,sz@uv");
+            return Mesh.CreateBox(Vec(parts[0], name), Vec(parts[1], name), uv);
+        }
+
+        // plane:WxL@uv
+        private static Mesh ParsePlane(string name)
+        {
+            var (body, uv) = SplitUv(name.Substring(6), name);
+            var wl = body.Split('x', 'X');
+            if (wl.Length != 2) throw new FormatException($"mesh '{name}': expected plane:WxL@uv");
+            return Mesh.CreatePlane(Vector3.zero, Num(wl[0], name), Num(wl[1], name), uv);
+        }
+
+        private static (string body, float uv) SplitUv(string s, string name)
+        {
+            int at = s.LastIndexOf('@');
+            return at < 0 ? (s, 1f) : (s.Substring(0, at), Num(s.Substring(at + 1), name));
+        }
+
+        private static Vector3 Vec(string s, string name)
+        {
+            var p = s.Split(',');
+            if (p.Length != 3) throw new FormatException($"mesh '{name}': expected x,y,z in '{s}'");
+            return new Vector3(Num(p[0], name), Num(p[1], name), Num(p[2], name));
+        }
+
+        private static float Num(string s, string name) =>
+            float.TryParse(s, System.Globalization.NumberStyles.Float, Inv, out var f) ? f : throw new FormatException($"mesh '{name}': '{s}' is not a number");
     }
 }

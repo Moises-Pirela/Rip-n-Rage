@@ -137,6 +137,32 @@ internal static class Layer10Checks
         True(!w.Has<LocalTransform>(lib.Get("loose").Spawn(w).Root), "a poseless spawn adds no transform to a prefab that has none");
         True(w.Has<LocalTransform>(lib.Get("loose").Spawn(w, Vector3.one, Quaternion.identity).Root), "a posed spawn gives the root a transform");
 
+        // ---- detached and preview-only nodes (10.3a)
+        lib.AddJson(@"{ ""name"": ""post"", ""components"": { ""LocalTransform"": { ""position"": [0, 1, 0] } },
+            ""children"": { ""collider"": { ""detached"": true, ""components"": { ""LocalTransform"": { ""position"": [0, 2.6, 0] }, ""Health"": { ""max"": 1 } } },
+                            ""pad"": { ""previewOnly"": true, ""components"": { ""Position"": { ""x"": 1 } } },
+                            ""head"": { ""components"": { ""LocalTransform"": { ""position"": [0, 5.4, 0] } } } } }");
+        var post = lib.Get("post").Spawn(w, new Vector3(-13.5f, 0.91f, -28f), Quaternion.identity);
+        True(post.All.Count == 3 && post.Named("pad").IsNull, "a previewOnly child is not part of the game's build");
+        True(!w.Has<Parent>(post["collider"]) && w.Has<Parent>(post["head"]), "a detached child has no Parent; a plain one does");
+        True((w.Get<LocalTransform>(post["collider"]).Position - new Vector3(-13.5f, 3.51f, -28f)).magnitude < 1e-4f, "a detached child is posed in the world like the root");
+        True(w.Get<LocalTransform>(post["head"]).Position == new Vector3(0f, 5.4f, 0f), "a plain child keeps its local pose");
+        var postPreview = lib.Get("post").SpawnPreview(w, Vector3.zero, Quaternion.identity);
+        True(postPreview.All.Count == 4 && w.IsAlive(postPreview["pad"]) && w.Get<Position>(postPreview["pad"]).X == 1 && w.Get<Parent>(postPreview["pad"]).Value == postPreview.Root,
+            "the preview spawns the previewOnly child, parented like any other");
+        lib.AddJson(@"{ ""name"": ""post2"", ""base"": ""post"", ""children"": { ""collider"": { ""components"": { ""Health"": { ""max"": 2 } } } } }");
+        True(!w.Has<Parent>(lib.Get("post2").Spawn(w).Named("collider")), "detached is inherited through base");
+
+        // ---- mesh names (10.3a): the sized forms the level interns under, parsed back by the library
+        var sized = RipNRage.Engine.Ecs.Rendering.MeshLibrary.Get("box:0,2.6,0:0.28,5.2,0.28@1");
+        True(sized != null && ReferenceEquals(sized, RipNRage.Engine.Ecs.Rendering.MeshLibrary.Get("box:0,2.6,0:0.28,5.2,0.28@1")), "a sized box mesh is built once per name");
+        True(RipNRage.Engine.Ecs.Rendering.MeshLibrary.BoxName(new Vector3(0f, 2.6f, 0f), new Vector3(0.28f, 5.2f, 0.28f)) == "box:0,2.6,0:0.28,5.2,0.28@1", "BoxName writes the form Get parses");
+        True(RipNRage.Engine.Ecs.Rendering.MeshLibrary.PlaneName(1732f, 1000f, 0.0625f) == "plane:1732x1000@0.0625" && RipNRage.Engine.Ecs.Rendering.MeshLibrary.Get("plane:1732x1000@0.0625") != null, "and so does PlaneName");
+        True(Throws<FormatException>(() => RipNRage.Engine.Ecs.Rendering.MeshLibrary.Get("box:1,2,3"), "box:cx"), "a malformed box name says what it expected");
+        // (not a whole MeshRenderConfig bake: that touches Texture2D.White, a GL texture, and there is no context here)
+        True(Throws<KeyNotFoundException>(() => RipNRage.Engine.Ecs.Rendering.MeshRenderConfig.MaterialByName("nope"), "nope"), "an unregistered material name is refused");
+        True(RipNRage.Engine.Ecs.Rendering.MeshRenderConfig.MaterialByName(null).IsNone, "no material name is no material");
+
         // ---- malformed trees
         lib.AddJson(@"{ ""name"": ""badroot"", ""children"": { ""root"": { } } }");
         True(Throws<InvalidDataException>(() => lib.Get("badroot").Spawn(w), "reserved"), "a child named 'root' is refused");

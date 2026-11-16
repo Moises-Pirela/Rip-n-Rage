@@ -124,6 +124,7 @@ namespace RipNRage.Game.Content
             SpriteLibrary.RegisterAtlas("RocketLauncher", RocketLauncher);
             SpriteLibrary.RegisterAtlas("Fist", Fist);
             SpriteLibrary.RegisterAtlas("Katana", Katana);
+            SpriteLibrary.RegisterAtlas("Pickups", Pickups); // 10.3a: "Pickups/pickup_shellammo" from a prefab
             SpriteLibrary.RegisterAtlas("Pickups", Pickups);
             SpriteLibrary.RegisterAtlas("HUD_General", HudGeneral);
             SpriteLibrary.RegisterAtlas("HUD_Portrait", HudPortrait);
@@ -182,14 +183,23 @@ namespace RipNRage.Game.Content
             };
         }
 
+        /// <summary>A repeating world texture, interned under its asset path (10.3a): a prefab's
+        /// <c>"texture": "Textures/texture_13.png"</c> resolves to this very object, not a second copy of the PNG.</summary>
+        private static Texture2D World(string rel)
+        {
+            var t = Texture2D.Load(A(rel), FilterMode.Trilinear, TextureWrapMode.Repeat);
+            RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Intern(t, rel);
+            return t;
+        }
+
         private static void LoadTextures()
         {
-            GridTexture = Texture2D.Load(A("Textures/texture_08.png"), FilterMode.Trilinear, TextureWrapMode.Repeat);
-            Texture13 = Texture2D.Load(A("Textures/texture_13.png"), FilterMode.Trilinear, TextureWrapMode.Repeat);
-            OrangeProto = Texture2D.Load(A("Textures/TEX-Orange_Proto.png"), FilterMode.Trilinear, TextureWrapMode.Repeat);
-            GreenProto = Texture2D.Load(A("Textures/TEX-Green_Proto.png"), FilterMode.Trilinear, TextureWrapMode.Repeat);
-            PurpleProto = Texture2D.Load(A("Textures/TEX-Purple_Proto.png"), FilterMode.Trilinear, TextureWrapMode.Repeat);
-            RedProto = Texture2D.Load(A("Textures/TEX-Red_Proto.png"), FilterMode.Trilinear, TextureWrapMode.Repeat);
+            GridTexture = World("Textures/texture_08.png");
+            Texture13 = World("Textures/texture_13.png");
+            OrangeProto = World("Textures/TEX-Orange_Proto.png");
+            GreenProto = World("Textures/TEX-Green_Proto.png");
+            PurpleProto = World("Textures/TEX-Purple_Proto.png");
+            RedProto = World("Textures/TEX-Red_Proto.png");
 
             RiflemanIdle = Texture2D.Load(A("Sprites/Enemies/Rifleman/Rifleman_Idle.png"));
             RiflemanAttack = Texture2D.Load(A("Sprites/Enemies/Rifleman/Rifleman_Attack.png"));

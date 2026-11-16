@@ -1893,12 +1893,29 @@ that changes what the level builds.
 
       **Steps** (one commit each; the manifest is the gate throughout)
 
-      - [ ] 10.3a **Names and forms** (engine + GameAssets, no level change). Parametrised mesh names in `MeshLibrary`;
-            `material` on `MeshRenderConfig` and named game materials; textures and the `Pickups` atlas interned under
-            names; `detached` / `previewOnly` prefab nodes with engine checks. **Gate**: the manifest changes **only in
-            asset names** (`Texture2D:#7` → `Texture2D:Textures/texture_13.png`, `Sprite:#2` → `Sprite:Pickups/…`,
-            `Material:#1` → `Material:lamp`) — shown by diffing with the ids normalised; 26 scripts and 4 shots as before.
-            Re-baseline the hashes in the roadmap.
+      - [x] 10.3a **Names and forms** (done; engine + GameAssets, no level change).
+            - **Sized meshes by name**: `MeshLibrary.Get` parses `box:cx,cy,cz:sx,sy,sz@uv` and `plane:WxL@uv`;
+              `MeshLibrary.BoxName` / `PlaneName` write them; `LevelVisuals.Box` / `Plane` go through them — so a
+              prefab's `"mesh": "box:0,2.6,0:0.28,5.2,0.28@1"` is the entry the lamp post already uses.
+            - **`MeshRenderConfig.material`** (a `MaterialLibrary` name, through `MaterialByName`; unregistered throws).
+            - **Names**: GameAssets interns its world textures under their asset paths (`Textures/texture_13.png`),
+              `LevelTextures` the procedural ones as `proc:planks` / `proc:sand`, `LevelVisuals.Render` names `White`
+              `"white"` (what `MeshRenderConfig` calls it) and interns a material under its own name; `Materials.Load`
+              interns the four game materials by name; the `Pickups` atlas is registered with `SpriteLibrary` and
+              `Pickups.Spawn` interns its sprite as `Pickups/<name>`. The atlas indexer is `Get` — one `Sprite` instance
+              per name, so a prefab's lookup lands on the same handle.
+            - **Prefab nodes**: `"detached": true` (spawned with the instance, posed like the root, **no `Parent`** —
+              the lamp's collider, since physics entities are roots) and `"previewOnly": true` (exists only in
+              `SpawnPreview` — the spawner's pad); both inherit through `base`.
+            - **Checks** (+12 → 244 engine): detached pose and parenting, previewOnly absent / present, inheritance of
+              the flags, the mesh names round trip and their errors, the material name errors. Found on the way: a
+              `MeshRenderConfig` bake touches `Texture2D.White`, a GL texture — headless checks must not bake one (the
+              first attempt segfaulted the suite). Game checks 467.
+            - **Gate**: both manifests **identical with asset names normalised**; the only change is ids → names
+              (`Texture2D:#7` → `Texture2D:Textures/texture_13.png`, `Sprite:#2` → `Sprite:Pickups/pickup_shellammo`,
+              `Material:#1` → `Material:lamp`, `Texture2D:#8` → `Texture2D:white`). Still anonymous, by design: the 15
+              level chunk meshes (keyed by file + timestamp), the brush face tables and hulls, the viewmodel sprites.
+              **Re-baselined: dock.map `e180c83d`, title `01f09c74`** (106 / 98 entities).
       - [ ] 10.3b **The loader spawns prefabs** (`EntityDefinition.prefab`, `GamePrefabs.Library` over `prefabs/level/`).
             `prefab + (origin, angle) + overrides` through the chained resolver (`LoadedLevel.namedEntities`, roots
             registered by `targetname`); `LevelRef.Index` stamped on the root; preview = `SpawnPreview`; `defaults` /

@@ -43,8 +43,8 @@ namespace RipNRage.Game.Content.Level
             _init = true;
             GameAssets.Load();
             Materials.Load();
-            Add("planks", () => ProceduralTextures.WoodPlanks()).surface = Surfaces.Wood;
-            Add("sand", () => ProceduralTextures.Sand()).surface = Surfaces.Sand;
+            Add("planks", () => Named(ProceduralTextures.WoodPlanks(), "proc:planks")).surface = Surfaces.Wood;
+            Add("sand", () => Named(ProceduralTextures.Sand(), "proc:sand")).surface = Surfaces.Sand;
             Add("grid", () => GameAssets.GridTexture);
             Add("dark", () => GameAssets.Texture13);
             Add("orange", () => GameAssets.OrangeProto);
@@ -58,6 +58,13 @@ namespace RipNRage.Game.Content.Level
             var glass = Add("glass", () => Texture2D.White); glass.tint = new Color(0.6f, 0.8f, 0.9f, 0.4f); glass.transparent = true; glass.surface = Surfaces.Glass;
             var clip = Add("clip", () => Texture2D.White); clip.visible = false;
             var sky = Add("sky", () => Texture2D.White); sky.visible = false;
+        }
+
+        /// <summary>A generated texture, interned under a name a prefab can use (10.3a; the asset textures are named in GameAssets).</summary>
+        private static Texture2D Named(Texture2D t, string name)
+        {
+            RipNRage.Engine.Ecs.Rendering.RenderAssets.Textures.Intern(t, name);
+            return t;
         }
 
         private static LevelTexture Add(string name, Func<Texture2D> tex)

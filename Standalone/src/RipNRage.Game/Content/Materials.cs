@@ -51,6 +51,8 @@ namespace RipNRage.Game.Content
             // Crates share the default mesh shader but are registered so their tint can be tweaked from the cfg.
             Crate = new Material("mesh") { color = new Color(0.9f, 0.9f, 0.9f, 1f) };
             MaterialLibrary.Register("crate", Crate);
+            // 10.3a: the render registry knows them by the same names, so a prefab's "material": "lamp" is this handle
+            foreach (var m in new[] { Water, Lamp, EnemyDissolve, Crate }) RipNRage.Engine.Ecs.Rendering.RenderAssets.Materials.Intern(m, m.name);
         }
     }
 
