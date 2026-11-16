@@ -90,7 +90,7 @@ namespace RipNRage.Game.Content.Level
                             RipNRage.Engine.Ecs.Entity ent;
                             if (def.prefab != null)
                             {
-                                var inst = SpawnPrefab(def, e, preview);
+                                var inst = SpawnPrefab(def, e, preview, w);
                                 ent = inst.Root;
                                 if (preview) foreach (var x in inst.All) level.previewEntities.Add(x); // detached children too
                                 else level.RegisterNamed(e.Get("targetname"), ent,
@@ -120,17 +120,28 @@ namespace RipNRage.Game.Content.Level
         /// <c>EntityRef</c> the tree cannot answer is looked up among the level's <c>targetname</c>s. A key the prefab
         /// does not know throws, naming the class and the key — a typo in a map is caught at load, not at play.
         /// </summary>
-        private static RipNRage.Engine.Ecs.PrefabInstance SpawnPrefab(EntityDefinition def, MapEntity e, bool preview)
+        private static RipNRage.Engine.Ecs.PrefabInstance SpawnPrefab(EntityDefinition def, MapEntity e, bool preview, RipNRage.Engine.Ecs.World world)
         {
             var overrides = new List<KeyValuePair<string, string>>();
             foreach (var kv in e.properties)
                 if (!IsUniversalKey(kv.Key)) overrides.Add(kv);
             var lib = GamePrefabs.Library;
             var prefab = overrides.Count == 0 ? lib.Get(def.prefab) : lib.Get(def.prefab, overrides);
-            var world = Application.Current.World;
             var rotation = Quaternion.Euler(0f, e.angle, 0f);
             return preview ? prefab.SpawnPreview(world, e.origin, rotation, LevelName)
                            : prefab.Spawn(world, e.origin, rotation, LevelName);
+        }
+
+        /// <summary>
+        /// One entity of a class, outside a level load (10.3d: the save restoring a monster a spawner made). The class
+        /// may be a prefab or still code; the caller gives the world because this runs when no level is loading.
+        /// </summary>
+        public static RipNRage.Engine.Ecs.Entity SpawnClass(RipNRage.Engine.Ecs.World world, MapEntity e)
+        {
+            var def = EntityRegistry.Get(e.classname);
+            if (def == null) return RipNRage.Engine.Ecs.Entity.Null;
+            if (def.prefab != null) return SpawnPrefab(def, e, preview: false, world).Root;
+            return def.spawnEntity?.Invoke(e) ?? RipNRage.Engine.Ecs.Entity.Null;
         }
 
         /// <summary>Keys the loader owns: where a thing stands, which way it faces, and what it is called.</summary>

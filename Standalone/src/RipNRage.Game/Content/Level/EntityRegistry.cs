@@ -27,6 +27,19 @@ namespace RipNRage.Game.Content.Level
         public Vector3 pickExtents = new Vector3(0.5f, 0.5f, 0.5f);
         /// <summary>Spawned after every other entity (joints that connect entities by targetname).</summary>
         public bool deferred;
+
+        /// <summary>
+        /// The components this class puts on its root (10.3d: from the prefab, so a reader asks what a thing *is*
+        /// instead of what its name starts with — the save used to tell monsters from pickups by a classname prefix).
+        /// Empty for the classes that are still code.
+        /// </summary>
+        public bool Builds<T>() where T : struct, RipNRage.Engine.Ecs.IComponent
+        {
+            if (prefab == null) return false;
+            foreach (var c in GamePrefabs.Library.Get(prefab).Components)
+                if (c.ComponentType == typeof(T)) return true;
+            return false;
+        }
     }
 
     /// <summary>All entity classes the level files can use (Quake-style classnames).</summary>

@@ -55,7 +55,7 @@ then start at the first unchecked layer.
   the legacy producer are deleted; the application runs only the World, which drives its own fixed clock; the
   player, the level, the props, cameras, lights, menus, HUD and all four editor tools are entities and screens
   (close-out below)
-- [ ] Layer 10 — Editors on configs **(planned 2026-11-16: survey, direction, questions, steps 10.0–10.8 below; start at 10.0)**
+- [ ] Layer 10 — Editors on configs **(10.0–10.3 done: the level manifest, prefab trees, the game configs and six classes as files; 10.4 next)**
 
 ### Pick-up point for the next session (written 2026-11-15, after 9.8; layer 10 is next)
 
@@ -1978,10 +1978,24 @@ that changes what the level builds.
             - **Gate**: engine checks 254, game 467; `pickup` (4 → 3 pickups, shells 64 → 80), `killenemy`
               (`killedAtFrame 97`), `approach` (the AI sees, chases, idles) and `checkpoint` as before; the editor runs
               its session script clean and writes its shot; `levels/` untouched.
-      - [ ] 10.3d **The save keys by component**: monsters / pickups / spawners found by `Enemy` / `Pickup` / `Spawner`
-            + `LevelRef.Index`, not by classname prefix; runtime monsters respawn through their prefab
-            (`EntityRegistry.Get(classname).prefab`). **Gate**: `saveload` round trip unchanged, `killenemy` /
-            `checkpoint` as before.
+      - [x] 10.3d **The save keys by component** (done). `EntityDefinition.Builds<T>()` asks the prefab what a class
+            puts on its root, and the save tells monsters / pickups / spawners apart by `Enemy` / `Pickup` / `Spawner`
+            instead of by a `monster_` / `item_` classname prefix, on both the capture and the apply side.
+            - **A live bug 10.3c had just created, fixed here**: a save restores spawner-made monsters through
+              `EntityRegistry.Get(classname).spawnEntity`, which is **null for a prefab class** — those monsters would
+              have vanished on load, silently, and no gate would have caught it (the dock has no spawner).
+              `LevelLoader.SpawnClass(world, mapEntity)` is the one way to build a class outside a load now, prefab or
+              code; it takes the world as an argument so it works where no level is loading.
+            - **Checks** (+11 → 478): the real `prefabs/level/monster_rifleman.json` against `Enemies.Spawn` at the
+              same placement — body pose, capsule, mass and flags, motor, health (the file repeats `EnemyData`'s
+              number: this comparison is the pin), hitbox, placement seed, facing, layer, and the sprite child's pose,
+              billboard and effects slot. The facing needed a tolerance: the file reads it off the instance rotation,
+              so it is a quaternion round trip (~2e-5°, invisible in the manifest's four places).
+            - **Gate**: `saveload` round trip **116 lines, 0 differ**; `deathf8` asset counts flat across the F8
+              rebuild (meshes 29, textures 9, materials 4 before and after) — prefab spawning interns nothing fresh.
+            - **Known gap**: `EntityRegistry.Init` calls `Materials.Load`, which compiles shaders, so it needs a GL
+              context — the checks cannot reach `SpawnClass` / `Builds<T>()` end to end and rely on the `saveload`
+              gate for them. Deferring shader compilation the way textures now defer would open that up (10.6).
 - [ ] 10.4 **Derived classes on prefabs** (`prop_physics` and `phys_fixed` join it from 10.3: `size` fans out into mesh, UV, collider and lift). `phys_door` / `phys_hinge` / `phys_slider` / `phys_pendulum` /
       `phys_spring_prop` build the `prop_physics` prefab with a `derive` hook adding the computed `JointConfig`
       (+ `SliderPatrol`, the rod child); `joint_*` connectors resolve `body` / `connected` through the chained

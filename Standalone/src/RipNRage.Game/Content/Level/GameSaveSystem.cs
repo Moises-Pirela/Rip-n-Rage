@@ -125,7 +125,9 @@ namespace RipNRage.Game.Content.Level
             {
                 var e = doc.entities[i];
                 var es = new EntitySave { index = i, classname = e.classname };
-                if (e.classname.StartsWith("monster_", StringComparison.OrdinalIgnoreCase) && !e.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase))
+                var def = EntityRegistry.Get(e.classname);
+                if (def == null) continue;
+                if (def.Builds<Enemy>()) // what the class is made of, not what its name starts with (10.3d)
                 {
                     es.alive = monstersByIndex.TryGetValue(i, out var en) && !w.Has<Dead>(en);
                     if (es.alive)
@@ -135,8 +137,8 @@ namespace RipNRage.Game.Content.Level
                         es.health = w.Get<Health>(en).Current;
                     }
                 }
-                else if (e.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase)) es.taken = !pickupsByIndex.ContainsKey(i);
-                else if (e.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase)) es.spawned = spawnersByIndex.TryGetValue(i, out var sp) ? w.Get<Spawner>(sp).Spawned : 0;
+                else if (def.Builds<RipNRage.Game.Ecs.Pickup>()) es.taken = !pickupsByIndex.ContainsKey(i);
+                else if (def.Builds<Spawner>()) es.spawned = spawnersByIndex.TryGetValue(i, out var sp) ? w.Get<Spawner>(sp).Spawned : 0;
                 else continue;
                 save.entities.Add(es);
             }
@@ -259,7 +261,9 @@ namespace RipNRage.Game.Content.Level
                 }
                 foreach (var es in save.entities)
                 {
-                    if (es.classname.StartsWith("monster_", StringComparison.OrdinalIgnoreCase) && !es.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase))
+                    var def = EntityRegistry.Get(es.classname);
+                    if (def == null) continue;
+                    if (def.Builds<Enemy>())
                     {
                         if (!monstersByIndex.TryGetValue(es.index, out var en) || !w.IsAlive(en)) continue;
                         if (!es.alive) { w.DestroyEntity(en); continue; } // the sprite child follows through the hierarchy
@@ -267,12 +271,12 @@ namespace RipNRage.Game.Content.Level
                         if (es.health > 0f) { ref var h = ref w.Get<Health>(en); h.Current = Mathf.Min(es.health, h.Max); }
                         continue;
                     }
-                    if (es.classname.Equals("monster_spawner", StringComparison.OrdinalIgnoreCase))
+                    if (def.Builds<Spawner>())
                     {
                         if (spawnersByIndex.TryGetValue(es.index, out var sp)) w.Get<Spawner>(sp).Spawned = es.spawned;
                         continue;
                     }
-                    if (es.classname.StartsWith("item_", StringComparison.OrdinalIgnoreCase))
+                    if (def.Builds<RipNRage.Game.Ecs.Pickup>())
                     {
                         if (es.taken && pickupsByIndex.TryGetValue(es.index, out var pk) && w.IsAlive(pk)) w.DestroyEntity(pk); // the sprite child follows
                         continue;
@@ -280,11 +284,9 @@ namespace RipNRage.Game.Content.Level
                 }
                 foreach (var m in save.dynamicMonsters)
                 {
-                    var def = EntityRegistry.Get(m.classname);
-                    if (def?.spawnEntity == null) continue;
                     var e = new MapEntity { classname = m.classname, origin = new Vector3(m.x, m.y, m.z) };
                     e.angle = m.yaw;
-                    var en = def.spawnEntity(e);
+                    var en = LevelLoader.SpawnClass(w, e); // through the class, prefab or code (10.3d)
                     if (!w.IsAlive(en)) continue;
                     w.Get<LocalTransform>(en).Position = new Vector3(m.x, m.y, m.z); // the saved pose is the body centre
                     w.Get<LevelRef>(en).SpawnerIndex = m.spawnerIndex;

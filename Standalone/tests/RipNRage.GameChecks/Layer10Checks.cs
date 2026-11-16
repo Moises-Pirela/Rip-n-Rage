@@ -5,6 +5,7 @@ using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Rendering;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Content;
+using RipNRage.Game.Content.Level;
 using RipNRage.Game.Ecs;
 using RipNRage.Game.Ecs.AI;
 using RipNRage.Game.Ecs.Combat;
@@ -21,11 +22,24 @@ internal static class Layer10Checks
         var savedEnemies = Enemies.All;
         Enemies.All = new[]
         {
-            new EnemyData { name = "TestGrunt", classname = "monster_test", maxHealth = 1000f, maxArmor = 0f },
+            new EnemyData { name = "TestGrunt", classname = "monster_rifleman", maxHealth = 1000f, maxArmor = 0f },
             new EnemyData { name = "TestHeavy", classname = "monster_heavy", maxHealth = 50f, maxArmor = 40f },
         };
         try { Checks(True, Equal); }
         finally { Enemies.All = savedEnemies; }
+    }
+
+    /// <summary>The repo's prefabs/, found by walking up from the test binary (the game walks up from its assets).</summary>
+    private static string RepoPrefabs()
+    {
+        var d = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        while (d != null)
+        {
+            string c = System.IO.Path.Combine(d.FullName, "prefabs");
+            if (System.IO.Directory.Exists(c)) return c;
+            d = d.Parent;
+        }
+        return null;
     }
 
     private static bool Throws<T>(Action a) where T : Exception
@@ -56,7 +70,7 @@ internal static class Layer10Checks
         // ---- the pose-dependent bakes, through a prefab spawn (a bare Bake has no context)
         var lib = new PrefabLibrary();
         lib.AddJson(@"{ ""name"": ""grunt"",
-            ""components"": { ""Enemy"": { ""kind"": ""monster_test"" }, ""Heading"": { }, ""AiBrain"": { ""monster"": ""monster_test"" },
+            ""components"": { ""Enemy"": { ""kind"": ""monster_rifleman"" }, ""Heading"": { }, ""AiBrain"": { ""monster"": ""monster_rifleman"" },
                               ""AiIntent"": { }, ""Perception"": { }, ""EnemyWeapon"": { }, ""Health"": { ""max"": 1000 },
                               ""Hitbox"": { }, ""EnemyVisual"": { ""sprite"": ""sprite"" }, ""LevelRef"": { } },
             ""children"": { ""sprite"": { ""components"": { ""SpriteRender"": { ""billboard"": true, ""lit"": true }, ""SpriteFx"": { } } } } }");
@@ -128,6 +142,27 @@ internal static class Layer10Checks
         True(!w.Has<AiBrain>(gruntPreview.Root) && !w.Has<Perception>(gruntPreview.Root) && !w.Has<EnemyWeapon>(gruntPreview.Root)
              && w.Has<Health>(gruntPreview.Root) && w.Has<EnemyVisual>(gruntPreview.Root),
             "an enemy preview has no mind, senses or gun, and keeps what it looks like");
+
+        // ---- the real file: prefabs/level/monster_rifleman.json builds what Enemies.Spawn builds (10.3c)
+        GamePrefabs.Reset();
+        GamePrefabs.Directory = RepoPrefabs();
+        True(GamePrefabs.Directory != null && GamePrefabs.Library.Contains("monster_rifleman"), "the level prefabs are on disk where the game looks for them");
+        var file = GamePrefabs.Library.Get("monster_rifleman").Spawn(w, floor, Quaternion.Euler(0f, 180f, 0f));
+        var fileSprite = file["sprite"];
+        True((w.Get<LocalTransform>(file.Root).Position - w.Get<LocalTransform>(spawned).Position).magnitude < 1E-4f, "the file puts the body where the code puts it (the ride-height lift)");
+        var fs = w.Get<ColliderShape>(file.Root); var cs = w.Get<ColliderShape>(spawned);
+        True(fs.Kind == cs.Kind && MathF.Abs(fs.Radius - cs.Radius) < 1E-5f && MathF.Abs(fs.Height - cs.Height) < 1E-5f && (fs.Center - cs.Center).magnitude < 1E-5f,
+            "with the same capsule (radius, height and centre all follow the Enemy profile's ride height)");
+        var fb = w.Get<RipNRage.Engine.Ecs.Physics.Body>(file.Root); var cb = w.Get<RipNRage.Engine.Ecs.Physics.Body>(spawned);
+        True(fb.Mass == cb.Mass && fb.Interpolate == cb.Interpolate && fb.FreezeRotation == cb.FreezeRotation && fb.CanSleep == cb.CanSleep, "the same body");
+        True(w.Get<CharacterMotor>(file.Root).RideHeight == w.Get<CharacterMotor>(spawned).RideHeight && w.Get<CharacterMotor>(file.Root).Profile == w.Get<CharacterMotor>(spawned).Profile, "the same motor");
+        True(w.Get<Health>(file.Root).Max == w.Get<Health>(spawned).Max, "the same health (the file repeats EnemyData's number: this is the pin)");
+        Equal(w.Get<Hitbox>(spawned).Height, w.Get<Hitbox>(file.Root).Height, "the same hitbox");
+        True(w.Get<AiBrain>(file.Root).Rng == w.Get<AiBrain>(spawned).Rng, "the same placement seed");
+        Equal(w.Get<Heading>(spawned).Yaw, w.Get<Heading>(file.Root).Yaw, "the same facing (the file reads it off the instance rotation, so it is a quaternion round trip)");
+        True(w.Get<EnemyVisual>(file.Root).Sprite == fileSprite && w.Get<CollisionFilter>(file.Root).Layer == w.Get<CollisionFilter>(spawned).Layer, "the look points at its own sprite child, on the enemy layer");
+        True(w.Get<LocalTransform>(fileSprite).Position == new Vector3(0f, -0.35f, 0f) && w.Has<SpriteFx>(fileSprite) && w.Get<SpriteRender>(fileSprite).Billboard,
+            "and the sprite child hangs where the code hangs it, billboarded, with its effects slot");
 
         // ---- every component a level places can be authored (what 10.3 relies on)
         foreach (var t in new[]
