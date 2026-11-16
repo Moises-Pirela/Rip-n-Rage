@@ -2072,13 +2072,102 @@ that changes what the level builds.
         259 (+5: the `Given` mask, apply-onto-settings, the sky turning headless), game 479 (one fewer: the game
         system that went); the Tick schedule re-pinned (**25 batches**: `WorldspawnSystem` alone after
         `EcsInputSystem`, `SkySpinSystem` gone); the editor runs its session clean.
-- [ ] 10.6 **The editor's Entity window.** `PropertyGrid` in `RipNRage.ImGui` (lifted from the vfx editor, which
-      then draws through it — its shots pin the move), `Inspect*` attributes on the engine side. The window: prefab
-      (combo to swap class, keeping shared overrides), origin / angle, then each config with its fields; overrides in
-      accent, right-click reverts, multi-selection applies to all, one undo step per edit, per-entity preview
-      rebuild (`LoadedLevel.previewEntities` becomes per map entity). A **Level** tab draws the `WorldspawnConfig`
-      live. Editor gate `properties`: select the door, set `Body.mass` through the controller, revert
-      `LightSource.range` on a lamp, save, assert the keys in the file, screenshot.
+- [ ] 10.6 **The editor's Entity window** — spec written 2026-11-16, review before building.
+
+      **What the editor has today**: entity mode places a class on a clicked surface, drags it, rotates it 45°,
+      duplicates and deletes it, and steps **two** numeric keys with `+` / `-`. Every other key of every class is
+      unreachable — a `phys_door`'s hinge edge, a light's colour, a spawner's wave, a prop's texture are all
+      type-it-into-the-.map-by-hand. Picking is geometric (`pickExtents`), the preview is rebuilt **whole** on every
+      edit (`LoadedLevel.previewEntities` destroyed, the level re-loaded), undo is a stack of complete map texts and
+      `Restore` **clears the selection**. The reflective grid that should serve all this already exists, in the vfx
+      editor (`DrawGrid` / `DrawField`, ~150 lines, driven by `Vfx*` attributes).
+
+      **What a class now exposes** (after 10.3–10.5, this is what the window has to show): a prefab with
+      `description`, an `editor` block (`gizmoColor`, `pickExtents`, `defaults`, `numeric`), a `keys` table mapping a
+      map key to **one or more** config field paths, and the component configs themselves with typed fields —
+      `float`, `int`, `bool`, `string`, enums (`ShapeKind`, `JointKind`, `BoxEdge`, `AmmoType`, `LightType`),
+      `float[]` of 2 / 3 / 4, `float?`, `EntityRef`, and asset names (a texture path, `Pickups/pickup_shellammo`,
+      `lamp`, `box:0,2.6,0:…`).
+
+      **The model of an edit.** The window never touches entities; it writes **map keys**, and the level re-previews
+      itself — the same path a load takes, so what the editor shows is what the game will build:
+      `panel → MapEntity key → prefab + overrides → SpawnPreview → the entity you see`. Three consequences:
+      a value that fails to bake (a bad enum, a zero radius) is an error message on the row and the old value stays;
+      a key equal to the prefab's own value is **removed**, not written; and nothing in the window needs to know what
+      a class *is*.
+
+      **Layout** — a new dockable "Entity" window beside Tools:
+
+      | Section | Contents |
+      |---|---|
+      | Header | class name + `description`, instance count when several are selected, a combo to **change the class** (shared keys carry over, the rest are dropped with a warning) |
+      | Instance | `origin` (drag 3), `angle` (drag, 45° snap on Shift), `targetname` (text, warns when a name is used twice) |
+      | Keys | one row per entry of the prefab's `keys`, labelled by the key (`size`, `hinge`, `motor_torque`): **the class's own vocabulary**, in file order, with the prefab's value as the placeholder. A key that drives several fields (`size` → collider *and* the box the editor draws) is **one row** — editing the fields separately is how a map goes inconsistent |
+      | Components | everything else, grouped by component, one row per config field, labelled `Component.field`. Collapsed by default; this is the escape hatch for a field a class never named |
+      | Level tab | the same grid over `worldspawn` (10.5 made it a prefab + singleton): sun, sky, fog, kill height, sky spin — applied live, because the system re-applies when the singleton's `Version` changes |
+
+      **Widgets** (the shared `PropertyGrid`, lifted out of the vfx editor into `RipNRage.ImGui`; the `Vfx*`
+      attributes generalise to engine `Inspect*` ones and the vfx editor draws through the same grid):
+
+      | Field | Widget |
+      |---|---|
+      | `float` / `int` | drag, with `[Range(min, max, step)]` when the field declares one |
+      | `bool` | checkbox |
+      | enum | combo of its names |
+      | `float[3]` / `[4]` | drag 3 / colour picker when the field is a colour (`[Color]`) |
+      | `float[2]` | drag 2 (a plane's `w l`) |
+      | `float?` | checkbox "set" + the number; cleared writes nothing |
+      | `string` asset | combo from the registry it names — level textures, `SpriteLibrary` atlases, `MaterialLibrary`, mesh names — with free text for anything else |
+      | `EntityRef` | combo of the map's `targetname`s, plus free text; unknown names flagged |
+      | everything else | read-only text (a convex hull's vertices are not a property-grid job) |
+
+      **Behaviour**
+      - **Live**: a drag re-previews the edited entity **only** — `LoadedLevel` learns a per-map-entity rebuild, so
+        dragging a light's range does not rebuild the dock's 24 brush colliders at 60 fps.
+      - **Undo**: one step per edit *session*, not per frame — pushed on `IsItemActivated`, not on every drag tick;
+        and `Restore` keeps the selection (by index) so undo does not drop you out of the panel.
+      - **Overridden fields** are drawn in the accent colour with a dot; right-click reverts to the prefab's value
+        (the key leaves the map). A multi-selection shows a field as "—" when the instances disagree and writes all
+        of them when edited.
+      - **Multi-select across classes** edits only the keys they share (by name and type); the header says so.
+
+      **Questions for review** (recommendations in bold)
+
+      - **Q1 — which view is the default?** The Keys list (the class's own vocabulary, what a `.map` actually holds)
+        or the full component dump? **Keys**, with Components collapsed underneath: the keys are the documented
+        surface, and the dump is there when you need it.
+      - **Q2 — how is a value written?** Through the key that names it (`mass 25`) when one exists, otherwise the
+        path form (`Body.mass 25`). **Yes, alias first** — `dock.map` stays the file a human wrote, and 10.3's
+        `ResolveKey` already answers which is which.
+      - **Q3 — changing an instance's class.** Keep the keys the new class also knows and drop the rest (with a
+        count in the status bar), or refuse unless the selection is empty? **Keep and warn**: swapping
+        `prop_physics` → `phys_fixed` is a real move and shares every key.
+      - **Q4 — adding or removing a *component* on one instance** (a prop that alone carries a `Trigger`). The map
+        format has no syntax for it and a prefab is the right place to say what a thing is made of. **Out of scope
+        here**; 10.7's prefab authoring covers it.
+      - **Q5 — editing the prefab from the window** ("apply to all of this class"). Tempting next to the instance
+        rows, and it is exactly 10.7's subject. **Not in 10.6**, but the grid is written so 10.7 can point it at a
+        prefab instead of a map entity.
+      - **Q6 — `[Inspect]` attributes on config fields** (range, step, tip, group, asset kind). They are what make
+        the grid pleasant, and there are ~40 configs. **Do the classes a level places first** (the ten in
+        `prefabs/level/`), leave the rest to pick up hints as they are touched.
+      - **Q7 — copy / paste properties between entities** and a field filter box. **Defer both**; say so in the
+        close-out rather than half-building them.
+      - **Q8 — the gate.** A scripted `properties` editor run (select the door, set `Body.mass` through the panel,
+        revert a lamp's `range`, swap a class, save, assert the keys in the file) plus the existing `session` shot.
+        **Yes** — and it is the first editor gate that asserts file contents rather than "it did not crash".
+
+      **Steps** (one commit each)
+
+      - [ ] 10.6a **`PropertyGrid` in `RipNRage.ImGui`** + engine `Inspect*` attributes; the vfx editor draws through
+            it (its shots are the proof nothing moved). No level editor change yet.
+      - [ ] 10.6b **Per-entity preview rebuild** and selection-preserving undo in the level editor — the plumbing the
+            window needs, visible on its own (`session` shot unchanged, edits stop costing a full reload).
+      - [ ] 10.6c **The Entity window**: header, instance, keys, components, the live write path, overridden state and
+            revert, multi-selection.
+      - [ ] 10.6d **The Level tab** (worldspawn) and the asset / entity-reference combos.
+      - [ ] 10.6e **`[Inspect]` passes over the ten level classes**, the `properties` gate script, close-out.
+
 - [ ] 10.7 **Prefab authoring** (Q3). "Save selection as prefab" writes `prefabs/level/<name>.json` from the merged
       values and points the map entity at it; `prefabs/` hot-reloads in the editor (the animations / vfx watcher
       pattern) and re-previews. Stretch: edit a prefab's defaults in place.
