@@ -206,6 +206,28 @@ internal static class Layer10Checks
             RipNRage.Engine.Graphics.RenderSettings.skyboxRotation = skyBefore;
         }
 
+        // ---- an instance may add or drop a component ("+Trigger" / "-Health"), and a prefab writes back as JSON (10.6)
+        {
+            var plus = lib.Get("rig", new[] { KV("+Motorised", ""), KV("arm/+Position", ""), KV("-Health", "") }).Spawn(w, Vector3.zero, Quaternion.identity, Named);
+            True(w.Has<Motorised>(plus.Root) && !w.Has<Health>(plus.Root) && w.Has<Position>(plus["arm"]), "an override may add a component (on a child too) or remove one");
+            True(lib.ResolveKey("rig", "+Trigger")?[0] == "+Trigger" && lib.ResolveKey("rig", "arm/-Health")?[0] == "arm/-Health", "ResolveKey treats + / - keys as paths");
+            True(Throws<InvalidDataException>(() => lib.Get("rig", new[] { KV("+Nope", "") }), "Nope"), "adding a component that does not exist is refused");
+
+            var fresh = lib.Fresh("rig2");
+            string json = RipNRage.Engine.Ecs.PrefabWriter.ToJson(fresh, lib.Fresh("rig"), "rig");
+            True(json.Contains("\"base\": \"rig\"") && json.Contains("\"extra\"") && !json.Contains("LocalTransform") && !json.Contains("Motorised"), "a derived prefab writes its base and its own changes, and nothing it merely inherits");
+            var lib2 = new PrefabLibrary();
+            lib2.AddJson(@"{ ""name"": ""rig"", ""description"": ""a rig"", ""keys"": { ""hp"": ""Health.max"" },
+                ""components"": { ""LocalTransform"": { ""position"": [0, 1, 0] }, ""Health"": { ""max"": 50 }, ""Motorised"": { ""speed"": 2 } },
+                ""children"": { ""arm"": { ""components"": { ""Health"": { ""max"": 10 } }, ""children"": { ""tip"": { ""components"": { ""Position"": { ""x"": 5 } } } } } } }");
+            lib2.AddJson(json);
+            var again = lib2.Get("rig2").Spawn(w, Vector3.zero, Quaternion.identity);
+            True(w.Get<Health>(again.Root).Max == 60 && w.Get<Health>(again["arm"]).Max == 20 && w.Get<Position>(again["tip"]).Y == 7 && w.Get<Position>(again["tip"]).X == 5 && w.IsAlive(again["extra"]),
+                "written back and read again, a derived prefab spawns the same tree with the same values");
+            string flat = RipNRage.Engine.Ecs.PrefabWriter.ToJson(lib.Fresh("plain"), null, null);
+            True(flat.Contains("\"max\": 50") && !flat.Contains("current") && !flat.Contains("\"scale\""), "a prefab without a base writes only the fields that differ from a fresh config");
+        }
+
         // ---- malformed trees
         lib.AddJson(@"{ ""name"": ""badroot"", ""children"": { ""root"": { } } }");
         True(Throws<InvalidDataException>(() => lib.Get("badroot").Spawn(w), "reserved"), "a child named 'root' is refused");

@@ -228,6 +228,7 @@ namespace RipNRage.Engine.Ecs.View
     public sealed class CameraShakeConfig : ComponentConfig<CameraShake>
     {
         public float rotationSpeed = 6f, returnSpeed = 25f;
+        [InspectTip("how fast a shake fades, the most it may tilt (deg) and shift (m), how fast it shakes")]
         public float traumaDecay = 1.5f, maxShakeAngle = 5f, maxShakeOffset = 0.1f, shakeFrequency = 18f;
         public float[] basePosition = { 0, 0, 0 };
         public override CameraShake Bake()
@@ -242,6 +243,7 @@ namespace RipNRage.Engine.Ecs.View
 
     public sealed class ViewBobConfig : ComponentConfig<ViewBob>
     {
+        [InspectTip("head bob: steps per second and how far it moves")]
         public float frequency = 15f, waveLength = 0.1f;
         public float[] basePosition = { 0, 0, 0 };
         public override ViewBob Bake() => new ViewBob

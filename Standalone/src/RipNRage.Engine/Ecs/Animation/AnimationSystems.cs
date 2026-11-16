@@ -68,8 +68,11 @@ namespace RipNRage.Engine.Ecs.Animation
     public sealed class SpriteAnimatorConfig : ComponentConfig<SpriteAnimator>
     {
         /// <summary>Controller name (animations/controllers/*.json or code-registered).</summary>
+        [InspectAsset(AssetKind.Animator), InspectTip("an animator controller name (animations/)")]
         public string controller;
+        [InspectRange(0, 10, 0.05f)]
         public float speed = 1f;
+        [InspectTip("the state to begin in; empty = the controller's default")]
         public string startState;
         public override SpriteAnimator Bake()
         {

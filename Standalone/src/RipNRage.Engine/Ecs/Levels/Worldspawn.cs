@@ -36,10 +36,14 @@ namespace RipNRage.Engine.Ecs.Levels
     {
         /// <summary>The level's title (a map key nothing reads yet; kept so the key is known).</summary>
         public string message;
+        [InspectTip("degrees above the horizon; degrees around (0 = light travelling towards +Z). Empty = the tunables' value")]
         public float? sunElevation, sunAzimuth;
+        [InspectColor, InspectTip("empty = the tunables' value")]
         public float[] sunColor, skyZenith, skyHorizon, fogColor;
         /// <summary>NaN = the loader derives it from the level (a metre under the water, or under the lowest brush).</summary>
+        [InspectTip("the height the level ends below; NaN = a metre under the water, else under the lowest brush")]
         public float killY = float.NaN;
+        [InspectRange(-90, 90, 0.1f), InspectTip("degrees per second the sky turns")]
         public float skySpin = 1.2f;
 
         public override Worldspawn Bake()

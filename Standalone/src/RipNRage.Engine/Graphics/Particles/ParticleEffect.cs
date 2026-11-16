@@ -35,36 +35,39 @@ namespace RipNRage.Engine.Graphics.Particles
         Box,
     }
 
-    /// <summary>Editor hint: slider range and drag step for a numeric field.</summary>
+    /// <summary>Editor hint: slider range and drag step for a numeric field (an <see cref="RipNRage.Engine.Ecs.InspectRangeAttribute"/>).</summary>
     [AttributeUsage(AttributeTargets.Field)]
-    public sealed class VfxRangeAttribute : Attribute
+    public sealed class VfxRangeAttribute : RipNRage.Engine.Ecs.InspectRangeAttribute
     {
-        public readonly float min, max, step;
-        public VfxRangeAttribute(float min, float max, float step = 0.01f) { this.min = min; this.max = max; this.step = step; }
+        public VfxRangeAttribute(float min, float max, float step = 0.01f) : base(min, max, step) { }
     }
 
     /// <summary>Editor hint: starts a new section in the property grid.</summary>
     [AttributeUsage(AttributeTargets.Field)]
-    public sealed class VfxGroupAttribute : Attribute
+    public sealed class VfxGroupAttribute : RipNRage.Engine.Ecs.InspectGroupAttribute
     {
-        public readonly string name;
-        public VfxGroupAttribute(string name) { this.name = name; }
+        public VfxGroupAttribute(string name) : base(name) { }
     }
 
     /// <summary>Editor hint: the string field holds a sprite reference ("Atlas/name") and gets the sprite palette.</summary>
     [AttributeUsage(AttributeTargets.Field)]
-    public sealed class VfxSpriteAttribute : Attribute { }
+    public sealed class VfxSpriteAttribute : RipNRage.Engine.Ecs.InspectAssetAttribute
+    {
+        public VfxSpriteAttribute() : base(RipNRage.Engine.Ecs.AssetKind.Sprite) { }
+    }
 
     /// <summary>Editor hint: the string field names another effect.</summary>
     [AttributeUsage(AttributeTargets.Field)]
-    public sealed class VfxEffectRefAttribute : Attribute { }
+    public sealed class VfxEffectRefAttribute : RipNRage.Engine.Ecs.InspectAssetAttribute
+    {
+        public VfxEffectRefAttribute() : base(RipNRage.Engine.Ecs.AssetKind.Effect) { }
+    }
 
     /// <summary>Editor hint: one-line description shown as a tooltip / help text.</summary>
     [AttributeUsage(AttributeTargets.Field)]
-    public sealed class VfxTipAttribute : Attribute
+    public sealed class VfxTipAttribute : RipNRage.Engine.Ecs.InspectTipAttribute
     {
-        public readonly string text;
-        public VfxTipAttribute(string text) { this.text = text; }
+        public VfxTipAttribute(string text) : base(text) { }
     }
 
     /// <summary>Inclusive random range.</summary>

@@ -24,8 +24,11 @@ namespace RipNRage.Engine.Ecs.Rendering
     public sealed class BoxMeshConfig : ComponentConfig<BoxMesh>
     {
         public float[] center = { 0, 0, 0 };
+        [InspectRange(0.01f, 500, 0.01f), InspectTip("metres")]
         public float[] size = { 1, 1, 1 };
+        [InspectRange(0.001f, 100, 0.01f), InspectTip("texture repeats per metre")]
         public float uvScale = 1f;
+        [InspectTip("one texture repeat across the width, whatever the size (the level props' convention)")]
         public bool fitUvToWidth;
         public override BoxMesh Bake() => new BoxMesh
         {
@@ -36,7 +39,9 @@ namespace RipNRage.Engine.Ecs.Rendering
     public sealed class PlaneMeshConfig : ComponentConfig<PlaneMesh>
     {
         /// <summary>"w l", or "w h l" with the height ignored — a plane is flat, and that is how the maps write it.</summary>
+        [InspectRange(0.1f, 5000, 1), InspectTip("w l (or w h l; a plane is flat)")]
         public float[] size = { 1, 1 };
+        [InspectRange(0.001f, 100, 0.01f), InspectTip("texture repeats per metre")]
         public float uvScale = 1f;
         public override PlaneMesh Bake() => new PlaneMesh
         {

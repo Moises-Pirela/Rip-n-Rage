@@ -52,7 +52,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// anchor and axis into the body's local space, hands the body the joint, and removes this entity — a connector
     /// is an instruction, not a thing in the world.
     /// </summary>
-    public struct JointConnector : IComponent
+    [NotInPreview] public struct JointConnector : IComponent
     {
         public Entity Body, Connected;
         public Joint Joint;
@@ -70,6 +70,7 @@ namespace RipNRage.Engine.Ecs.Physics
     {
         public float[] size = { 1, 1, 1 };
         /// <summary>The middle number when <see cref="size"/> is given as "w l" (a plane's slab).</summary>
+        [InspectTip("the middle number when size is given as \"w l\" (a plane's slab)")]
         public float thickness = 1f;
         public override ShapeSize Bake() => new ShapeSize
         {
@@ -79,18 +80,21 @@ namespace RipNRage.Engine.Ecs.Physics
 
     public sealed class StandOnBaseConfig : ComponentConfig<StandOnBase>
     {
+        [InspectRange(0, 1, 0.005f), InspectTip("a hair above the floor so it does not start intersecting")]
         public float clearance = 0.02f;
         public override StandOnBase Bake() => new StandOnBase { Clearance = clearance };
     }
 
     public sealed class HingeOnEdgeConfig : ComponentConfig<HingeOnEdge>
     {
+        [InspectTip("the edge the hinge runs along: left / right turn about up, top / bottom about right")]
         public BoxEdge edge = BoxEdge.Left;
         public override HingeOnEdge Bake() => new HingeOnEdge { Edge = edge };
     }
 
     public sealed class HangsFromConfig : ComponentConfig<HangsFrom>
     {
+        [InspectTip("metres below the hook; degrees swung out to start")]
         public float length = 1f, startAngle;
         public override HangsFrom Bake() => new HangsFrom { Length = length, StartAngle = startAngle };
         public override HangsFrom Bake(in BakeContext ctx) =>
@@ -103,6 +107,7 @@ namespace RipNRage.Engine.Ecs.Physics
         public JointKind kind = JointKind.Ball;
         /// <summary>The props by name (a level targetname); an empty "connected" joins the world.</summary>
         public EntityRef body, connected;
+        [InspectTip("hinge / slider axis in the connector's own space (its angle applies)")]
         public float[] axis = { 0, 1, 0 };
         public float[] connectedAnchor;
         public float breakForce, breakTorque;
@@ -111,6 +116,7 @@ namespace RipNRage.Engine.Ecs.Physics
         public float motorSpeed, motorForce = 100f;
         public float springStiffness, springDamping = 1f, springTarget;
         public bool rope;
+        [InspectTip("NaN = taken from how far apart the bodies are now")]
         public float minDistance = float.NaN, maxDistance = float.NaN;
         public float stiffness = 50f, damping = 2f, restLength = -1f;
 

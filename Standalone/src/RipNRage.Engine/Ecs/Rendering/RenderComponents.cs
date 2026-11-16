@@ -76,8 +76,11 @@ namespace RipNRage.Engine.Ecs.Rendering
 
     public sealed class CameraLensConfig : ComponentConfig<CameraLens>
     {
+        [InspectTip("vertical field of view in degrees; near / far clip planes in metres")]
         public float fov = 72f, near = 0.05f, far = 2000f;
+        [InspectColor]
         public float[] background = { 0.19f, 0.3f, 0.47f, 1f };
+        [InspectTip("the highest-priority lens is the one that renders")]
         public int priority;
         public override CameraLens Bake() => new CameraLens { FieldOfView = fov, Near = near, Far = far, Background = ConfigUtil.Color(background), Priority = priority };
     }
@@ -85,10 +88,14 @@ namespace RipNRage.Engine.Ecs.Rendering
     public sealed class SpriteRenderConfig : ComponentConfig<SpriteRender>
     {
         /// <summary>Sprite reference as SpriteLibrary resolves it ("Atlas/name" or a loose sprite path).</summary>
+        [InspectAsset(AssetKind.Sprite), InspectTip("Atlas/name, or a registered loose sprite")]
         public string sprite;
+        [InspectColor]
         public float[] color = { 1, 1, 1, 1 };
+        [InspectTip("billboard faces the camera; lit takes the scene lighting; fullBright ignores it")]
         public bool flipX, flipY, billboard, lit, castsShadow = true, fullBright;
         public float billboardRoll;
+        [InspectRange(-100, 100, 1), InspectTip("draw order among sprites at the same depth")]
         public int sortingOrder;
         public RenderLayer layer;
         public override SpriteRender Bake() => new SpriteRender
@@ -103,14 +110,21 @@ namespace RipNRage.Engine.Ecs.Rendering
     {
         /// <summary>A <see cref="MeshLibrary"/> name ("box", "plane", a sized form, or an .obj). Empty = a shape
         /// component (<see cref="BoxMesh"/>, <see cref="PlaneMesh"/>) names it as the entity is created.</summary>
+        [InspectAsset(AssetKind.Mesh), InspectTip("box, plane, box:cx,cy,cz:sx,sy,sz@uv, plane:WxL@uv, a registered name or an .obj; empty when a BoxMesh / PlaneMesh names it")]
         public string mesh;
         /// <summary>Texture path under assets (null = white).</summary>
+        [InspectAsset(AssetKind.Texture), InspectTip("a path under assets/; empty = white")]
         public string texture;
         /// <summary>A <see cref="MaterialLibrary"/> name (null = the default lit material). 10.3a: the lamp head's pulse.</summary>
+        [InspectAsset(AssetKind.Material)]
         public string material;
+        [InspectColor]
         public float[] color = { 1, 1, 1, 1 };
+        [InspectRange(0.01f, 100, 0.01f)]
         public float[] uvScale = { 1, 1 };
+        [InspectRange(0, 10, 0.05f), InspectTip("glow added on top of the lighting")]
         public float emissive;
+        [InspectTip("occluder: this mesh hides what is behind it for culling")]
         public bool castsShadow = true, transparent, occluder;
         public RenderLayer layer;
         public override MeshRender Bake() => new MeshRender
@@ -133,7 +147,9 @@ namespace RipNRage.Engine.Ecs.Rendering
     public sealed class LightSourceConfig : ComponentConfig<LightSource>
     {
         public LightType type = LightType.Point;
+        [InspectColor]
         public float[] color = { 1, 1, 1, 1 };
+        [InspectRange(0, 200, 0.05f), InspectTip("intensity (brightness) and range (metres)")]
         public float intensity = 1f, range = 10f;
         public override LightSource Bake() => new LightSource { Type = type, Color = ConfigUtil.Color(color), Intensity = intensity, Range = range };
     }
@@ -159,6 +175,8 @@ namespace RipNRage.Engine.Ecs.Rendering
         private static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
 
         public static void Register(string name, Mesh mesh) => _meshes[name] = mesh;
+        /// <summary>The names registered or built so far (the editors' pickers; the sized forms are typed).</summary>
+        public static IEnumerable<string> Names => _meshes.Keys;
 
         /// <summary>The name of a box mesh with this centre, size and UV scale (what <see cref="Get"/> parses).</summary>
         public static string BoxName(Vector3 center, Vector3 size, float uvScale = 1f) =>

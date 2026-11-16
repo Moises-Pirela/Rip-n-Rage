@@ -199,6 +199,8 @@ namespace RipNRage.Engine.Graphics
         }
 
         public bool TryGet(string spriteName, out Sprite sprite) => _sprites.TryGetValue(spriteName, out sprite);
+        /// <summary>Every sprite name in the atlas (the editors' pickers).</summary>
+        public IEnumerable<string> Names => _sprites.Keys;
 
         /// <summary>Creates an empty atlas over a texture so sprites generated in code can be registered like TexturePacker ones.</summary>
         public static SpriteAtlas Create(string name, Texture2D texture) => new SpriteAtlas { Name = name, Texture = texture };

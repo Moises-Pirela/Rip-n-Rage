@@ -67,17 +67,25 @@ namespace RipNRage.Engine.Ecs.Physics
     public sealed class JointConfig : ComponentConfig<Joint>
     {
         public JointKind kind = JointKind.Ball;
+        [InspectTip("where the joint sits on this body (local metres) and the hinge / slider axis (local)")]
         public float[] anchor = { 0, 0, 0 }, axis = { 0, 1, 0 };
         /// <summary>Null = computed from the poses at creation.</summary>
+        [InspectTip("on the connected body (its local space), or in world space when joined to the world; empty = computed from the poses")]
         public float[] connectedAnchor;
         /// <summary>0 = unbreakable.</summary>
+        [InspectTip("N / N·m; 0 = unbreakable")]
         public float breakForce, breakTorque;
         public bool collideConnected;
         public float hertz, dampingRatio;
+        [InspectTip("[min, max] degrees (hinge) or metres (slider); empty = free")]
         public float[] limits;
+        [InspectTip("deg/s or m/s; the force / torque it may use; non-zero speed switches the motor on")]
         public float motorSpeed, motorForce = 100f; public bool motorFreeSpin;
+        [InspectTip("a spring pulling to springTarget (deg or m); stiffness > 0 switches it on")]
         public float springStiffness, springDamping = 1f, springTarget;
+        [InspectTip("distance / spring reach, metres; -1 = measured at creation; rope slackens below max")]
         public float minDistance = -1f, maxDistance = -1f; public bool rope;
+        [InspectTip("spring joints: N/m, N·s/m, metres (-1 = measured at creation)")]
         public float stiffness = 50f, damping = 2f, restLength = -1f;
 
         public override Joint Bake()

@@ -35,7 +35,9 @@ namespace RipNRage.Engine.Ecs.Audio
     public sealed class AudioEmitterConfig : ComponentConfig<AudioEmitter>
     {
         /// <summary>Asset path of the clip (wav / mp3 under assets).</summary>
+        [InspectAsset(AssetKind.Sound)]
         public string clip;
+        [InspectTip("volume 0..1; pitch 1 = as recorded")]
         public float volume = 1f, pitch = 1f;
         public bool loop, playOnStart;
         public override AudioEmitter Bake() => new AudioEmitter

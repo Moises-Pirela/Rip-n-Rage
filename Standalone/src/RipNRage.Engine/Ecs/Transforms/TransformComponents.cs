@@ -42,9 +42,12 @@ namespace RipNRage.Engine.Ecs.Transforms
 
     public sealed class LocalTransformConfig : ComponentConfig<LocalTransform>
     {
+        [InspectTip("metres, relative to the parent (the placed origin for a root)")]
         public float[] position = { 0, 0, 0 };
         /// <summary>Euler angles in degrees.</summary>
+        [InspectRange(-360, 360, 1)]
         public float[] rotation = { 0, 0, 0 };
+        [InspectRange(0.001f, 100, 0.01f)]
         public float[] scale = { 1, 1, 1 };
         public override LocalTransform Bake() => new LocalTransform
         {

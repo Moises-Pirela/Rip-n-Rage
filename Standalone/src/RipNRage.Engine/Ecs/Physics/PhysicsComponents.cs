@@ -122,15 +122,22 @@ namespace RipNRage.Engine.Ecs.Physics
     public sealed class BodyConfig : ComponentConfig<Body>
     {
         public BodyKind kind = BodyKind.Dynamic;
+        [InspectRange(0.01f, 10000, 0.1f), InspectTip("kilograms")]
         public float mass = 1f;
+        [InspectTip("velocity lost per second, linear and angular")]
         public float linearDamping = 0.05f, angularDamping = 0.1f;
         public bool useGravity = true;
+        [InspectRange(-5, 5, 0.05f)]
         public float gravityScale = 1f;
         public bool freezeRotation;
+        [InspectTip("Continuous: swept, for small fast things that must not tunnel")]
         public CollisionDetectionMode collisionDetection = CollisionDetectionMode.Discrete;
+        [InspectTip("render between fixed steps (characters and anything the camera follows)")]
         public bool interpolate;
+        [InspectTip("may stop simulating when it comes to rest")]
         public bool canSleep = true;
         /// <summary>Null = the tunables.cfg defaults (<see cref="SolverBody.DefaultSleepThreshold"/> etc.) at bake time.</summary>
+        [InspectTip("empty = the tunables' defaults")]
         public float? sleepThreshold, sleepDelay, maxSpeed, maxAngularSpeed;
 
         public override Body Bake()
@@ -152,6 +159,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
     public sealed class BodyVelocityConfig : ComponentConfig<BodyVelocity>
     {
+        [InspectTip("starting velocity, m/s and rad/s")]
         public float[] linear = { 0, 0, 0 }, angular = { 0, 0, 0 };
         public override BodyVelocity Bake() => new BodyVelocity { Linear = PhysicsConfigUtil.Vec(linear), Angular = PhysicsConfigUtil.Vec(angular) };
     }
@@ -159,17 +167,24 @@ namespace RipNRage.Engine.Ecs.Physics
     public sealed class ColliderShapeConfig : ComponentConfig<ColliderShape>
     {
         public ShapeKind kind = ShapeKind.Box;
+        [InspectTip("offset of the shape from the entity, local metres")]
         public float[] center = { 0, 0, 0 };
+        [InspectRange(0.001f, 5000, 0.01f), InspectTip("a box's full size (ShapeSize may set it)")]
         public float[] size = { 1, 1, 1 };
+        [InspectTip("sphere / capsule radius, capsule total height")]
         public float radius = 0.5f, height = 2f;
         /// <summary>Mesh colliders: a <see cref="MeshLibrary"/> name (shared with rendering).</summary>
+        [InspectAsset(AssetKind.Mesh), InspectTip("a MeshLibrary name for a mesh collider")]
         public string mesh;
         /// <summary>
         /// Convex colliders, local space: the hull's corner points as [x, y, z] triples. With <see cref="planes"/> the
         /// faces are taken as given (brushes: [nx, ny, nz, d], outward normals); without, they are derived from the points.
         /// </summary>
+        [InspectTip("convex hull corners [x,y,z]..., edited in the file")]
         public float[][] vertices;
+        [InspectTip("convex hull faces [nx,ny,nz,d]..., edited in the file")]
         public float[][] planes;
+        [InspectTip("never moves: baked once into the world")]
         public bool isStatic;
 
         public override ColliderShape Bake()
@@ -205,6 +220,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
     public sealed class SurfaceMaterialConfig : ComponentConfig<SurfaceMaterial>
     {
+        [InspectTip("friction at rest / sliding; restitution = bounciness 0..1")]
         public float staticFriction = 0.6f, dynamicFriction = 0.5f, restitution;
         public CombineMode frictionCombine = CombineMode.Average, restitutionCombine = CombineMode.Maximum;
         public override SurfaceMaterial Bake() => new SurfaceMaterial
@@ -216,9 +232,12 @@ namespace RipNRage.Engine.Ecs.Physics
 
     public sealed class CollisionFilterConfig : ComponentConfig<CollisionFilter>
     {
+        [InspectRange(0, 31, 1), InspectTip("collision layer 0..31 (11 walkable, 12 enemies, 14 pickups)")]
         public int layer;
+        [InspectTip("bit mask of the layers this collides with; -1 = all")]
         public int mask = ~0;
         public bool useLayerMatrix = true;
+        [InspectTip("entities sharing a negative group never collide with each other (a ragdoll's pieces)")]
         public int group;
         public override CollisionFilter Bake()
         {

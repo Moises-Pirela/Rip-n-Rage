@@ -183,9 +183,11 @@ namespace RipNRage.Engine.Ecs
         private readonly Dictionary<string, JsonObject> _raw = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _source = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Prefab> _built = new Dictionary<string, Prefab>(StringComparer.OrdinalIgnoreCase);
-        private static readonly JsonSerializerOptions Options = new JsonSerializerOptions
+        /// <summary>How configs read and write JSON: fields, enums by name, <see cref="EntityRef"/> as a string.</summary>
+        public static readonly JsonSerializerOptions Options = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true, IncludeFields = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true,
+            WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
             Converters = { new JsonStringEnumConverter(), new EntityRefConverter() }, // "Point" as well as 1; "sprite" → EntityRef
         };
         private static readonly JsonDocumentOptions DocOptions = new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
@@ -212,6 +214,28 @@ namespace RipNRage.Engine.Ecs
         }
 
         public bool Contains(string name) => _raw.ContainsKey(name);
+
+        /// <summary>The file a prefab came from (null when added as text).</summary>
+        public string SourceOf(string name) => _source.TryGetValue(name, out var f) ? f : null;
+
+        /// <summary>The prefab this one inherits from, or null.</summary>
+        public string BaseOf(string name) => _raw.TryGetValue(name, out var n) ? (string)n["base"] : null;
+
+        /// <summary>Re-reads a prefab from the file it came from (an editor's "revert to file").</summary>
+        public void Reload(string name)
+        {
+            var file = SourceOf(name) ?? throw new InvalidOperationException($"prefab '{name}' did not come from a file");
+            AddJson(File.ReadAllText(file), name, file);
+        }
+
+        /// <summary>An uncached build: fresh config instances an editor may change without touching what the level spawns from.</summary>
+        public Prefab Fresh(string name) => Build(Resolve(name, new HashSet<string>(StringComparer.OrdinalIgnoreCase)), name, name);
+
+        /// <summary>Every config class name a prefab may list (what the editors' "add component" offers).</summary>
+        public static IEnumerable<string> ConfigNames()
+        {
+            foreach (var info in ComponentRegistry.All) if (info.ConfigType != null) yield return info.Type.Name;
+        }
 
         /// <summary>The prefab as its file (and its bases) define it. Cached.</summary>
         public Prefab Get(string name)
@@ -248,6 +272,8 @@ namespace RipNRage.Engine.Ecs
         private static string[] ResolvePath(Node node, string key)
         {
             if (node.Keys.TryGetValue(key, out var alias)) return alias;
+            string last = key.Substring(key.LastIndexOf('/') + 1);
+            if (last.Length > 1 && (last[0] == '+' || last[0] == '-')) return new[] { key }; // add / remove a component
             return key.Contains('.') ? new[] { key } : null;
         }
 
@@ -319,6 +345,16 @@ namespace RipNRage.Engine.Ecs
             for (int i = 0; i < segs.Length - 1; i++)
                 if (!node.Children.TryGetValue(segs[i], out node)) throw new InvalidDataException($"prefab '{prefabName}': key '{key}': no child '{segs[i]}'");
             string last = segs[segs.Length - 1];
+            if (last.Length > 1 && (last[0] == '+' || last[0] == '-'))
+            {
+                // an instance adds a component the prefab lacks ("+Trigger") or drops one it has ("-Body") — 10.6
+                var addType = ComponentRegistry.FindConfig(last.Substring(1)) ?? throw new InvalidDataException($"prefab '{prefabName}': key '{key}': no config '{last.Substring(1)}'");
+                string existing = null;
+                foreach (var k in node.Components.Keys) if (ComponentRegistry.FindConfig(k) == addType) { existing = k; break; }
+                if (last[0] == '+') { if (existing == null) node.Components[addType.Name] = new JsonObject(); }
+                else if (existing != null) node.Components.Remove(existing);
+                return;
+            }
             int dot = last.LastIndexOf('.');
             if (dot <= 0 || dot == last.Length - 1) throw new InvalidDataException($"prefab '{prefabName}': key '{key}': '{last}' is not Config.field");
             string cfgName = last.Substring(0, dot), fieldName = last.Substring(dot + 1);

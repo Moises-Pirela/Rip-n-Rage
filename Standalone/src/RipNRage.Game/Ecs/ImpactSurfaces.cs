@@ -33,6 +33,8 @@ public static class Surfaces
     }
 
     public static string Name(int id) => id > 0 && id < _names.Count ? _names[id] : Default;
+    /// <summary>Every surface name known so far (the editors' pickers).</summary>
+    public static IEnumerable<string> All { get { lock (_names) return new List<string>(_names); } }
 
     /// <summary>The per-face tables of the level brushes, as assets the components hold handles to.</summary>
     public static readonly AssetRegistry<RipNRage.Game.Ecs.BrushFaces> FaceTables = new AssetRegistry<RipNRage.Game.Ecs.BrushFaces>();

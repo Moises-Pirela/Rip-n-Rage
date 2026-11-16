@@ -32,8 +32,10 @@ namespace RipNRage.Engine.Ecs.Effects
 
     public sealed class EffectEmitterConfig : ComponentConfig<EffectEmitter>
     {
+        [InspectAsset(AssetKind.Effect), InspectTip("a particle effect name (vfx/)")]
         public string effect;
         public float[] offset = { 0, 0, 0 };
+        [InspectRange(0.01f, 10, 0.05f)]
         public float scale = 1f;
         public bool backwards;
         public override EffectEmitter Bake()

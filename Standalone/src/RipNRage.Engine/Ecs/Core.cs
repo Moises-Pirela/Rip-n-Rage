@@ -25,7 +25,7 @@ namespace RipNRage.Engine.Ecs
     /// <see cref="Bake(in BakeContext)"/> when the component needs the entity, the pose or a reference (10.1).</summary>
     public abstract class ComponentConfig<T> : IComponentConfig where T : struct, IComponent
     {
-        public Type ComponentType => typeof(T);
+        [System.Text.Json.Serialization.JsonIgnore] public Type ComponentType => typeof(T);
         public abstract T Bake();
         /// <summary>Bake with the spawn context; the default ignores it.</summary>
         public virtual T Bake(in BakeContext ctx) => Bake();

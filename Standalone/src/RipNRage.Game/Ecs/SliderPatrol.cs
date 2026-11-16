@@ -9,6 +9,7 @@ namespace RipNRage.Game.Ecs
 
     public sealed class SliderPatrolConfig : ComponentConfig<SliderPatrol>
     {
+        [InspectTip("reverse the motor at the limits (needs a motor and limits)")]
         public bool enabled = true;
         public override SliderPatrol Bake() => new SliderPatrol { Enabled = enabled };
     }

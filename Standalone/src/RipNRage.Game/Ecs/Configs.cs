@@ -18,7 +18,9 @@ namespace RipNRage.Game.Ecs.Combat
     /// <summary>Hit points. <c>current</c> &lt; 0 = full.</summary>
     public sealed class HealthConfig : ComponentConfig<Health>
     {
+        [InspectRange(1, 100000, 1)]
         public float max = 100f;
+        [InspectTip("-1 = full")]
         public float current = -1f;
         public override Health Bake()
         {
@@ -30,9 +32,12 @@ namespace RipNRage.Game.Ecs.Combat
     /// <summary>Armour. Absent = none at all (the grunt's 0): a prefab without this component is unarmoured.</summary>
     public sealed class ArmorConfig : ComponentConfig<Armor>
     {
+        [InspectRange(1, 100000, 1)]
         public float max = 100f;
+        [InspectTip("-1 = full")]
         public float current = -1f;
         /// <summary>Fraction of a hit the armour takes (0.75 for enemies, 1 for the player).</summary>
+        [InspectRange(0, 1, 0.01f), InspectTip("the fraction of a hit the armour takes while it lasts")]
         public float resistance = 0.75f;
         public override Armor Bake()
         {
@@ -44,7 +49,9 @@ namespace RipNRage.Game.Ecs.Combat
     /// <summary>Where a figure can be hurt: the defaults are the rifleman's sprite (2.25 m, head above 0.76).</summary>
     public sealed class HitboxConfig : ComponentConfig<Hitbox>
     {
+        [InspectRange(0.1f, 10, 0.01f), InspectTip("the figure's full height, metres")]
         public float height = 2.25f;
+        [InspectRange(0, 1, 0.01f), InspectTip("hits above this fraction of the height are headshots")]
         public float headFraction = 0.76f;
         public override Hitbox Bake() => new Hitbox { Height = height, HeadFraction = headFraction };
     }
@@ -55,6 +62,7 @@ namespace RipNRage.Game.Ecs.AI
     /// <summary>Which enemy this is, by classname (<c>monster_rifleman</c>) — the file never names a table index.</summary>
     public sealed class EnemyConfig : ComponentConfig<Enemy>
     {
+        [InspectAsset(AssetKind.Classname), InspectTip("the enemy class, by classname (monster_rifleman)")]
         public string kind;
         public override Enemy Bake() => new Enemy { Kind = KindOf(kind) };
 
@@ -72,6 +80,7 @@ namespace RipNRage.Game.Ecs.AI
     /// <summary>Facing: the instance rotation (the map's <c>angle</c>) plus an optional offset.</summary>
     public sealed class HeadingConfig : ComponentConfig<Heading>
     {
+        [InspectRange(-360, 360, 1), InspectTip("added to the instance's facing (the map's angle)")]
         public float yaw;
         public override Heading Bake() => new Heading { Yaw = yaw };
         public override Heading Bake(in BakeContext ctx) => new Heading { Yaw = yaw + (ctx.HasEntity ? ctx.Rotation.eulerAngles.y : 0f) };
@@ -94,6 +103,7 @@ namespace RipNRage.Game.Ecs.AI
     {
         public AiState state = AiState.Idle;
         /// <summary>Classname salting the seed (the enemy's own kind; empty = 0, the first kind).</summary>
+        [InspectAsset(AssetKind.Classname), InspectTip("salts the placement seed, exactly as the kind did")]
         public string monster;
         public override AiBrain Bake() => new AiBrain { State = state };
         public override AiBrain Bake(in BakeContext ctx) =>
@@ -112,12 +122,19 @@ namespace RipNRage.Game.Ecs.AI
     /// <summary>A wave spawner; <c>monster</c> is a classname, the facing comes from the instance rotation.</summary>
     public sealed class SpawnerConfig : ComponentConfig<Spawner>
     {
+        [InspectAsset(AssetKind.Classname), InspectTip("what it spawns")]
         public string monster = "monster_rifleman";
+        [InspectRange(0, 200, 1), InspectTip("monsters this spawner ever makes")]
         public int count = 3;
+        [InspectRange(0, 120, 0.1f), InspectTip("seconds between spawns")]
         public float interval = 5f;
+        [InspectRange(0, 50, 0.1f), InspectTip("scatter around the origin, metres")]
         public float radius = 2f;
+        [InspectRange(0, 500, 1), InspectTip("0 = starts at once; else waits for the player within this distance")]
         public float activateRange;
+        [InspectRange(0, 100, 1), InspectTip("standing at once (corpses count until they dissolve)")]
         public int maxAlive = 4;
+        [InspectRange(-360, 360, 1), InspectTip("added to the instance's facing (the map's angle)")]
         public float yaw;
         public override Spawner Bake() => Make(yaw);
         public override Spawner Bake(in BakeContext ctx) => Make(yaw + (ctx.HasEntity ? ctx.Rotation.eulerAngles.y : 0f));
@@ -143,6 +160,7 @@ namespace RipNRage.Game.Ecs
     {
         public AmmoType ammo = AmmoType.LIGHT;
         /// <summary>0 = what the type gives (<see cref="Pickups.ByType"/>).</summary>
+        [InspectTip("0 = what the type gives (the table)")]
         public int amount;
         public override Pickup Bake() => new Pickup { Ammo = ammo, Amount = amount > 0 ? amount : Pickups.ByType[(int)ammo].Amount };
     }
@@ -150,6 +168,7 @@ namespace RipNRage.Game.Ecs
     /// <summary>The hover, with its phase seeded from where the pickup was placed (7.5) and salted by the ammo type.</summary>
     public sealed class BobConfig : ComponentConfig<Bob>
     {
+        [InspectTip("the local height it hovers around")]
         public float baseY;
         /// <summary>Salts the phase; the pickups use their own type, as the code spawn did.</summary>
         public AmmoType ammo = AmmoType.LIGHT;
@@ -169,6 +188,7 @@ namespace RipNRage.Game.Ecs
     {
         /// <summary>"w h l", or "w l" with <see cref="depth"/> between them (the plane classes' form).</summary>
         public float[] size = { 200f, 100f, 200f };
+        [InspectRange(0, 2000, 1), InspectTip("how far the water reaches down when size is \"w l\"")]
         public float depth = 100f;
         public override WaterVolume Bake() => From(Vector3.zero);
         public override WaterVolume Bake(in BakeContext ctx) => From(ctx.HasEntity ? ctx.Position : Vector3.zero);
@@ -188,6 +208,7 @@ namespace RipNRage.Game.Ecs
     /// <summary>What a bullet kicks up off this collider, by surface name (the VFX bindings' spelling).</summary>
     public sealed class ImpactSurfaceConfig : ComponentConfig<ImpactSurface>
     {
+        [InspectAsset(AssetKind.Surface), InspectTip("what a bullet kicks up (the VFX bindings' spelling)")]
         public string surface = Surfaces.Default;
         public override ImpactSurface Bake() => new ImpactSurface { Id = Surfaces.Id(surface) };
     }

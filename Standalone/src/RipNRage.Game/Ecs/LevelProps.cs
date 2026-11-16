@@ -18,6 +18,7 @@ namespace RipNRage.Game.Ecs
     public sealed class LevelTexturedConfig : ComponentConfig<LevelTextured>
     {
         /// <summary>A name from the level texture table ("planks", "orange", "sand"...).</summary>
+        [InspectAsset(AssetKind.LevelTexture)]
         public string texture = "grid";
         public override LevelTextured Bake() => new LevelTextured { Texture = LevelTextures.IndexOf(texture) };
     }

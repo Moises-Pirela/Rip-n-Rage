@@ -59,8 +59,11 @@ namespace RipNRage.Engine.Ecs.Physics
 
     public sealed class CharacterMotorConfig : ComponentConfig<CharacterMotor>
     {
+        [InspectTip("Player / Enemy track tunables.cfg live; Custom uses the fields here")]
         public CharacterProfileKind profile = CharacterProfileKind.Custom;
+        [InspectTip("the spring the capsule rides on: height above the ground, its frequency and damping, how hard it may push, how far below it still counts as ground, the steepest walkable slope")]
         public float rideHeight = 0.5f, rideFrequency = 6f, rideDamping = 0.8f, maxRideAcceleration = 90f, groundTolerance = 0.25f, maxSlopeAngle = 50f;
+        [InspectTip("m/s² on the ground and in the air, braking, seconds a jump is still honoured after leaving the ground")]
         public float acceleration = 70f, airAcceleration = 20f, stopDeceleration = 60f, jumpGrace = 0.25f;
         public int groundMask = ~0;
         public float gravityScale = 1f;
@@ -284,9 +287,11 @@ namespace RipNRage.Engine.Ecs.Physics
     {
         public float[] velocity = { 0, 0, 0 };
         public bool useGravity = true; public float gravityScale = 1f, drag, terminalSpeed = 60f;
+        [InspectTip("what a hit does: Slide along, Bounce off, or Stop; the bounce's energy, friction and the speed below which it rests")]
         public MotionMode mode = MotionMode.Slide; public float bounciness = 0.4f, friction = 0.2f, restSpeed = 0.6f;
         public int collisionMask = ~0; public bool useLayerMatrix = true, collideWithTriggers;
         public float[] halfExtents = { 0, 0, 0 }, center = { 0, 0, 0 };
+        [InspectTip("how heavy it feels to bodies it pushes; the steepest floor; a step it climbs; how far it snaps down to stay grounded; the skin gap")]
         public float pushMass = 10f, floorMaxAngle = 46f, stepHeight, snapLength, skin; public int maxSlides = 4;
         public override KinematicMover Bake() => new KinematicMover
         {
