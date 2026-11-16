@@ -17,7 +17,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// (<see cref="IsGrounded"/> ...); the <see cref="CharacterMotorSystem"/> consumes intent each fixed step.
     /// Profile kinds Player / Enemy track the tunables.cfg [character] / [enemy_character] values live.
     /// </summary>
-    public struct CharacterMotor : IComponent
+    [NotInPreview] public struct CharacterMotor : IComponent
     {
         public CharacterProfileKind Profile;
         // ---- ride + motor tunables (overwritten from the profile unless Custom) ----
@@ -263,7 +263,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// <see cref="ColliderShape"/> (sphere / capsule / box), which also makes it visible to triggers and queries.
     /// Movers are roots and must not also have a <see cref="Body"/>.
     /// </summary>
-    public struct KinematicMover : IComponent
+    [NotInPreview] public struct KinematicMover : IComponent
     {
         public Vector3 Velocity;
         public bool UseGravity; public float GravityScale, Drag, TerminalSpeed;

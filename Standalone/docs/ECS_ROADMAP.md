@@ -24,6 +24,7 @@ then start at the first unchecked layer.
 | Priority (set during layer 2) | **The ECS comes first; the game may be broken while we refactor.** Legacy code is removed as soon as its ECS replacement exists — or before, if nothing replaces it yet. Gameplay that depended on it goes inert until its layer ports it. Don't spend effort keeping legacy gameplay working |
 | Editors | Editor integration of configs comes **later** (after gameplay) |
 | Assets in components | **Handles, not references**: `AssetHandle<T>` into an `AssetRegistry<T>` (`Ecs/Assets.cs`); registries keep the name a config baked from (`NameOf`) so handles serialise back to config data. Render registries: `RenderAssets`. Physics collider shapes reuse the same pattern |
+| Prefabs (set in layer 10) | **Entity trees** with named children; configs reference entities **by name** through a `BakeContext` (`EntityRef`); a `.map` entity = **prefab + field overrides** (`Config.field` paths, short keys through the prefab's `keys` aliases); the editor preview = the prefab minus `[NotInPreview]` |
 
 ## Status
 
@@ -1760,6 +1761,12 @@ acceptable where drawing moves onto entities.
 - **Q6 — the decisions table** gets a row once 10.1 lands: *Prefabs: entity trees with named children; references by
   name through a bake context; a `.map` entity = prefab + field overrides.*
 
+**Answered at review (2026-11-16)**: every recommendation stands — Q1 aliases + paths, Q2 the player stays code,
+Q3 save-as-prefab and hot reload in 10.7 (in-place defaults a stretch), Q4 `+` / `-` keep their two fields, Q5
+`prefabs/level/`, Q6 the decisions row is in the table. `native/linux-x64/libclay.so` is bundled (was untracked since
+the Clay UI port). **Order**: 10.1 was asked for first; 10.0 (the manifest) must land before 10.3, the first step
+that changes what the level builds.
+
 **Steps** (one commit + review stop each)
 
 - [ ] 10.0 **Instrument** — the level manifest. `--dump-level OUT.level` (and the `[test]` line `level: N entities,
@@ -1769,15 +1776,37 @@ acceptable where drawing moves onto entities.
       across sweeps like the probes. The editor joins the sweep: `edit` (dock.map, 90 frames, screenshot) and the
       existing `session` script, their `[test]` lines and shots compared like the game's. **Baseline**: the manifest
       of `dock.map` as the code spawns build it — the truth the ports reproduce.
-- [ ] 10.1 **Prefab trees, references, overrides (engine)**. `children`, `Prefab.Spawn(World, pose)` immediate with
-      the named-children result, `Instantiate(CommandBuffer)` kept (reserved entities resolve the same way),
-      `BakeContext` + `Bake(in ctx)`, `EntityRef`, the chained `Named` resolver, `PrefabLibrary.Get(name, overrides)`
-      with typed conversion from strings (float / int / bool / enum / string / `float[]` "1 2 3" / `EntityRef`),
-      `keys` aliases, path validation (an unknown config or field throws with the prefab and key named),
-      `[NotInPreview]` + `Prefab.SpawnPreview`. Asset-by-name bakes must reuse handles (the registry is append-only:
-      intern under the name, `deathf8` pins it). `Layer10Checks` in EngineChecks: tree parented and posed, child
-      merge under `base`, refs resolved (child / root / chained / missing → error), overrides typed and merged last,
-      alias and path both reach a field, the preview strips, command-buffer spawn equals the immediate spawn.
+- [x] 10.1 **Prefab trees, references, overrides (engine)** (done; `Ecs/Prefab.cs`, `Ecs/Core.cs`).
+      - **Trees**: `children` (an object: name → node with `components` / `children`), merged by name under `base`;
+        every child is parented to the node above and gets the identity `LocalTransform` when it declares none.
+        `Prefab.Spawn(world, position, rotation, named)` builds the tree **immediately** and returns a
+        `PrefabInstance` (root, `All`, children by name, `root` included); `Instantiate(commands, world, pose, named)`
+        is the same through a command buffer (reserved handles until playback — references resolve to them and are
+        right once played back). The old `Instantiate(world)` / `Instantiate(commands, world)` still return the root
+        at the prefab's own pose. **Pose composition**: the root's configured transform is an offset above the placed
+        origin, its rotation adds to the yaw; a posed spawn of a prefab without a transform gets one at the pose, a
+        poseless one does not (the layer-0 tests' bare prefabs).
+      - **References**: `ComponentConfig<T>.Bake(in BakeContext)` (default: `Bake()`); the context carries `Self`,
+        `Root`, the instance pose and a `Named` lookup — the tree's children, `root` / `self`, then the spawner's
+        chained resolver (a level's targetnames). `EntityRef` is the config field type (a JSON string); empty = Null,
+        unknown = `KeyNotFoundException` naming the prefab and the name. `HasEntity` tells a bare `Bake()` apart.
+      - **Overrides**: `PrefabLibrary.Get(name, overrides)` applies `(key, text)` pairs last — the key an alias from
+        the prefab's `keys` or a path (`Config.field`, `child/Config.field`); the text converts by the field's type
+        (numbers, bools from 0 / 1 / true / false, enums by name, strings, `EntityRef`, `float[]` from "1 2 3",
+        nullables with "null"). Unknown config / field / child / alias and a value of the wrong type throw
+        `InvalidDataException` naming the prefab and the key. `ResolveKey(prefab, key)` tells a caller whether a key
+        is the prefab's (alias or path) or its own (`origin`, `angle`, a derived class's). `description` and `keys`
+        inherit through `base`. Overridden builds are not cached; the plain `Get(name)` still is.
+      - **Preview**: `[NotInPreview]` on component structs (`ComponentInfo.NotInPreview`); `Prefab.SpawnPreview`
+        skips their configs. Marked: `Body`, `BodyVelocity`, `ColliderShape`, `Joint`, `CharacterMotor`,
+        `KinematicMover`, `Trigger`, `ReportCollisions` (the game's in 10.2).
+      - **Library**: a name defined in two files throws (Q5); the same file may redefine its own (a reload).
+      - **Checks**: `Layer10Checks.cs`, 42 assertions (232 engine total): the tree parented and posed through the
+        hierarchy, references to a grandchild / `root` / a chained name, the dangling and the empty reference, child
+        merge under `base`, aliases and paths on root and child fields, every conversion, every error path, the
+        preview strip, the buffered spawn equal to the immediate one, the pose reaching a config, the layer-0 API,
+        reserved and duplicate names, the two-files clash. Game checks 415 unchanged; `walk` / `saveload` / `rocket` /
+        `menu` gates and the four shots pass; `--ecs-demo` spawns its 129 entities through the old API.
 - [ ] 10.2 **Configs for the game components the level places.** `Health`, `Armor`, `Hitbox`, `Enemy` (kind by
       classname), `Heading`, `Perception`, `AiBrain` (seeded from the instance pose — the placement seed of 7.5 stays
       exact), `AiIntent`, `EnemyWeapon`, `EnemyVisual` (`sprite` ref), `SpriteFx`, `Spawner` (monster by classname),

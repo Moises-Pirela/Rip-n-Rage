@@ -10,7 +10,8 @@ compatible build. If a bundled library fails to load, NativeLoader falls back to
 | `osx-arm64/` | `libglfw.3.dylib` | GLFW 3.4 | official release `glfw-3.4.bin.MACOS.zip` (`lib-arm64`) |
 | `osx-x64/` | `libglfw.3.dylib` | GLFW 3.4 | official release `glfw-3.4.bin.MACOS.zip` (`lib-x86_64`) |
 | `osx-arm64/`, `osx-x64/` | `libclay.dylib` | Clay v0.14 | built from `src/clay` (vendored `clay.h`, github.com/nicbarker/clay) with `tools/build-clay.sh` |
-| `linux-x64/`, `win-x64/` | `libclay.so`, `clay.dll` | Clay v0.14 | not committed yet: built by `tools/build-clay.sh` / `tools/build-clay.cmd` or the CI `clay-native` job |
+| `linux-x64/` | `libclay.so` | Clay v0.14 | built from `src/clay` with `tools/build-clay.sh` on x64 Linux (gcc, glibc 2.34+) |
+| `win-x64/` | `clay.dll` | Clay v0.14 | not committed yet: built by `tools/build-clay.cmd` or the CI `clay-native` job |
 
 macOS has no bundled OpenAL: the loader uses Homebrew's `openal-soft` if installed, otherwise the system
 `OpenAL.framework`.

@@ -17,7 +17,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// legacy RigidBody. An entity with a <see cref="ColliderShape"/> but no Body is static
     /// geometry. Velocities live in <see cref="BodyVelocity"/> so systems that only steer don't write the whole body.
     /// </summary>
-    public struct Body : IComponent
+    [NotInPreview] public struct Body : IComponent
     {
         public BodyKind Kind;
         public float Mass;
@@ -32,7 +32,7 @@ namespace RipNRage.Engine.Ecs.Physics
         public float MaxSpeed, MaxAngularSpeed;
     }
 
-    public struct BodyVelocity : IComponent
+    [NotInPreview] public struct BodyVelocity : IComponent
     {
         public Vector3 Linear, Angular;
     }
@@ -43,7 +43,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// The collision shape in the entity's local space (scaled by <see cref="Transforms.LocalToWorld"/> like the legacy
     /// colliders). Convex / mesh data is shared and referenced by handle.
     /// </summary>
-    public struct ColliderShape : IComponent
+    [NotInPreview] public struct ColliderShape : IComponent
     {
         public ShapeKind Kind;
         public Vector3 Center;
@@ -77,13 +77,13 @@ namespace RipNRage.Engine.Ecs.Physics
     }
 
     /// <summary>Tag: the collider reports overlaps instead of producing contacts.</summary>
-    [SparseComponent] public struct Trigger : IComponent { }
+    [SparseComponent, NotInPreview] public struct Trigger : IComponent { }
 
     /// <summary>Tag set by the simulation while the body sleeps (toggles often: sparse).</summary>
     [SparseComponent] public struct Sleeping : IComponent { }
 
     /// <summary>Opt-in: the body's contacts are posted as <see cref="CollisionEvent"/>s after each step (thousands of contacts otherwise).</summary>
-    [SparseComponent] public struct ReportCollisions : IComponent { }
+    [SparseComponent, NotInPreview] public struct ReportCollisions : IComponent { }
 
     /// <summary>A shared convex collider: the hull (queries, bounds) plus the faces / vertices it was built from (narrow-phase polytopes).</summary>
     public sealed class ConvexColliderAsset

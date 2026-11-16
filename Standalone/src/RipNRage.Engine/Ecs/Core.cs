@@ -9,22 +9,84 @@ namespace RipNRage.Engine.Ecs
 
     /// <summary>
     /// Authoring data for exactly one runtime component (a class, serialisable to JSON prefabs and editable by
-    /// tools). <see cref="Bake"/> produces the struct an entity starts with.
+    /// tools). <see cref="ComponentConfig{T}.Bake()"/> produces the struct an entity starts with; a prefab spawn
+    /// hands every config a <see cref="BakeContext"/> (the entity, the instance pose, the named entities of the tree).
     /// </summary>
     public interface IComponentConfig
     {
         Type ComponentType { get; }
         /// <summary>Adds the baked component to <paramref name="entity"/> through <paramref name="commands"/>.</summary>
-        void BakeInto(CommandBuffer commands, Entity entity);
+        void BakeInto(CommandBuffer commands, Entity entity, in BakeContext ctx);
+        /// <summary>Adds the baked component to <paramref name="entity"/> now (a build, outside the systems).</summary>
+        void BakeInto(World world, Entity entity, in BakeContext ctx);
     }
 
-    /// <summary>Typed config: implement <see cref="Bake"/>; the plumbing is provided.</summary>
+    /// <summary>Typed config: implement <see cref="Bake()"/>; the plumbing is provided. Override
+    /// <see cref="Bake(in BakeContext)"/> when the component needs the entity, the pose or a reference (10.1).</summary>
     public abstract class ComponentConfig<T> : IComponentConfig where T : struct, IComponent
     {
         public Type ComponentType => typeof(T);
         public abstract T Bake();
-        public void BakeInto(CommandBuffer commands, Entity entity) => commands.Add(entity, Bake());
+        /// <summary>Bake with the spawn context; the default ignores it.</summary>
+        public virtual T Bake(in BakeContext ctx) => Bake();
+        public void BakeInto(CommandBuffer commands, Entity entity, in BakeContext ctx) => commands.Add(entity, Bake(in ctx));
+        public void BakeInto(World world, Entity entity, in BakeContext ctx) => world.Add(entity, Bake(in ctx));
     }
+
+    /// <summary>
+    /// What a config may know while it bakes inside a prefab spawn (10.1): the entity it bakes onto, the root of the
+    /// tree, the instance pose (where the prefab was placed — a seed, a floor height) and a lookup for entities by
+    /// name: the tree's children, <c>root</c> / <c>self</c>, then whatever the spawner chained (a level's
+    /// targetnames). Outside a prefab (<c>new XConfig().Bake()</c>) there is no context.
+    /// </summary>
+    public readonly struct BakeContext
+    {
+        public readonly Entity Self, Root;
+        public readonly Vector3 Position;
+        public readonly Quaternion Rotation;
+        private readonly Func<string, Entity> _named;
+        /// <summary>The prefab being spawned (for error messages).</summary>
+        public readonly string Prefab;
+
+        public BakeContext(Entity self, Entity root, Vector3 position, Quaternion rotation, Func<string, Entity> named, string prefab)
+        { Self = self; Root = root; Position = position; Rotation = rotation; _named = named; Prefab = prefab; }
+
+        /// <summary>True inside a prefab spawn (a bare <c>Bake()</c> has <c>default</c>).</summary>
+        public bool HasEntity => !Self.IsNull;
+
+        /// <summary>The entity called <paramref name="name"/>: a child of the tree, <c>root</c> / <c>self</c>, or one the
+        /// spawner knows. Null / empty → <see cref="Entity.Null"/> (no reference); an unknown name throws.</summary>
+        public Entity Resolve(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return Entity.Null;
+            if (name.Equals("self", StringComparison.OrdinalIgnoreCase)) return Self;
+            if (name.Equals("root", StringComparison.OrdinalIgnoreCase)) return Root;
+            var e = _named?.Invoke(name) ?? Entity.Null;
+            if (e.IsNull) throw new System.Collections.Generic.KeyNotFoundException($"prefab '{Prefab ?? "?"}': no entity named '{name}'");
+            return e;
+        }
+    }
+
+    /// <summary>
+    /// A config field that names another entity (10.1): a child of the prefab tree (<c>"sprite"</c>), <c>root</c>,
+    /// or a name the spawner resolves (a level targetname). JSON: a string. Empty = no entity.
+    /// </summary>
+    public struct EntityRef
+    {
+        public string name;
+        public EntityRef(string name) { this.name = name; }
+        public static implicit operator EntityRef(string name) => new EntityRef(name);
+        public bool IsEmpty => string.IsNullOrEmpty(name);
+        public Entity Resolve(in BakeContext ctx) => ctx.Resolve(name);
+        public override string ToString() => name ?? "";
+    }
+
+    /// <summary>
+    /// A component that simulates or acts (a body, a joint, a brain, a trigger): a prefab's editor preview is spawned
+    /// without it (<see cref="Prefab.SpawnPreview"/>), so the editor shows what a thing looks like and nothing moves.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Struct)]
+    public sealed class NotInPreviewAttribute : Attribute { }
 
     /// <summary>
     /// Stored in a per-type sparse set instead of the archetype tables: adding / removing it never moves the entity

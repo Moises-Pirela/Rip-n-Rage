@@ -28,7 +28,7 @@ namespace RipNRage.Engine.Ecs.Physics
     /// One joint per entity (ragdolls and chains joint each piece to its parent). Parameters (motor speed, limits...)
     /// may change at runtime; the <see cref="JointSystem"/> copies them into the solver every step.
     /// </summary>
-    public struct Joint : IComponent
+    [NotInPreview] public struct Joint : IComponent
     {
         public JointKind Kind;
         public Entity Connected;

@@ -12,6 +12,7 @@ namespace RipNRage.Engine.Ecs
         public int Id;            // the signature bit
         public bool Sparse;
         public Type ConfigType;   // the IComponentConfig that bakes it (null = runtime-only)
+        public bool NotInPreview; // [NotInPreview]: a prefab's editor preview leaves it out
         public override string ToString() => $"{Type.Name}#{Id}{(Sparse ? " sparse" : "")}";
     }
 
@@ -69,7 +70,11 @@ namespace RipNRage.Engine.Ecs
         {
             if (_byType.TryGetValue(t, out var info)) return info;
             if (_byId.Count >= Signature.Capacity) throw new InvalidOperationException($"more than {Signature.Capacity} component types");
-            info = new ComponentInfo { Type = t, Id = _byId.Count, Sparse = t.GetCustomAttribute<SparseComponentAttribute>() != null };
+            info = new ComponentInfo
+            {
+                Type = t, Id = _byId.Count, Sparse = t.GetCustomAttribute<SparseComponentAttribute>() != null,
+                NotInPreview = t.GetCustomAttribute<NotInPreviewAttribute>() != null,
+            };
             _byType[t] = info; _byId.Add(info);
             return info;
         }
