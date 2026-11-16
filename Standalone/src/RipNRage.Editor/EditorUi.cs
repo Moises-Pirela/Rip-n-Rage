@@ -54,11 +54,12 @@ namespace RipNRage.Editor
             {
                 _layoutBuilt = true;
                 if (!_imgui.HasSavedLayout)
-                    ImGuiDock.BuildDefaultLayout(dockspace, ImGui.GetWindowSize(), "Tools", null, 0.19f);
+                    ImGuiDock.BuildDefaultLayout(dockspace, ImGui.GetWindowSize(), "Tools", "Entity", 0.19f, 0.28f);
             }
             _imgui.EndDockHost();
 
             DrawToolsPanel();
+            if (showInspector) DrawInspector();
             DrawStatusBar(statusH);
             if (_snapshotPanel) DrawSnapshotWindow();
             if (showHelp) DrawHelpWindow();
@@ -92,6 +93,7 @@ namespace RipNRage.Editor
             }
             if (ImGui.BeginMenu("View"))
             {
+                if (ImGui.MenuItem("Entity inspector", "I", showInspector)) showInspector = !showInspector;
                 if (ImGui.MenuItem("Physics settings...", "F9")) { _physicsPanel.Open = !_physicsPanel.Open; if (_physicsPanel.Open) _physicsPanel.Revert(); }
                 if (ImGui.MenuItem("Help", "F1", showHelp)) showHelp = !showHelp;
                 ImGui.EndMenu();
@@ -322,6 +324,7 @@ namespace RipNRage.Editor
                 Help("LMB on a surface", "Place");
                 Help("LMB on an entity", "Select or drag (Shift vertical)");
                 Help("R / + - / Ctrl+D", "Rotate 45, property, duplicate");
+                Help("Entity window", "Every field of the selection's components; right-click a value to revert it; I toggles it");
             }
             ImGui.SeparatorText("Anywhere");
             Help("P / M / N", "Place the player start, a monster or a spawner at the cursor");

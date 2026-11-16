@@ -73,6 +73,7 @@ namespace RipNRage.Game.Content.Level
     public sealed class RodVisualConfig : ComponentConfig<RodVisual>
     {
         public EntityRef target;
+        [InspectRange(0.005f, 1, 0.005f), InspectTip("the rod's thickness, metres")]
         public float width = 0.07f;
         public override RodVisual Bake() => new RodVisual { Width = width };
         public override RodVisual Bake(in BakeContext ctx) =>

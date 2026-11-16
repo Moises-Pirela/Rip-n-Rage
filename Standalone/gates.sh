@@ -79,7 +79,15 @@ if [ -z "${GATES:-}" ] || [[ " $GATES " == *" edit "* ]]; then
     dotnet src/RipNRage.Editor/bin/Release/net10.0/RipNRageEditor.dll "$OUT/dock.map" --script session --frames 90 \
         --fixed-dt 0.016667 --width 640 --height 360 --screenshot "$OUT/shot-edit.png" > "$OUT/edit.log" 2>&1
     code=$?
-    grep -E '\[test\]|Exception|Fatal' "$OUT/edit.log" > "$OUT/edit.test"
+    grep -E '\[test\]|\[Error\] level|Exception|Fatal' "$OUT/edit.log" > "$OUT/edit.test" # a level error in the preview is a failure of the editor
     if [ $code -ne 0 ]; then echo "FAIL edit (exit $code)"; fail=1; else echo "ok   edit"; fi
+    # 10.6: the Entity window's model — sets, reverts, swaps, copies, adds a component, saves a prefab from an
+    # instance — then saves the map and reads it back. The prefabs are copied too: "save as prefab" writes a file.
+    rm -rf "$OUT/prefabs"; cp -r prefabs "$OUT/prefabs"
+    RIPNRAGE_PREFABS="$OUT/prefabs" dotnet src/RipNRage.Editor/bin/Release/net10.0/RipNRageEditor.dll "$OUT/dock.map" --script properties --frames 60 \
+        --fixed-dt 0.016667 --width 640 --height 360 --screenshot "$OUT/shot-props.png" > "$OUT/props.log" 2>&1
+    code=$?
+    grep -E '\[test\]|\[Error\] level|Exception|Fatal' "$OUT/props.log" > "$OUT/props.test"
+    if [ $code -ne 0 ]; then echo "FAIL properties (exit $code)"; fail=1; else echo "ok   properties"; fi
 fi
 exit $fail

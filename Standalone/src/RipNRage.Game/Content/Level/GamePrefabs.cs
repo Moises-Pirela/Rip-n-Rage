@@ -11,13 +11,19 @@ namespace RipNRage.Game.Content.Level
     public static class GamePrefabs
     {
         private static PrefabLibrary _library;
-        /// <summary>Override the folder (tools and checks); null = found next to the assets.</summary>
-        public static string Directory;
+        /// <summary>Override the folder (tools and checks); null = $RIPNRAGE_PREFABS, else found next to the assets.</summary>
+        public static string Directory = Environment.GetEnvironmentVariable("RIPNRAGE_PREFABS");
 
         public static PrefabLibrary Library => _library ??= Load();
 
         /// <summary>Forgets the loaded prefabs (a reload, or a check that points <see cref="Directory"/> somewhere else).</summary>
         public static void Reset() => _library = null;
+
+        /// <summary>The folder the library was loaded from (where a new prefab file goes).</summary>
+        public static string Folder => Directory ?? Locate();
+
+        /// <summary>The level classes' folder.</summary>
+        public static string LevelFolder => System.IO.Path.Combine(Folder ?? "prefabs", "level");
 
         private static PrefabLibrary Load()
         {

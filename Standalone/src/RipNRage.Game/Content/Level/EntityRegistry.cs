@@ -52,7 +52,20 @@ namespace RipNRage.Game.Content.Level
         public static IReadOnlyList<EntityDefinition> All { get { Init(); return Defs; } }
         public static EntityDefinition Get(string classname) { Init(); return ByName.TryGetValue(classname, out var d) ? d : null; }
 
-        private static EntityDefinition Add(EntityDefinition d) { Defs.Add(d); ByName[d.classname] = d; return d; }
+        private static EntityDefinition Add(EntityDefinition d)
+        {
+            if (ByName.TryGetValue(d.classname, out var old)) Defs[Defs.IndexOf(old)] = d; else Defs.Add(d);
+            ByName[d.classname] = d;
+            return d;
+        }
+
+        /// <summary>A prefab class registered or re-read after its file changed (10.6: the prefab window saved it).</summary>
+        public static EntityDefinition Refresh(string classname)
+        {
+            Init();
+            var old = Get(classname);
+            return AddPrefab(classname, old?.deferred ?? false);
+        }
 
         /// <summary>
         /// A class that is a prefab file (10.3b): what the editor needs comes from the prefab itself — its

@@ -115,10 +115,14 @@ namespace RipNRage.Editor
 
         private void Restore(string text)
         {
+            // keep the selection by index: an undo while editing a property must not drop you out of the panel (10.6)
+            var selected = new List<int>();
+            foreach (var e in _selEntities) { int i = doc.entities.IndexOf(e); if (i >= 0) selected.Add(i); }
             string path = doc.path;
             doc = MapFile.Parse(text);
             doc.path = path;
             ClearSelection();
+            foreach (int i in selected) if (i < doc.entities.Count) _selEntities.Add(doc.entities[i]);
             Rebuild();
         }
 
@@ -249,6 +253,7 @@ namespace RipNRage.Editor
 
             // ---- global keys
             if (Input.GetKeyDown(KeyCode.F1)) showHelp = !showHelp;
+            if (Input.GetKeyDown(KeyCode.I)) showInspector = !showInspector;
             if (Input.GetKeyDown(KeyCode.F5)) Play();
             if (ctrl && Input.GetKeyDown(KeyCode.S)) Save();
             if (ctrl && Input.GetKeyDown(KeyCode.Z)) Undo();

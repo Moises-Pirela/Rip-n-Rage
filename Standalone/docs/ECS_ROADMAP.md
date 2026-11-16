@@ -55,7 +55,7 @@ then start at the first unchecked layer.
   the legacy producer are deleted; the application runs only the World, which drives its own fixed clock; the
   player, the level, the props, cameras, lights, menus, HUD and all four editor tools are entities and screens
   (close-out below)
-- [ ] Layer 10 — Editors on configs **(10.0–10.5 done: the level manifest, prefab trees, the game configs, every level class as components in a file, the worldspawn as a component singleton; 10.6 next)**
+- [ ] Layer 10 — Editors on configs **(10.0–10.6 done: the level manifest, prefab trees, the game configs, every level class as components in a file, the worldspawn singleton, the Entity and Prefab windows; 10.7 next — most of it landed with 10.6)**
 
 ### Pick-up point for the next session (written 2026-11-15, after 9.8; layer 10 is next)
 
@@ -2072,7 +2072,7 @@ that changes what the level builds.
         259 (+5: the `Given` mask, apply-onto-settings, the sky turning headless), game 479 (one fewer: the game
         system that went); the Tick schedule re-pinned (**25 batches**: `WorldspawnSystem` alone after
         `EcsInputSystem`, `SkySpinSystem` gone); the editor runs its session clean.
-- [ ] 10.6 **The editor's Entity window** — spec written 2026-11-16, review before building.
+- [x] 10.6 **The editor's Entity window and the Prefab window** — spec written and built 2026-11-16.
 
       **What the editor has today**: entity mode places a class on a clicked surface, drags it, rotates it 45°,
       duplicates and deletes it, and steps **two** numeric keys with `+` / `-`. Every other key of every class is
@@ -2131,42 +2131,85 @@ that changes what the level builds.
         of them when edited.
       - **Multi-select across classes** edits only the keys they share (by name and type); the header says so.
 
-      **Questions for review** (recommendations in bold)
+      **Decided at review (2026-11-16)**: the Components view is the default (the Keys list stays as its own group at
+      the top for the keys that drive several fields); values are written alias-first; a class swap keeps the keys the
+      new class knows and warns about the rest; **an instance may add or drop a component** (`+Trigger` / `-Body`
+      map keys — the format grew that syntax rather than defer it); **the prefab template is editable** in a window of
+      its own, Unity-style; the `[Inspect]` pass covers **every** config, not ten; copy / paste and the field filter are
+      built, not deferred; the gate asserts file contents.
 
-      - **Q1 — which view is the default?** The Keys list (the class's own vocabulary, what a `.map` actually holds)
-        or the full component dump? **Keys**, with Components collapsed underneath: the keys are the documented
-        surface, and the dump is there when you need it.
-      - **Q2 — how is a value written?** Through the key that names it (`mass 25`) when one exists, otherwise the
-        path form (`Body.mass 25`). **Yes, alias first** — `dock.map` stays the file a human wrote, and 10.3's
-        `ResolveKey` already answers which is which.
-      - **Q3 — changing an instance's class.** Keep the keys the new class also knows and drop the rest (with a
-        count in the status bar), or refuse unless the selection is empty? **Keep and warn**: swapping
-        `prop_physics` → `phys_fixed` is a real move and shares every key.
-      - **Q4 — adding or removing a *component* on one instance** (a prop that alone carries a `Trigger`). The map
-        format has no syntax for it and a prefab is the right place to say what a thing is made of. **Out of scope
-        here**; 10.7's prefab authoring covers it.
-      - **Q5 — editing the prefab from the window** ("apply to all of this class"). Tempting next to the instance
-        rows, and it is exactly 10.7's subject. **Not in 10.6**, but the grid is written so 10.7 can point it at a
-        prefab instead of a map entity.
-      - **Q6 — `[Inspect]` attributes on config fields** (range, step, tip, group, asset kind). They are what make
-        the grid pleasant, and there are ~40 configs. **Do the classes a level places first** (the ten in
-        `prefabs/level/`), leave the rest to pick up hints as they are touched.
-      - **Q7 — copy / paste properties between entities** and a field filter box. **Defer both**; say so in the
-        close-out rather than half-building them.
-      - **Q8 — the gate.** A scripted `properties` editor run (select the door, set `Body.mass` through the panel,
-        revert a lamp's `range`, swap a class, save, assert the keys in the file) plus the existing `session` shot.
-        **Yes** — and it is the first editor gate that asserts file contents rather than "it did not crash".
+      **Steps** (done 2026-11-16, in two commits: engine + grid, then the editor)
 
-      **Steps** (one commit each)
+      - [x] **Engine**: `Inspect*` attributes (`Range`, `Tip`, `Group`, `Asset(kind)`, `Color`, `Hidden`) in
+            `Ecs/Inspect.cs`; the particle editor's `Vfx*` attributes now derive from them, so one grid reads both.
+            `PrefabLibrary`: `+Component` / `-Component` overrides (on a child too: `arm/+Position`), `Fresh(name)`
+            (an uncached build an editor may change), `BaseOf` / `SourceOf` / `Reload`, `ConfigNames()`, public JSON
+            options. **`PrefabWriter`** writes a prefab back as JSON, each component as only the fields that differ
+            from its reference — the base's same component when the prefab has one, else a fresh config — so files
+            stay as short as a hand kept them and inheritance survives a save (comments do not: a saved file is
+            regenerated). `ComponentType` is `[JsonIgnore]`d (it is a `Type`; serialising configs hit it first).
+            Name enumerators for the pickers: `SpriteAtlas.Names`, `MeshLibrary.Names`, `Surfaces.All`.
+      - [x] **`PropertyGrid`** (`RipNRage.ImGui`): rows in, widgets out. A row carries the value, the default, an
+            overridden flag, a mixed flag, hints, and the callbacks that write / revert — the grid never knows where a
+            value lives. Widgets: drag (with range), checkbox, enum combo, colour picker for `[InspectColor]` arrays,
+            drag-2/3/4, a "set" box for nullables, text boxes that commit when the edit ends, and **asset / entity
+            combos** — a text box with a filtered picker beside it over the names a source provides, free text
+            always allowed. Overridden rows are marked and revert on right-click; `Began` fires once per edit for the
+            undo step; a filter hides rows whose label or group does not contain it; a group header can carry extras
+            (the remove button).
+      - [x] **The `[Inspect]` pass over every config** — ranges on masses, radii, intensities, counts and angles;
+            tips on what a name does not say; `Asset` kinds on every texture / sprite / material / mesh / level
+            texture / surface / classname / sound / effect / animator field; `Color` on every colour.
+      - [x] **The Entity window** (`EntityInspector.cs`): header (class combo = swap, description, selection count,
+            Copy / Paste / Open prefab / Save as prefab, filter), Instance (`origin`, `angle`, `targetname` with a
+            duplicate warning), Keys (one row per multi-path alias), then every component of the resolved prefab tree
+            — root and children (`head/light > LightSource`), one row per field, single-path aliases shown on their
+            field — with a remove button per root component and an add-component combo. Rows are rebuilt only when
+            the selection or the document changes. **An edit writes a map key** (alias first, path otherwise) and
+            re-previews that one entity; a value that fails to bake is a message on the row and the old value is put
+            back; a value equal to the prefab's own removes the key. Multi-selection: mixed values marked, an edit
+            writes all. The **Level tab** is the same grid over the worldspawn, re-baked onto the singleton on each
+            edit so the lighting follows live.
+      - [x] **The Prefab window** (`PrefabWindow.cs`): opened on a class (`Open`) or on a **new prefab made from an
+            instance** (`NewFrom`: the template with the instance's overrides folded in, named `<class>_2`, and on
+            Save the instance is retargeted to it with its overrides cleared — they live in the template now).
+            Tabs: Components (the node tree with detached / previewOnly / gameOnly flags, add / remove child; the
+            selected node's components with the grid against the base's values, add / remove component), Keys (the
+            alias table, editable), Editor (gizmo colour, pick extents, placement defaults, the + / - keys). **Every
+            edit lands in the library at once** so every instance in the level re-previews as you type; Save writes
+            the file and refreshes the class's registry entry; Revert re-reads the file.
+      - [x] **Plumbing**: `LevelLoader.RebuildPreview(level, entity)` / `RemovePreview` over a new
+            `previewByEntity` map — an edit rebuilds one thing, not the dock; `EntityRegistry.Refresh(classname)`;
+            `GamePrefabs.Folder` / `LevelFolder` and `$RIPNRAGE_PREFABS` (the gate's copy); undo keeps the selection
+            by index; `I` toggles the window; the default dock layout gains it on the right.
+      - [x] **Gate** (`properties`, in `gates.sh` after `edit`, on copies of the map **and the prefabs** — "save as
+            prefab" writes a file): set an alias (`mass 30`) and a path (`Body.linearDamping 0.2`), set a value
+            equal to the prefab's (`spring 0`: the key must leave), set a bad one (`hinge nonsense`: refused, `left`
+            kept), revert a lamp's `range`, copy one lamp's `intensity 2.5` and paste it onto all six, add `+Trigger`
+            to a prop, swap `item_ammo_shell` → `item_ammo_heavy` in place, set `sky_spin 0.5` on the level, make
+            `phys_fixed_2` from the shelf and save it — then save the map and read it back. Every line holds; the
+            new prefab file is the shelf's template with its overrides folded in; the repo's `prefabs/` and
+            `levels/` are untouched.
 
-      - [ ] 10.6a **`PropertyGrid` in `RipNRage.ImGui`** + engine `Inspect*` attributes; the vfx editor draws through
-            it (its shots are the proof nothing moved). No level editor change yet.
-      - [ ] 10.6b **Per-entity preview rebuild** and selection-preserving undo in the level editor — the plumbing the
-            window needs, visible on its own (`session` shot unchanged, edits stop costing a full reload).
-      - [ ] 10.6c **The Entity window**: header, instance, keys, components, the live write path, overridden state and
-            revert, multi-selection.
-      - [ ] 10.6d **The Level tab** (worldspawn) and the asset / entity-reference combos.
-      - [ ] 10.6e **`[Inspect]` passes over the ten level classes**, the `properties` gate script, close-out.
+      **Found on the way**
+      - The scripted gate's **Ctrl+S was swallowed**: a key press is ignored while the pointer rests on a panel, and
+        a script that never moves the mouse rests on one. The gate saves through `Save()`. (A human's Ctrl+S with the
+        pointer over the inspector is swallowed too — the same rule the F9 panel already lived under.)
+      - **The editor's preview had logged connector errors since 10.4** (`no entity named 'chain1'`): in preview the
+        loader never registered targetnames, and a `JointConnector` bakes its `body` reference. Two fixes: the
+        preview registers names too, and `JointConnector` is `[NotInPreview]` — a connector's preview is its marker.
+        Earlier runs grepped only for exceptions; the editor gates now grep `[Error]` as well.
+      - The add-component combo re-baked the prefab **every frame**; it reads the rows' cache now.
+      - The ImGui font has no `●` / `▸` / `—` / `×`: ASCII in every UI string.
+
+      **Known limits**: a saved prefab loses its comments; the vfx editor keeps its own grid for now (it reads the
+      shared attributes; moving it onto `PropertyGrid` is a follow-up); asset pickers list the asset folders and the
+      registries the process loaded, the entity picker the map's targetnames and the prefab's children — free text
+      is always allowed and validated by the bake.
+
+      **Gate**: engine checks 265 (+6: `+` / `-` overrides, the writer's round trip and its diff-only output), game
+      479; the `walk` / `menu` manifests unchanged (`054f07cd` / `a54bbd91`) — nothing here touches what the game
+      builds; the `session` script runs clean with no `[Error]`; the `properties` script passes every line.
 
 - [ ] 10.7 **Prefab authoring** (Q3). "Save selection as prefab" writes `prefabs/level/<name>.json` from the merged
       values and points the map entity at it; `prefabs/` hot-reloads in the editor (the animations / vfx watcher

@@ -148,6 +148,38 @@ namespace RipNRage.Editor
                 case "lowgrid":
                     if (_frame == 2) _ed.workHeight = -3f;
                     break;
+                case "properties":
+                    // 10.6: the Entity window's model — set, revert, swap, copy / paste, add a component, the level tab,
+                    // a prefab saved from an instance — then save and read the file back
+                    if (_frame == 5) { _ed.mode = EditMode.Entity; _ed.showInspector = true; _ed.SelectFirst("phys_door"); }
+                    if (_frame == 8) _ed.InspectorSet("mass", "30");                       // an alias key
+                    if (_frame == 10) _ed.InspectorSet("Body.linearDamping", "0.2");       // a path key
+                    if (_frame == 12) _ed.InspectorSet("spring", "0");                     // equal to the prefab's: must leave the map
+                    if (_frame == 14) _ed.InspectorSet("hinge", "nonsense");               // a bad value: refused, old value kept
+                    if (_frame == 16) { _ed.SelectFirst("lamp_post"); }
+                    if (_frame == 18) _ed.InspectorSet("range", "30");
+                    if (_frame == 20) _ed.InspectorRevert("range");
+                    if (_frame == 22) { var a = _ed.SelectFirst("lamp_post"); _ed.InspectorSet("intensity", "2.5"); _ed.CopyProperties(); }
+                    if (_frame == 24) { var all = _ed.doc.entities.FindAll(e => e.classname == "lamp_post"); _ed.SelectFirst("lamp_post"); foreach (var e in all) _ed.SelectAlso(e); _ed.PasteProperties(); }
+                    if (_frame == 26) { _ed.SelectFirst("prop_physics"); _ed.AddComponent(new System.Collections.Generic.List<RipNRage.Level.MapEntity>(_ed.Selection), "Trigger"); }
+                    if (_frame == 28) { _ed.SelectFirst("item_ammo_shell"); _ed.SwapClass(new System.Collections.Generic.List<RipNRage.Level.MapEntity>(_ed.Selection), "item_ammo_heavy"); }
+                    if (_frame == 30) _ed.LevelSet("sky_spin", "0.5");
+                    if (_frame == 32) { _ed.SelectFirst("phys_fixed"); _ed.Prefabs.NewFrom(_ed.Selection[0], _ed); }
+                    if (_frame == 34) _ed.Prefabs.Save(_ed);
+                    if (_frame == 36) _ed.Save(); // directly: a key press is swallowed while the pointer rests on a panel
+                    if (_frame == 40)
+                    {
+                        var text = System.IO.File.ReadAllText(_ed.doc.path);
+                        var saved = RipNRage.Level.MapFile.Parse(text);
+                        var door = saved.entities.Find(e => e.classname == "phys_door");
+                        var lamps = saved.entities.FindAll(e => e.classname == "lamp_post");
+                        var prop = saved.entities.Find(e => e.classname == "prop_physics");
+                        Debug.LogWarning($"[test] door: mass={door?.Get("mass")} damping={door?.Get("Body.linearDamping")} spring-key={door?.properties.ContainsKey("spring")} hinge={door?.Get("hinge", "(unset)")}");
+                        Debug.LogWarning($"[test] lamps: range-key={lamps.Exists(l => l.properties.ContainsKey("range"))} intensity=[{string.Join(",", lamps.ConvertAll(l => l.Get("intensity", "-")))}]");
+                        Debug.LogWarning($"[test] prop: +Trigger={prop?.properties.ContainsKey("+Trigger")}  heavy={saved.entities.Exists(e => e.classname == "item_ammo_heavy" && e.origin.z < -19.9f && e.origin.z > -20.1f)} shell-left={saved.entities.Exists(e => e.classname == "item_ammo_shell")}");
+                        Debug.LogWarning($"[test] level: sky_spin={saved.worldspawn.Get("sky_spin")}  new-prefab={_ed.Prefabs.Name} file={System.IO.File.Exists(System.IO.Path.Combine(RipNRage.Game.Content.Level.GamePrefabs.LevelFolder, _ed.Prefabs.Name + ".json"))} retargeted={saved.entities.Exists(e => e.classname == _ed.Prefabs.Name)}");
+                    }
+                    break;
                 case "session":
                     // 1) drag-create a brush on the ground in front of the camera
                     if (_frame == 5) Input.SimulateMousePosition(Px(0.40f, 0.45f));

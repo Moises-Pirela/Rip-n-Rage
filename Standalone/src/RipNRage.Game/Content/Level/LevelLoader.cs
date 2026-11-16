@@ -15,6 +15,8 @@ namespace RipNRage.Game.Content.Level
         public float killY = -50f;
         /// <summary>The editor's preview entities (9.6: a rebuild destroys them; children follow their parents).</summary>
         public readonly List<RipNRage.Engine.Ecs.Entity> previewEntities = new List<RipNRage.Engine.Ecs.Entity>();
+        /// <summary>The preview entities each map entity made (10.6: so one entity can be rebuilt without the level).</summary>
+        public readonly Dictionary<MapEntity, List<RipNRage.Engine.Ecs.Entity>> previewByEntity = new Dictionary<MapEntity, List<RipNRage.Engine.Ecs.Entity>>();
 
         /// <summary>A named spawn and where it stood when the level was built (9.2: the connectors' pose math — the
         /// entity itself goes through the command buffer and is not alive until playback).</summary>
@@ -83,32 +85,66 @@ namespace RipNRage.Game.Content.Level
                         var def = EntityRegistry.Get(e.classname);
                         if (def == null) { if (pass == 0) Debug.LogWarning("level: unknown entity class " + e.classname); continue; }
                         if (def.deferred != (pass == 1)) continue;
-                        try
-                        {
-                            var w = Application.Current.World;
-                            RipNRage.Engine.Ecs.Entity ent;
-                            if (def.prefab != null)
-                            {
-                                var inst = SpawnPrefab(def, e, preview, w);
-                                ent = inst.Root;
-                                if (preview) foreach (var x in inst.All) level.previewEntities.Add(x); // detached children too
-                                else level.RegisterNamed(e.Get("targetname"), ent,
-                                                         w.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(ent).Position,
-                                                         w.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(ent).Rotation);
-                            }
-                            else
-                            {
-                                ent = (preview ? (def.previewEntity ?? def.spawnEntity) : def.spawnEntity)?.Invoke(e) ?? RipNRage.Engine.Ecs.Entity.Null;
-                                if (preview && !ent.IsNull) level.previewEntities.Add(ent);
-                            }
-                            if (!preview && w.IsAlive(ent) && w.Has<RipNRage.Game.Ecs.AI.LevelRef>(ent))
-                                w.Get<RipNRage.Game.Ecs.AI.LevelRef>(ent).Index = index;
-                        }
+                        try { SpawnEntity(level, def, e, index, preview); }
                         catch (Exception ex) { Debug.LogError($"level: failed to spawn {e.classname}: {ex.Message}"); }
                     }
             }
             finally { Loading = null; }
             return level;
+        }
+
+        /// <summary>One map entity into the world (the game's build or the editor's preview), recorded on the level.</summary>
+        private static void SpawnEntity(LoadedLevel level, EntityDefinition def, MapEntity e, int index, bool preview)
+        {
+            var w = Application.Current.World;
+            RipNRage.Engine.Ecs.Entity ent;
+            var made = preview ? new List<RipNRage.Engine.Ecs.Entity>() : null;
+            if (def.prefab != null)
+            {
+                var inst = SpawnPrefab(def, e, preview, w);
+                ent = inst.Root;
+                if (preview) made.AddRange(inst.All); // detached children too
+                if (w.Has<RipNRage.Engine.Ecs.Transforms.LocalTransform>(ent))
+                    level.RegisterNamed(e.Get("targetname"), ent,
+                                        w.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(ent).Position,
+                                        w.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(ent).Rotation);
+            }
+            else
+            {
+                ent = (preview ? (def.previewEntity ?? def.spawnEntity) : def.spawnEntity)?.Invoke(e) ?? RipNRage.Engine.Ecs.Entity.Null;
+                if (preview && !ent.IsNull) made.Add(ent);
+            }
+            if (preview) { level.previewEntities.AddRange(made); level.previewByEntity[e] = made; }
+            if (!preview && w.IsAlive(ent) && w.Has<RipNRage.Game.Ecs.AI.LevelRef>(ent))
+                w.Get<RipNRage.Game.Ecs.AI.LevelRef>(ent).Index = index;
+        }
+
+        /// <summary>
+        /// Rebuilds one map entity's preview (10.6: the editor edits a key and only that thing changes — the brushes
+        /// and the other entities stay). Throws what the spawn throws, so a bad value reaches the panel as a message.
+        /// </summary>
+        public static void RebuildPreview(LoadedLevel level, MapEntity e)
+        {
+            var w = Application.Current.World;
+            if (level.previewByEntity.TryGetValue(e, out var old))
+            {
+                foreach (var x in old) { if (w.IsAlive(x)) w.DestroyEntity(x); level.previewEntities.Remove(x); }
+                level.previewByEntity.Remove(e);
+            }
+            var def = EntityRegistry.Get(e.classname);
+            if (def == null) return;
+            Loading = level;
+            try { SpawnEntity(level, def, e, level.document.entities.IndexOf(e), preview: true); }
+            finally { Loading = null; }
+        }
+
+        /// <summary>Removes a map entity's preview (it was deleted from the document).</summary>
+        public static void RemovePreview(LoadedLevel level, MapEntity e)
+        {
+            var w = Application.Current.World;
+            if (!level.previewByEntity.TryGetValue(e, out var old)) return;
+            foreach (var x in old) { if (w.IsAlive(x)) w.DestroyEntity(x); level.previewEntities.Remove(x); }
+            level.previewByEntity.Remove(e);
         }
 
         /// <summary>The level being built right now (entity spawners resolve targetnames through it).</summary>
@@ -236,7 +272,7 @@ namespace RipNRage.Game.Content.Level
         /// derived from the level when absent, and a key the prefab does not know is a warning, not an error — a map
         /// editor writes its own there (<c>mapversion</c>, <c>wad</c>). Returns the kill height.
         /// </summary>
-        private static float BakeWorldspawn(MapDocument doc)
+        public static float BakeWorldspawn(MapDocument doc)
         {
             var lib = GamePrefabs.Library;
             var overrides = new List<KeyValuePair<string, string>>();
