@@ -56,8 +56,11 @@ namespace RipNRage.Engine.Ecs
         public string Description;
         public readonly List<IComponentConfig> Components = new List<IComponentConfig>();
         public readonly List<Prefab> Children = new List<Prefab>();
-        /// <summary>Short key → field path (root node only).</summary>
-        public readonly Dictionary<string, string> Keys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Short key → the field path(s) it writes (root node only). A key may drive more than one field —
+        /// a volume's "size" is its collider and the box the editor draws for it.</summary>
+        public readonly Dictionary<string, string[]> Keys = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Top-level JSON the ECS does not own (the game's "editor" block: gizmo, pick extents, defaults).</summary>
+        public JsonObject Extra;
         /// <summary>A child spawned with the instance but with **no** <see cref="Parent"/>: posed by composing the instance
         /// pose like the root. Physics entities must be roots (2.4) — a prefab's collider is one.</summary>
         public bool Detached;
@@ -159,13 +162,14 @@ namespace RipNRage.Engine.Ecs
             public readonly Dictionary<string, JsonObject> Components = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
             public readonly Dictionary<string, Node> Children = new Dictionary<string, Node>(StringComparer.OrdinalIgnoreCase);
             public readonly List<string> ChildOrder = new List<string>();
-            public readonly Dictionary<string, string> Keys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, string[]> Keys = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
             public string Description;
             public bool Detached, PreviewOnly;
+            public JsonObject Extra;
 
             public Node Clone()
             {
-                var n = new Node { Description = Description, Detached = Detached, PreviewOnly = PreviewOnly };
+                var n = new Node { Description = Description, Detached = Detached, PreviewOnly = PreviewOnly, Extra = (JsonObject)Extra?.DeepClone() };
                 foreach (var kv in Components) n.Components[kv.Key] = (JsonObject)kv.Value.DeepClone();
                 foreach (var name in ChildOrder) { n.Children[name] = Children[name].Clone(); n.ChildOrder.Add(name); }
                 foreach (var kv in Keys) n.Keys[kv.Key] = kv.Value;
@@ -224,24 +228,24 @@ namespace RipNRage.Engine.Ecs
             var node = Resolve(name, new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Clone();
             foreach (var kv in overrides)
             {
-                string path = ResolvePath(node, kv.Key) ?? throw new InvalidDataException($"prefab '{name}': key '{kv.Key}' is neither an alias nor a Config.field path");
-                ApplyOverride(node, path, kv.Value, name, kv.Key);
+                var paths = ResolvePath(node, kv.Key) ?? throw new InvalidDataException($"prefab '{name}': key '{kv.Key}' is neither an alias nor a Config.field path");
+                foreach (var path in paths) ApplyOverride(node, path, kv.Value, name, kv.Key);
             }
             return Build(node, name, name);
         }
 
-        /// <summary>The field path a key addresses on <paramref name="prefabName"/> (its alias, or the key itself when it is
-        /// already a path), or null when it is neither — the caller's own key, then.</summary>
-        public string ResolveKey(string prefabName, string key)
+        /// <summary>The field path(s) a key addresses on <paramref name="prefabName"/> (its alias, or the key itself when
+        /// it is already a path), or null when it is neither — the caller's own key, then.</summary>
+        public string[] ResolveKey(string prefabName, string key)
         {
             var node = Resolve(prefabName, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
             return ResolvePath(node, key);
         }
 
-        private static string ResolvePath(Node node, string key)
+        private static string[] ResolvePath(Node node, string key)
         {
             if (node.Keys.TryGetValue(key, out var alias)) return alias;
-            return key.Contains('.') ? key : null;
+            return key.Contains('.') ? new[] { key } : null;
         }
 
         // ------------------------------------------------------------------ inheritance
@@ -264,7 +268,14 @@ namespace RipNRage.Engine.Ecs
             if (json["detached"] is JsonValue det) target.Detached = (bool)det;
             if (json["previewOnly"] is JsonValue po) target.PreviewOnly = (bool)po;
             if (json["keys"] is JsonObject keys)
-                foreach (var kv in keys) target.Keys[kv.Key] = (string)kv.Value;
+                foreach (var kv in keys)
+                    target.Keys[kv.Key] = kv.Value is JsonArray many
+                        ? System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(many, n => (string)n))
+                        : new[] { (string)kv.Value };
+            foreach (var kv in json)
+                if (kv.Key != "name" && kv.Key != "base" && kv.Key != "components" && kv.Key != "children" &&
+                    kv.Key != "keys" && kv.Key != "description" && kv.Key != "detached" && kv.Key != "previewOnly")
+                    (target.Extra ??= new JsonObject())[kv.Key] = kv.Value?.DeepClone();
             if (json["components"] is JsonObject comps)
                 foreach (var kv in comps)
                 {
@@ -283,7 +294,7 @@ namespace RipNRage.Engine.Ecs
 
         private static Prefab Build(Node node, string name, string prefabName)
         {
-            var p = new Prefab { Name = name, Description = node.Description, Detached = node.Detached, PreviewOnly = node.PreviewOnly };
+            var p = new Prefab { Name = name, Description = node.Description, Detached = node.Detached, PreviewOnly = node.PreviewOnly, Extra = node.Extra };
             foreach (var kv in node.Keys) p.Keys[kv.Key] = kv.Value;
             foreach (var kv in node.Components)
             {

@@ -1,0 +1,20 @@
+// A checkpoint volume: walking into it saves the game. "size" is the box, in metres.
+{ "name": "trigger_checkpoint",
+  "description": "Checkpoint volume (size w h l): saves the game",
+  "keys": { "size": ["ColliderShape.size", "gizmo/LocalTransform.scale"] },
+  "editor": { "gizmoColor": [0.4, 1, 1, 1], "pickExtents": [1, 1, 1], "defaults": { "size": "4 4 4" } },
+  "components": {
+    "ColliderShape": { "kind": "Box", "size": [4, 4, 4], "isStatic": true },
+    "CollisionFilter": { "layer": 0 },
+    "Trigger": {},
+    "Checkpoint": {}
+  },
+  "children": {
+    "gizmo": {
+      "previewOnly": true,
+      "components": {
+        "LocalTransform": { "scale": [4, 4, 4] },
+        "MeshRender": { "mesh": "box", "color": [0.4, 1, 1, 0.5], "emissive": 0.5, "castsShadow": false, "transparent": true }
+      }
+    }
+  } }

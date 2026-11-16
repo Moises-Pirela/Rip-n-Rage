@@ -1936,11 +1936,24 @@ that changes what the level builds.
               `Texture2D.White` is 4×4 data with handle 0, binding it headless is the named error, and the full
               `MeshRenderConfig` bake resolves mesh + `white` texture. **The renderer is untouched**: the `look` shot
               is 0.000% against the pre-change build and `walk`'s manifest is still `e180c83d`; game checks 467.
-      - [ ] 10.3b **The loader spawns prefabs** (`EntityDefinition.prefab`, `GamePrefabs.Library` over `prefabs/level/`).
-            `prefab + (origin, angle) + overrides` through the chained resolver (`LoadedLevel.namedEntities`, roots
-            registered by `targetname`); `LevelRef.Index` stamped on the root; preview = `SpawnPreview`; `defaults` /
-            `description` / editor bits from the prefab. Port **one class** to prove the path: `trigger_checkpoint` (one
-            entity, one alias `size → ColliderShape.size`). **Gate**: manifest byte-identical to 10.3a; `checkpoint` gate.
+      - [x] 10.3b **The loader spawns prefabs** (done; `GamePrefabs`, `EntityDefinition.prefab`, `trigger_checkpoint`).
+            `GamePrefabs.Library` loads `prefabs/` once (found by walking up from the assets, as levels are);
+            `AddPrefab(classname)` builds the `EntityDefinition` from the prefab itself — its `description` and an
+            `editor` block (`gizmoColor`, `pickExtents`, `defaults`, `numeric` for the `+` / `-` keys). The loader
+            spawns `prefab + (origin, angle) + overrides`, registers the root under its `targetname`, stamps
+            `LevelRef.Index`, and in preview adds **every** entity of the instance to the preview list (detached
+            children have no parent to follow). Keys the loader owns: `classname` / `origin` / `angle` / `targetname`;
+            every other key is an override, and an unknown one throws naming the class and the key.
+            - **A key may drive several fields**: `"size": ["ColliderShape.size", "gizmo/LocalTransform.scale"]` — the
+              volume and the box the editor draws for it. `Prefab.Keys` holds paths per key, `ResolveKey` returns them.
+            - **`Prefab.Extra`** keeps the top-level JSON the ECS does not own (the `editor` block), merged through `base`.
+            - **The gate earned its keep immediately**: the first dump came back `6dec1d82` instead of `e180c83d`, one
+              line different — `ColliderShape` baked `Radius=0.5 Height=2` on a **box**, because the config's defaults
+              are written whatever the kind is, while `Checkpoints.Spawn` left them zero. Fixed in the config, not in
+              the JSON: a bake now keeps only the fields its shape uses (a box has no radius, a sphere no size), so
+              prefab-built and hand-built components agree everywhere, not just here.
+            - **Gate**: `walk` `e180c83d` and `menu` `01f09c74`, byte-identical to 10.3a; engine checks 254 (+2: the
+              multi-path alias), game 467; the `checkpoint` script saves, dies and respawns at the checkpoint as before.
       - [ ] 10.3c **The five others**: `light`, `lamp_post` (head → light, detached collider), `item_ammo` base + five
             children-of-`base`, `monster_rifleman` (the ride-height literals + their check), `monster_spawner` (pad and
             ghost as `previewOnly`). Their `spawnEntity` / `previewEntity` code and `Gizmo` / `GhostSprite` /

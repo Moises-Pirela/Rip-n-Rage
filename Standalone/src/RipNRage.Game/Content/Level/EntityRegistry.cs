@@ -16,6 +16,9 @@ namespace RipNRage.Game.Content.Level
         public Dictionary<string, string> defaults = new Dictionary<string, string>();
         /// <summary>Editable numeric properties (name, step) the editor exposes with +/- keys.</summary>
         public List<(string key, float step)> numericProps = new List<(string, float)>();
+        /// <summary>The prefab this class is (10.3b): the loader spawns it with the map's keys as field overrides.
+        /// When set, <see cref="spawnEntity"/> / <see cref="previewEntity"/> are not used.</summary>
+        public string prefab;
         /// <summary>Game spawn; the loader stamps the <see cref="RipNRage.Game.Ecs.AI.LevelRef"/> when the entity carries one.</summary>
         public Func<MapEntity, RipNRage.Engine.Ecs.Entity> spawnEntity;
         /// <summary>Visual-only instance for the editor (entities since 9.6 — no AI, triggers or colliders). Null = spawnEntity.</summary>
@@ -37,6 +40,31 @@ namespace RipNRage.Game.Content.Level
         public static EntityDefinition Get(string classname) { Init(); return ByName.TryGetValue(classname, out var d) ? d : null; }
 
         private static EntityDefinition Add(EntityDefinition d) { Defs.Add(d); ByName[d.classname] = d; return d; }
+
+        /// <summary>
+        /// A class that is a prefab file (10.3b): what the editor needs comes from the prefab itself — its
+        /// <c>description</c> and its <c>editor</c> block (<c>gizmoColor</c>, <c>pickExtents</c>, <c>defaults</c> the
+        /// editor writes when placing one, <c>numeric</c> the + / - keys step).
+        /// </summary>
+        private static EntityDefinition AddPrefab(string classname, bool deferred = false)
+        {
+            var p = GamePrefabs.Library.Get(classname);
+            var d = new EntityDefinition { classname = classname, prefab = classname, description = p.Description ?? classname, deferred = deferred };
+            if (p.Extra?["editor"] is System.Text.Json.Nodes.JsonObject ed)
+            {
+                if (ed["gizmoColor"] is System.Text.Json.Nodes.JsonArray c && c.Count >= 3)
+                    d.gizmoColor = new Color((float)c[0], (float)c[1], (float)c[2], c.Count > 3 ? (float)c[3] : 1f);
+                if (ed["pickExtents"] is System.Text.Json.Nodes.JsonArray x && x.Count >= 3)
+                    d.pickExtents = new Vector3((float)x[0], (float)x[1], (float)x[2]);
+                if (ed["defaults"] is System.Text.Json.Nodes.JsonObject defs)
+                    foreach (var kv in defs) d.defaults[kv.Key] = (string)kv.Value;
+                if (ed["numeric"] is System.Text.Json.Nodes.JsonArray nums)
+                    foreach (var n in nums)
+                        if (n is System.Text.Json.Nodes.JsonObject o && o["key"] != null)
+                            d.numericProps.Add(((string)o["key"], o["step"] != null ? (float)o["step"] : 1f));
+            }
+            return Add(d);
+        }
 
         private static void Init()
         {
@@ -173,14 +201,7 @@ namespace RipNRage.Game.Content.Level
                 previewEntity = e => PlaneEntity(e, null, LevelTextures.Get(e.Get("texture", "sand")).Texture, 1f / 4f, transparent: false, collider: false, water: false),
             });
 
-            Add(new EntityDefinition
-            {
-                classname = "trigger_checkpoint", description = "Checkpoint volume (size w h l): saves the game",
-                gizmoColor = new Color(0.4f, 1f, 1f, 1f), pickExtents = new Vector3(1f, 1f, 1f),
-                defaults = { ["size"] = "4 4 4" },
-                spawnEntity = e => RipNRage.Game.Ecs.Checkpoints.Spawn(Application.Current.World, e.origin, e.GetVector("size", new Vector3(4, 4, 4))),
-                previewEntity = e => Gizmo(new Color(0.4f, 1f, 1f, 0.5f), e.GetVector("size", new Vector3(4, 4, 4)), e),
-            });
+            AddPrefab("trigger_checkpoint"); // 10.3b: prefabs/level/trigger_checkpoint.json
         }
 
         /// <summary>An emissive box at the entity's origin with a facing arrow (the editor's stand-in gizmo).</summary>

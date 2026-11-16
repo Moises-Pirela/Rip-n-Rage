@@ -190,6 +190,15 @@ namespace RipNRage.Engine.Ecs.Physics
                     s.Hull = ConvexConfig.Bake(vertices, planes);
                     break;
             }
+            // only the fields this shape uses survive: a box has no radius, a sphere no size. Otherwise a config bake
+            // and a hand-built component differ in fields nothing reads (10.3b: the level manifest saw it).
+            switch (kind)
+            {
+                case ShapeKind.Box: s.Radius = 0f; s.Height = 0f; break;
+                case ShapeKind.Sphere: s.Size = Vector3.zero; s.Height = 0f; break;
+                case ShapeKind.Capsule: s.Size = Vector3.zero; break;
+                default: s.Size = Vector3.zero; s.Radius = 0f; s.Height = 0f; break;
+            }
             return s;
         }
     }

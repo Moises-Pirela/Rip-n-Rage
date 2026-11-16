@@ -87,10 +87,23 @@ namespace RipNRage.Game.Content.Level
                         try
                         {
                             var w = Application.Current.World;
-                            var ent = (preview ? (def.previewEntity ?? def.spawnEntity) : def.spawnEntity)?.Invoke(e) ?? RipNRage.Engine.Ecs.Entity.Null;
+                            RipNRage.Engine.Ecs.Entity ent;
+                            if (def.prefab != null)
+                            {
+                                var inst = SpawnPrefab(def, e, preview);
+                                ent = inst.Root;
+                                if (preview) foreach (var x in inst.All) level.previewEntities.Add(x); // detached children too
+                                else level.RegisterNamed(e.Get("targetname"), ent,
+                                                         w.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(ent).Position,
+                                                         w.Get<RipNRage.Engine.Ecs.Transforms.LocalTransform>(ent).Rotation);
+                            }
+                            else
+                            {
+                                ent = (preview ? (def.previewEntity ?? def.spawnEntity) : def.spawnEntity)?.Invoke(e) ?? RipNRage.Engine.Ecs.Entity.Null;
+                                if (preview && !ent.IsNull) level.previewEntities.Add(ent);
+                            }
                             if (!preview && w.IsAlive(ent) && w.Has<RipNRage.Game.Ecs.AI.LevelRef>(ent))
                                 w.Get<RipNRage.Game.Ecs.AI.LevelRef>(ent).Index = index;
-                            if (preview && !ent.IsNull) level.previewEntities.Add(ent);
                         }
                         catch (Exception ex) { Debug.LogError($"level: failed to spawn {e.classname}: {ex.Message}"); }
                     }
@@ -101,6 +114,33 @@ namespace RipNRage.Game.Content.Level
 
         /// <summary>The level being built right now (entity spawners resolve targetnames through it).</summary>
         public static LoadedLevel Loading { get; private set; }
+
+        /// <summary>
+        /// A class that is a prefab (10.3b): every map key but the universal ones is a field override, and an
+        /// <c>EntityRef</c> the tree cannot answer is looked up among the level's <c>targetname</c>s. A key the prefab
+        /// does not know throws, naming the class and the key — a typo in a map is caught at load, not at play.
+        /// </summary>
+        private static RipNRage.Engine.Ecs.PrefabInstance SpawnPrefab(EntityDefinition def, MapEntity e, bool preview)
+        {
+            var overrides = new List<KeyValuePair<string, string>>();
+            foreach (var kv in e.properties)
+                if (!IsUniversalKey(kv.Key)) overrides.Add(kv);
+            var lib = GamePrefabs.Library;
+            var prefab = overrides.Count == 0 ? lib.Get(def.prefab) : lib.Get(def.prefab, overrides);
+            var world = Application.Current.World;
+            var rotation = Quaternion.Euler(0f, e.angle, 0f);
+            return preview ? prefab.SpawnPreview(world, e.origin, rotation, LevelName)
+                           : prefab.Spawn(world, e.origin, rotation, LevelName);
+        }
+
+        /// <summary>Keys the loader owns: where a thing stands, which way it faces, and what it is called.</summary>
+        private static bool IsUniversalKey(string key) =>
+            key.Equals("classname", StringComparison.OrdinalIgnoreCase) || key.Equals("origin", StringComparison.OrdinalIgnoreCase) ||
+            key.Equals("angle", StringComparison.OrdinalIgnoreCase) || key.Equals("targetname", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Resolves an <c>EntityRef</c> against the level's named entities (a prefab's own children come first).</summary>
+        private static RipNRage.Engine.Ecs.Entity LevelName(string name) =>
+            Loading != null && Loading.namedEntities.TryGetValue(name, out var n) ? n.entity : RipNRage.Engine.Ecs.Entity.Null;
 
         /// <summary>Kill height: explicit worldspawn "kill_y", else the water surface minus one metre, else five metres under the lowest brush.</summary>
         private static float ComputeKillY(MapDocument doc)

@@ -88,15 +88,21 @@ internal static class Layer10Checks
         True(w.Get<Health>(r2.Root).Max == 60 && w.Get<Link>(r2.Root).Target == r2["tip"], "the derived root overrides a field and keeps the rest");
         True(w.Get<Health>(r2["arm"]).Max == 20 && w.Get<LocalTransform>(r2["arm"]).Position == new Vector3(1f, 0f, 0f), "a child merges by name: its field overridden, its transform kept");
         True(w.Get<Position>(r2["tip"]).X == 5 && w.Get<Position>(r2["tip"]).Y == 7, "a grandchild merges field by field");
-        True(lib.ResolveKey("rig2", "hp") == "Health.max", "aliases are inherited");
+        True(lib.ResolveKey("rig2", "hp")[0] == "Health.max", "aliases are inherited");
 
         // ---- overrides: aliases and paths, typed from text, applied last
         var ov = lib.Get("rig", new[] { KV("hp", "200"), KV("tipx", "3"), KV("Motorised.speed", "4.5"), KV("arm/Health.max", "11") }).Spawn(w, Vector3.zero, Quaternion.identity, Named);
         True(w.Get<Health>(ov.Root).Max == 200 && w.Get<Position>(ov["tip"]).X == 3, "an alias reaches a root field and a grandchild's field");
         True(w.Get<Motorised>(ov.Root).Speed == 4.5f && w.Get<Health>(ov["arm"]).Max == 11, "a path reaches a root field and a child's field");
         True(w.Get<Health>(lib.Get("rig").Spawn(w, Vector3.zero, Quaternion.identity, Named).Root).Max == 50, "overrides do not touch the cached prefab");
-        True(lib.ResolveKey("rig", "hp") == "Health.max" && lib.ResolveKey("rig", "Health.max") == "Health.max" && lib.ResolveKey("rig", "origin") == null,
+        True(lib.ResolveKey("rig", "hp")[0] == "Health.max" && lib.ResolveKey("rig", "Health.max")[0] == "Health.max" && lib.ResolveKey("rig", "origin") == null,
             "ResolveKey: an alias, a path, and a key that is neither");
+        lib.AddJson(@"{ ""name"": ""multi"", ""keys"": { ""size"": [""ColliderShape.size"", ""gizmo/LocalTransform.scale""] },
+            ""components"": { ""ColliderShape"": { ""kind"": ""Box"" } }, ""children"": { ""gizmo"": { ""components"": { ""LocalTransform"": { } } } } }");
+        var multi = lib.Get("multi", new[] { KV("size", "30 4 4") }).Spawn(w, Vector3.zero, Quaternion.identity);
+        True(w.Get<RipNRage.Engine.Ecs.Physics.ColliderShape>(multi.Root).Size == new Vector3(30f, 4f, 4f) && w.Get<LocalTransform>(multi["gizmo"]).Scale == new Vector3(30f, 4f, 4f),
+            "one key may drive several fields (a volume's size: its collider and the box the editor draws)");
+        True(lib.ResolveKey("multi", "size").Length == 2, "ResolveKey gives every path a key writes");
         True(Throws<InvalidDataException>(() => lib.Get("rig", new[] { KV("Health.nope", "1") }), "nope"), "an unknown field throws, naming it");
         True(Throws<InvalidDataException>(() => lib.Get("rig", new[] { KV("Nope.x", "1") }), "Nope"), "an unknown config throws");
         True(Throws<InvalidDataException>(() => lib.Get("rig", new[] { KV("leg/Health.max", "1") }), "leg"), "an unknown child throws");
