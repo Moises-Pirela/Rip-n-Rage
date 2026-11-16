@@ -1846,16 +1846,75 @@ that changes what the level builds.
         plus the enemy's halves vs `Enemies.Spawn` at the same placement (seed, facing, health, hitbox), the preview
         strip on a pickup and an enemy, and a sweep asserting every component a level places now has a config.
       - Level untouched this step: the `walk` / `menu` manifests do not move.
-- [ ] 10.3 **Data classes become prefab files** (`prefabs/level/`). `light`, `lamp_post` (post → head → light),
-      `item_ammo` + five children-of-`base`, `monster_rifleman` (body + sprite child), `monster_spawner`,
-      `trigger_checkpoint`, `prop_physics`, `phys_fixed`. `EntityDefinition.prefab`; the loader spawns
-      `prefab + (origin, angle, targetname) + overrides`; the preview is `SpawnPreview` plus the stand-in gizmos;
-      `defaults` / `description` / `numericProps` read from the prefab (Q4). The save keys monsters / pickups /
-      spawners by **component**, not by classname prefix (prefab names are data now); runtime monsters respawn
-      through the prefab. **Gate**: `walk.level` / `menu.level` byte-identical to 10.0 (the manifest proves the
-      swap invisible), 26 scripts byte-identical, four shots 0.000%, `saveload` round trip unchanged, `deathf8`'s
-      asset count flat across the rebuild.
-- [ ] 10.4 **Derived classes on prefabs.** `phys_door` / `phys_hinge` / `phys_slider` / `phys_pendulum` /
+- [ ] 10.3 **Data classes become prefab files** — broken down 2026-11-16 against the manifest (`ee532966`).
+
+      **What the manifest says each class builds** (every number below is from the dump, not the source):
+
+      | Class | Entities | Components and values that must come out identical |
+      |---|---|---|
+      | `monster_rifleman` ×4 | body + `sprite` child | body at origin + (0, 1.475, 0) (= ½·2.25 + ride 0.35), rotation = angle; `ColliderShape` Capsule r 0.3375 h 1.9 centre (0, −0.175, 0); `CollisionFilter` layer 12; `Body` mass 85 interpolate freezeRotation canSleep 0; `CharacterMotor` Enemy ride 0.35; `Health` 1000; `Hitbox` 2.25 / 0.76; `Heading` = angle; `AiBrain` Rng = Seed(origin, kind); `EnemyVisual` → child, DeadTime −1; `Perception` / `AiIntent` / `EnemyWeapon` default; `LevelRef`. Child: pos (0, −0.35, 0) scale 0.4395 (= 2.25 / 5.12); `SpriteRender` none, billboard lit castsShadow 1; `SpriteFx` |
+      | `item_ammo_*` ×4 | trigger root + `sprite` child | root at origin + (0, 0.9, 0); `ColliderShape` Sphere r 1.5 static; `CollisionFilter` layer 14; `Trigger`; `Pickup` type + table amount; `LevelRef`. Child: scale (0.75, 0.75, 1); `SpriteRender` = the atlas sprite, billboard lit **castsShadow 0**; `Bob` phase = Seed(origin, type) |
+      | `trigger_checkpoint` ×1 | one | at origin; `ColliderShape` Box `size` static; `CollisionFilter` layer 0; `Trigger`; `Checkpoint` |
+      | `lamp_post` ×6 | post + `head` child + `light` grandchild + **a root collider** | post: `MeshRender` mesh `box:0,2.6,0:0.28,5.2,0.28@1`, Texture13, colour (0.35, 0.35, 0.38); head at (0, 5.4, 0): mesh `box:0,0,0:0.7,0.5,0.7@1`, white, colour (1, 0.85, 0.55), **material Lamp**, castsShadow 0; light: Point (1, 0.78, 0.5) 1.4 / 24; collider: a **separate root** at origin + (0, 2.6, 0), Box 0.4 × 5.2 × 0.4 static, layer 11, `ImpactSurface` metal |
+      | `light` ×0 in dock | one | `LightSource` Point, colour / intensity / range keys |
+      | `monster_spawner` ×0 in dock | one (+ an editor pad) | `Spawner` monster / count / interval / radius / activate_range / max_alive, yaw = angle; `LevelRef` |
+      | `prop_physics` ×6, `phys_fixed` ×1 | one | mesh `box:0,0,0:<size>@<1/size.x>` (dock sizes: 0.25×0.7×0.25, 0.55³, 0.7³, 0.8³, one sphere), collider from `size` + `shape`, mass with CCD, `ImpactSurface` from the texture, **no `CollisionFilter`**, the fixed one a `Joint` Fixed 260 N / 220 N·m |
+
+      **What the data decides**
+
+      - **Props are derived, not data**: `size` fans out into the mesh name, its UV scale (1 / size.x), the collider and
+        the lift; `shape` picks the collider kind and a radius from the largest side. An alias maps one key to one
+        field. `prop_physics` and `phys_fixed` move to **10.4** with the machines they are the base of. 10.3 ports
+        **six classes**: `light`, `lamp_post`, `item_ammo_*`, `monster_rifleman`, `monster_spawner`, `trigger_checkpoint`.
+      - **Asset names are part of the manifest, and today they are missing.** Textures read `Texture2D:#7`
+        (GameAssets loads them, LevelVisuals interns them anonymously), pickup sprites `Sprite:#2`, the lamp material
+        `Material:#1`. `MeshRenderConfig` loads a texture **by path** through `GetOrLoad` — a second copy of the same
+        PNG unless the first was interned under that path. So the port needs names first: GameAssets interns its
+        textures under their asset paths (`Textures/texture_13.png`) and the procedural ones under `proc:planks` /
+        `proc:sand`, registers the `Pickups` atlas with `SpriteLibrary`, and the game's materials get names in
+        `RenderAssets.Materials` (`lamp`, `water`; `enemy_dissolve` already has one).
+      - **Sized boxes by name.** The level's meshes are interned as `box:<centre>:<size>@<uv>` and `plane:<w>x<l>@<uv>`
+        (LevelVisuals). `MeshLibrary.Get` learns those two forms, LevelVisuals delegates to it, and a prefab says
+        `"mesh": "box:0,2.6,0:0.28,5.2,0.28@1"` — the same registry entry, the same handle, no scale trick.
+      - **`MeshRenderConfig` gains `material`** (a name) — the lamp head cannot be written without it.
+      - **A prefab node may be `"detached": true`**: spawned with the instance, posed by composing the instance pose
+        like the root, but **no `Parent`** — physics entities must be roots (2.4), and the lamp's collider is one.
+        And **`"previewOnly": true`** nodes exist only in `SpawnPreview`: the spawner's pad and ghost, the checkpoint's
+        translucent box, so the hand-written previews can go without inventing a second mechanism.
+      - **The enemy's geometry is a tunable baked into four literals** (ride 0.35 → lift 1.475, capsule 1.9 / −0.175,
+        sprite −0.35). The code reads `CharacterProfiles.Enemy.rideHeight` at spawn, the prefab will carry the numbers.
+        A game check pins the four to the profile's default, so a default change fails loudly instead of drifting.
+      - **The editor's bits ride in the prefab**: `"editor": { "pickExtents": [...], "gizmoColor": [...], "numeric":
+        ["intensity", "range"] }` fills `EntityDefinition`'s `pickExtents` / `gizmoColor` / `numericProps`; `description`
+        and `defaults` come from the prefab itself (Q4: `+` / `-` keep two fields, named here until 10.6's `[Range]`).
+      - **Override extraction is strict**: the loader passes every key but `classname` / `origin` / `angle` /
+        `targetname` as an override; a key the prefab does not know throws with the class and the key named. The six
+        classes' maps have no stray keys today (checked against dock.map), so a typo in a future map is caught at load.
+
+      **Steps** (one commit each; the manifest is the gate throughout)
+
+      - [ ] 10.3a **Names and forms** (engine + GameAssets, no level change). Parametrised mesh names in `MeshLibrary`;
+            `material` on `MeshRenderConfig` and named game materials; textures and the `Pickups` atlas interned under
+            names; `detached` / `previewOnly` prefab nodes with engine checks. **Gate**: the manifest changes **only in
+            asset names** (`Texture2D:#7` → `Texture2D:Textures/texture_13.png`, `Sprite:#2` → `Sprite:Pickups/…`,
+            `Material:#1` → `Material:lamp`) — shown by diffing with the ids normalised; 26 scripts and 4 shots as before.
+            Re-baseline the hashes in the roadmap.
+      - [ ] 10.3b **The loader spawns prefabs** (`EntityDefinition.prefab`, `GamePrefabs.Library` over `prefabs/level/`).
+            `prefab + (origin, angle) + overrides` through the chained resolver (`LoadedLevel.namedEntities`, roots
+            registered by `targetname`); `LevelRef.Index` stamped on the root; preview = `SpawnPreview`; `defaults` /
+            `description` / editor bits from the prefab. Port **one class** to prove the path: `trigger_checkpoint` (one
+            entity, one alias `size → ColliderShape.size`). **Gate**: manifest byte-identical to 10.3a; `checkpoint` gate.
+      - [ ] 10.3c **The five others**: `light`, `lamp_post` (head → light, detached collider), `item_ammo` base + five
+            children-of-`base`, `monster_rifleman` (the ride-height literals + their check), `monster_spawner` (pad and
+            ghost as `previewOnly`). Their `spawnEntity` / `previewEntity` code and `Gizmo` / `GhostSprite` /
+            `Billboard` / `LampPostEntity` go; `EntityRegistry` keeps `info_player_start`, the planes and the physics
+            classes. **Gate**: manifest byte-identical to 10.3a; 26 scripts byte-identical; 4 shots 0.000%; `deathf8`'s
+            asset count flat across the rebuild; the editor gate's shot unchanged (previews are the same entities).
+      - [ ] 10.3d **The save keys by component**: monsters / pickups / spawners found by `Enemy` / `Pickup` / `Spawner`
+            + `LevelRef.Index`, not by classname prefix; runtime monsters respawn through their prefab
+            (`EntityRegistry.Get(classname).prefab`). **Gate**: `saveload` round trip unchanged, `killenemy` /
+            `checkpoint` as before.
+- [ ] 10.4 **Derived classes on prefabs** (`prop_physics` and `phys_fixed` join it from 10.3: `size` fans out into mesh, UV, collider and lift). `phys_door` / `phys_hinge` / `phys_slider` / `phys_pendulum` /
       `phys_spring_prop` build the `prop_physics` prefab with a `derive` hook adding the computed `JointConfig`
       (+ `SliderPatrol`, the rod child); `joint_*` connectors resolve `body` / `connected` through the chained
       resolver (the prefab spawn registers `targetname` roots in `namedEntities`, pose math as in 9.2);
