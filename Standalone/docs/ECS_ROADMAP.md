@@ -54,7 +54,7 @@ then start at the first unchecked layer.
   the legacy producer are deleted; the application runs only the World, which drives its own fixed clock; the
   player, the level, the props, cameras, lights, menus, HUD and all four editor tools are entities and screens
   (close-out below)
-- [ ] Layer 10 — Editors on configs
+- [ ] Layer 10 — Editors on configs **(planned 2026-11-16: survey, direction, questions, steps 10.0–10.8 below; start at 10.0)**
 
 ### Pick-up point for the next session (written 2026-11-15, after 9.8; layer 10 is next)
 
@@ -1682,6 +1682,144 @@ acceptable where drawing moves onto entities.
 
 - Level editor places prefabs and edits `IComponentConfig` fields by reflection (like the VFX property grid).
 - `.map` entities reference prefabs; worldspawn keys become a singleton config.
+
+**What is there today** (surveyed at 9.8, 2026-11-16):
+
+| Piece | Where | Shape |
+|---|---|---|
+| Prefabs | `Ecs/Prefab.cs` (94) | **One entity** per prefab: a flat list of configs, `base` inheritance with field merge. No children, no entity references (`EcsDemo` wires the chain and the piston by hand), spawn only through a command buffer (`Instantiate(world)` → `world.Commands`, so the entity is not alive until playback). Used by `--ecs-demo` (15 files in `prefabs/demo/`) and the engine checks — **nothing in the game** |
+| Configs | 29 of 76 component structs | All engine-side (transforms, render, physics, joints, movers, animation, audio, camera rig) plus the game's `SliderPatrol` / `Spin`. **No game component the level places has one**: `Health`, `Armor`, `Hitbox`, `Enemy`, `Heading`, `Perception`, `AiBrain`, `AiIntent`, `EnemyWeapon`, `EnemyVisual`, `Spawner`, `Pickup`, `Bob`, `Checkpoint`, `WaterVolume`, `LevelRef`, `ImpactSurface`. Asset fields bake by name (`MeshRenderConfig.mesh = "box"`, `SpriteRenderConfig.sprite`); `ConfigUtil.Color` for `float[]` colours |
+| Entity classes | `EntityRegistry` (266), `PhysicsEntities` (448) | 26 classnames, each a **code pair** `spawnEntity` / `previewEntity` over `MapEntity` key/values, plus `defaults` (what the editor writes when placing), `numericProps` (the two keys `+` / `-` step), `pickExtents`, `gizmoColor`, `deferred`. Keys are Quake-style strings parsed ad hoc (`size "w h l"`, `hinge left`, `limits "-110 110"`); the machines (`phys_*`, `joint_*`) **derive** anchors / axes / lift from them. Props already bake their joints from `JointConfig` and their bodies from `BodyConfig` |
+| Loader | `LevelLoader` (214), `LevelVisuals` (108) | Brushes → chunk meshes (cached per file version) + static colliders tagged with surfaces; entities in two passes (connectors last) by classname; `info_player_start` handled inline; `LoadedLevel.namedEntities` (targetname → entity + spawn pose) for the connectors; preview mode = `previewEntity` for every class, **the whole preview rebuilt on every edit** |
+| Worldspawn | `LevelLoader.ApplyWorldspawn`, `ComputeKillY`, `LevelBuild` | `sun_elevation` / `sun_azimuth` / `sun_color` / `sky_zenith` / `sky_horizon` / `fog_color` poked straight into `Renderer.Lighting`; `kill_y` (else derived from the water plane / the lowest brush) into the `KillHeight` singleton; the sky spin **hard-coded** (`Sky.Spin(World, 1.2f)`); `message` unused |
+| Level editor | `EditorController` (893), `EditorUi` (342), `PhysicsPanel` (304) | Entity mode: class list (1–0 / , .), place on a surface, drag, `R` = +45°, `+` / `-` on the two `numericProps`, duplicate, delete, undo. **No property panel**: every other key is unreachable from the editor. Picking is geometric on `pickExtents`. The F9 panel edits `tunables.cfg` (global), not the level |
+| Property grid | `VfxEditorUi.DrawGrid` / `DrawField` (~150 lines) | Reflection over public fields, widget by type (float / int / bool / enum / string / `List<string>` / `FloatRange` / `Color` / `Vector3`), guided by `VfxRange` / `VfxGroup` / `VfxTip` / `VfxSprite` / `VfxEffectRef` attributes (declared in `Graphics/Particles/ParticleEffect.cs`), right-click = default. The model for the entity panel, but tied to the particle types and the vfx editor's palette |
+| Save | `GameSaveSystem` (313) | Level entities keyed by `LevelRef.Index` (position in `doc.entities`), **kinds told apart by classname prefix** (`monster_`, `item_`, `monster_spawner`); runtime monsters respawn through `EntityRegistry.Get(classname)` |
+| Player | `PlayerPrefab` (117), `PlayerLink.Spawn`, `ViewModel.Build` | Code with constants; a four-entity tree (capsule, pivot, camera, viewmodel sprites) with cross references (`PlayerViewRig`, `Weapon.Sprite`, `AltFire` fists) and non-entity wiring (weapon tables, HUD screen, clip-event callback, `MovementSettings` live from tunables) |
+| The level | `levels/dock.map` | 36 entities over 19 classes; the editor and the game both read it; `MapFile.Write` round-trips key order |
+
+**Direction (proposed 2026-11-16, review before 10.1)**
+
+- **A prefab is an entity tree.** `children` in the JSON, each named, each a prefab body of its own (`components`,
+  nested `children`), parented to the node above; `base` inheritance merges trees (a child of the same name merges, a
+  new name adds). `Prefab.Spawn(World, pose)` creates the tree **immediately** (a build) and returns the root plus
+  the named children; `Instantiate(CommandBuffer)` stays for systems. The instance pose composes with the root's
+  `LocalTransform` (the prefab's position is the offset above the placed origin — the enemy's 1.125 m, the pickup's
+  lift; `angle` adds to its yaw).
+- **Configs may reference entities by name.** `ComponentConfig<T>` gains `Bake(in BakeContext)` (default: calls
+  `Bake()`); the context carries `Self`, `Root`, the instance pose, and a `Named` lookup — the prefab's children
+  first, then whatever the caller chains (the level's targetnames). An `EntityRef` config field is a string
+  (`"sprite"`, `"root"`, a targetname) resolved before the struct is baked. That is `EnemyVisual.Sprite`,
+  `Joint.Connected` and the `body` / `connected` of the connectors — the hole the layer 2 close-out left open.
+- **A `.map` entity is a prefab plus field overrides.** `classname` names the prefab; `origin` / `angle` /
+  `targetname` are the instance; every other key overrides a config field by path (`Body.mass`, `LightSource.range`,
+  `ColliderShape.size "4 4 4"`), converted from the Quake string by the field's type. Prefabs carry a `keys` alias
+  table so today's short keys keep working (`"mass": "Body.mass"`, `"intensity": "LightSource.intensity"`):
+  **`dock.map` does not change** and stays TrenchBroom-plain. The override merge is the `base` merge, applied last.
+- **Two tiers of classes.** *Data classes* are prefab files, nothing else: `light`, `lamp_post`, the five
+  `item_ammo_*` (one `item_ammo` base), `monster_rifleman`, `monster_spawner`, `trigger_checkpoint`, `prop_physics`,
+  `phys_fixed`. *Derived classes* keep a small code hook that turns their keys into geometry — the door's hinge edge,
+  the pendulum's rod and swing, the plane meshes sized by `size`, the connectors' anchors — but build **on top of a
+  prefab** (`prop_physics` for every machine body) and add computed configs to the same bake. `EntityDefinition`
+  shrinks to `prefab` + optional `derive`; `defaults` are the prefab's values, `description` the prefab's.
+- **The preview is the prefab minus what simulates.** A `[NotInPreview]` attribute on component structs (engine:
+  `Body`, `BodyVelocity`, `Joint`, `CharacterMotor`, `KinematicMover`, `Trigger`, `ColliderShape`,
+  `ReportCollisions`; game: `AiBrain`, `AiIntent`, `Perception`, `EnemyWeapon`, `Spawner`, `Pickup`, `Checkpoint`,
+  `WaterVolume`, `LevelRef`); the editor spawns the same prefab with those stripped. The hand-written
+  `previewEntity`s go, except the stand-ins that have no runtime look (the player start's gizmo, the spawner's pad,
+  the checkpoint's translucent box — drawn from the config's size).
+- **Worldspawn is a singleton config.** `Worldspawn` struct + `WorldspawnConfig` (message, sun, sky, fog, `killY`,
+  `skySpin`); the loader bakes it from the worldspawn keys by the same path / alias mechanism; a `WorldspawnSystem`
+  writes `KillHeight`, `SkySpin` and `Renderer.Lighting` on start and when the editor changes it. `kill_y` unset
+  keeps today's derivation.
+- **One property grid, shared.** `DrawField` moves to `RipNRage.ImGui` as `PropertyGrid`, the `Vfx*` attributes
+  generalise to engine `Inspect*` attributes (`[Range]`, `[Group]`, `[Tip]`, `[AssetRef(kind)]`, `[EntityRef]`) kept
+  as aliases where the particle types use them. The editor's Entity window draws the selection's prefab, one section
+  per config, overridden fields in the accent colour, right-click = back to the prefab's value (the key leaves the
+  map). Edits are undoable and re-preview **only the edited entity**.
+- **The gate of the layer is the level manifest.** Swapping a class from code to a prefab must build the *same
+  entities*: same components, same field values, same children, same asset names. 10.0 dumps that manifest; every
+  port is byte-identical against it, and the 26 scripts and four shots stay what 9.8 pinned.
+
+**Questions for review** (recommendations in bold)
+
+- **Q1 — map keys.** Keep the short Quake keys through per-prefab alias tables, or migrate `dock.map` to field paths
+  once? **Aliases, and accept paths as well** (an unknown key is tried as a path): the file stays readable and
+  byte-identical, and new keys never need an alias.
+- **Q2 — the player.** Make the player's entity tree a prefab (`prefabs/player.json`, ~12 more configs, every gate
+  touches it) or leave `PlayerLink.Spawn` as code? **Leave it**: there is one player, its tunables already live in
+  `tunables.cfg`, and the enemy prefab exercises the same tree-and-references machinery. Revisit if a second
+  character kind appears.
+- **Q3 — prefab authoring in the editor.** "Save selection as prefab" and hot reload of `prefabs/` are cheap on top
+  of the grid; editing a prefab's *defaults* in place (every instance follows) needs a second mode of the same panel.
+  **Do the first two (10.7), make in-place default editing a stretch.**
+- **Q4 — the `+` / `-` keys.** Keep them bound to the prefab's first two numeric fields, or let the panel replace
+  them? **Keep, bound to the first two `[Range]`-marked fields of the prefab** — the scripted editor gates use them.
+- **Q5 — where prefabs live.** `prefabs/level/` next to `prefabs/demo/`, the library loading `prefabs/` recursively
+  (names must be unique across folders — the library throws on a clash). **Yes.**
+- **Q6 — the decisions table** gets a row once 10.1 lands: *Prefabs: entity trees with named children; references by
+  name through a bake context; a `.map` entity = prefab + field overrides.*
+
+**Steps** (one commit + review stop each)
+
+- [ ] 10.0 **Instrument** — the level manifest. `--dump-level OUT.level` (and the `[test]` line `level: N entities,
+      manifest <hash>`) writes every entity of the built level sorted by `LevelRef.Index` / classname / position:
+      its components in registry order, each public field by reflection (asset handles as `NameOf`, entities as
+      `root` / child paths, floats to 4 places). `gates.sh` writes `walk.level` and `menu.level` and compares them
+      across sweeps like the probes. The editor joins the sweep: `edit` (dock.map, 90 frames, screenshot) and the
+      existing `session` script, their `[test]` lines and shots compared like the game's. **Baseline**: the manifest
+      of `dock.map` as the code spawns build it — the truth the ports reproduce.
+- [ ] 10.1 **Prefab trees, references, overrides (engine)**. `children`, `Prefab.Spawn(World, pose)` immediate with
+      the named-children result, `Instantiate(CommandBuffer)` kept (reserved entities resolve the same way),
+      `BakeContext` + `Bake(in ctx)`, `EntityRef`, the chained `Named` resolver, `PrefabLibrary.Get(name, overrides)`
+      with typed conversion from strings (float / int / bool / enum / string / `float[]` "1 2 3" / `EntityRef`),
+      `keys` aliases, path validation (an unknown config or field throws with the prefab and key named),
+      `[NotInPreview]` + `Prefab.SpawnPreview`. Asset-by-name bakes must reuse handles (the registry is append-only:
+      intern under the name, `deathf8` pins it). `Layer10Checks` in EngineChecks: tree parented and posed, child
+      merge under `base`, refs resolved (child / root / chained / missing → error), overrides typed and merged last,
+      alias and path both reach a field, the preview strips, command-buffer spawn equals the immediate spawn.
+- [ ] 10.2 **Configs for the game components the level places.** `Health`, `Armor`, `Hitbox`, `Enemy` (kind by
+      classname), `Heading`, `Perception`, `AiBrain` (seeded from the instance pose — the placement seed of 7.5 stays
+      exact), `AiIntent`, `EnemyWeapon`, `EnemyVisual` (`sprite` ref), `SpriteFx`, `Spawner` (monster by classname),
+      `Pickup` (ammo by name, amount from the table when 0), `Bob` (phase from the pose), `Checkpoint`,
+      `WaterVolume` (min / max from the pose and a size), `ImpactSurface` (surface by name), `LevelRef`. Runtime-only
+      components stay without (the registry allows it). GameChecks: each config's bake equals the code spawn's
+      struct field by field, over a world. No level change yet; the manifest is untouched.
+- [ ] 10.3 **Data classes become prefab files** (`prefabs/level/`). `light`, `lamp_post` (post → head → light),
+      `item_ammo` + five children-of-`base`, `monster_rifleman` (body + sprite child), `monster_spawner`,
+      `trigger_checkpoint`, `prop_physics`, `phys_fixed`. `EntityDefinition.prefab`; the loader spawns
+      `prefab + (origin, angle, targetname) + overrides`; the preview is `SpawnPreview` plus the stand-in gizmos;
+      `defaults` / `description` / `numericProps` read from the prefab (Q4). The save keys monsters / pickups /
+      spawners by **component**, not by classname prefix (prefab names are data now); runtime monsters respawn
+      through the prefab. **Gate**: `walk.level` / `menu.level` byte-identical to 10.0 (the manifest proves the
+      swap invisible), 26 scripts byte-identical, four shots 0.000%, `saveload` round trip unchanged, `deathf8`'s
+      asset count flat across the rebuild.
+- [ ] 10.4 **Derived classes on prefabs.** `phys_door` / `phys_hinge` / `phys_slider` / `phys_pendulum` /
+      `phys_spring_prop` build the `prop_physics` prefab with a `derive` hook adding the computed `JointConfig`
+      (+ `SliderPatrol`, the rod child); `joint_*` connectors resolve `body` / `connected` through the chained
+      resolver (the prefab spawn registers `targetname` roots in `namedEntities`, pose math as in 9.2);
+      `water_plane` / `floor_plane` derive their plane mesh and volume from `size` over a `plane` prefab;
+      `info_player_start` stays the loader's. `PhysicsEntities` keeps only the derivations. **Gate**: manifest
+      identical; the dock's shelf breaks with the layer-2 numbers (666 N / 147 N·m); `--ecs-demo`'s machines
+      move onto the same prefabs where they are the same thing.
+- [ ] 10.5 **Worldspawn singleton.** `Worldspawn` + `WorldspawnConfig` + `WorldspawnSystem`; `ApplyWorldspawn`,
+      `ComputeKillY`'s explicit branch and `LevelBuild`'s `Sky.Spin(1.2f)` fold into it (the derived kill height
+      stays the unset default). The `menu` / `look` shots pin the lighting; `fall`'s `killY` probe pins the height.
+- [ ] 10.6 **The editor's Entity window.** `PropertyGrid` in `RipNRage.ImGui` (lifted from the vfx editor, which
+      then draws through it — its shots pin the move), `Inspect*` attributes on the engine side. The window: prefab
+      (combo to swap class, keeping shared overrides), origin / angle, then each config with its fields; overrides in
+      accent, right-click reverts, multi-selection applies to all, one undo step per edit, per-entity preview
+      rebuild (`LoadedLevel.previewEntities` becomes per map entity). A **Level** tab draws the `WorldspawnConfig`
+      live. Editor gate `properties`: select the door, set `Body.mass` through the controller, revert
+      `LightSource.range` on a lamp, save, assert the keys in the file, screenshot.
+- [ ] 10.7 **Prefab authoring** (Q3). "Save selection as prefab" writes `prefabs/level/<name>.json` from the merged
+      values and points the map entity at it; `prefabs/` hot-reloads in the editor (the animations / vfx watcher
+      pattern) and re-previews. Stretch: edit a prefab's defaults in place.
+- [ ] 10.8 **Close-out.** Full sweep twice (checks, 26 scripts, four shots, two manifests, the editor gates); bench
+      flat vs 9.8; all four tools and the benchmark clean; `EntityRegistry` + `PhysicsEntities` line totals before /
+      after; README: the prefab format (tree, refs, overrides, aliases), the level entity table rewritten as
+      "classname = prefab in `prefabs/level/`", the editor's Entity window; the pick-up point rewritten for what
+      follows the migration (the general `ROADMAP.md` gaps).
 
 ## Conventions
 
