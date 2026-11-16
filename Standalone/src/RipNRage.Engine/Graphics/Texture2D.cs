@@ -14,6 +14,10 @@ namespace RipNRage.Engine.Graphics
         private static readonly Dictionary<string, Texture2D> Cache = new Dictionary<string, Texture2D>(StringComparer.OrdinalIgnoreCase);
 
         public uint Handle { get; private set; }
+        /// <summary>The pixels, until they are uploaded (headless: a texture exists as data with no GPU object).</summary>
+        private Image _pixels;
+        /// <summary>True once the pixels reached the GPU (<see cref="Handle"/> is valid).</summary>
+        public bool IsUploaded => Handle != 0;
         public int width { get; private set; }
         public int height { get; private set; }
         public FilterMode filterMode { get; private set; }
@@ -23,19 +27,30 @@ namespace RipNRage.Engine.Graphics
 
         private Texture2D() { }
 
-        public static unsafe Texture2D Create(Image image, FilterMode filter = FilterMode.Trilinear, TextureWrapMode wrap = TextureWrapMode.Clamp, bool mipmaps = true, string name = null)
+        public static Texture2D Create(Image image, FilterMode filter = FilterMode.Trilinear, TextureWrapMode wrap = TextureWrapMode.Clamp, bool mipmaps = true, string name = null)
         {
             var tex = new Texture2D { width = image.Width, height = image.Height, filterMode = filter, wrapMode = wrap, HasMipmaps = mipmaps, name = name ?? "Texture" };
-            byte[] flipped = image.GetFlippedPixels(); // GL expects the bottom row first
-            tex.Handle = GL.GenTexture();
-            GL.BindTexture(GL.TEXTURE_2D, tex.Handle);
+            // Headless (a check, a tool, a config bake before the window exists): keep the pixels and upload on first
+            // use. Nothing can draw without a context anyway, and touching GL here is what used to kill the process.
+            tex._pixels = image;
+            if (GL.IsLoaded) tex.Upload();
+            return tex;
+        }
+
+        /// <summary>Uploads the pixels kept since <see cref="Create"/> (no-op once uploaded). Needs a current context.</summary>
+        public unsafe void Upload()
+        {
+            if (Handle != 0 || _pixels == null) return;
+            byte[] flipped = _pixels.GetFlippedPixels(); // GL expects the bottom row first
+            Handle = GL.GenTexture();
+            GL.BindTexture(GL.TEXTURE_2D, Handle);
             GL.PixelStorei(GL.UNPACK_ALIGNMENT, 1);
             fixed (byte* p = flipped)
-                GL.TexImage2D(GL.TEXTURE_2D, 0, (int)GL.RGBA8, image.Width, image.Height, 0, GL.RGBA, GL.UNSIGNED_BYTE, p);
-            tex.ApplyParameters();
-            if (mipmaps) GL.GenerateMipmap(GL.TEXTURE_2D);
+                GL.TexImage2D(GL.TEXTURE_2D, 0, (int)GL.RGBA8, _pixels.Width, _pixels.Height, 0, GL.RGBA, GL.UNSIGNED_BYTE, p);
+            ApplyParameters();
+            if (HasMipmaps) GL.GenerateMipmap(GL.TEXTURE_2D);
             GL.BindTexture(GL.TEXTURE_2D, 0);
-            return tex;
+            _pixels = null; // the GPU has it now
         }
 
         /// <summary>Creates a solid colour texture (for untextured geometry / UI fills).</summary>
@@ -84,6 +99,7 @@ namespace RipNRage.Engine.Graphics
 
         public void Bind(int unit = 0)
         {
+            if (Handle == 0) Upload(); // created before the context existed
             GL.ActiveTexture(GL.TEXTURE0 + (uint)unit);
             GL.BindTexture(GL.TEXTURE_2D, Handle);
         }

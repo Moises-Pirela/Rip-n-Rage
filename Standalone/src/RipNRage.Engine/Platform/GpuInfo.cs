@@ -71,6 +71,7 @@ namespace RipNRage.Engine.Platform
                 if (!overwrite && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(name))) return;
                 if (!NativeLibrary.TryLoad("libc.so.6", out var libc) && !NativeLibrary.TryLoad("libc", out libc)) return;
                 var fn = (delegate* unmanaged<byte*, byte*, int, int>)NativeLibrary.GetExport(libc, "setenv");
+                if (fn == null) return; // never call a null function pointer: that is a segfault, not an exception
                 byte[] n = System.Text.Encoding.UTF8.GetBytes(name + "\0"), v = System.Text.Encoding.UTF8.GetBytes(value + "\0");
                 fixed (byte* pn = n) fixed (byte* pv = v) fn(pn, pv, 1);
                 Environment.SetEnvironmentVariable(name, value);

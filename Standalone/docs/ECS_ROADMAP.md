@@ -1916,6 +1916,26 @@ that changes what the level builds.
               `Material:#1` → `Material:lamp`, `Texture2D:#8` → `Texture2D:white`). Still anonymous, by design: the 15
               level chunk meshes (keyed by file + timestamp), the brush face tables and hulls, the viewmodel sprites.
               **Re-baselined: dock.map `e180c83d`, title `01f09c74`** (106 / 98 entities).
+      - [x] **Headless safety** (after 10.3a, by request: "even headless should not crash the engine"). The segfault
+            10.3a hit was the binding layer: `GL`'s entry points are `delegate* unmanaged` fields, null until
+            `LoadFunctions` runs against a context, and calling a null function pointer jumps to address 0 — a crash
+            with no stack, no log and no exit message (it killed the whole check suite silently). **Every one of the 87
+            wrappers now guards its entry point** (`Ensure((void*)_fn, "glX")`) and throws `GraphicsContextException`
+            naming the call; `GL.IsLoaded` says whether a context was ever bound. A script did the rewrite and a second
+            pass verified that no wrapper calls a field it has not guarded — which found the one hand-written
+            exception, `DrawElementsBaseVertex`, whose deliberate fallback to `glDrawElements` the blanket guard would
+            have broken.
+            - **Textures are data first**: `Texture2D.Create` keeps the pixels and uploads on first `Bind` (or an
+              explicit `Upload`) — so `Texture2D.White`, `Texture2D.Load`, the atlases and therefore a **whole
+              `MeshRenderConfig` / `SpriteRenderConfig` bake work headless**, which is what the checks and the coming
+              editor work need. `IsUploaded` / `Handle == 0` is the honest state. Meshes already deferred.
+            - Shaders and materials still need a context (compiling is a GL act) — headless they now say so by name.
+            - The other function-pointer surfaces are safe: Clay and GLFW are `DllImport` (a missing library is a
+              managed exception), and `GpuInfo`'s one `setenv` pointer sits in a try/catch (now null-checked too).
+            - **Checks** (+8 → 252 engine): no context in the checks, a GL call throws and names the entry point,
+              `Texture2D.White` is 4×4 data with handle 0, binding it headless is the named error, and the full
+              `MeshRenderConfig` bake resolves mesh + `white` texture. **The renderer is untouched**: the `look` shot
+              is 0.000% against the pre-change build and `walk`'s manifest is still `e180c83d`; game checks 467.
       - [ ] 10.3b **The loader spawns prefabs** (`EntityDefinition.prefab`, `GamePrefabs.Library` over `prefabs/level/`).
             `prefab + (origin, angle) + overrides` through the chained resolver (`LoadedLevel.namedEntities`, roots
             registered by `targetname`); `LevelRef.Index` stamped on the root; preview = `SpawnPreview`; `defaults` /
@@ -1959,6 +1979,11 @@ that changes what the level builds.
       follows the migration (the general `ROADMAP.md` gaps).
 
 ## Conventions
+
+- **Headless code must not touch the GPU.** `GL` throws `GraphicsContextException` (naming the entry point) when
+  there is no context instead of segfaulting; `GL.IsLoaded` tells you. Data types keep their data on the CPU and
+  upload later (`Texture2D` on first bind, `Mesh` on `Upload`), so configs, manifests, checks and tools work without
+  a window. Compiling a shader or building a `Material` still needs one.
 
 - New component: a `struct : IComponent` plus one `ComponentConfig<T>` (JSON field names = config field names).
   Mark toggled state / tags `[SparseComponent]`.

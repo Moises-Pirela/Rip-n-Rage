@@ -206,6 +206,20 @@ namespace RipNRage.Engine.Platform
             }
         }
 
+        /// <summary>True once <see cref="LoadFunctions"/> bound the entry points against a current context.</summary>
+        public static bool IsLoaded { get; private set; }
+
+        /// <summary>
+        /// Guards every call below: an entry point is null until <see cref="LoadFunctions"/> runs, and calling a null
+        /// function pointer jumps to address 0 — a segfault with no stack and no log, which is how a headless check
+        /// once took a whole suite down. This turns that into an exception naming the call.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private static void Ensure(void* fn, string entry)
+        {
+            if (fn == null) throw new GraphicsContextException(entry);
+        }
+
         public static void LoadFunctions(Func<string, IntPtr> getProc)
         {
             _clear = (delegate* unmanaged<uint, void>)getProc("glClear");
@@ -298,65 +312,191 @@ namespace RipNRage.Engine.Platform
 
             if (_clear == null || _createShader == null || _genVertexArrays == null)
                 throw new InvalidOperationException("Failed to load core OpenGL 3.3 functions. Is a 3.3+ core context current?");
+            IsLoaded = true;
         }
 
         // ---- wrappers ----
-        public static void Clear(uint mask) => _clear(mask);
-        public static void ClearColor(float r, float g, float b, float a) => _clearColor(r, g, b, a);
-        public static void Viewport(int x, int y, int w, int h) => _viewport(x, y, w, h);
-        public static void Enable(uint cap) => _enable(cap);
-        public static void Disable(uint cap) => _disable(cap);
-        public static void BlendFunc(uint src, uint dst) => _blendFunc(src, dst);
-        public static void DepthFunc(uint f) => _depthFunc(f);
-        public static void DepthMask(bool flag) => _depthMask(flag ? (byte)1 : (byte)0);
-        public static void CullFace(uint mode) => _cullFace(mode);
-        public static void FrontFace(uint mode) => _frontFace(mode);
-        public static string GetString(uint name) { byte* p = _getString(name); return p == null ? "" : Marshal.PtrToStringAnsi((IntPtr)p); }
-        public static int GetInteger(uint pname) { int v; _getIntegerv(pname, &v); return v; }
-        public static uint GetError() => _getError();
-        public static uint GenTexture() { uint t; _genTextures(1, &t); return t; }
-        public static void DeleteTexture(uint t) => _deleteTextures(1, &t);
-        public static void BindTexture(uint target, uint t) => _bindTexture(target, t);
-        public static void ActiveTexture(uint unit) => _activeTexture(unit);
-        public static void TexImage2D(uint target, int level, int internalFormat, int w, int h, int border, uint format, uint type, void* data) =>
+        public static void Clear(uint mask) {
+            Ensure((void*)_clear, "glClear");
+            _clear(mask);
+        }
+        public static void ClearColor(float r, float g, float b, float a) {
+            Ensure((void*)_clearColor, "glClearColor");
+            _clearColor(r, g, b, a);
+        }
+        public static void Viewport(int x, int y, int w, int h) {
+            Ensure((void*)_viewport, "glViewport");
+            _viewport(x, y, w, h);
+        }
+        public static void Enable(uint cap) {
+            Ensure((void*)_enable, "glEnable");
+            _enable(cap);
+        }
+        public static void Disable(uint cap) {
+            Ensure((void*)_disable, "glDisable");
+            _disable(cap);
+        }
+        public static void BlendFunc(uint src, uint dst) {
+            Ensure((void*)_blendFunc, "glBlendFunc");
+            _blendFunc(src, dst);
+        }
+        public static void DepthFunc(uint f) {
+            Ensure((void*)_depthFunc, "glDepthFunc");
+            _depthFunc(f);
+        }
+        public static void DepthMask(bool flag) {
+            Ensure((void*)_depthMask, "glDepthMask");
+            _depthMask(flag ? (byte)1 : (byte)0);
+        }
+        public static void CullFace(uint mode) {
+            Ensure((void*)_cullFace, "glCullFace");
+            _cullFace(mode);
+        }
+        public static void FrontFace(uint mode) {
+            Ensure((void*)_frontFace, "glFrontFace");
+            _frontFace(mode);
+        }
+        public static string GetString(uint name) {
+            Ensure((void*)_getString, "glGetString");
+            byte* p = _getString(name); return p == null ? "" : Marshal.PtrToStringAnsi((IntPtr)p);
+        }
+        public static int GetInteger(uint pname) {
+            Ensure((void*)_getIntegerv, "glGetIntegerv");
+            int v; _getIntegerv(pname, &v); return v;
+        }
+        public static uint GetError() {
+            Ensure((void*)_getError, "glGetError");
+            return _getError();
+        }
+        public static uint GenTexture() {
+            Ensure((void*)_genTextures, "glGenTextures");
+            uint t; _genTextures(1, &t); return t;
+        }
+        public static void DeleteTexture(uint t) {
+            Ensure((void*)_deleteTextures, "glDeleteTextures");
+            _deleteTextures(1, &t);
+        }
+        public static void BindTexture(uint target, uint t) {
+            Ensure((void*)_bindTexture, "glBindTexture");
+            _bindTexture(target, t);
+        }
+        public static void ActiveTexture(uint unit) {
+            Ensure((void*)_activeTexture, "glActiveTexture");
+            _activeTexture(unit);
+        }
+        public static void TexImage2D(uint target, int level, int internalFormat, int w, int h, int border, uint format, uint type, void* data) {
+            Ensure((void*)_texImage2D, "glTexImage2D");
             _texImage2D(target, level, internalFormat, w, h, border, format, type, data);
-        public static void TexSubImage2D(uint target, int level, int x, int y, int w, int h, uint format, uint type, void* data) =>
+        }
+        public static void TexSubImage2D(uint target, int level, int x, int y, int w, int h, uint format, uint type, void* data) {
+            Ensure((void*)_texSubImage2D, "glTexSubImage2D");
             _texSubImage2D(target, level, x, y, w, h, format, type, data);
-        public static void TexParameteri(uint target, uint pname, int v) => _texParameteri(target, pname, v);
-        public static void TexParameteriv(uint target, uint pname, int* v) => _texParameteriv(target, pname, v);
-        public static void TexParameterf(uint target, uint pname, float v) => _texParameterf(target, pname, v);
-        public static void GenerateMipmap(uint target) => _generateMipmap(target);
-        public static void PixelStorei(uint pname, int v) => _pixelStorei(pname, v);
-        public static uint GenBuffer() { uint b; _genBuffers(1, &b); return b; }
-        public static void DeleteBuffer(uint b) => _deleteBuffers(1, &b);
-        public static void BindBuffer(uint target, uint b) => _bindBuffer(target, b);
-        public static void BufferData(uint target, nint size, void* data, uint usage) => _bufferData(target, size, data, usage);
-        public static void BufferSubData(uint target, nint offset, nint size, void* data) => _bufferSubData(target, offset, size, data);
-        public static uint GenVertexArray() { uint v; _genVertexArrays(1, &v); return v; }
-        public static void DeleteVertexArray(uint v) => _deleteVertexArrays(1, &v);
-        public static void BindVertexArray(uint v) => _bindVertexArray(v);
-        public static void EnableVertexAttribArray(uint i) => _enableVertexAttribArray(i);
-        public static void VertexAttribPointer(uint index, int size, uint type, bool normalized, int stride, int offset) =>
+        }
+        public static void TexParameteri(uint target, uint pname, int v) {
+            Ensure((void*)_texParameteri, "glTexParameteri");
+            _texParameteri(target, pname, v);
+        }
+        public static void TexParameteriv(uint target, uint pname, int* v) {
+            Ensure((void*)_texParameteriv, "glTexParameteriv");
+            _texParameteriv(target, pname, v);
+        }
+        public static void TexParameterf(uint target, uint pname, float v) {
+            Ensure((void*)_texParameterf, "glTexParameterf");
+            _texParameterf(target, pname, v);
+        }
+        public static void GenerateMipmap(uint target) {
+            Ensure((void*)_generateMipmap, "glGenerateMipmap");
+            _generateMipmap(target);
+        }
+        public static void PixelStorei(uint pname, int v) {
+            Ensure((void*)_pixelStorei, "glPixelStorei");
+            _pixelStorei(pname, v);
+        }
+        public static uint GenBuffer() {
+            Ensure((void*)_genBuffers, "glGenBuffers");
+            uint b; _genBuffers(1, &b); return b;
+        }
+        public static void DeleteBuffer(uint b) {
+            Ensure((void*)_deleteBuffers, "glDeleteBuffers");
+            _deleteBuffers(1, &b);
+        }
+        public static void BindBuffer(uint target, uint b) {
+            Ensure((void*)_bindBuffer, "glBindBuffer");
+            _bindBuffer(target, b);
+        }
+        public static void BufferData(uint target, nint size, void* data, uint usage) {
+            Ensure((void*)_bufferData, "glBufferData");
+            _bufferData(target, size, data, usage);
+        }
+        public static void BufferSubData(uint target, nint offset, nint size, void* data) {
+            Ensure((void*)_bufferSubData, "glBufferSubData");
+            _bufferSubData(target, offset, size, data);
+        }
+        public static uint GenVertexArray() {
+            Ensure((void*)_genVertexArrays, "glGenVertexArrays");
+            uint v; _genVertexArrays(1, &v); return v;
+        }
+        public static void DeleteVertexArray(uint v) {
+            Ensure((void*)_deleteVertexArrays, "glDeleteVertexArrays");
+            _deleteVertexArrays(1, &v);
+        }
+        public static void BindVertexArray(uint v) {
+            Ensure((void*)_bindVertexArray, "glBindVertexArray");
+            _bindVertexArray(v);
+        }
+        public static void EnableVertexAttribArray(uint i) {
+            Ensure((void*)_enableVertexAttribArray, "glEnableVertexAttribArray");
+            _enableVertexAttribArray(i);
+        }
+        public static void VertexAttribPointer(uint index, int size, uint type, bool normalized, int stride, int offset) {
+            Ensure((void*)_vertexAttribPointer, "glVertexAttribPointer");
             _vertexAttribPointer(index, size, type, normalized ? (byte)1 : (byte)0, stride, (void*)offset);
-        public static void DrawArrays(uint mode, int first, int count) => _drawArrays(mode, first, count);
-        public static void DrawElements(uint mode, int count, uint type, int offset) => _drawElements(mode, count, type, (void*)offset);
+        }
+        public static void DrawArrays(uint mode, int first, int count) {
+            Ensure((void*)_drawArrays, "glDrawArrays");
+            _drawArrays(mode, first, count);
+        }
+        public static void DrawElements(uint mode, int count, uint type, int offset) {
+            Ensure((void*)_drawElements, "glDrawElements");
+            _drawElements(mode, count, type, (void*)offset);
+        }
         /// <summary>Indexed draw with every index shifted by <paramref name="baseVertex"/> (Dear ImGui's per-command vertex offset).</summary>
         public static void DrawElementsBaseVertex(uint mode, int count, uint type, int offset, int baseVertex)
         {
-            if (_drawElementsBaseVertex != null) _drawElementsBaseVertex(mode, count, type, (void*)offset, baseVertex);
-            else _drawElements(mode, count, type, (void*)offset); // GL 3.2+ always has it; fall back rather than crash
+            if (_drawElementsBaseVertex != null) { _drawElementsBaseVertex(mode, count, type, (void*)offset, baseVertex); return; }
+            Ensure((void*)_drawElements, "glDrawElements"); // GL 3.2+ always has base vertex; fall back rather than crash
+            _drawElements(mode, count, type, (void*)offset);
         }
-        public static void BlendFuncSeparate(uint srcRgb, uint dstRgb, uint srcA, uint dstA) => _blendFuncSeparate(srcRgb, dstRgb, srcA, dstA);
-        public static void BlendEquation(uint mode) => _blendEquation(mode);
+        public static void BlendFuncSeparate(uint srcRgb, uint dstRgb, uint srcA, uint dstA) {
+            Ensure((void*)_blendFuncSeparate, "glBlendFuncSeparate");
+            _blendFuncSeparate(srcRgb, dstRgb, srcA, dstA);
+        }
+        public static void BlendEquation(uint mode) {
+            Ensure((void*)_blendEquation, "glBlendEquation");
+            _blendEquation(mode);
+        }
         /// <summary>GL 3.3 instancing: one draw for <paramref name="instances"/> copies (per-instance attributes via <see cref="VertexAttribDivisor"/>).</summary>
-        public static void DrawElementsInstanced(uint mode, int count, uint type, int offset, int instances) => _drawElementsInstanced(mode, count, type, (void*)offset, instances);
+        public static void DrawElementsInstanced(uint mode, int count, uint type, int offset, int instances) {
+            Ensure((void*)_drawElementsInstanced, "glDrawElementsInstanced");
+            _drawElementsInstanced(mode, count, type, (void*)offset, instances);
+        }
         public static bool HasInstancing => _drawElementsInstanced != null && _vertexAttribDivisor != null;
-        public static void VertexAttribDivisor(uint index, uint divisor) => _vertexAttribDivisor(index, divisor);
-        public static void DisableVertexAttribArray(uint index) => _disableVertexAttribArray(index);
-        public static uint CreateShader(uint type) => _createShader(type);
+        public static void VertexAttribDivisor(uint index, uint divisor) {
+            Ensure((void*)_vertexAttribDivisor, "glVertexAttribDivisor");
+            _vertexAttribDivisor(index, divisor);
+        }
+        public static void DisableVertexAttribArray(uint index) {
+            Ensure((void*)_disableVertexAttribArray, "glDisableVertexAttribArray");
+            _disableVertexAttribArray(index);
+        }
+        public static uint CreateShader(uint type) {
+            Ensure((void*)_createShader, "glCreateShader");
+            return _createShader(type);
+        }
 
         public static void ShaderSource(uint shader, string source)
         {
+            Ensure((void*)_shaderSource, "glShaderSource");
             byte[] bytes = Encoding.UTF8.GetBytes(source + "\0");
             fixed (byte* p = bytes)
             {
@@ -366,41 +506,87 @@ namespace RipNRage.Engine.Platform
             }
         }
 
-        public static void CompileShader(uint s) => _compileShader(s);
-        public static int GetShaderi(uint s, uint pname) { int v; _getShaderiv(s, pname, &v); return v; }
+        public static void CompileShader(uint s) {
+            Ensure((void*)_compileShader, "glCompileShader");
+            _compileShader(s);
+        }
+        public static int GetShaderi(uint s, uint pname) {
+            Ensure((void*)_getShaderiv, "glGetShaderiv");
+            int v; _getShaderiv(s, pname, &v); return v;
+        }
         public static string GetShaderInfoLog(uint s)
         {
+            Ensure((void*)_getShaderInfoLog, "glGetShaderInfoLog");
             int len = GetShaderi(s, INFO_LOG_LENGTH);
             if (len <= 1) return "";
             byte[] buf = new byte[len];
             fixed (byte* p = buf) { int written; _getShaderInfoLog(s, len, &written, p); return Encoding.UTF8.GetString(buf, 0, written); }
         }
-        public static void DeleteShader(uint s) => _deleteShader(s);
-        public static uint CreateProgram() => _createProgram();
-        public static void AttachShader(uint p, uint s) => _attachShader(p, s);
-        public static void LinkProgram(uint p) => _linkProgram(p);
-        public static int GetProgrami(uint p, uint pname) { int v; _getProgramiv(p, pname, &v); return v; }
+        public static void DeleteShader(uint s) {
+            Ensure((void*)_deleteShader, "glDeleteShader");
+            _deleteShader(s);
+        }
+        public static uint CreateProgram() {
+            Ensure((void*)_createProgram, "glCreateProgram");
+            return _createProgram();
+        }
+        public static void AttachShader(uint p, uint s) {
+            Ensure((void*)_attachShader, "glAttachShader");
+            _attachShader(p, s);
+        }
+        public static void LinkProgram(uint p) {
+            Ensure((void*)_linkProgram, "glLinkProgram");
+            _linkProgram(p);
+        }
+        public static int GetProgrami(uint p, uint pname) {
+            Ensure((void*)_getProgramiv, "glGetProgramiv");
+            int v; _getProgramiv(p, pname, &v); return v;
+        }
         public static string GetProgramInfoLog(uint p)
         {
+            Ensure((void*)_getProgramInfoLog, "glGetProgramInfoLog");
             int len = GetProgrami(p, INFO_LOG_LENGTH);
             if (len <= 1) return "";
             byte[] buf = new byte[len];
             fixed (byte* b = buf) { int written; _getProgramInfoLog(p, len, &written, b); return Encoding.UTF8.GetString(buf, 0, written); }
         }
-        public static void UseProgram(uint p) => _useProgram(p);
-        public static void DeleteProgram(uint p) => _deleteProgram(p);
+        public static void UseProgram(uint p) {
+            Ensure((void*)_useProgram, "glUseProgram");
+            _useProgram(p);
+        }
+        public static void DeleteProgram(uint p) {
+            Ensure((void*)_deleteProgram, "glDeleteProgram");
+            _deleteProgram(p);
+        }
         public static int GetUniformLocation(uint p, string name)
         {
+            Ensure((void*)_getUniformLocation, "glGetUniformLocation");
             byte[] bytes = Encoding.ASCII.GetBytes(name + "\0");
             fixed (byte* b = bytes) return _getUniformLocation(p, b);
         }
-        public static void Uniform1i(int loc, int v) => _uniform1i(loc, v);
-        public static void Uniform1f(int loc, float v) => _uniform1f(loc, v);
-        public static void Uniform2f(int loc, float x, float y) => _uniform2f(loc, x, y);
-        public static void Uniform3f(int loc, float x, float y, float z) => _uniform3f(loc, x, y, z);
-        public static void Uniform4f(int loc, float x, float y, float z, float w) => _uniform4f(loc, x, y, z, w);
+        public static void Uniform1i(int loc, int v) {
+            Ensure((void*)_uniform1i, "glUniform1i");
+            _uniform1i(loc, v);
+        }
+        public static void Uniform1f(int loc, float v) {
+            Ensure((void*)_uniform1f, "glUniform1f");
+            _uniform1f(loc, v);
+        }
+        public static void Uniform2f(int loc, float x, float y) {
+            Ensure((void*)_uniform2f, "glUniform2f");
+            _uniform2f(loc, x, y);
+        }
+        public static void Uniform3f(int loc, float x, float y, float z) {
+            Ensure((void*)_uniform3f, "glUniform3f");
+            _uniform3f(loc, x, y, z);
+        }
+        public static void Uniform4f(int loc, float x, float y, float z, float w) {
+            Ensure((void*)_uniform4f, "glUniform4f");
+            _uniform4f(loc, x, y, z, w);
+        }
         public static void UniformMatrix4(int loc, Matrix4x4 m)
         {
+            Ensure((void*)_uniformMatrix4fv, "glUniformMatrix4fv");
             float* buf = stackalloc float[16];
             m.CopyTo(buf);
             _uniformMatrix4fv(loc, 1, 0, buf);
@@ -408,35 +594,120 @@ namespace RipNRage.Engine.Platform
         /// <summary>Uploads 16 floats in OpenGL column-major order (a projection built by hand, e.g. the ImGui backend).</summary>
         public static void UniformMatrix4Raw(int loc, float[] values)
         {
+            Ensure((void*)_uniformMatrix4fv, "glUniformMatrix4fv");
             if (values == null || values.Length < 16) return;
             fixed (float* p = values) _uniformMatrix4fv(loc, 1, 0, p);
         }
-        public static void ReadPixels(int x, int y, int w, int h, uint format, uint type, void* data) => _readPixels(x, y, w, h, format, type, data);
-        public static void Scissor(int x, int y, int w, int h) => _scissor(x, y, w, h);
-        public static void LineWidth(float w) => _lineWidth(w);
-        public static void Finish() => _finish();
-        public static void Flush() { if (_flush != null) _flush(); }
-        public static void ColorMask(bool r, bool g, bool b, bool a) => _colorMask(r ? (byte)1 : (byte)0, g ? (byte)1 : (byte)0, b ? (byte)1 : (byte)0, a ? (byte)1 : (byte)0);
+        public static void ReadPixels(int x, int y, int w, int h, uint format, uint type, void* data) {
+            Ensure((void*)_readPixels, "glReadPixels");
+            _readPixels(x, y, w, h, format, type, data);
+        }
+        public static void Scissor(int x, int y, int w, int h) {
+            Ensure((void*)_scissor, "glScissor");
+            _scissor(x, y, w, h);
+        }
+        public static void LineWidth(float w) {
+            Ensure((void*)_lineWidth, "glLineWidth");
+            _lineWidth(w);
+        }
+        public static void Finish() {
+            Ensure((void*)_finish, "glFinish");
+            _finish();
+        }
+        public static void Flush() {
+            Ensure((void*)_flush, "glFlush");
+            if (_flush != null) _flush();
+        }
+        public static void ColorMask(bool r, bool g, bool b, bool a) {
+            Ensure((void*)_colorMask, "glColorMask");
+            _colorMask(r ? (byte)1 : (byte)0, g ? (byte)1 : (byte)0, b ? (byte)1 : (byte)0, a ? (byte)1 : (byte)0);
+        }
 
         /// <summary>True when the GL timer-query entry points were found (GPU stage timing possible).</summary>
         public static bool HasTimerQueries => _genQueries != null && _beginQuery != null && _endQuery != null && _getQueryObjectiv != null && _getQueryObjectui64v != null && _queryCounter != null;
-        public static uint GenQuery() { uint q; _genQueries(1, &q); return q; }
-        public static void DeleteQuery(uint q) => _deleteQueries(1, &q);
-        public static void BeginQuery(uint target, uint q) => _beginQuery(target, q);
-        public static void EndQuery(uint target) => _endQuery(target);
-        public static void QueryCounter(uint q, uint target) => _queryCounter(q, target);
-        public static bool QueryResultAvailable(uint q) { int v; _getQueryObjectiv(q, QUERY_RESULT_AVAILABLE, &v); return v != 0; }
-        public static ulong QueryResult64(uint q) { ulong v; _getQueryObjectui64v(q, QUERY_RESULT, &v); return v; }
-        public static uint GenFramebuffer() { uint f; _genFramebuffers(1, &f); return f; }
-        public static void DeleteFramebuffer(uint f) => _deleteFramebuffers(1, &f);
-        public static void BindFramebuffer(uint target, uint f) => _bindFramebuffer(target, f);
-        public static void FramebufferTexture2D(uint target, uint attachment, uint texTarget, uint tex, int level) => _framebufferTexture2D(target, attachment, texTarget, tex, level);
-        public static uint CheckFramebufferStatus(uint target) => _checkFramebufferStatus(target);
-        public static void DrawBuffer(uint buf) => _drawBuffer(buf);
-        public static void ReadBuffer(uint buf) => _readBuffer(buf);
-        public static void Uniform3fv(int loc, int count, float* v) => _uniform3fv(loc, count, v);
-        public static void Uniform1fv(int loc, int count, float* v) => _uniform1fv(loc, count, v);
-        public static void PolygonOffset(float factor, float units) => _polygonOffset(factor, units);
-        public static void BlitFramebuffer(int sx0, int sy0, int sx1, int sy1, int dx0, int dy0, int dx1, int dy1, uint mask, uint filter) => _blitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
+        public static uint GenQuery() {
+            Ensure((void*)_genQueries, "glGenQueries");
+            uint q; _genQueries(1, &q); return q;
+        }
+        public static void DeleteQuery(uint q) {
+            Ensure((void*)_deleteQueries, "glDeleteQueries");
+            _deleteQueries(1, &q);
+        }
+        public static void BeginQuery(uint target, uint q) {
+            Ensure((void*)_beginQuery, "glBeginQuery");
+            _beginQuery(target, q);
+        }
+        public static void EndQuery(uint target) {
+            Ensure((void*)_endQuery, "glEndQuery");
+            _endQuery(target);
+        }
+        public static void QueryCounter(uint q, uint target) {
+            Ensure((void*)_queryCounter, "glQueryCounter");
+            _queryCounter(q, target);
+        }
+        public static bool QueryResultAvailable(uint q) {
+            Ensure((void*)_getQueryObjectiv, "glGetQueryObjectiv");
+            int v; _getQueryObjectiv(q, QUERY_RESULT_AVAILABLE, &v); return v != 0;
+        }
+        public static ulong QueryResult64(uint q) {
+            Ensure((void*)_getQueryObjectui64v, "glGetQueryObjectui64v");
+            ulong v; _getQueryObjectui64v(q, QUERY_RESULT, &v); return v;
+        }
+        public static uint GenFramebuffer() {
+            Ensure((void*)_genFramebuffers, "glGenFramebuffers");
+            uint f; _genFramebuffers(1, &f); return f;
+        }
+        public static void DeleteFramebuffer(uint f) {
+            Ensure((void*)_deleteFramebuffers, "glDeleteFramebuffers");
+            _deleteFramebuffers(1, &f);
+        }
+        public static void BindFramebuffer(uint target, uint f) {
+            Ensure((void*)_bindFramebuffer, "glBindFramebuffer");
+            _bindFramebuffer(target, f);
+        }
+        public static void FramebufferTexture2D(uint target, uint attachment, uint texTarget, uint tex, int level) {
+            Ensure((void*)_framebufferTexture2D, "glFramebufferTexture2D");
+            _framebufferTexture2D(target, attachment, texTarget, tex, level);
+        }
+        public static uint CheckFramebufferStatus(uint target) {
+            Ensure((void*)_checkFramebufferStatus, "glCheckFramebufferStatus");
+            return _checkFramebufferStatus(target);
+        }
+        public static void DrawBuffer(uint buf) {
+            Ensure((void*)_drawBuffer, "glDrawBuffer");
+            _drawBuffer(buf);
+        }
+        public static void ReadBuffer(uint buf) {
+            Ensure((void*)_readBuffer, "glReadBuffer");
+            _readBuffer(buf);
+        }
+        public static void Uniform3fv(int loc, int count, float* v) {
+            Ensure((void*)_uniform3fv, "glUniform3fv");
+            _uniform3fv(loc, count, v);
+        }
+        public static void Uniform1fv(int loc, int count, float* v) {
+            Ensure((void*)_uniform1fv, "glUniform1fv");
+            _uniform1fv(loc, count, v);
+        }
+        public static void PolygonOffset(float factor, float units) {
+            Ensure((void*)_polygonOffset, "glPolygonOffset");
+            _polygonOffset(factor, units);
+        }
+        public static void BlitFramebuffer(int sx0, int sy0, int sx1, int sy1, int dx0, int dy0, int dx1, int dy1, uint mask, uint filter) {
+            Ensure((void*)_blitFramebuffer, "glBlitFramebuffer");
+            _blitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
+        }
+    }
+
+    /// <summary>
+    /// An OpenGL entry point was called with no context current (headless, or before the window exists). The renderer
+    /// only runs behind a context; data paths that can work without one (a <c>Texture2D</c> keeps its pixels, a
+    /// <c>Mesh</c> its vertices) must not reach GL at all.
+    /// </summary>
+    public sealed class GraphicsContextException : InvalidOperationException
+    {
+        public GraphicsContextException(string entry)
+            : base($"OpenGL '{entry}' was called with no current OpenGL context. Headless code must not touch the GPU: " +
+                   "keep the data on the CPU (Texture2D / Mesh do) and upload it when a context exists.") { }
     }
 }

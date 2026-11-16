@@ -4,6 +4,8 @@ using System.IO;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Transforms;
+using RipNRage.Engine.Ecs.Rendering;
+using RipNRage.Engine.Graphics;
 
 // ---- test components / configs for the prefab trees (reuse Health / Position from EcsChecks)
 public struct Link : IComponent { public Entity Target, Other; }
@@ -154,14 +156,27 @@ internal static class Layer10Checks
         True(!w.Has<Parent>(lib.Get("post2").Spawn(w).Named("collider")), "detached is inherited through base");
 
         // ---- mesh names (10.3a): the sized forms the level interns under, parsed back by the library
-        var sized = RipNRage.Engine.Ecs.Rendering.MeshLibrary.Get("box:0,2.6,0:0.28,5.2,0.28@1");
-        True(sized != null && ReferenceEquals(sized, RipNRage.Engine.Ecs.Rendering.MeshLibrary.Get("box:0,2.6,0:0.28,5.2,0.28@1")), "a sized box mesh is built once per name");
-        True(RipNRage.Engine.Ecs.Rendering.MeshLibrary.BoxName(new Vector3(0f, 2.6f, 0f), new Vector3(0.28f, 5.2f, 0.28f)) == "box:0,2.6,0:0.28,5.2,0.28@1", "BoxName writes the form Get parses");
-        True(RipNRage.Engine.Ecs.Rendering.MeshLibrary.PlaneName(1732f, 1000f, 0.0625f) == "plane:1732x1000@0.0625" && RipNRage.Engine.Ecs.Rendering.MeshLibrary.Get("plane:1732x1000@0.0625") != null, "and so does PlaneName");
-        True(Throws<FormatException>(() => RipNRage.Engine.Ecs.Rendering.MeshLibrary.Get("box:1,2,3"), "box:cx"), "a malformed box name says what it expected");
-        // (not a whole MeshRenderConfig bake: that touches Texture2D.White, a GL texture, and there is no context here)
-        True(Throws<KeyNotFoundException>(() => RipNRage.Engine.Ecs.Rendering.MeshRenderConfig.MaterialByName("nope"), "nope"), "an unregistered material name is refused");
-        True(RipNRage.Engine.Ecs.Rendering.MeshRenderConfig.MaterialByName(null).IsNone, "no material name is no material");
+        var sized = MeshLibrary.Get("box:0,2.6,0:0.28,5.2,0.28@1");
+        True(sized != null && ReferenceEquals(sized, MeshLibrary.Get("box:0,2.6,0:0.28,5.2,0.28@1")), "a sized box mesh is built once per name");
+        True(MeshLibrary.BoxName(new Vector3(0f, 2.6f, 0f), new Vector3(0.28f, 5.2f, 0.28f)) == "box:0,2.6,0:0.28,5.2,0.28@1", "BoxName writes the form Get parses");
+        True(MeshLibrary.PlaneName(1732f, 1000f, 0.0625f) == "plane:1732x1000@0.0625" && MeshLibrary.Get("plane:1732x1000@0.0625") != null, "and so does PlaneName");
+        True(Throws<FormatException>(() => MeshLibrary.Get("box:1,2,3"), "box:cx"), "a malformed box name says what it expected");
+        True(Throws<KeyNotFoundException>(() => MeshRenderConfig.MaterialByName("nope"), "nope"), "an unregistered material name is refused");
+        True(MeshRenderConfig.MaterialByName(null).IsNone, "no material name is no material");
+
+        // ---- headless: the GPU is absent, and that is an error with a name, never a crash
+        True(!RipNRage.Engine.Platform.GL.IsLoaded, "these checks run with no OpenGL context");
+        True(Throws<RipNRage.Engine.Platform.GraphicsContextException>(() => RipNRage.Engine.Platform.GL.GenTexture(), "glGenTextures"),
+            "a GL call with no context throws, naming the entry point (it used to jump to address 0 and kill the process)");
+        True(Throws<RipNRage.Engine.Platform.GraphicsContextException>(() => RipNRage.Engine.Platform.GL.Clear(0)), "and so does every other entry point");
+        var white = Texture2D.White;
+        True(white.width == 4 && white.height == 4 && !white.IsUploaded && white.Handle == 0,
+            "a texture made without a context is real data with no GPU object behind it");
+        True(Throws<RipNRage.Engine.Platform.GraphicsContextException>(() => white.Bind()), "using one headless is the named error, not a crash");
+        var baked = new MeshRenderConfig { mesh = "box" }.Bake();
+        True(!baked.Mesh.IsNone && !baked.Texture.IsNone && baked.Material.IsNone, "a whole MeshRenderConfig bakes headless: mesh and the white texture resolve, no material");
+        True(RenderAssets.Textures.NameOf(baked.Texture) == "white", "and the texture is interned under the name a prefab writes");
+        True(new SpriteRenderConfig().Bake().Sprite.IsNone, "a sprite-less SpriteRender bakes headless too");
 
         // ---- malformed trees
         lib.AddJson(@"{ ""name"": ""badroot"", ""children"": { ""root"": { } } }");
