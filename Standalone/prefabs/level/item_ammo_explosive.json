@@ -1,0 +1,4 @@
+{ "name": "item_ammo_explosive", "base": "item_ammo",
+  "description": "Ammo pickup: explosive",
+  "components": { "Pickup": { "ammo": "EXPLOSIVE" } },
+  "children": { "sprite": { "components": { "SpriteRender": { "sprite": "Pickups/pickup_explosiveammo" }, "Bob": { "ammo": "EXPLOSIVE" } } } } }

@@ -1954,12 +1954,30 @@ that changes what the level builds.
               prefab-built and hand-built components agree everywhere, not just here.
             - **Gate**: `walk` `e180c83d` and `menu` `01f09c74`, byte-identical to 10.3a; engine checks 254 (+2: the
               multi-path alias), game 467; the `checkpoint` script saves, dies and respawns at the checkpoint as before.
-      - [ ] 10.3c **The five others**: `light`, `lamp_post` (head → light, detached collider), `item_ammo` base + five
-            children-of-`base`, `monster_rifleman` (the ride-height literals + their check), `monster_spawner` (pad and
-            ghost as `previewOnly`). Their `spawnEntity` / `previewEntity` code and `Gizmo` / `GhostSprite` /
-            `Billboard` / `LampPostEntity` go; `EntityRegistry` keeps `info_player_start`, the planes and the physics
-            classes. **Gate**: manifest byte-identical to 10.3a; 26 scripts byte-identical; 4 shots 0.000%; `deathf8`'s
-            asset count flat across the rebuild; the editor gate's shot unchanged (previews are the same entities).
+      - [x] 10.3c **The five others** (done; `prefabs/level/`). `light`, `lamp_post`, `item_ammo` + five
+            children-of-`base`, `monster_rifleman`, `monster_spawner` are files; their `spawnEntity` /
+            `previewEntity` code and the `GhostSprite` / `Billboard` / `LampPostEntity` helpers are gone.
+            `EntityRegistry` is down to `info_player_start`, the two planes and the physics classes (10.4).
+            - **Two engine additions the files needed**: `"gameOnly": true` (the mirror of `previewOnly`) for the lamp
+              post's collider — detached *and* absent from the editor's preview — and a name for the rifleman
+              stand-in sprite (`SpriteLibrary.RegisterSprite("Rifleman/idle", …)`), since the game's sprite child
+              carries none (the visual system picks the frame) while the editor must draw something.
+            - **The enemy's capsule is four literals** (lift 1.475, capsule 1.9 / −0.175, sprite −0.35) that follow
+              the Enemy profile's ride height of 0.35, and its health (1000) repeats `EnemyData` — the game check
+              comparing the prefab against `Enemies.Spawn` at the same placement is what keeps them in step.
+            - **The manifest's tie-break was wrong, and the port exposed it**: six lamp heads (or four pickup sprites)
+              produce identical blocks, so their ranks came from creation order and the `Parent` of a tied entity
+              wobbled — the first diff was six parent pointers and nothing else. The sort key now includes the
+              **ancestor chain**, so a tied block is ordered by whose child it is. Proven before and after by
+              canonicalising both files on that key offline: **identical**, the port changes nothing.
+            - **Re-baselined** (ordering, not content): `walk` **`6c933799`** (106), `menu` **`210a7c54`** (98),
+              stable across repeated runs.
+            - **Previews, changed on purpose**: the checkpoint's box is centred on the entity (it used to sit 2 m
+              above its collider) and has no arrow — the editor already draws a wire box and a facing line for every
+              entity; the lamp preview has no collider. Nothing else moved.
+            - **Gate**: engine checks 254, game 467; `pickup` (4 → 3 pickups, shells 64 → 80), `killenemy`
+              (`killedAtFrame 97`), `approach` (the AI sees, chases, idles) and `checkpoint` as before; the editor runs
+              its session script clean and writes its shot; `levels/` untouched.
       - [ ] 10.3d **The save keys by component**: monsters / pickups / spawners found by `Enemy` / `Pickup` / `Spawner`
             + `LevelRef.Index`, not by classname prefix; runtime monsters respawn through their prefab
             (`EntityRegistry.Get(classname).prefab`). **Gate**: `saveload` round trip unchanged, `killenemy` /

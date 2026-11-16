@@ -47,7 +47,7 @@ namespace RipNRage.Engine.Ecs
     /// <c>keys</c> are the short names a <c>.map</c> may use for field paths (<c>Config.field</c>, or
     /// <c>child/Config.field</c> for a child's). A child with <c>"detached": true</c> is spawned with the instance but
     /// not parented (a collider: physics entities are roots); one with <c>"previewOnly": true</c> exists only in the
-    /// editor's preview (a pad, a ghost).
+    /// editor's preview (a pad, a ghost), one with <c>"gameOnly": true</c> only outside it.
     /// </summary>
     public sealed class Prefab
     {
@@ -66,6 +66,8 @@ namespace RipNRage.Engine.Ecs
         public bool Detached;
         /// <summary>A child that exists only in <see cref="SpawnPreview"/> (an editor stand-in: a pad, a ghost, a volume's box).</summary>
         public bool PreviewOnly;
+        /// <summary>A child the preview leaves out (a collider: the editor shows what a thing looks like, nothing it does).</summary>
+        public bool GameOnly;
 
         public T Get<T>() where T : class, IComponentConfig => Components.Find(c => c is T) as T;
         public Prefab Child(string name) => Children.Find(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -134,6 +136,7 @@ namespace RipNRage.Engine.Ecs
             void Create(Prefab node, Entity parent, bool isRoot)
             {
                 if (node.PreviewOnly && !preview) return; // an editor stand-in: not part of the game's build
+                if (node.GameOnly && preview) return;     // a collider: not part of what the editor draws
                 var e = commands != null ? commands.CreateEntity() : world.CreateEntity();
                 if (!isRoot)
                 {
@@ -164,12 +167,12 @@ namespace RipNRage.Engine.Ecs
             public readonly List<string> ChildOrder = new List<string>();
             public readonly Dictionary<string, string[]> Keys = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
             public string Description;
-            public bool Detached, PreviewOnly;
+            public bool Detached, PreviewOnly, GameOnly;
             public JsonObject Extra;
 
             public Node Clone()
             {
-                var n = new Node { Description = Description, Detached = Detached, PreviewOnly = PreviewOnly, Extra = (JsonObject)Extra?.DeepClone() };
+                var n = new Node { Description = Description, Detached = Detached, PreviewOnly = PreviewOnly, GameOnly = GameOnly, Extra = (JsonObject)Extra?.DeepClone() };
                 foreach (var kv in Components) n.Components[kv.Key] = (JsonObject)kv.Value.DeepClone();
                 foreach (var name in ChildOrder) { n.Children[name] = Children[name].Clone(); n.ChildOrder.Add(name); }
                 foreach (var kv in Keys) n.Keys[kv.Key] = kv.Value;
@@ -267,6 +270,7 @@ namespace RipNRage.Engine.Ecs
             if (json["description"] is JsonValue d) target.Description = (string)d;
             if (json["detached"] is JsonValue det) target.Detached = (bool)det;
             if (json["previewOnly"] is JsonValue po) target.PreviewOnly = (bool)po;
+            if (json["gameOnly"] is JsonValue go) target.GameOnly = (bool)go;
             if (json["keys"] is JsonObject keys)
                 foreach (var kv in keys)
                     target.Keys[kv.Key] = kv.Value is JsonArray many
@@ -294,7 +298,7 @@ namespace RipNRage.Engine.Ecs
 
         private static Prefab Build(Node node, string name, string prefabName)
         {
-            var p = new Prefab { Name = name, Description = node.Description, Detached = node.Detached, PreviewOnly = node.PreviewOnly, Extra = node.Extra };
+            var p = new Prefab { Name = name, Description = node.Description, Detached = node.Detached, PreviewOnly = node.PreviewOnly, GameOnly = node.GameOnly, Extra = node.Extra };
             foreach (var kv in node.Keys) p.Keys[kv.Key] = kv.Value;
             foreach (var kv in node.Components)
             {

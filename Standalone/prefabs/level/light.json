@@ -1,0 +1,13 @@
+// A point light. The editor shows it as a small emissive box in its own colour.
+{ "name": "light",
+  "description": "Point light (color r g b, intensity, range)",
+  "keys": { "color": ["LightSource.color", "bulb/MeshRender.color"], "intensity": "LightSource.intensity", "range": "LightSource.range" },
+  "editor": { "gizmoColor": [1, 1, 0.6, 1], "pickExtents": [0.35, 0.35, 0.35],
+              "defaults": { "color": "1 0.85 0.6", "intensity": "1.5", "range": "18" },
+              "numeric": [ { "key": "intensity", "step": 0.25 }, { "key": "range", "step": 1 } ] },
+  "components": { "LightSource": { "type": "Point", "color": [1, 0.85, 0.6, 1], "intensity": 1.5, "range": 18 } },
+  "children": {
+    "bulb": { "previewOnly": true,
+      "components": {
+        "LocalTransform": { "scale": [0.4, 0.4, 0.4] },
+        "MeshRender": { "mesh": "box", "color": [1, 0.85, 0.6, 1], "emissive": 1.5, "castsShadow": false } } } } }

@@ -1,0 +1,22 @@
+// A wave spawner: it makes monsters, it is not one. The editor draws a pad and a ghost of what it spawns.
+{ "name": "monster_spawner",
+  "description": "Wave spawner (count, interval, radius, activate_range)",
+  "keys": { "monster": "Spawner.monster", "count": "Spawner.count", "interval": "Spawner.interval", "radius": "Spawner.radius",
+            "activate_range": "Spawner.activateRange", "max_alive": "Spawner.maxAlive" },
+  "editor": { "gizmoColor": [1, 0.5, 0.1, 1], "pickExtents": [0.8, 0.3, 0.8],
+              "defaults": { "monster": "monster_rifleman", "count": "3", "interval": "5", "radius": "2", "activate_range": "25", "max_alive": "4", "angle": "180" },
+              "numeric": [ { "key": "count", "step": 1 }, { "key": "interval", "step": 0.5 } ] },
+  "components": {
+    "Spawner": { "monster": "monster_rifleman", "count": 3, "interval": 5, "radius": 2, "activateRange": 25, "maxAlive": 4 },
+    "LevelRef": {}
+  },
+  "children": {
+    "pad": { "previewOnly": true,
+      "components": {
+        "LocalTransform": { "position": [0, 0.15, 0] },
+        "MeshRender": { "mesh": "box:0,0,0:1.6,0.3,1.6@1", "color": [1, 0.5, 0.1, 1], "emissive": 0.4, "castsShadow": false } }
+    },
+    "ghost": { "previewOnly": true,
+      "components": {
+        "LocalTransform": { "position": [0, 1.125, 0], "scale": [0.439453125, 0.439453125, 0.439453125] },
+        "SpriteRender": { "sprite": "Rifleman/idle", "color": [1, 0.6, 0.3, 0.45], "billboard": true, "lit": true } } } } }

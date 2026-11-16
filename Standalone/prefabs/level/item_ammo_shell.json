@@ -1,0 +1,4 @@
+{ "name": "item_ammo_shell", "base": "item_ammo",
+  "description": "Ammo pickup: shell",
+  "components": { "Pickup": { "ammo": "SHELL" } },
+  "children": { "sprite": { "components": { "SpriteRender": { "sprite": "Pickups/pickup_shellammo" }, "Bob": { "ammo": "SHELL" } } } } }

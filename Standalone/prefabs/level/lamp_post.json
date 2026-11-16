@@ -1,0 +1,27 @@
+// A lamp post: the pole, its head (the pulsing lamp material), the light in the head, and the pole's collider -
+// a detached node, because a physics entity is a root (2.4), and left out of the editor's preview.
+{ "name": "lamp_post",
+  "description": "Lamp post with light (origin = base)",
+  "keys": { "color": "head/light/LightSource.color", "intensity": "head/light/LightSource.intensity", "range": "head/light/LightSource.range" },
+  "editor": { "gizmoColor": [1, 0.8, 0.4, 1], "pickExtents": [0.4, 2.8, 0.4],
+              "defaults": { "intensity": "1.4", "range": "24" },
+              "numeric": [ { "key": "intensity", "step": 0.2 }, { "key": "range", "step": 1 } ] },
+  "components": {
+    "MeshRender": { "mesh": "box:0,2.6,0:0.28,5.2,0.28@1", "texture": "Textures/texture_13.png", "color": [0.35, 0.35, 0.38, 1] }
+  },
+  "children": {
+    "head": {
+      "components": {
+        "LocalTransform": { "position": [0, 5.4, 0] },
+        "MeshRender": { "mesh": "box:0,0,0:0.7,0.5,0.7@1", "material": "lamp", "color": [1, 0.85, 0.55, 1], "castsShadow": false }
+      },
+      "children": {
+        "light": { "components": { "LightSource": { "type": "Point", "color": [1, 0.78, 0.5, 1], "intensity": 1.4, "range": 24 } } }
+      }
+    },
+    "collider": { "detached": true, "gameOnly": true,
+      "components": {
+        "LocalTransform": { "position": [0, 2.6, 0] },
+        "ColliderShape": { "kind": "Box", "size": [0.4, 5.2, 0.4], "isStatic": true },
+        "CollisionFilter": { "layer": 11 },
+        "ImpactSurface": { "surface": "metal" } } } } }

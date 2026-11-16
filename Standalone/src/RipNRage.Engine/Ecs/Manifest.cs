@@ -25,9 +25,25 @@ namespace RipNRage.Engine.Ecs
         {
             var entities = new List<Entity>(world.AllEntities());
 
-            // pass 1: each entity's block with references blanked, to decide a content order
+            // pass 1: each entity's block with references blanked, plus its ancestors' — identical siblings (six lamp
+            // heads, four pickup sprites) would otherwise tie and take their rank from creation order, which made the
+            // Parent of a tied entity wobble between builds and showed up as a diff that meant nothing (10.3c).
+            var own = new Dictionary<Entity, string>(entities.Count);
+            foreach (var e in entities) own[e] = Block(world, e, _ => "?");
+            var keys = new Dictionary<Entity, string>(entities.Count);
+            string Key(Entity e, int depth)
+            {
+                if (keys.TryGetValue(e, out var k)) return k;
+                k = own[e];
+                if (depth < 32 && world.Has<Transforms.Parent>(e))
+                {
+                    var p = world.Get<Transforms.Parent>(e).Value;
+                    if (own.ContainsKey(p)) k += "|^" + Key(p, depth + 1);
+                }
+                return keys[e] = k;
+            }
             var blocks = new List<(Entity entity, string sortKey)>(entities.Count);
-            foreach (var e in entities) blocks.Add((e, Block(world, e, _ => "?")));
+            foreach (var e in entities) blocks.Add((e, Key(e, 0)));
             blocks.Sort((a, b) => string.CompareOrdinal(a.sortKey, b.sortKey));
 
             // pass 2: ranks are positions in that order, so references are stable across builds

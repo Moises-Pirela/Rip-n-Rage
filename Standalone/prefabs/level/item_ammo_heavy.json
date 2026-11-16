@@ -1,0 +1,4 @@
+{ "name": "item_ammo_heavy", "base": "item_ammo",
+  "description": "Ammo pickup: heavy",
+  "components": { "Pickup": { "ammo": "HEAVY" } },
+  "children": { "sprite": { "components": { "SpriteRender": { "sprite": "Pickups/pickup_heavyammo" }, "Bob": { "ammo": "HEAVY" } } } } }

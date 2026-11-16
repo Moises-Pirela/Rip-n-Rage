@@ -82,64 +82,12 @@ namespace RipNRage.Game.Content.Level
                 previewEntity = e => Gizmo(new Color(0.2f, 1f, 0.3f, 1f), new Vector3(0.8f, 1.8f, 0.8f), e),
             });
 
-            Add(new EntityDefinition
-            {
-                classname = "monster_rifleman", description = "AR grunt (rifleman)",
-                gizmoColor = new Color(1f, 0.3f, 0.3f, 1f), pickExtents = new Vector3(0.5f, 1.1f, 0.5f),
-                defaults = { ["angle"] = "180" },
-                spawnEntity = e => RipNRage.Game.Ecs.AI.Enemies.Spawn(
-                    Application.Current.World, RipNRage.Game.Ecs.AI.Enemies.KindOf(GameAssets.RiflemanData), e.origin, e.angle),
-                previewEntity = e => GhostSprite(e.origin, Color.white),
-            });
+            AddPrefab("monster_rifleman");
 
-            foreach (var (cls, type, sprite) in new[]
-            {
-                ("item_ammo_light", AmmoType.LIGHT, "pickup_lightammo"), ("item_ammo_heavy", AmmoType.HEAVY, "pickup_heavyammo"),
-                ("item_ammo_shell", AmmoType.SHELL, "pickup_shellammo"), ("item_ammo_energy", AmmoType.ENERGY, "pickup_energyammo"),
-                ("item_ammo_explosive", AmmoType.EXPLOSIVE, "pickup_explosiveammo"),
-            })
-            {
-                var t = type; var sp = sprite;
-                Add(new EntityDefinition
-                {
-                    classname = cls, description = "Ammo pickup: " + type.ToString().ToLowerInvariant(),
-                    gizmoColor = new Color(1f, 0.9f, 0.3f, 1f), pickExtents = new Vector3(0.7f, 0.7f, 0.7f),
-                    spawnEntity = e => RipNRage.Game.Ecs.Pickups.Spawn(Application.Current.World, t, e.origin), // 7.5: an entity, keyed by LevelRef
-                    previewEntity = e => Billboard(e.origin + Vector3.up * 0.9f, new Vector3(0.75f, 0.75f, 1f), GameAssets.Pickups[sp], Color.white),
-                });
-            }
+            foreach (var cls in new[] { "item_ammo_light", "item_ammo_heavy", "item_ammo_shell", "item_ammo_energy", "item_ammo_explosive" })
+                AddPrefab(cls);
 
-            Add(new EntityDefinition
-            {
-                classname = "monster_spawner", description = "Wave spawner (count, interval, radius, activate_range)",
-                gizmoColor = new Color(1f, 0.5f, 0.1f, 1f), pickExtents = new Vector3(0.8f, 0.3f, 0.8f),
-                defaults = { ["monster"] = "monster_rifleman", ["count"] = "3", ["interval"] = "5", ["radius"] = "2", ["activate_range"] = "25", ["max_alive"] = "4", ["angle"] = "180" },
-                numericProps = { ("count", 1f), ("interval", 0.5f) },
-                spawnEntity = e =>
-                {
-                    var w = Application.Current.World;
-                    string monster = e.Get("monster", "monster_rifleman");
-                    int kind = RipNRage.Game.Ecs.AI.Enemies.KindByClassname(monster);
-                    if (kind < 0) Debug.LogWarning("monster_spawner: unknown monster " + monster);
-                    var ent = w.CreateEntity();
-                    w.Add(ent, new RipNRage.Engine.Ecs.Transforms.LocalTransform { Position = e.origin, Rotation = Quaternion.identity, Scale = Vector3.one });
-                    w.Add(ent, new RipNRage.Game.Ecs.AI.Spawner
-                    {
-                        Kind = kind, Count = e.GetInt("count", 3), Interval = e.GetFloat("interval", 5f),
-                        Radius = e.GetFloat("radius", 2f), ActivateRange = e.GetFloat("activate_range", 0f),
-                        MaxAlive = e.GetInt("max_alive", 4), Yaw = e.angle,
-                    });
-                    w.Add(ent, new RipNRage.Game.Ecs.AI.LevelRef { Index = -1, SpawnerIndex = -1 });
-                    return ent;
-                },
-                previewEntity = e =>
-                {
-                    var pad = LevelVisuals.Spawn(e.origin, LevelVisuals.Render(LevelVisuals.Box(new Vector3(0, 0.15f, 0), new Vector3(1.6f, 0.3f, 1.6f)),
-                                                                              Texture2D.White, new Color(1f, 0.5f, 0.1f, 1f), emissive: 0.4f, castsShadow: false));
-                    GhostSprite(e.origin, new Color(1f, 0.6f, 0.3f, 0.45f), pad);
-                    return pad;
-                },
-            });
+            AddPrefab("monster_spawner");
 
             Add(new EntityDefinition
             {
@@ -153,33 +101,9 @@ namespace RipNRage.Game.Content.Level
 
             PhysicsEntities.Register(Add);
 
-            Add(new EntityDefinition
-            {
-                classname = "light", description = "Point light (color r g b, intensity, range)",
-                gizmoColor = new Color(1f, 1f, 0.6f, 1f), pickExtents = new Vector3(0.35f, 0.35f, 0.35f),
-                defaults = { ["color"] = "1 0.85 0.6", ["intensity"] = "1.5", ["range"] = "18" },
-                numericProps = { ("intensity", 0.25f), ("range", 1f) },
-                spawnEntity = e => LevelVisuals.PointLight(e.origin, e.GetColor("color", new Color(1f, 0.85f, 0.6f, 1f)),
-                                                           e.GetFloat("intensity", 1.5f), e.GetFloat("range", 18f)), // 9.1
-                previewEntity = e =>
-                {
-                    var l = LevelVisuals.PointLight(e.origin, e.GetColor("color", new Color(1f, 0.85f, 0.6f, 1f)),
-                                                    e.GetFloat("intensity", 1.5f), e.GetFloat("range", 18f));
-                    LevelVisuals.Spawn(Vector3.zero, LevelVisuals.Render(LevelVisuals.Box(Vector3.zero, Vector3.one * 0.4f),
-                                                                         Texture2D.White, e.GetColor("color", new Color(1f, 0.85f, 0.6f, 1f)), emissive: 1.5f, castsShadow: false), l);
-                    return l;
-                },
-            });
+            AddPrefab("light");
 
-            Add(new EntityDefinition
-            {
-                classname = "lamp_post", description = "Lamp post with light (origin = base)",
-                gizmoColor = new Color(1f, 0.8f, 0.4f, 1f), pickExtents = new Vector3(0.4f, 2.8f, 0.4f),
-                defaults = { ["intensity"] = "1.4", ["range"] = "24" },
-                numericProps = { ("intensity", 0.2f), ("range", 1f) },
-                spawnEntity = e => LampPostEntity(e), // 9.1 (the preview is the same build minus the collider)
-                previewEntity = e => LampPostEntity(e, preview: true),
-            });
+            AddPrefab("lamp_post");
 
             Add(new EntityDefinition
             {
@@ -215,29 +139,6 @@ namespace RipNRage.Game.Content.Level
             return box;
         }
 
-        /// <summary>The rifleman stand-in sprite (the monster and spawner previews).</summary>
-        private static RipNRage.Engine.Ecs.Entity GhostSprite(Vector3 origin, Color color, RipNRage.Engine.Ecs.Entity parent = default)
-        {
-            var sprite = new RipNRage.Engine.Graphics.DirectionalSpriteSheet(GameAssets.RiflemanIdle, 1, 4, 1).GetSprite(0, 0);
-            var pos = parent.IsNull ? origin + new Vector3(0, 1.125f, 0) : new Vector3(0, 1.125f, 0);
-            return Billboard(pos, Vector3.one * (2.25f / 5.12f), sprite, color, parent);
-        }
-
-        /// <summary>A lit billboard sprite entity (the pickup and monster previews).</summary>
-        private static RipNRage.Engine.Ecs.Entity Billboard(Vector3 position, Vector3 scale, Sprite sprite, Color color, RipNRage.Engine.Ecs.Entity parent = default)
-        {
-            var w = Application.Current.World;
-            var ent = w.CreateEntity();
-            w.Add(ent, new RipNRage.Engine.Ecs.Transforms.LocalTransform { Position = position, Rotation = Quaternion.identity, Scale = scale });
-            if (!parent.IsNull) w.Add(ent, new RipNRage.Engine.Ecs.Transforms.Parent { Value = parent });
-            w.Add(ent, new RipNRage.Engine.Ecs.Rendering.SpriteRender
-            {
-                Sprite = RipNRage.Engine.Ecs.Rendering.RenderAssets.Sprites.Intern(sprite),
-                Color = color, Billboard = true, Lit = true, Layer = RipNRage.Engine.Graphics.RenderLayer.World,
-            });
-            return ent;
-        }
-
         /// <summary>A plane's width and length: "w l" (what the maps write) or "w h l". MapEntity.GetVector wants three
         /// numbers and falls back to its default otherwise — which is how dock.map's 1732 x 1000 water and sand were built
         /// 200 x 200 (found in 7.6: the water volume did not reach where the player goes in).</summary>
@@ -264,23 +165,6 @@ namespace RipNRage.Game.Content.Level
             }
             if (water) RipNRage.Game.Ecs.Waters.Spawn(Application.Current.World, e.origin, new Vector3(w, 100f, l)); // the view under it hides the sky
             return ent;
-        }
-
-        /// <summary>The game's lamp post (9.1): the pole and its collider, the head (lamp material), the light in it.
-        /// The editor's preview is the same build without the collider.</summary>
-        private static RipNRage.Engine.Ecs.Entity LampPostEntity(MapEntity e, bool preview = false)
-        {
-            var post = LevelVisuals.Spawn(e.origin, LevelVisuals.Render(LevelVisuals.Box(new Vector3(0, 2.6f, 0), new Vector3(0.28f, 5.2f, 0.28f)),
-                                                                     GameAssets.Texture13, new Color(0.35f, 0.35f, 0.38f, 1f)));
-            if (!preview)
-            {
-                var poleCollider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, 2.6f, 0), Quaternion.identity, new Vector3(0.4f, 5.2f, 0.4f), Layers.Walkable);
-                Surfaces.Tag(Application.Current.World, poleCollider, Surfaces.Metal);
-            }
-            var head = LevelVisuals.Spawn(new Vector3(0, 5.4f, 0), LevelVisuals.Render(LevelVisuals.Box(Vector3.zero, new Vector3(0.7f, 0.5f, 0.7f)),
-                                                                                    Texture2D.White, new Color(1f, 0.85f, 0.55f, 1f), Materials.Lamp, castsShadow: false), post);
-            LevelVisuals.PointLight(Vector3.zero, e.GetColor("color", new Color(1f, 0.78f, 0.5f, 1f)), e.GetFloat("intensity", 1.4f), e.GetFloat("range", 24f), head);
-            return post;
         }
 
     }

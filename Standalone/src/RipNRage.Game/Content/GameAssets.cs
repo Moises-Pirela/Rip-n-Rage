@@ -206,6 +206,9 @@ namespace RipNRage.Game.Content
             RiflemanRun = Texture2D.Load(A("Sprites/Enemies/Rifleman/Rifleman_Run.png"));
             RiflemanDeath = Texture2D.Load(A("Sprites/Enemies/Rifleman/Rifleman_Death.png"));
             RiflemanDead = Texture2D.Load(A("Sprites/Enemies/Rifleman/Rifleman_Dead.png"));
+
+            // 10.3c: the editor's stand-in for a rifleman (the game's sprite is chosen per frame by EnemyVisualSystem)
+            SpriteLibrary.RegisterSprite("Rifleman/idle", new DirectionalSpriteSheet(RiflemanIdle, 1, 4, 1).GetSprite(0, 0));
         }
 
         private static void LoadAudio()

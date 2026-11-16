@@ -1,0 +1,4 @@
+{ "name": "item_ammo_light", "base": "item_ammo",
+  "description": "Ammo pickup: light",
+  "components": { "Pickup": { "ammo": "LIGHT" } },
+  "children": { "sprite": { "components": { "SpriteRender": { "sprite": "Pickups/pickup_lightammo" }, "Bob": { "ammo": "LIGHT" } } } } }
