@@ -1784,8 +1784,15 @@ that changes what the level builds.
         `*.test`. **The editor joins the sweep**: `edit` builds the level editor and runs its `session` script for 90
         frames with a screenshot, on a **copy of dock.map inside OUT** — the script saves, and a sweep must never
         write the repo's level.
-      - **Baseline**: dock.map builds **69 entities, manifest `2b1e8134`**; the title screen 61, `8aac8c46`. Identical
-        across runs and across output directories. That is the truth 10.3 and 10.4 must reproduce byte for byte.
+      - **The dump syncs first** (found while planning 10.3: the first baseline had 69 entities and `RodVisual
+        Target=dead` — the build goes partly through the command buffer, so colliders, props and joints were reserved,
+        not alive). `World.Sync()` before the dump is what the first `Update` does before anything else (and what
+        `--ecs-demo` already does); `walk`'s 400-frame probes are byte-identical with and without it.
+      - **Baseline**: dock.map builds **106 entities, manifest `ee532966`**; the title screen 98, `9ecaf5a7`.
+        Identical across runs and across output directories. That is the truth 10.3 and 10.4 must reproduce byte for
+        byte. Census: 24 brush colliders, 13 prop bodies (10 with a joint, 1 with `SliderPatrol`, 2 loose), 23 mesh
+        entities (15 chunks, 6 lamp posts, 2 planes), 6 lamp heads + 6 lights, 4 enemies + 4 sprite children, 4
+        pickups + 4 sprite children, 1 checkpoint, 2 rods, the player rig, the singletons.
 - [x] 10.1 **Prefab trees, references, overrides (engine)** (done; `Ecs/Prefab.cs`, `Ecs/Core.cs`).
       - **Trees**: `children` (an object: name → node with `components` / `children`), merged by name under `base`;
         every child is parented to the node above and gets the identity `LocalTransform` when it declares none.
@@ -1838,7 +1845,7 @@ that changes what the level builds.
         phase, the sprite child's scale, the trigger sphere) and a water prefab vs `Waters.Spawn` (both corners) —
         plus the enemy's halves vs `Enemies.Spawn` at the same placement (seed, facing, health, hitbox), the preview
         strip on a pickup and an enemy, and a sweep asserting every component a level places now has a config.
-      - Level untouched this step: `walk` / `menu` manifests still `2b1e8134` / `8aac8c46`.
+      - Level untouched this step: the `walk` / `menu` manifests do not move.
 - [ ] 10.3 **Data classes become prefab files** (`prefabs/level/`). `light`, `lamp_post` (post → head → light),
       `item_ammo` + five children-of-`base`, `monster_rifleman` (body + sprite child), `monster_spawner`,
       `trigger_checkpoint`, `prop_physics`, `phys_fixed`. `EntityDefinition.prefab`; the loader spawns

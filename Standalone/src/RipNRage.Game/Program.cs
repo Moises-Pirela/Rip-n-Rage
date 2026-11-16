@@ -174,7 +174,10 @@ namespace RipNRage.Game
                     if (script != null) UiScreens.Add(new DemoScript { scriptName = script });
                     if (dumpLevel == null) return;
                     // 10.0: what this scene built, as text — the gate a prefab port is compared against. The file is
-                    // the first build's; every build reports its line (a rebuild that differs is the news).
+                    // the first build's; every build reports its line (a rebuild that differs is the news). The build
+                    // goes partly through the command buffer (colliders, props, joints), so the dump syncs first —
+                    // what the first frame's Update does before anything else runs (and what --ecs-demo does too).
+                    app.World.Sync();
                     string summary = dumped
                         ? RipNRage.Engine.Ecs.EntityManifest.Summary(RipNRage.Engine.Ecs.EntityManifest.Build(app.World))
                         : RipNRage.Engine.Ecs.EntityManifest.Write(app.World, dumpLevel);
