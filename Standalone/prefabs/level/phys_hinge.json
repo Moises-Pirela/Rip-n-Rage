@@ -1,0 +1,23 @@
+// A prop turning about an axis through a pivot: seesaws, levers, windmills, rotating platforms.
+{ "name": "phys_hinge",
+  "description": "Prop on a hinge (axis \"x y z\" local, pivot \"x y z\" offset from the centre; limits; motor deg/s, motor_torque; spring, damper, target)",
+  "keys": { "size": ["BoxMesh.size", "ShapeSize.size"], "mass": "Body.mass", "texture": "LevelTextured.texture", "shape": "ColliderShape.kind",
+            "axis": "Joint.axis", "pivot": "Joint.anchor", "limits": "Joint.limits", "motor": "Joint.motorSpeed",
+            "motor_torque": "Joint.motorForce", "spring": "Joint.springStiffness", "damper": "Joint.springDamping",
+            "target": "Joint.springTarget", "break_force": "Joint.breakForce", "break_torque": "Joint.breakTorque" },
+  "editor": { "gizmoColor": [1, 0.6, 0.2, 1], "pickExtents": [0.6, 0.6, 0.6],
+              "defaults": { "size": "3 0.2 0.6", "mass": "20", "texture": "planks", "axis": "0 0 1", "pivot": "0 0 0",
+                            "motor": "0", "motor_torque": "100", "spring": "0", "damper": "2", "target": "0", "break_force": "0" },
+              "numeric": [ { "key": "motor", "step": 15 }, { "key": "spring", "step": 5 } ] },
+  "components": {
+    "BoxMesh": { "size": [3, 0.2, 0.6], "fitUvToWidth": true },
+    "MeshRender": {},
+    "LevelTextured": { "texture": "planks" },
+    "ImpactSurface": {},
+    "ColliderShape": { "kind": "Box" },
+    "ShapeSize": { "size": [3, 0.2, 0.6] },
+    "Body": { "mass": 20, "collisionDetection": "Continuous" },
+    "BodyVelocity": {},
+    "StandOnBase": { "clearance": 0.01 },
+    "Joint": { "kind": "Hinge", "axis": [0, 0, 1], "springDamping": 2 }
+  } }

@@ -69,10 +69,31 @@ namespace RipNRage.Game.Content.Level
         public float Width;
     }
 
-    /// <summary>Stretches every <see cref="RodVisual"/> after the frame's motion (the prop moved under physics).</summary>
-    [Writes(typeof(LocalTransform)), Reads(typeof(RodVisual))] // its own transform by query; the target's is read ad hoc
-    public sealed class RodSystem : SystemBase, ILateTick
+    /// <summary>A rod's own data: what it hangs from (where it was placed) and what it reaches to.</summary>
+    public sealed class RodVisualConfig : ComponentConfig<RodVisual>
     {
+        public EntityRef target;
+        public float width = 0.07f;
+        public override RodVisual Bake() => new RodVisual { Width = width };
+        public override RodVisual Bake(in BakeContext ctx) =>
+            new RodVisual { Target = target.Resolve(ctx), Hook = ctx.HasEntity ? ctx.Position : Vector3.zero, Width = width };
+    }
+
+    /// <summary>Stretches every <see cref="RodVisual"/> after the frame's motion (the prop moved under physics), and
+    /// once as it is created so a rod stands up even where nothing ticks (the editor's preview).</summary>
+    [EntityFilter(typeof(RodVisual), typeof(LocalTransform))]
+    [UpdateAfter(typeof(RipNRage.Engine.Ecs.Physics.HangsFromSystem)), UpdateBefore(typeof(TransformSystem))] // stand the rod up before the world pose is read
+    [Writes(typeof(LocalTransform)), Reads(typeof(RodVisual))] // its own transform by query; the target's is read ad hoc
+    public sealed class RodSystem : SystemBase, ILateTick, IOnEntityCreated
+    {
+        public void OnEntityCreated(SystemContext ctx, Entity e)
+        {
+            var w = ctx.World;
+            var r = w.Get<RodVisual>(e);
+            if (!w.IsAlive(r.Target) || !w.Has<LocalTransform>(r.Target)) return;
+            Place(ref w.Get<LocalTransform>(e), w.Get<LocalTransform>(r.Target).Position, r.Hook, r.Width);
+        }
+
         private Query _rods;
 
         public override void OnCreate() => _rods = World.Query().WithReadOnly<RodVisual>().With<LocalTransform>().Build();

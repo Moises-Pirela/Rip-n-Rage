@@ -25,10 +25,27 @@ namespace RipNRage.Game.Content.Level
     public static class LevelTextures
     {
         private static readonly Dictionary<string, LevelTexture> Table = new Dictionary<string, LevelTexture>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>The same textures in registration order, so a component can hold one as plain data (10.4).</summary>
+        private static readonly List<LevelTexture> Order = new List<LevelTexture>();
         private static bool _init;
 
         public static IEnumerable<LevelTexture> All { get { Init(); return Table.Values; } }
         public static IReadOnlyList<string> Names { get { Init(); return new List<string>(Table.Keys); } }
+
+        /// <summary>The index of a texture name (0 = the fallback), for components that hold one.</summary>
+        public static int IndexOf(string name)
+        {
+            Init();
+            int i = Order.IndexOf(Get(name));
+            return i < 0 ? 0 : i;
+        }
+
+        /// <summary>The texture a <see cref="IndexOf"/> index names.</summary>
+        public static LevelTexture At(int index)
+        {
+            Init();
+            return (uint)index < (uint)Order.Count ? Order[index] : null;
+        }
 
         public static LevelTexture Get(string name)
         {
@@ -71,6 +88,7 @@ namespace RipNRage.Game.Content.Level
         {
             var t = new LevelTexture { name = name, texture = tex };
             Table[name] = t;
+            Order.Add(t);
             return t;
         }
     }

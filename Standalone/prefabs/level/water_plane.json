@@ -1,0 +1,12 @@
+// Water: one object, two things about it - what you see (a plane with the water shader) and what you swim in
+// (the volume hanging under that surface). Both take their extent from the same key.
+{ "name": "water_plane",
+  "description": "Animated water plane (size w l)",
+  "keys": { "size": ["PlaneMesh.size", "WaterVolume.size"] },
+  "editor": { "gizmoColor": [0.3, 0.6, 1, 1], "pickExtents": [2, 0.2, 2], "defaults": { "size": "200 200" },
+              "numeric": [ { "key": "height", "step": 0.25 } ] },
+  "components": {
+    "PlaneMesh": { "size": [200, 200], "uvScale": 0.0625 },
+    "MeshRender": { "material": "water", "transparent": true, "castsShadow": false },
+    "WaterVolume": { "size": [200, 200], "depth": 100 }
+  } }

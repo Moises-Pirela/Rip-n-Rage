@@ -1,0 +1,20 @@
+// A loose rigid body. Everything a map can say about it is a field of one of these components: how big it is
+// (BoxMesh / ShapeSize), what it is made of (LevelTextured -> picture, tint, impact surface), how heavy (Body),
+// and that a map places it by the floor it stands on (StandOnBase).
+{ "name": "prop_physics",
+  "description": "Rigid-body prop (size w h l, mass, texture; shape box|sphere|capsule; targetname for joints)",
+  "keys": { "size": ["BoxMesh.size", "ShapeSize.size"], "mass": "Body.mass", "texture": "LevelTextured.texture", "shape": "ColliderShape.kind" },
+  "editor": { "gizmoColor": [1, 0.6, 0.2, 1], "pickExtents": [0.5, 0.5, 0.5],
+              "defaults": { "size": "1 1 1", "mass": "10", "texture": "orange", "shape": "box" },
+              "numeric": [ { "key": "mass", "step": 1 } ] },
+  "components": {
+    "BoxMesh": { "size": [1, 1, 1], "fitUvToWidth": true },
+    "MeshRender": {},
+    "LevelTextured": { "texture": "orange" },
+    "ImpactSurface": {},
+    "ColliderShape": { "kind": "Box" },
+    "ShapeSize": { "size": [1, 1, 1] },
+    "Body": { "mass": 10, "collisionDetection": "Continuous" },
+    "BodyVelocity": {},
+    "StandOnBase": { "clearance": 0.02 }
+  } }

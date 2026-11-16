@@ -1,0 +1,15 @@
+// The ground: a plane you see and a slab you stand on, two metres thick, one metre under the surface - the same
+// level texture dresses both (its picture on the plane, its surface under the bullets).
+{ "name": "floor_plane",
+  "description": "Large textured ground plane (size w l, texture)",
+  "keys": { "size": ["PlaneMesh.size", "ShapeSize.size"], "texture": "LevelTextured.texture" },
+  "editor": { "gizmoColor": [0.9, 0.8, 0.5, 1], "pickExtents": [2, 0.2, 2], "defaults": { "size": "200 200", "texture": "sand" } },
+  "components": {
+    "PlaneMesh": { "size": [200, 200], "uvScale": 0.25 },
+    "MeshRender": { "castsShadow": false },
+    "LevelTextured": { "texture": "sand" },
+    "ImpactSurface": {},
+    "ColliderShape": { "kind": "Box", "center": [0, -1, 0], "isStatic": true },
+    "ShapeSize": { "size": [200, 200], "thickness": 2 },
+    "CollisionFilter": { "layer": 11 }
+  } }

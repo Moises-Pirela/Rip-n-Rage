@@ -1,0 +1,28 @@
+// A bob hanging from the point it was placed on, on a rod (or a rope). HangsFrom drops it and points its joint
+// back at the hook; the rod is its own entity that remembers the same hook and stretches to the bob.
+{ "name": "phys_pendulum",
+  "description": "Prop hanging on a rod (or rope 1) from the origin (length; start_angle deg; size, mass, shape)",
+  "keys": { "size": ["BoxMesh.size", "ShapeSize.size"], "mass": "Body.mass", "texture": "LevelTextured.texture", "shape": "ColliderShape.kind",
+            "length": "HangsFrom.length", "start_angle": "HangsFrom.startAngle", "rope": "Joint.rope",
+            "break_force": "Joint.breakForce", "break_torque": "Joint.breakTorque" },
+  "editor": { "gizmoColor": [1, 0.6, 0.2, 1], "pickExtents": [0.3, 0.3, 0.3],
+              "defaults": { "size": "0.6 0.6 0.6", "mass": "15", "texture": "red", "shape": "sphere", "length": "3",
+                            "rope": "0", "start_angle": "0", "break_force": "0" },
+              "numeric": [ { "key": "length", "step": 0.25 }, { "key": "start_angle", "step": 5 } ] },
+  "components": {
+    "BoxMesh": { "size": [0.6, 0.6, 0.6], "fitUvToWidth": true },
+    "MeshRender": {},
+    "LevelTextured": { "texture": "red" },
+    "ImpactSurface": {},
+    "ColliderShape": { "kind": "Sphere" },
+    "ShapeSize": { "size": [0.6, 0.6, 0.6] },
+    "Body": { "mass": 15, "collisionDetection": "Continuous" },
+    "BodyVelocity": {},
+    "HangsFrom": { "length": 3 },
+    "Joint": { "kind": "Distance" }
+  },
+  "children": {
+    "rod": { "detached": true,
+      "components": {
+        "MeshRender": { "mesh": "box:0,0.5,0:1,1,1@1", "color": [0.35, 0.33, 0.3, 1], "castsShadow": false },
+        "RodVisual": { "target": "root", "width": 0.07 } } } } }

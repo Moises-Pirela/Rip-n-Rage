@@ -1,0 +1,25 @@
+// A prop on a rail: pistons, lifts, sliding doors. With a motor and limits, "patrol 1" reverses it at the ends -
+// the rail itself is read off the joint, so nothing has to be told where the rail is.
+{ "name": "phys_slider",
+  "description": "Prop on a rail (axis \"x y z\" local; limits \"min max\" m; motor m/s, motor_force, patrol 1 = reverse at the limits; spring N/m, damper, target)",
+  "keys": { "size": ["BoxMesh.size", "ShapeSize.size"], "mass": "Body.mass", "texture": "LevelTextured.texture", "shape": "ColliderShape.kind",
+            "axis": "Joint.axis", "limits": "Joint.limits", "motor": "Joint.motorSpeed", "motor_force": "Joint.motorForce",
+            "patrol": "SliderPatrol.enabled", "spring": "Joint.springStiffness", "damper": "Joint.springDamping",
+            "target": "Joint.springTarget", "break_force": "Joint.breakForce", "break_torque": "Joint.breakTorque" },
+  "editor": { "gizmoColor": [1, 0.6, 0.2, 1], "pickExtents": [0.6, 0.6, 0.6],
+              "defaults": { "size": "1 1 1", "mass": "15", "texture": "orange", "axis": "1 0 0", "limits": "-2 2",
+                            "motor": "0", "motor_force": "300", "patrol": "0", "spring": "0", "damper": "10", "target": "0", "break_force": "0" },
+              "numeric": [ { "key": "motor", "step": 0.25 }, { "key": "spring", "step": 25 } ] },
+  "components": {
+    "BoxMesh": { "size": [1, 1, 1], "fitUvToWidth": true },
+    "MeshRender": {},
+    "LevelTextured": { "texture": "orange" },
+    "ImpactSurface": {},
+    "ColliderShape": { "kind": "Box" },
+    "ShapeSize": { "size": [1, 1, 1] },
+    "Body": { "mass": 15, "collisionDetection": "Continuous" },
+    "BodyVelocity": {},
+    "StandOnBase": { "clearance": 0.01 },
+    "Joint": { "kind": "Slider", "axis": [1, 0, 0], "limits": [-2, 2], "motorForce": 300, "springDamping": 10 },
+    "SliderPatrol": { "enabled": false }
+  } }

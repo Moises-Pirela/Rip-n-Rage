@@ -1,0 +1,13 @@
+// A connector: an instruction standing at the anchor, not a thing in the world. Its system hands the joint to the
+// prop named by "body" (in that prop's local space) and removes this entity.
+{ "name": "joint_ball",
+  "description": "Ball-and-socket between body and connected at the origin",
+  "keys": { "body": "JointConnector.body", "connected": "JointConnector.connected", "break_force": "JointConnector.breakForce",
+            "break_torque": "JointConnector.breakTorque", "collide": "JointConnector.collideConnected" },
+  "editor": { "gizmoColor": [0.4, 0.8, 1, 1], "pickExtents": [0.25, 0.25, 0.25],
+              "defaults": { "body": "", "connected": "", "break_force": "0", "break_torque": "0", "collide": "0" } },
+  "components": { "JointConnector": { "kind": "Ball" } },
+  "children": {
+    "marker": { "previewOnly": true,
+      "components": {
+        "MeshRender": { "mesh": "box:0,0,0:0.3,0.3,0.3@1", "color": [0.4, 0.8, 1, 1], "emissive": 0.8, "castsShadow": false } } } } }

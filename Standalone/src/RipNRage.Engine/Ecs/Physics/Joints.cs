@@ -85,6 +85,7 @@ namespace RipNRage.Engine.Ecs.Physics
             var ax = PhysicsConfigUtil.Vec(axis);
             if ((kind == JointKind.Hinge || kind == JointKind.Slider) && ax.sqrMagnitude < 1E-8f)
                 throw new ArgumentException("hinge / slider joints need a non-zero axis", nameof(axis));
+            if (ax.sqrMagnitude > 1E-8f) ax = ax.normalized; // an axis is a direction, whatever length a level wrote
             if (limits != null && limits.Length != 2) throw new ArgumentException("limits must be [min, max]", nameof(limits));
             if (breakForce < 0f || breakTorque < 0f || stiffness < 0f || damping < 0f) throw new ArgumentOutOfRangeException(nameof(breakForce), "break thresholds, stiffness and damping must be ≥ 0");
             return new Joint

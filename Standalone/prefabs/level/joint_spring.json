@@ -1,0 +1,12 @@
+{ "name": "joint_spring",
+  "description": "Spring between body (anchor = origin) and connected (connected_anchor; stiffness, damper, rest, min, max)",
+  "keys": { "body": "JointConnector.body", "connected": "JointConnector.connected", "connected_anchor": "JointConnector.connectedAnchor",
+            "stiffness": "JointConnector.stiffness", "damper": "JointConnector.damping", "rest": "JointConnector.restLength",
+            "min": "JointConnector.minDistance", "max": "JointConnector.maxDistance",
+            "break_force": "JointConnector.breakForce", "break_torque": "JointConnector.breakTorque", "collide": "JointConnector.collideConnected" },
+  "editor": { "gizmoColor": [0.4, 0.8, 1, 1], "pickExtents": [0.25, 0.25, 0.25],
+              "defaults": { "body": "", "connected": "", "stiffness": "100", "damper": "5", "break_force": "0", "break_torque": "0", "collide": "0" } },
+  "components": { "JointConnector": { "kind": "Spring", "stiffness": 100, "damping": 5 } },
+  "children": {
+    "marker": { "previewOnly": true,
+      "components": { "MeshRender": { "mesh": "box:0,0,0:0.3,0.3,0.3@1", "color": [0.4, 0.8, 1, 1], "emissive": 0.8, "castsShadow": false } } } } }

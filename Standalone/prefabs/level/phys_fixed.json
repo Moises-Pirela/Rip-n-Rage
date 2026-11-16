@@ -1,0 +1,20 @@
+// A prop welded where it stands: the same body, plus a fixed joint to the world that a hard enough hit breaks.
+{ "name": "phys_fixed",
+  "description": "Prop welded in place; breaks loose above break_force (N) / break_torque (N·m)",
+  "keys": { "size": ["BoxMesh.size", "ShapeSize.size"], "mass": "Body.mass", "texture": "LevelTextured.texture", "shape": "ColliderShape.kind",
+            "break_force": "Joint.breakForce", "break_torque": "Joint.breakTorque" },
+  "editor": { "gizmoColor": [1, 0.6, 0.2, 1], "pickExtents": [0.5, 0.5, 0.5],
+              "defaults": { "size": "1 1 1", "mass": "10", "texture": "purple", "break_force": "400", "break_torque": "0" },
+              "numeric": [ { "key": "break_force", "step": 50 }, { "key": "mass", "step": 1 } ] },
+  "components": {
+    "BoxMesh": { "size": [1, 1, 1], "fitUvToWidth": true },
+    "MeshRender": {},
+    "LevelTextured": { "texture": "purple" },
+    "ImpactSurface": {},
+    "ColliderShape": { "kind": "Box" },
+    "ShapeSize": { "size": [1, 1, 1] },
+    "Body": { "mass": 10, "collisionDetection": "Continuous" },
+    "BodyVelocity": {},
+    "StandOnBase": { "clearance": 0.02 },
+    "Joint": { "kind": "Fixed", "breakForce": 400 }
+  } }

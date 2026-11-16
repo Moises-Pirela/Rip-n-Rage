@@ -55,7 +55,7 @@ then start at the first unchecked layer.
   the legacy producer are deleted; the application runs only the World, which drives its own fixed clock; the
   player, the level, the props, cameras, lights, menus, HUD and all four editor tools are entities and screens
   (close-out below)
-- [ ] Layer 10 — Editors on configs **(10.0–10.3 done: the level manifest, prefab trees, the game configs and six classes as files; 10.4 next)**
+- [ ] Layer 10 — Editors on configs **(10.0–10.4 done: the level manifest, prefab trees, the game configs, and every level class as components in a file; 10.5 next)**
 
 ### Pick-up point for the next session (written 2026-11-15, after 9.8; layer 10 is next)
 
@@ -1996,71 +1996,54 @@ that changes what the level builds.
             - **Known gap**: `EntityRegistry.Init` calls `Materials.Load`, which compiles shaders, so it needs a GL
               context — the checks cannot reach `SpawnClass` / `Builds<T>()` end to end and rely on the `saveload`
               gate for them. Deferring shader compilation the way textures now defer would open that up (10.6).
-- [ ] 10.4 **Derived classes on prefabs** — broken down 2026-11-16 against the manifest (`6c933799`).
+- [x] 10.4 **Every physical object is a composition of components** (done 2026-11-16, one pass; the plan's five steps
+      were folded together when the design changed from "a hook computes the fields" to "components say what a thing
+      does"). **No derived classes, no prefab inheritance**: each of the fifteen files lists its own components, and
+      what used to be 448 lines of load-time arithmetic in `PhysicsEntities` is now behaviour that systems carry out
+      as an entity is created.
 
-      **The fifteen classes left, and what each one derives** (`PhysicsEntities` 448 lines, `EntityRegistry`'s two planes):
+      **The components that replaced the derivations**
 
-      | Class | In dock | What the keys fan out into |
+      | Component | Says | System (at creation) |
       |---|---|---|
-      | `prop_physics` | 6 | `size` → the **lift** (`origin + (0, h/2 + 0.02, 0)`), the **mesh name** `box:0,0,0:w,h,l@{1/w}`, and the collider: Box `size`, Sphere `r = max/2`, Capsule `r = max(x,z)/2, h = max(y, max(x,z))`. `mass` → `Body.mass` (always CCD). `texture` → the level texture's **path, tint and surface** (three fields from one key) |
-      | `phys_fixed` | 1 | the prop, plus a Fixed `Joint` with `break_force` / `break_torque` (defaults 400 / 0 → 400 N, ∞ N·m) |
-      | `phys_door` | 1 | the prop (lift `h/2 + 0.01`), plus a Hinge whose **anchor and axis come from `hinge`**: left `(−w/2, 0, 0)` + up, right `(+w/2, 0, 0)` + up, top / bottom `(0, ±h/2, 0)` + right. `limits`, `spring` / `damper` / `closed_angle`, `motor` / `motor_torque` |
-      | `phys_hinge` | 2 | the prop, plus a Hinge at local `pivot` about local `axis` (default forward, normalised), `limits` / `motor` / `motor_torque` / `spring` / `damper` / `target` |
-      | `phys_slider` | 1 | the prop, plus a Slider along local `axis` (default right), `limits` / `motor` / `motor_force` / `spring` / `damper`; `patrol 1` with a motor and limits adds **`SliderPatrol`** (world origin = the body centre, axis = `rot · axis`, the limits) |
-      | `phys_pendulum` | 1 | the bob's centre is `origin + (down swung by start_angle about rot·forward) × length`; a Distance `Joint` **to the world** (`ConnectedAnchor` = the map origin, world space, `AutoConnectedAnchor` off), `rope`; plus a **rod entity** (a root, not a child): pose from `RodSystem.Place`, `RodVisual{Target, Hook, Width 0.07}`, unit box `box:0,0.5,0:1,1,1@1` |
-      | `phys_spring_prop` | 1 | centre `origin + down × length`; a Spring `Joint` to the world with `stiffness` / `damper` / `max_length`; a thinner rod (0.04) |
-      | `joint_hinge` / `joint_slider` / `joint_fixed` / `joint_ball` / `joint_distance` / `joint_spring` | 4 (ball) | **no entity of their own**: they add a `Joint` to the prop named by `body`, with the anchor and axis converted into that body's local space from the recorded spawn pose, `connected` by targetname, and rods / springs reaching to a separate `connected_anchor` |
-      | `water_plane` | 1 | `size "w l"` → the mesh `plane:WxL@0.0625`, the water material, **and a `WaterVolume`** `w × 100 × l` hanging under the surface |
-      | `floor_plane` | 1 | `size` → `plane:WxL@0.25`, the texture's own texture, **and a static box collider** `w × 2 × l` one metre under it, tagged with the texture's surface |
+      | `BoxMesh` / `PlaneMesh` (engine) | "I am drawn as a box / plane this big" | names the shared mesh (`box:c:s@uv`), one texture repeat across the width when asked |
+      | `ShapeSize` (engine) | "my collider is this big" | fills the `ColliderShape` the way its kind wants it — a box takes the size, a sphere half the longest side, a capsule width and height |
+      | `StandOnBase` (engine) | "my transform is my base, not my middle" | lifts the body half its height plus a clearance |
+      | `HingeOnEdge` (engine) | "my hinge runs along my left / right / top / bottom edge" | works the anchor and axis out of the panel's size |
+      | `HangsFrom` (engine) | "I hang from where I was placed, this far down, swung out this much" | drops the prop and points its joint back at the hook |
+      | `JointConnector` (engine) | "give this joint to that prop" | converts anchor and axis into the body's local space, hands it over, and **removes itself** — a connector is an instruction, not a thing |
+      | `RodVisual` + its config | "I stretch from the hook I was placed on to that prop" | stands the rod up (and keeps stretching it every frame, as before) |
+      | `LevelTextured` (game) | "I am made of one of the level's materials" | picture, tint, shader and the **impact surface** a bullet kicks up — one name, three things, no lookup in code |
+      | `SliderPatrol.Enabled` (game) | "reverse me at my limits" | reads the rail off the joint it rides |
 
-      **The mechanism: a class contributes overrides, the prefab still does the building.**
-      `EntityDefinition.derive(MapEntity, List<KeyValuePair<string,string>>)` appends computed `(path, text)` pairs to
-      the map's own keys, and the loader bakes the prefab with the lot (later entries win, so a map key can still be
-      overridden by a derivation or the other way round). Nothing mutates an entity after the fact: the spawn stays a
-      pure bake, which is what keeps the manifest exact and the preview identical to the game minus `[NotInPreview]`.
-      Everything invariant — that a prop has a `Body`, `BodyVelocity`, `ImpactSurface`, that a door's joint is a Hinge,
-      that a rod is white and 0.35-grey — lives in the prefab file; only the arithmetic stays in code.
+      **The fifteen files**: `prop_physics`, `phys_fixed`, `phys_door`, `phys_hinge`, `phys_slider`, `phys_pendulum`,
+      `phys_spring_prop`, the six `joint_*`, `water_plane`, `floor_plane`. `PhysicsEntities.cs` is **deleted**;
+      `EntityRegistry` is down to `info_player_start` and a list of prefab names.
 
-      **The connectors are the one exception, deliberately.** A `joint_*` builds no entity; it *edits another one* (the
-      prop named by `body`), so there is nothing for a prefab to spawn. They keep their code hook, and their prefab
-      file carries only the **editor** side: the `editor` block and the `previewOnly` marker + axis bar. The loader
-      learns one new field for that, `previewPrefab`, so a class can be code in the game and data in the editor.
+      **Two objects became one entity each** (106 → 104): the floor is a plane that *carries its slab*
+      (`ColliderShape` with a centre a metre down instead of a separate collider entity), and the water is a plane
+      that *carries its volume*. A thing that is one thing in the world is one entity.
 
-      **Decided while reading the code**
-      - **A sphere prop still draws a box** (the pendulum bob: Sphere collider r 0.35, mesh `box:…:0.7,0.7,0.7@1.43`).
-        That is the original's behaviour and the manifest's; the port keeps it rather than quietly fixing it.
-      - **The rod is a root, not a child** of its prop (it is posed in world space and stretched every frame by
-        `RodSystem`), so it is a `detached` node whose `RodVisual.target` is an `EntityRef` to `root` — the reference
-        machinery of 10.1, used for the first time inside one prefab.
-      - **One key, three fields**: `texture` becomes the texture path, the tint and the impact surface. The multi-path
-        aliases of 10.3b cover two of them; the third (a *lookup* in the level texture table) is arithmetic, so it
-        belongs in `derive`.
-      - `prop_physics` has **no `CollisionFilter`** (layer 0, so the helper never added one) — the prefabs must not add
-        one either, or the manifest moves.
+      **Found by the gate**
+      - **A system that moves an entity as it is created must run before `TransformSystem`**, which initialises
+        `LocalToWorld` the same way: the rods were stretched in `LocalTransform` but still at the hook in
+        `LocalToWorld`. `StandOnBaseSystem`, `HangsFromSystem` and `RodSystem` now declare it.
+      - **A shape's unused fields had to stop being baked** (10.3b's lesson, again): `MeshRenderConfig.mesh` is empty
+        by default now, so a renderer waiting for its `BoxMesh` does not intern a stray unit box — `deathf8`'s asset
+        counts (29 / 9 / 4) are flat across a rebuild.
+      - **An axis is a direction**: `JointConfig` normalises hinge / slider axes, which the old loader did by hand.
 
-      **Steps** (one commit each; the manifest is the gate throughout, `6c933799` / `210a7c54`)
-
-      - [ ] 10.4a **The hook and the props**: `derive` on `EntityDefinition`, applied by the loader after the map's own
-            keys; `prop_physics` and `phys_fixed` as files. Engine checks for override precedence (map key vs derived).
-            **Gate**: manifest identical; `rocket` (props are what rockets shove) unchanged.
-      - [ ] 10.4b **The three machines on their own body**: `phys_door`, `phys_hinge`, `phys_slider` (+ `SliderPatrol`).
-            **Gate**: manifest identical; the dock's shelf still breaks on spawn at the layer-2 numbers (666 N / 147 N·m).
-      - [ ] 10.4c **The two hanging ones**: `phys_pendulum`, `phys_spring_prop`, with their rods as detached nodes
-            referencing the root. **Gate**: manifest identical (the rod's pose is four computed numbers — the gate reads
-            them to 4 places).
-      - [ ] 10.4d **The planes**: `water_plane` (mesh + volume) and `floor_plane` (mesh + collider + surface), both with
-            detached `gameOnly` children. **Gate**: manifest identical; `water` (the underwater sky) and `surface` (what
-            a bullet kicks up off sand) unchanged.
-      - [ ] 10.4e **The connectors and the close-out**: `previewPrefab` for the six `joint_*` classes, their gizmos as
-            `previewOnly` nodes, `PhysicsEntities` reduced to the arithmetic. **Gate**: full sweep twice (26 scripts,
-            4 shots, 2 manifests, the editor), bench vs 9.8 on the dev Mac, and the line count `PhysicsEntities` lost.
-
-      **Risks**
-      - The chain (5 props + 4 ball joints by targetname) is the one place where a connector's local-space conversion
-        is exercised; `rocket` and a shove are the only gates that move it — if a conversion is wrong, the chain hangs
-        wrong rather than failing loudly. 10.4e should print the chain's joint anchors once as a probe.
-      - Every machine shares `prop_physics`'s derivation; a mistake there moves seven classes at once, which is why
-        10.4a ports the two simplest first and the manifest is read before anything else lands.
+      **Gate**: of the 106 blocks the 10.3 manifest had, **98 are byte-identical**, including every joint anchor on
+      the chain, both hooks, every prop pose and mesh name. The rest: the two merges above, and **four inert joint
+      defaults** — a door's `MotorForce` 60 and the hinges' / slider's `SpringDamping` 2 / 10 now carry the class's
+      documented default instead of the config's, and are read only when that motor or spring is switched on.
+      **New baselines: `walk` `00bf2d8e` (104), `menu` `61fabd7f` (96).**
+      Engine checks 254, game 480 (+2: a system each for the patrol and the level textures). `rocket` hp 80 armour 0
+      y 3.93 (what the 10.1 sweep measured on this machine; the roadmap's 3.82 is the dev Mac's), `water` one volume
+      and the sky right, `surface` wood underfoot, `deathf8` assets flat, `--ecs-demo` unchanged (its 23 entities),
+      the editor runs its session clean.
+      **Previews**: a prop's preview is now its own prefab minus what simulates; the `joint_*` markers lost their
+      axis bar (the editor draws a wire box and facing line for every entity anyway).
 
 - [ ] 10.5 **Worldspawn singleton.** `Worldspawn` + `WorldspawnConfig` + `WorldspawnSystem`; `ApplyWorldspawn`,
       `ComputeKillY`'s explicit branch and `LevelBuild`'s `Sky.Spin(1.2f)` fold into it (the derived kill height

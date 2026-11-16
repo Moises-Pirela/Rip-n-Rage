@@ -1,0 +1,27 @@
+// The same idea on a spring instead of a rod: it hangs at its rest length and bounces, on a thinner rod.
+{ "name": "phys_spring_prop",
+  "description": "Prop hanging on a spring from the origin (length = rest length; stiffness N/m, damper N·s/m; max_length rope limit, 0 = none)",
+  "keys": { "size": ["BoxMesh.size", "ShapeSize.size"], "mass": "Body.mass", "texture": "LevelTextured.texture", "shape": "ColliderShape.kind",
+            "length": "HangsFrom.length", "stiffness": "Joint.stiffness", "damper": "Joint.damping", "max_length": "Joint.maxDistance",
+            "break_force": "Joint.breakForce", "break_torque": "Joint.breakTorque" },
+  "editor": { "gizmoColor": [1, 0.6, 0.2, 1], "pickExtents": [0.3, 0.3, 0.3],
+              "defaults": { "size": "0.8 0.8 0.8", "mass": "10", "texture": "green", "length": "2",
+                            "stiffness": "150", "damper": "6", "max_length": "0", "break_force": "0" },
+              "numeric": [ { "key": "stiffness", "step": 25 }, { "key": "length", "step": 0.25 } ] },
+  "components": {
+    "BoxMesh": { "size": [0.8, 0.8, 0.8], "fitUvToWidth": true },
+    "MeshRender": {},
+    "LevelTextured": { "texture": "green" },
+    "ImpactSurface": {},
+    "ColliderShape": { "kind": "Box" },
+    "ShapeSize": { "size": [0.8, 0.8, 0.8] },
+    "Body": { "mass": 10, "collisionDetection": "Continuous" },
+    "BodyVelocity": {},
+    "HangsFrom": { "length": 2 },
+    "Joint": { "kind": "Spring", "stiffness": 150, "damping": 6 }
+  },
+  "children": {
+    "rod": { "detached": true,
+      "components": {
+        "MeshRender": { "mesh": "box:0,0.5,0:1,1,1@1", "color": [0.35, 0.33, 0.3, 1], "castsShadow": false },
+        "RodVisual": { "target": "root", "width": 0.04 } } } } }

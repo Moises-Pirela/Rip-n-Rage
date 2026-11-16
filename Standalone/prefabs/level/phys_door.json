@@ -1,0 +1,25 @@
+// A door: a panel standing on its origin, hinged along one of its own edges (HingeOnEdge works the anchor out of
+// the panel's size, so a door of any width hangs right), with an optional closing spring and motor.
+{ "name": "phys_door",
+  "description": "Hinged door (size w h thick; hinge left|right|top|bottom; limits \"min max\" deg; spring N·m/rad, damper, closed_angle; motor deg/s, motor_torque; break_force)",
+  "keys": { "size": ["BoxMesh.size", "ShapeSize.size"], "mass": "Body.mass", "texture": "LevelTextured.texture",
+            "hinge": "HingeOnEdge.edge", "limits": "Joint.limits", "spring": "Joint.springStiffness", "damper": "Joint.springDamping",
+            "closed_angle": "Joint.springTarget", "motor": "Joint.motorSpeed", "motor_torque": "Joint.motorForce",
+            "break_force": "Joint.breakForce", "break_torque": "Joint.breakTorque" },
+  "editor": { "gizmoColor": [1, 0.6, 0.2, 1], "pickExtents": [0.6, 1.2, 0.2],
+              "defaults": { "size": "1.2 2.4 0.12", "mass": "25", "texture": "planks", "hinge": "left", "limits": "-110 110",
+                            "spring": "0", "damper": "3", "closed_angle": "0", "motor": "0", "motor_torque": "60", "break_force": "0" },
+              "numeric": [ { "key": "spring", "step": 5 }, { "key": "motor", "step": 15 } ] },
+  "components": {
+    "BoxMesh": { "size": [1.2, 2.4, 0.12], "fitUvToWidth": true },
+    "MeshRender": {},
+    "LevelTextured": { "texture": "planks" },
+    "ImpactSurface": {},
+    "ColliderShape": { "kind": "Box" },
+    "ShapeSize": { "size": [1.2, 2.4, 0.12] },
+    "Body": { "mass": 25, "collisionDetection": "Continuous" },
+    "BodyVelocity": {},
+    "StandOnBase": { "clearance": 0.01 },
+    "Joint": { "kind": "Hinge", "limits": [-110, 110], "springDamping": 3, "motorForce": 60 },
+    "HingeOnEdge": { "edge": "Left" }
+  } }

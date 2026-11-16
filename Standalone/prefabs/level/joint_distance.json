@@ -1,0 +1,11 @@
+{ "name": "joint_distance",
+  "description": "Rod / rope between body (anchor = origin) and connected (connected_anchor; min, max, rope 1)",
+  "keys": { "body": "JointConnector.body", "connected": "JointConnector.connected", "connected_anchor": "JointConnector.connectedAnchor",
+            "min": "JointConnector.minDistance", "max": "JointConnector.maxDistance", "rope": "JointConnector.rope",
+            "break_force": "JointConnector.breakForce", "break_torque": "JointConnector.breakTorque", "collide": "JointConnector.collideConnected" },
+  "editor": { "gizmoColor": [0.4, 0.8, 1, 1], "pickExtents": [0.25, 0.25, 0.25],
+              "defaults": { "body": "", "connected": "", "rope": "0", "break_force": "0", "break_torque": "0", "collide": "0" } },
+  "components": { "JointConnector": { "kind": "Distance" } },
+  "children": {
+    "marker": { "previewOnly": true,
+      "components": { "MeshRender": { "mesh": "box:0,0,0:0.3,0.3,0.3@1", "color": [0.4, 0.8, 1, 1], "emissive": 0.8, "castsShadow": false } } } } }

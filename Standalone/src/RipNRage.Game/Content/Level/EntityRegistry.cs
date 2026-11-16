@@ -102,41 +102,20 @@ namespace RipNRage.Game.Content.Level
 
             AddPrefab("monster_spawner");
 
-            Add(new EntityDefinition
-            {
-                classname = "prop_physics", description = "Rigid-body prop (size w h l, mass, texture; shape box|sphere|capsule; targetname for joints)",
-                gizmoColor = new Color(1f, 0.6f, 0.2f, 1f), pickExtents = new Vector3(0.5f, 0.5f, 0.5f),
-                defaults = { ["size"] = "1 1 1", ["mass"] = "10", ["texture"] = "orange", ["shape"] = "box" },
-                numericProps = { ("mass", 1f) },
-                spawnEntity = e => PhysicsEntities.PropEntity(e), // 9.2
-                previewEntity = e => PhysicsEntities.PropPreview(e),
-            });
+            AddPrefab("prop_physics");
 
-            PhysicsEntities.Register(Add);
+            foreach (var cls in new[] { "phys_fixed", "phys_door", "phys_hinge", "phys_slider", "phys_pendulum", "phys_spring_prop" })
+                AddPrefab(cls);
+            foreach (var cls in new[] { "joint_hinge", "joint_slider", "joint_fixed", "joint_ball", "joint_distance", "joint_spring" })
+                AddPrefab(cls, deferred: true); // a connector needs the props it joins to exist
 
             AddPrefab("light");
 
             AddPrefab("lamp_post");
 
-            Add(new EntityDefinition
-            {
-                classname = "water_plane", description = "Animated water plane (size w l)",
-                gizmoColor = new Color(0.3f, 0.6f, 1f, 1f), pickExtents = new Vector3(2f, 0.2f, 2f),
-                defaults = { ["size"] = "200 200" },
-                numericProps = { ("height", 0.25f) },
-                spawnEntity = e => PlaneEntity(e, Materials.Water, Texture2D.White, 1f / 16f, transparent: true, collider: false, water: true), // 9.1
-                previewEntity = e => PlaneEntity(e, Materials.Water, Texture2D.White, 1f / 16f, transparent: true, collider: false, water: false),
-            });
+            AddPrefab("water_plane");
 
-            Add(new EntityDefinition
-            {
-                classname = "floor_plane", description = "Large textured ground plane (size w l, texture)",
-                gizmoColor = new Color(0.9f, 0.8f, 0.5f, 1f), pickExtents = new Vector3(2f, 0.2f, 2f),
-                defaults = { ["size"] = "200 200", ["texture"] = "sand" },
-                spawnEntity = e => PlaneEntity(e, null, LevelTextures.Get(e.Get("texture", "sand")).Texture, 1f / 4f, transparent: false, collider: true, water: false,
-                                               surface: LevelTextures.Get(e.Get("texture", "sand")).surface), // 9.1
-                previewEntity = e => PlaneEntity(e, null, LevelTextures.Get(e.Get("texture", "sand")).Texture, 1f / 4f, transparent: false, collider: false, water: false),
-            });
+            AddPrefab("floor_plane");
 
             AddPrefab("trigger_checkpoint"); // 10.3b: prefabs/level/trigger_checkpoint.json
         }
@@ -152,33 +131,6 @@ namespace RipNRage.Game.Content.Level
             return box;
         }
 
-        /// <summary>A plane's width and length: "w l" (what the maps write) or "w h l". MapEntity.GetVector wants three
-        /// numbers and falls back to its default otherwise — which is how dock.map's 1732 x 1000 water and sand were built
-        /// 200 x 200 (found in 7.6: the water volume did not reach where the player goes in).</summary>
-        private static (float w, float l) PlaneSize(MapEntity e)
-        {
-            var parts = e.Get("size", "200 200").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
-            float Num(int i) => i < parts.Length && float.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0f;
-            float w = Num(0), l = parts.Length >= 3 ? Num(2) : Num(1);
-            if (w <= 0f) w = 200f;
-            if (l <= 0f) l = w;
-            return (w, l);
-        }
-
-        /// <summary>The game's plane (9.1): a render entity, plus its collider (floor) or water volume (water).</summary>
-        private static RipNRage.Engine.Ecs.Entity PlaneEntity(MapEntity e, Material material, Texture2D texture, float uvScale, bool transparent, bool collider, bool water, string surface = null)
-        {
-            var (w, l) = PlaneSize(e);
-            var ent = LevelVisuals.Spawn(e.origin, LevelVisuals.Render(LevelVisuals.Plane(w, l, uvScale), texture, Color.white, material,
-                                                                    castsShadow: false, transparent: transparent));
-            if (collider)
-            {
-                var floor = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World, e.origin + new Vector3(0, -1f, 0), Quaternion.identity, new Vector3(w, 2f, l), Layers.Walkable);
-                if (surface != null) Surfaces.Tag(Application.Current.World, floor, surface); // what a bullet kicks up off it
-            }
-            if (water) RipNRage.Game.Ecs.Waters.Spawn(Application.Current.World, e.origin, new Vector3(w, 100f, l)); // the view under it hides the sky
-            return ent;
-        }
 
     }
 }

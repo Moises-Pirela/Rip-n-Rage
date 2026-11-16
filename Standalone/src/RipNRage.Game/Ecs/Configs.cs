@@ -167,17 +167,20 @@ namespace RipNRage.Game.Ecs
     /// </summary>
     public sealed class WaterVolumeConfig : ComponentConfig<WaterVolume>
     {
+        /// <summary>"w h l", or "w l" with <see cref="depth"/> between them (the plane classes' form).</summary>
         public float[] size = { 200f, 100f, 200f };
+        public float depth = 100f;
         public override WaterVolume Bake() => From(Vector3.zero);
         public override WaterVolume Bake(in BakeContext ctx) => From(ctx.HasEntity ? ctx.Position : Vector3.zero);
 
         private WaterVolume From(Vector3 surface)
         {
-            if (size == null || size.Length < 3) throw new ArgumentException("water size is \"w h l\"", nameof(size));
+            if (size == null || size.Length < 2) throw new ArgumentException("water size is \"w h l\" or \"w l\"", nameof(size));
+            float w = size[0], h = size.Length >= 3 ? size[1] : depth, l = size.Length >= 3 ? size[2] : size[1];
             return new WaterVolume
             {
-                Min = surface - new Vector3(size[0] * 0.5f, size[1], size[2] * 0.5f),
-                Max = surface + new Vector3(size[0] * 0.5f, 0f, size[2] * 0.5f),
+                Min = surface - new Vector3(w * 0.5f, h, l * 0.5f),
+                Max = surface + new Vector3(w * 0.5f, 0f, l * 0.5f),
             };
         }
     }

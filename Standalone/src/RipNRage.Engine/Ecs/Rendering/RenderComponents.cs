@@ -101,8 +101,9 @@ namespace RipNRage.Engine.Ecs.Rendering
 
     public sealed class MeshRenderConfig : ComponentConfig<MeshRender>
     {
-        /// <summary>A <see cref="MeshLibrary"/> name ("box", "plane", or a registered / .obj mesh).</summary>
-        public string mesh = "box";
+        /// <summary>A <see cref="MeshLibrary"/> name ("box", "plane", a sized form, or an .obj). Empty = a shape
+        /// component (<see cref="BoxMesh"/>, <see cref="PlaneMesh"/>) names it as the entity is created.</summary>
+        public string mesh;
         /// <summary>Texture path under assets (null = white).</summary>
         public string texture;
         /// <summary>A <see cref="MaterialLibrary"/> name (null = the default lit material). 10.3a: the lamp head's pulse.</summary>
@@ -114,7 +115,7 @@ namespace RipNRage.Engine.Ecs.Rendering
         public RenderLayer layer;
         public override MeshRender Bake() => new MeshRender
         {
-            Mesh = RenderAssets.Meshes.GetOrLoad(mesh, MeshLibrary.Get),
+            Mesh = string.IsNullOrEmpty(mesh) ? AssetHandle<Mesh>.None : RenderAssets.Meshes.GetOrLoad(mesh, MeshLibrary.Get),
             Texture = string.IsNullOrEmpty(texture)
                 ? RenderAssets.Textures.Intern(Texture2D.White, "white")
                 : RenderAssets.Textures.GetOrLoad(texture, t => Texture2D.Load(Application.AssetPath(t), FilterMode.Trilinear, TextureWrapMode.Repeat)),

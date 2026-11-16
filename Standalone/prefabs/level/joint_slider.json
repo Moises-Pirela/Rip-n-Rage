@@ -1,0 +1,13 @@
+{ "name": "joint_slider",
+  "description": "Slider between body and connected along axis (limits m, motor m/s, motor_force, spring, damper, target)",
+  "keys": { "body": "JointConnector.body", "connected": "JointConnector.connected", "axis": "JointConnector.axis",
+            "limits": "JointConnector.limits", "motor": "JointConnector.motorSpeed", "motor_force": "JointConnector.motorForce",
+            "spring": "JointConnector.springStiffness", "damper": "JointConnector.springDamping", "target": "JointConnector.springTarget",
+            "break_force": "JointConnector.breakForce", "break_torque": "JointConnector.breakTorque", "collide": "JointConnector.collideConnected" },
+  "editor": { "gizmoColor": [0.4, 0.8, 1, 1], "pickExtents": [0.25, 0.25, 0.25],
+              "defaults": { "body": "", "connected": "", "axis": "1 0 0", "motor": "0", "motor_force": "300",
+                            "spring": "0", "damper": "10", "target": "0", "break_force": "0", "break_torque": "0", "collide": "0" } },
+  "components": { "JointConnector": { "kind": "Slider", "axis": [1, 0, 0], "motorForce": 300, "springDamping": 10 } },
+  "children": {
+    "marker": { "previewOnly": true,
+      "components": { "MeshRender": { "mesh": "box:0,0,0:0.3,0.3,0.3@1", "color": [0.4, 0.8, 1, 1], "emissive": 0.8, "castsShadow": false } } } } }
