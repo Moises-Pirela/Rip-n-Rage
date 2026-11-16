@@ -16,6 +16,10 @@ known gap in the code; the rest are proposals based on art and data that already
 - [x] HUD: portrait, health/armour ring, ammo counter, crosshair
 - [x] Level editor (`.map` brushes, entities, vertex painting, snapshots) and sprite animation editor
 - [x] Unity removed; runtime assets restored into `Standalone/assets/`, builds on .NET 10
+- [x] **ECS migration complete** (layers 0–10, `Standalone/docs/ECS_ROADMAP.md`): no `GameObject` / `MonoBehaviour`
+  anywhere — components are structs, behaviour is systems, every entity class a level places is a prefab file of
+  components (`prefabs/level/`), and the editor edits both the instance and the template. How to work in it:
+  `Standalone/docs/GUIDE.md`
 
 ## Now: repo and build health
 
@@ -41,8 +45,9 @@ known gap in the code; the rest are proposals based on art and data that already
   ([GameManager.cs:52](Standalone/src/RipNRage.Game/Scripts/DungeonMaster/GameManager.cs:52),
   [LevelManager.cs:35](Standalone/src/RipNRage.Game/Scripts/DungeonMaster/LevelManager.cs:35)).
 - [ ] **Health and armour pickups**: the HUD shows both, but only ammo pickups exist.
-- [ ] **Enemy navigation**: agents steer in a straight line. Add pathfinding (a navmesh or a grid baked from the level brushes).
-- [ ] **Place checkpoints in the dock level**: save/load works, but the level has no `trigger_checkpoint` volumes yet.
+- [ ] **Enemy navigation**: agents steer in a straight line with a ledge guard. Add pathfinding (a navmesh or a
+  grid baked from the level brushes) — the steering system is the only place that would change.
+- [ ] **More checkpoints**: the dock has one `trigger_checkpoint` volume; a full level wants several.
 
 ## Later: content
 

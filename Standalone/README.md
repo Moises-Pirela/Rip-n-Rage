@@ -17,19 +17,29 @@ Standalone/
 │   ├── Platform/               GLFW + OpenGL 3.3 core bindings (P/Invoke, cross-platform loader)
 │   ├── Graphics/               render pipeline, PNG decoder, sprites/atlases, meshes, UI batch, font
 │   ├── Core/                   Application (the frame loop and the fixed clock), time, profiler, asset base
-│   ├── Ecs/                    the World: entities, components, systems, queries, command buffers, the schedule
+│   ├── Ecs/                    the World: entities, components, systems, queries, command buffers, the schedule,
+│   │                           prefabs (JSON trees of components), the level manifest, and the engine's own
+│   │                           components: Transforms, Rendering, Physics, Animation, Audio, Effects,
+│   │                           Destruction, View, Input, Levels (the worldspawn singleton)
 │   ├── Animation/              sprite animation clips + Unity-style Animator state machine
-│   ├── Audio/                  OpenAL bindings, WAV loader, AudioSource
-│   ├── Physics/                collision world (grid broadphase), sphere/capsule/box/brush/mesh colliders, GJK + conservative-advancement sweeps, move-and-slide, KinematicBody, CharacterController, RigidBody (contact solver: soft / Baumgarte / NGS, static-dynamic friction, warm-start cache, CCD), joints (ball / distance / spring / hinge / slider / fixed constraints + Unity-style Joint components with limits, motors, springs, break force), physics materials, triggers, nav agent
-│   ├── Destruction/            sprite destruction: skeletons (JSON), the SpriteRagdoll slicer (cut-out sprite pieces on jointed rigid bodies)
+│   ├── Audio/                  OpenAL bindings, WAV loader (playback is the AudioSystem + Sfx.Play)
+│   ├── Physics/                the simulation itself: collision world (grid broadphase), sphere/capsule/box/convex/mesh
+│   │                           shapes, GJK + conservative-advancement sweeps, move-and-slide, the rigid-body solver
+│   │                           (soft / Baumgarte / NGS, static-dynamic friction, warm-start cache, CCD, islands,
+│   │                           graph-coloured multithreading) and the joint constraints. What a level or a system
+│   │                           *authors* are components: Body, ColliderShape, Joint, CharacterMotor, KinematicMover,
+│   │                           Trigger, ShapeSize, StandOnBase, HingeOnEdge, HangsFrom, JointConnector (Ecs/Physics)
+│   ├── Destruction/            sprite destruction: skeletons (JSON) and the slicer behind Ecs/Destruction's
+│   │                           SpriteRagdolls.Spawn (cut-out sprite pieces as jointed rigid-body entities)
 │   ├── Math/                   Vector2/3, Quaternion (Unity ZXY euler), Matrix4x4, Mathf, Random, curves
 │   └── Tween/                  DOTween-style tweens
 ├── src/RipNRage.Level/         level data model: brushes/entities, .map read/write, polygons, collision shapes
 ├── src/RipNRage.Game/
-│   ├── Scripts/                the ported game scripts (same files/classes as the Unity _Game/Scripts)
-│   ├── Ecs/                    the game's components and systems (player, combat, AI, rage, flow, falls, death)
+│   ├── Scripts/                what is left of the ported Unity scripts: the UI screens (HUD, menus) and the data classes
+│   ├── Ecs/                    the game's components and systems (player, combat, AI, rage, flow, falls, death,
+│   │                           pickups, environment) and Configs.cs — the authoring data for everything a level places
 │   ├── Framework/              the inspector attributes the data classes still carry
-│   ├── Content/                the player build, data tables, animator graphs, the level build and loader,
+│   ├── Content/                the player build, data tables, animator graphs, the level build, loader and classes,
 │   │                           rebuilt in code from the values in the .prefab/.asset/.anim/.controller files
 │   └── Program.cs              entry point, CLI options, debug overlay, automation scripts
 ├── src/RipNRage.ImGui/         Dear ImGui integration used by the editors (renderer, input, docking)
@@ -43,6 +53,9 @@ Standalone/
 ├── vfx/                        particle effects + bindings (JSON, hot-reloaded; filled with the defaults on first run)
 ├── skeletons/                  sprite destruction skeletons (JSON, hot-reloaded; rifleman.json ships, see skeleton.sh)
 ├── levels/                     .map levels (dock.map = the test area)
+├── prefabs/                    entity classes as data: prefabs/level/*.json is what a .map's classnames name
+│                               (prefabs/demo/ is the --ecs-demo scene)
+├── docs/                       GUIDE.md (how to work in the engine), ECS_ROADMAP.md (how it got here)
 ├── shaders/                    GLSL shaders (hot-reloaded)
 ├── native/                     optional GLFW / OpenAL shared libraries, per runtime id (see below)
 └── tunables.cfg                post-processing / lighting settings (hot-reloaded)
@@ -80,7 +93,12 @@ cd Standalone
 ./vfx.sh          # particle effect editor
 ./skeleton.sh     # sprite destruction skeleton editor
 ./build.sh [rid]  # self-contained publish for this machine (or linux-x64 / osx-arm64 / osx-x64 / win-x64) into dist/<rid>; macOS also gets Rip-n-Rage.app
+./gates.sh out    # the whole gate sweep: both check suites, 26 scripted runs, pixel shots, level manifests, the editors
 ```
+
+**Writing code or content for this engine?** [docs/GUIDE.md](docs/GUIDE.md) is the how-to: the ECS model,
+adding a component / system, authoring a prefab, placing it in a level, the editor's Entity and Prefab windows,
+and the rules that keep a change from breaking something far away.
 
 On Windows: `run.cmd`, or the manual commands below.
 
@@ -136,8 +154,12 @@ Bindings, mouse sensitivity / inversion and gamepad look speed / inversion / dea
 --assets dir           assets folder (or the folder containing it); default: "assets" found in exe dir / cwd / parents
 --frames N             exit after N frames   --fixed-dt 0.0166 deterministic frame time
 --screenshot out.png   save on exit, or every --shot-interval N frames ("{n}" = frame number)
---script name          automation: look | spin | walk | fire | weapons | jab | m1887 | glockfire | rocket | close | approach | rage | crates | sunward | water | killenemy | die | pause | vfx | fall | strafe | slide | style | dash
---fall-mode die|respawn falling off the level: lethal (default) or an arcade respawn on a spot stood on before the fall
+--script name          automation; the 26 the gates run: walk fire weapons rage saveload jab m1887 glockfire rocket
+                       glockalt killenemy style die peek close approach pickup water surface evade fall pause
+                       checkpoint menu flowmoves deathf8 (plus look, spin, vfx, strafe, slide, dash, crates…)
+--dump-level file      write the built scene's level manifest (every entity, component and field, ordered by
+                       content) and report "entities N, manifest <hash>" — the gate for anything that changes
+                       how a level is built
 --menu / --no-menu     start on the title screen / straight in the level (default: title screen, unless --script, --frames or --load is given)
 --shaders dir          folder with the .glsl shader files (default: "shaders" found in cwd / exe dir / parents)
 --tunables file.cfg    post-processing config (default: tunables.cfg found in cwd / exe dir / parents)
@@ -159,13 +181,14 @@ Example used for the screenshots in this document:
 
 * First-person weapon sprites (Glock, M1887, MG338, rocket launcher) with the exact prefab
   hierarchy: `Camera(0,0.5,0) → WorldCamera(fov 77) → PlayerArms(0.017,-0.65,2.36) → Weapon(scale 0.1)`,
-  per-weapon `weaponPosition/weaponScale`, **WeaponSway**, **HeadBob**, **CameraRecoil**.
+  per-weapon `weaponPosition/weaponScale`, and the rig's feel as components: `WeaponSway`, `ViewBob`,
+  `CameraShake` (the weapon kick and explosion shake).
 * TexturePacker atlases including **polygon-packed sprites** (the `.tpsheet` vertex/triangle lists
   are used as tight meshes, exactly like Unity's importer) — needed because the M1887/MG338 sheets
   have overlapping bounding rectangles.
 * Weapon animation: the `BaseWeaponController` graph (`Idle ⇄ Fire ⇄ WeaponMelee` driven by the
   `IsFiring` / `WeaponMelee` bools) with every override controller and clip rebuilt from the
-  `.anim` files (frame times, loop flags, `OnFire`/`OnGlockAltFire`… animation events via SendMessage).
+  `.anim` files (frame times, loop flags, `OnFire`/`OnGlockAltFire`… clip events, delivered as a callback).
 * Fists: `LeftFist`/`RightFist` controllers (Jab trigger, Grapple bool, Any-State transition).
 * Hitscan & projectile weapons, ammo/inventory, pickups, rage/combat state, rage "post-processing"
   (colour filter + vignette like the URP volumes), HUD (portrait, radial health/armour ring,
@@ -179,9 +202,11 @@ Example used for the screenshots in this document:
   never rotates). An attack in progress is itself an entity parented to the enemy (telegraph, burst, recovery;
   a hit staggers it). 8-sided sprite sheets
   (`EnemyVisualSystem`), projectiles that damage the player through armour.
-* Level: the dock brush map (`dock.obj`, imported like Unity: X mirrored, 0.25 u/unit, y −3.09),
-  AABB collision per brush (rotated brushes are grid-approximated), sand/water planes, sky,
-  the Unity **layer table and collision matrix** from `ProjectSettings`.
+* Level: the dock brush map (`dock.obj`, imported like Unity: X mirrored, 0.25 u/unit, y −3.09), a static box
+  collider per axis-aligned brush and a convex hull for every other one, sand/water planes, sky, the Unity
+  **layer table and collision matrix** from `ProjectSettings`. Every entity class in a level — props, machines,
+  joints, lights, lamps, pickups, monsters, spawners, volumes, the planes — is a **prefab file** of components
+  (`prefabs/level/`), and the map's keys are field overrides on it.
 * Audio: OpenAL playback of all WAV clips (gunshots, footsteps, jump/land, punches).
 
 ## Post-processing (`tunables.cfg`)
@@ -350,9 +375,9 @@ scenario in one window and grades each against a time budget:
 | Scenario | What runs | Default |
 |---|---|---|
 | `crates` | one-metre rigid-body crates dropped in a loose block that tumbles into a heap; a blast every 4 s keeps it colliding (box/box SAT + clipping, stacking, sleeping, warm start) | 1000 |
-| `ragdolls` | billboard sprite enemies sliced into ragdolls with `SpriteRagdoll` — box / capsule pieces on ball constraints, piece/piece and piece/floor contacts; a blast every 5 s | 500 |
-| `projectiles` | swept `KinematicBody` projectiles (Stop mode, trigger volumes, per-frame) kept in the air from ring emitters through a field of pillars | 1000 in flight |
-| `ground` | force-driven `CharacterBody` runners at 12–16 m/s on a hilly `MeshCollider` terrain of ~29k triangles (ground sphere casts, capsule/triangle contacts) | 200 |
+| `ragdolls` | billboard sprite enemies sliced into ragdolls by `SpriteRagdolls.Spawn` — box / capsule pieces on ball joints, piece/piece and piece/floor contacts; a blast every 5 s | 500 |
+| `projectiles` | swept `KinematicMover` projectiles (Stop mode, trigger volumes) kept in the air from ring emitters through a field of pillars | 1000 in flight |
+| `ground` | `CharacterMotor` runners at 12–16 m/s on a hilly mesh-shaped collider of ~29k triangles (ground sphere casts, capsule/triangle contacts) | 200 |
 
 ```bash
 ./bench.sh                                   # all four, 3 s warm-up + 12 s measured each, report in the console
@@ -429,8 +454,8 @@ hides the weapon layer. All values hot-reload like the rest of the file; the deb
   state (`blend`, `cull`, `depthWrite`, `depthTest`, `renderQueue`, `alphaCutoff`). Assign to any
   `MeshRender.Material` / `SpriteRender.Material` (asset handles) at runtime; change properties any time.
   Unassigned renderers use the engine defaults (`mesh`, `sprite` shaders).
-* **`MaterialPropertyBlock`** — per-object overrides on top of the material
-  (`renderer.propertyBlock.SetFloat("_Flash", 1f)`).
+* **Per-entity overrides** — the `SpriteFx` component (flash colour, flash amount, dissolve) is turned into a
+  property block by the render producer; that is how the enemy hit flash and the death dissolve work.
 * **`ShaderLibrary`** — shaders are `.glsl` files in `Standalone/shaders/` (`#pragma vertex`,
   `#pragma fragment`, `#include "lighting.glsl"`), **hot-reloaded** when saved (a compile error is
   logged and the previous program is kept). The engine built-ins (`mesh`, `sprite`, `sky`, `ui`,
@@ -453,8 +478,8 @@ textures are bound from unit 4 upwards.
 
 Shipped examples: `water.glsl` (vertex waves + the project's normal maps + fresnel/specular, on the
 water plane), `mesh_emissive_pulse.glsl` (lamp heads), `sprite_dissolve.glsl` (enemy death) and the
-default `sprite.glsl` `_Flash` property (enemy hit flash, driven by `EnemyHitFlash` through the
-property block). PNG **and baseline JPEG** textures load (a few `.png` assets are actually JPEGs).
+default `sprite.glsl` `_Flash` property (the enemy hit flash, written into `SpriteFx` by
+`EnemyVisualSystem`). PNG **and baseline JPEG** textures load (a few `.png` assets are actually JPEGs).
 
 ## Game flow: title screen, pause and death
 
@@ -508,7 +533,7 @@ the level start; MAIN MENU returns to the title screen.
 Enemies drop a dead player as their target and go back to wandering; damage to a corpse is ignored and
 the HUD shows the death portrait. `--script die` automates the whole loop (kill, wait, RESTART).
 
-**Falling / clipping.** The player is a force-driven rigid body (`CharacterBody`, see
+**Falling / clipping.** The player is a force-driven rigid body (`CharacterMotor`, see
 [Physics](#physics-collision-world-move-and-slide-kinematic-bodies)) simulated by the rigid-body solver with
 continuous collision: its motion is swept every substep and clamped at the first contact, so a long frame cannot
 push it through a floor slab or a wall whatever the frame time (the simulation step is also capped at 100 ms),
@@ -519,14 +544,12 @@ On the rendering side the GPU occlusion culler
 never culls geometry within 6 m of the camera and re-tests meshes that re-enter the view, so the floor you
 stand on can no longer blink out for a frame.
 
-**Falling off the level** (`FallRespawn` on the player prefab). The kill height is the worldspawn `kill_y` key,
+**Falling off the level** (`FallWatch` on the player, stepped by `FallSystem`). The kill height is the
+worldspawn `kill_y` key (on the `Worldspawn` component singleton),
 else one metre under the `water_plane`, else five metres under the lowest brush. Dropping below it is **lethal by
 default**: the body stops, the death camera falls, the screen reads "YOU ARE DEAD — YOU FELL INTO THE HARBOUR" and
-RESTART reloads the last checkpoint or the level start, like any other death. `--fall-mode respawn` (or the
-worldspawn key `fall_mode respawn`) switches to an arcade respawn instead: the player is put back, undamaged,
-on a spot they stood on **at least a second before** the fall whose whole footprint has ground under it (four
-probes down from the capsule's corners) — never the last grounded frame, which for a walk off an edge *is* the
-brink; falling repeatedly within eight seconds falls back to the level start.
+RESTART reloads the last checkpoint or the level start, like any other death. (The arcade respawn mode the
+original had was dropped in the ECS migration: a fall is simply lethal. The classification below stayed.)
 
 Every fall is classified and logged: the game probes straight down at the point where the player first dropped
 half a metre below the level they last stood on. Floor right there at that level means they went **THROUGH
@@ -599,7 +622,7 @@ out of anything it starts inside (`depenetration`); the result reports the conta
 floor / wall / ceiling), the ground, the remainder of the motion and `ClipVelocity()` to keep a body's velocity
 consistent with what it touched. The broadphase runs once per move; one `MoveResult` is reused per mover.
 
-**Bodies.** `KinematicBody` is the component for entities and objects moved by code — enemies, projectiles,
+**Bodies.** `KinematicMover` is the component for things moved by code rather than by forces — projectiles,
 thrown things, moving props. It integrates its `velocity` with gravity (`gravityScale`), `drag` and a terminal
 speed, moves through `MoveAndSlide` and responds per `motionMode`: `Slide` (characters — velocity clipped by the
 contacts), `Bounce` (`bounciness` / `friction`, comes to rest below `restSpeed` on a floor) or `Stop` (stops dead
@@ -609,10 +632,8 @@ must look smooth at any frame rate) or `Manual` (`Move(motion)` / `Simulate(dt)`
 the object or explicit `halfExtents`; `collisionMask`, `useLayerMatrix`, `collideWithTriggers`, `ignore` and
 `collisionPredicate` make up its filter; `Collided` fires per contact after the move with the exact point and
 normal; `reportTriggers` registers the collider as a mover so `ITriggerListener` callbacks fire for it.
-`CharacterController` (the player: a box by default, or a true capsule with `controllerShape = Capsule`, which
-rounds corners and slides around edges like Unity's) and `NavMeshAgent` (enemies: gravity, wall sliding, 0.4 m
-steps, their capsule collider as the exact shape) are thin shells over the same solver, keeping their
-Unity-shaped APIs.
+The player and the enemies do not use it: they are `CharacterMotor` capsules on a ride spring, driven by the
+force solver (below).
 Projectiles fly as `Stop` bodies swept every frame (`Prefabs.AddProjectileBody`): they cannot skip through a
 wall or an enemy at any speed or frame time, they detonate at the exact contact point, and the contact is handed
 to the same `OnTriggerEnter` the original scripts implement (trigger volumes such as the water still arrive
@@ -629,7 +650,7 @@ floor angle, slide iterations, agent step height / slope, push mass), `[characte
 (the force-driven bodies: mass, ride height, spring frequency / damping / cap, ground tolerance, slope,
 accelerations, jump grace) and `[movement]` (the player's speeds, jump, gravity multiplier, smoothing, slide,
 wall run and dash). `PhysicsSettings.ApplyToWorld` pushes them into the engine, the defaults of new bodies /
-joints / agents and the live characters (`CharacterBody.profile` Player / Enemy follows the shared profiles);
+joints and the live characters (`CharacterMotor.Profile` Player / Enemy follows the shared profiles);
 `MovementSettings` does the same for the FPS controller. The level editor's **physics panel** (`F9`) edits all
 of them with drag cells — three pages: step / collision / solver, characters / movers, player movement —
 applies them to the editor's world as you drag and saves them back into the file (existing keys keep their
@@ -752,7 +773,7 @@ goes (`maxSpeed` still caps speeds at 80 m/s). The sweeps are translational: a b
 a substep (a fast-spinning thin plank could clip a corner). The arena's crates are `Continuous`, the balls
 `ContinuousDynamic`; the F3 overlay counts the CCD sweeps of the last step.
 
-*Characters* (`CharacterBody`): every entity that walks is a force-driven rigid body now. The component takes
+*Characters* (`CharacterMotor`): every entity that walks is a force-driven rigid body. The component takes
 the capsule `RigidBody` on its object (never rotates, never sleeps, no contact friction, continuous collision,
 interpolated transform) and keeps it `rideHeight` above the ground on a spring: a downward sphere cast finds the
 ground, the spring's acceleration (`rideFrequency`, `rideDamping`, capped at `maxRideAcceleration`) pulls the
@@ -765,10 +786,10 @@ with gravity off for a duration), `AddVelocityChange` (knockback, rocket jumps) 
 ceilings, crates and other characters are handled by the contact solver — the player pushes crates with its 80
 kg and is shoved by blasts and by enemies, and enemies shove each other. The `FPSController` keeps all of its
 feel (bunny hop, slide, wall run, dash, landing, rage / style speed) and only computes the velocity it wants;
-the `NavMeshAgent` drives a `CharacterBody` when the enemy has one. Rigid bodies are simulated at 50 Hz and a
+the steering system drives a `CharacterMotor` on every enemy. Rigid bodies are simulated at 50 Hz and a
 body with `interpolate` writes its transform every frame blended between the last two steps
-(`Application.FixedAlpha`), so the player moves smoothly at any frame rate. The old kinematic `CharacterController` /
-`KinematicBody` movers remain for things that should not be part of the force simulation (projectiles).
+(`Application.FixedAlpha`), so the player moves smoothly at any frame rate. `KinematicMover` remains for the
+things that should not be part of the force simulation (projectiles, platforms).
 
 *Joints* come in two layers. The solver layer is `Constraint` and its subclasses (`Physics.World.AddConstraint`,
 two bodies or a body and the world with `bodyB = null`), solved in the same substeps as the contacts — joints
@@ -928,10 +949,10 @@ of that side, whichever sheet (idle, run, attack) the sprite currently shows. `r
 two arms with the rifle, two legs); `EnemyData.skeleton` names the skeleton an enemy uses (empty = the old
 death animation only). The game reloads saved skeletons live; `--skeletons dir` overrides the folder.
 
-**Runtime.** `SpriteRagdoll.Spawn(skeleton, sprite, position, scale, RagdollOptions, template)` slices any
+**Runtime.** `SpriteRagdolls.Spawn(skeleton, sprite, position, scale, RagdollOptions, template)` slices any
 sprite the sheet produced (`Sprite.Cut` makes the cut-out sprites, ear-clipping their polygons) and returns the
 ragdoll: `parts`, `Detach(name)` (dismemberment), `BreakAll()`, `AddImpulseAt`, `AddExplosion`, `Nearest`,
-`PartDetached`. `EnemyDestruction` (on the rifleman prefab) does it on death using `DamageInfo` — the hit point,
+`PartDetached`. The enemy's death does it from the `DeathEvent` — the hit point,
 direction and impulse the weapons report right before `TakeDamage` (`WeaponStats.hitImpulse`; rockets report an
 explosion, which gibs).
 
@@ -956,8 +977,9 @@ armour/rage/combat state, inventory (ammo + equipped weapon), every level entity
 alive + health + position, pickups taken, spawner progress) and monsters created at runtime by
 spawners. Loading rebuilds the level (`GameSession.RestartLevel`) and re-applies the state once the
 player exists. **F6/F9** quick save/load, `trigger_checkpoint` volumes write the `checkpoint` slot
-(**F7** reloads it), **F8** restarts the level, `--load <slot>` starts from a save. The original
-`SaveData`/`SaveManager` classes are kept in sync for the ported checkpoint code.
+(**F7** reloads it), **F8** restarts the level, `--load <slot>` starts from a save. The save is captured from
+and applied to components by hand (`Saves.Capture` / `Apply`): it finds monsters, pickups and spawners by what
+they are made of (`Enemy` / `Pickup` / `Spawner` + their `LevelRef` slot), not by what their class is called.
 
 ## Levels & the level editor
 
@@ -987,21 +1009,57 @@ game's own `LevelLoader` in preview mode, with the lighting/shadows/fog from `tu
 | `,` `.` / Shift+`,` `.` / T | cycle face texture / halve-double texture scale / texture the whole brush |
 | `[` `]`, H, G | grid size, set the work plane height from the hovered point, toggle wireframes |
 | Tab | entity mode: `1`-`0` `,` `.` pick a class, LMB on a surface places it, LMB on an entity selects/drags it, R rotates 45°, `+`/`-` edit the class's numeric property (Shift = second one) |
+| I | **Entity window**: every field of the selection's components, its class, its instance keys — see below |
 | V (or Tab) | **vertex paint mode**: LMB hold paints the face under the cursor (Shift = erase to white, Ctrl = pick colour), `[` `]` radius, `+`/`-` strength, `,` `.` cell size for newly painted faces, `1`-`0` colour presets, arrows = hue/value, PgUp/PgDn = saturation, Del clears the hovered face |
 | P / M / N | quick-place (any mode) the player start (moves the existing one), a `monster_rifleman`, a `monster_spawner` at the cursor |
 | Ctrl+S, Ctrl+Z/Y, F5, F1 | save (+ automatic snapshot), undo/redo, save + launch the game on this level, help |
 | F7 / F8 | take a snapshot / open the snapshot browser (Up/Down select, Enter restore — undoable —, Del delete) |
 | F9 | physics settings panel: every simulation / collision / character / player-movement tunable, saved to `tunables.cfg` (Tab = page, Ctrl+S = save, Esc = close) |
 
+> A keyboard shortcut is ignored while the pointer rests on a panel (the panels own the keyboard then) — move
+> the mouse over the 3D view for Ctrl+S, Tab and the rest.
+
 **Snapshots** are timestamped copies of the level in `.snapshots/<levelname>/` next to the file:
 manual ones (`…-manual.map`) and an automatic one on every save (`…-auto.map`, the last 20 are
 kept). They are plain `.map` files, so any of them can also be opened directly.
 
-**Entity spawns**: `info_player_start` (one per level; P moves it), `monster_rifleman` (a grunt
-placed directly) and `monster_spawner` — a wave spawner with `monster`, `count`, `interval`,
-`radius`, `activate_range` (0 = immediately, otherwise when the player gets that close) and
-`max_alive`; in entity mode `+`/`-` edit `count` (Shift: `interval`). Spawners show a ghost of the
-monster in the editor.
+### Entity classes are prefabs, and the editor edits them
+
+A `.map` entity is a **class name plus key/values**, and a class is a **prefab file** in `prefabs/level/`: a
+tree of nodes, each a flat list of components, with a `keys` table that says which short map key drives which
+field. The map's keys are overrides on that template, so the same door class can be 1.4 m wide here and 1.2 m
+there, and `+Trigger` / `-Body` add or drop a component on one instance.
+
+```jsonc
+{ "name": "light", "description": "Point light (color r g b, intensity, range)",
+  "keys": { "color": ["LightSource.color", "bulb/MeshRender.color"], "intensity": "LightSource.intensity" },
+  "editor": { "gizmoColor": [1, 1, 0.6, 1], "pickExtents": [0.35, 0.35, 0.35],
+              "defaults": { "intensity": "1.5", "range": "18" } },
+  "components": { "LightSource": { "type": "Point", "intensity": 1.5, "range": 18 } },
+  "children": { "bulb": { "previewOnly": true, "components": { … } } } }
+```
+
+**The Entity window** (`I`) shows the selection's class (a combo swaps it, keeping the keys the new class also
+knows), its `origin` / `angle` / `targetname`, and then every field of every component the prefab gives it —
+root and children, with the class's own key names on the fields they drive. Dragging a value re-previews that
+one entity; a value that will not bake says so on its row and the old one stays; a value equal to the prefab's
+removes the key instead of writing it. Overridden fields are marked and revert on right-click. There is a field
+filter, Copy / Paste of an entity's keys onto others, a remove button per component and an add-component combo.
+Its **Level tab** is the same grid over the worldspawn — sun, sky, fog, kill height, sky spin — applied live.
+
+**The Prefab window** (Open prefab, or Save as prefab to make a new class out of an instance) edits the template
+itself: the node tree and its flags (`detached`, `previewOnly`, `gameOnly`), each node's components and their
+defaults, the key aliases, the editor block. Every edit lands in the library at once, so every instance of that
+class in the level updates as you type; Save writes the file. Prefab files are also **watched**: edit one by
+hand and the editor re-reads it and re-previews. (A prefab the editor saves is regenerated, so comments in it
+are lost.)
+
+The classes that ship: `info_player_start`, `monster_rifleman`, `monster_spawner`, `item_ammo_*` (five),
+`prop_physics`, the machines `phys_fixed` / `phys_door` / `phys_hinge` / `phys_slider` / `phys_pendulum` /
+`phys_spring_prop`, the connectors `joint_hinge` / `joint_slider` / `joint_fixed` / `joint_ball` /
+`joint_distance` / `joint_spring`, `light`, `lamp_post`, `water_plane`, `floor_plane`, `trigger_checkpoint`.
+Adding one is a JSON file plus `AddPrefab("name")` in `EntityRegistry` — the editor picks up its description,
+gizmo, pick extents, placement defaults and `+`/`-` keys from the file.
 
 **Vertex painting** stores an RGB grid per face in the face's texture space (`paint <face> <w> <h>
 <cell> <u0> <v0> <base64>` lines inside the brush block — an engine extension of the .map format;
@@ -1010,12 +1068,11 @@ the colours go through a new vertex-colour attribute that multiplies the surface
 the `white` texture for pure colours).
 
 Texture names come from `LevelTextures` (planks, sand, grid, dark, orange, green, purple, red, white,
-metal, lamp, water, clip = invisible collision, sky = invisible) and entity classes from
-`EntityRegistry` (`info_player_start`, `monster_rifleman`, `item_ammo_*`, `prop_physics`, the `phys_*` machines
-and `joint_*` connectors, `light`, `lamp_post`, `water_plane`, `floor_plane`, `trigger_checkpoint`) — both in
-`src/RipNRage.Game/Content/Level/`, so
-adding a texture or entity type is one line for the game *and* the editor. Worldspawn keys
-`sun_elevation`, `sun_azimuth`, `sun_color`, `sky_zenith`, `sky_horizon`, `fog_color` override the cfg.
+metal, lamp, water, clip = invisible collision, sky = invisible) in `src/RipNRage.Game/Content/Level/`, so a new
+texture is one line for the game *and* the editor. **Worldspawn keys** — `message`, `sun_elevation`,
+`sun_azimuth`, `sun_color`, `sky_zenith`, `sky_horizon`, `fog_color`, `kill_y`, `sky_spin` — are the
+`worldspawn` prefab's keys; they bake onto the `Worldspawn` **component singleton**, which overrides the
+tunables where a key is given, sets the height the level ends below, and turns the sky.
 
 Under the hood (`src/RipNRage.Level`): brushes are convex polyhedra defined by planes (three points
 per face, as in Quake); polygons are generated by half-space clipping, textures use the Quake
@@ -1029,7 +1086,7 @@ dominant-axis projection, axis-aligned brushes become box colliders and everythi
 
 `RipNRageAnimEditor` (`src/RipNRage.AnimEditor`) edits the sprite-swap clips and animator controllers
 the weapons, fists and the rocket explosion use, with the preview drawn by the real renderer: the
-sprite sits on the player-prefab rig (`PlayerArms` → weapon position/scale from `WeaponData`, the
+sprite sits on the player's view rig (`PlayerArms` → weapon position/scale from `WeaponData`, the
 fist offsets, or a world billboard for the explosion), goes through the viewmodel pass, the lights,
 shadows and post-fx, and in controller mode it is driven by the very same `Animator` the game runs.
 
@@ -1086,8 +1143,8 @@ Not covered (different system): the enemy 4/8-direction sheets (`AnimationStateC
 | Prefabs / ScriptableObjects / `.anim` / `.controller` | code in `Content/` with the serialized values copied from the asset files |
 | `SpriteRenderer`, `MeshRenderer`, `Light`, `Camera`, `Sprite`, TexturePacker importer | `SpriteRender` / `MeshRender` / `LightSource` / `CameraLens` components drawn by `EcsRenderProducer`; `Sprite`, `SpriteAtlas` (polygon meshes supported) |
 | `Animator` / `AnimatorOverrideController` / animation events | `Animation/Animator` (bool, trigger, float params; exit-time & Any-State transitions; events); clips/controllers as JSON in `animations/` (hot reload, `anim.sh` editor) |
-| `CharacterController`, `Physics.Raycast/SphereCast(All)`, `OnTriggerEnter`, layers, `Rigidbody`, `MeshCollider`, `CharacterJoint` (ragdolls) | `Physics/` (collision world with a grid broadphase, exact box-vs-hull sweeps, `Physics.MoveAndSlide`, `KinematicBody`, `RigidBody` + contact solver, `Joint` components (`HingeJoint`, `SliderJoint`, `SpringJoint`, `DistanceJoint`, `BallJoint`, `FixedJoint` over the solver's `*Constraint`s), `PhysicsMaterial`, `MeshCollider` with an AABB tree, `ITriggerListener`, collision matrix); `Destruction/` slices sprites into jointed pieces |
-| `NavMeshAgent`, `NavMesh.SamplePosition` | straight-line steering agent that sticks to geometry (no baked navmesh yet) |
+| `CharacterController`, `Physics.Raycast/SphereCast(All)`, `OnTriggerEnter`, layers, `Rigidbody`, `MeshCollider`, `CharacterJoint` (ragdolls) | components over one solver: `Body` + `ColliderShape` (box / sphere / capsule / convex / mesh) + `SurfaceMaterial` + `CollisionFilter`, `CharacterMotor` (the capsule on a ride spring), `KinematicMover` (move-and-slide), `Joint` (ball / distance / spring / hinge / slider / fixed, with limits, motors, springs and break forces), `Trigger` + `TriggerEnterEvent` / `TriggerExitEvent`, the collision matrix, and `Physics.Raycast` / `Sweep` / `Overlap` as queries over the world; `Destruction/` slices sprites into jointed pieces |
+| `NavMeshAgent`, `NavMesh.SamplePosition` | `SteeringSystem`: walks a `CharacterMotor` on the brain's intent with a ledge guard (no baked navmesh yet) |
 | Unity Input System (`PlayerControls.inputactions`) | `InputSystem` action maps (gameplay / UI schemes, rebindable keyboard + gamepad slots, `controls.json`); sampled once a frame into the `InputState` singleton by `EcsInputSystem`; automation drives `InputOverride` (`Scripted` runs never read the real devices) |
 | `AudioSource` / `AudioClip` | OpenAL-backed equivalents (WAV only for now) |
 | `UnityEngine.UI.Image`, TextMeshPro, Canvas 1920×1080 | `UiImage`/`UiText` drawn by `HudScreen` (reads the components each frame) through `UiBatch` (built-in bitmap font) |
@@ -1122,5 +1179,8 @@ switching stay in sync; the `0` glyph of the built-in font is plain.
   the CPU with the 4-side sheets.
 * Particles have no soft depth fade against geometry and decals are long-lived particles (they do not
   clip to the surface they sit on).
-* Save/load is wired (JSON) but no checkpoint volumes are placed yet.
+* A prefab saved by the editor is regenerated from its data, so comments in `prefabs/*.json` do not survive a
+  save from the Prefab window (editing the file by hand keeps them).
+* The particle editor still draws its own property grid; it reads the shared `[Inspect*]` hints but has not been
+  moved onto `PropertyGrid` yet.
 * A sokol-gfx backend could be added behind `RenderPipeline`; all GL calls live in `Graphics/` + `Platform/GL.cs`.

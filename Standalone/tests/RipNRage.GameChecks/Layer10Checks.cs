@@ -164,6 +164,36 @@ internal static class Layer10Checks
         True(w.Get<LocalTransform>(fileSprite).Position == new Vector3(0f, -0.35f, 0f) && w.Has<SpriteFx>(fileSprite) && w.Get<SpriteRender>(fileSprite).Billboard,
             "and the sprite child hangs where the code hangs it, billboarded, with its effects slot");
 
+        // ---- a prefab file changed on disk is picked up (10.7)
+        {
+            string tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "rnr-prefab-watch-" + System.Diagnostics.Process.GetCurrentProcess().Id);
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(tmp, "level"));
+            string watched = System.IO.Path.Combine(tmp, "level", "watch_me.json");
+            System.IO.File.WriteAllText(watched, @"{ ""name"": ""watch_me"", ""components"": { ""Health"": { ""max"": 10 } } }");
+            var savedDir = GamePrefabs.Directory;
+            try
+            {
+                GamePrefabs.Reset(); GamePrefabs.Directory = tmp;
+                True(GamePrefabs.Library.Get("watch_me").Get<HealthConfig>().max == 10f, "a prefab folder loads");
+                string reloaded = null;
+                GamePrefabs.OnReloaded = n => reloaded = n;
+                System.IO.File.WriteAllText(watched, @"{ ""name"": ""watch_me"", ""components"": { ""Health"": { ""max"": 99 } } }");
+                System.IO.File.SetLastWriteTimeUtc(watched, DateTime.UtcNow.AddSeconds(1));
+                int n = GamePrefabs.PollReload(0f);
+                True(n == 1 && reloaded == "watch_me", "a changed file is noticed and reported by name");
+                True(GamePrefabs.Library.Get("watch_me").Get<HealthConfig>().max == 99f, "and what it spawns follows the file");
+                System.IO.File.WriteAllText(watched, "{ not json");
+                System.IO.File.SetLastWriteTimeUtc(watched, DateTime.UtcNow.AddSeconds(2));
+                GamePrefabs.PollReload(0f);
+                True(GamePrefabs.Library.Get("watch_me").Get<HealthConfig>().max == 99f, "a file that does not parse is a warning, not a lost prefab");
+            }
+            finally
+            {
+                GamePrefabs.OnReloaded = null; GamePrefabs.Reset(); GamePrefabs.Directory = savedDir;
+                try { System.IO.Directory.Delete(tmp, true); } catch { }
+            }
+        }
+
         // ---- every component a level places can be authored (what 10.3 relies on)
         foreach (var t in new[]
         {

@@ -2211,9 +2211,14 @@ that changes what the level builds.
       479; the `walk` / `menu` manifests unchanged (`054f07cd` / `a54bbd91`) — nothing here touches what the game
       builds; the `session` script runs clean with no `[Error]`; the `properties` script passes every line.
 
-- [ ] 10.7 **Prefab authoring** (Q3). "Save selection as prefab" writes `prefabs/level/<name>.json` from the merged
-      values and points the map entity at it; `prefabs/` hot-reloads in the editor (the animations / vfx watcher
-      pattern) and re-previews. Stretch: edit a prefab's defaults in place.
+- [x] 10.7 **Prefab authoring** (done; most of it landed with 10.6). "Save as prefab" makes a new class out of
+      an instance (the template with that instance's overrides folded in) and retargets the instance on save; the
+      Prefab window edits a template in place — components, children, flags, aliases, the editor block — with
+      every edit visible on every instance at once. What 10.7 added on its own: **`prefabs/` is watched**
+      (`GamePrefabs.PollReload`, the editor polls it every half second) — a prefab edited by hand, by another tool
+      or by a `git checkout` is re-read, its class refreshed and its instances re-previewed, and a file that does
+      not parse is a warning rather than a lost prefab. Checks: +4 game assertions over a temp folder (a changed
+      file is noticed and reported by name, what it spawns follows, a broken file keeps the old one).
 - [ ] 10.8 **Close-out.** Full sweep twice (checks, 26 scripts, four shots, two manifests, the editor gates); bench
       flat vs 9.8; all four tools and the benchmark clean; `EntityRegistry` + `PhysicsEntities` line totals before /
       after; README: the prefab format (tree, refs, overrides, aliases), the level entity table rewritten as

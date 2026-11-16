@@ -78,9 +78,17 @@ namespace RipNRage.Editor
         private LoadedLevel _preview;
         private string _status = ""; private float _statusTimer;
 
+        /// <summary>Hooks the prefab watcher up to the preview (set in <see cref="Start"/>).</summary>
+        private void WatchPrefabs() => GamePrefabs.OnReloaded = name =>
+        {
+            try { EntityRegistry.Refresh(name); RebuildClass(name); Status("Reloaded prefab " + name); }
+            catch (Exception e) { Status($"{name}: {e.Message}"); }
+        };
+
         public void Start()
         {
             InitUi();
+            WatchPrefabs();
             _texNames = new List<string>(LevelTextures.Names);
             _texIndex = Math.Max(0, _texNames.IndexOf("planks"));
             Rebuild();
@@ -254,6 +262,8 @@ namespace RipNRage.Editor
             // ---- global keys
             if (Input.GetKeyDown(KeyCode.F1)) showHelp = !showHelp;
             if (Input.GetKeyDown(KeyCode.I)) showInspector = !showInspector;
+            // 10.7: a prefab file changed outside the editor (an edit by hand, another tool) is picked up and re-previewed
+            GamePrefabs.PollReload();
             if (Input.GetKeyDown(KeyCode.F5)) Play();
             if (ctrl && Input.GetKeyDown(KeyCode.S)) Save();
             if (ctrl && Input.GetKeyDown(KeyCode.Z)) Undo();
