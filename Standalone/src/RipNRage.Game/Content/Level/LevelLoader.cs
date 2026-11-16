@@ -62,8 +62,7 @@ namespace RipNRage.Game.Content.Level
         {
             var level = new LoadedLevel { document = doc };
             BuildBrushes(doc, level, preview);
-            ApplyWorldspawn(doc.worldspawn);
-            level.killY = ComputeKillY(doc);
+            level.killY = BakeWorldspawn(doc);
 
             if (!preview) GameSaveSystem.CurrentLevel = level;
             Loading = level;
@@ -153,10 +152,9 @@ namespace RipNRage.Game.Content.Level
         private static RipNRage.Engine.Ecs.Entity LevelName(string name) =>
             Loading != null && Loading.namedEntities.TryGetValue(name, out var n) ? n.entity : RipNRage.Engine.Ecs.Entity.Null;
 
-        /// <summary>Kill height: explicit worldspawn "kill_y", else the water surface minus one metre, else five metres under the lowest brush.</summary>
+        /// <summary>The kill height a level implies when its worldspawn gives none: the water surface minus one metre, else five metres under the lowest brush.</summary>
         private static float ComputeKillY(MapDocument doc)
         {
-            if (doc.worldspawn.properties.ContainsKey("kill_y")) return doc.worldspawn.GetFloat("kill_y");
             foreach (var e in doc.entities)
                 if (e.classname.Equals("water_plane", StringComparison.OrdinalIgnoreCase)) return e.origin.y - 1f;
             var (min, _) = doc.Bounds;
@@ -230,17 +228,30 @@ namespace RipNRage.Game.Content.Level
             }
         }
 
-        /// <summary>Optional worldspawn keys override the lighting config: sun_elevation, sun_azimuth, sun_color, sky_zenith, sky_horizon, fog_color.</summary>
-        private static void ApplyWorldspawn(MapEntity ws)
+        private static int _worldspawnVersion;
+
+        /// <summary>
+        /// The worldspawn is a prefab like every other class (10.5), baked onto the <c>Worldspawn</c> component
+        /// singleton rather than spawned: its keys override the <c>worldspawn</c> file's fields, <c>kill_y</c> is
+        /// derived from the level when absent, and a key the prefab does not know is a warning, not an error — a map
+        /// editor writes its own there (<c>mapversion</c>, <c>wad</c>). Returns the kill height.
+        /// </summary>
+        private static float BakeWorldspawn(MapDocument doc)
         {
-            var lt = Application.Current?.Renderer?.Lighting;
-            if (lt == null) return;
-            if (ws.properties.ContainsKey("sun_elevation")) lt.sunElevation = ws.GetFloat("sun_elevation");
-            if (ws.properties.ContainsKey("sun_azimuth")) lt.sunAzimuth = ws.GetFloat("sun_azimuth");
-            if (ws.properties.ContainsKey("sun_color")) lt.sunColor = ws.GetColor("sun_color", lt.sunColor);
-            if (ws.properties.ContainsKey("sky_zenith")) lt.skyZenith = ws.GetColor("sky_zenith", lt.skyZenith);
-            if (ws.properties.ContainsKey("sky_horizon")) lt.skyHorizon = ws.GetColor("sky_horizon", lt.skyHorizon);
-            if (ws.properties.ContainsKey("fog_color")) lt.fogColor = ws.GetColor("fog_color", lt.fogColor);
+            var lib = GamePrefabs.Library;
+            var overrides = new List<KeyValuePair<string, string>>();
+            foreach (var kv in doc.worldspawn.properties)
+            {
+                if (kv.Key.Equals("classname", StringComparison.OrdinalIgnoreCase)) continue;
+                if (lib.ResolveKey("worldspawn", kv.Key) != null) overrides.Add(kv);
+                else Debug.LogWarning($"level: worldspawn key '{kv.Key}' is not one the worldspawn prefab knows; ignored");
+            }
+            if (!doc.worldspawn.properties.ContainsKey("kill_y"))
+                overrides.Add(new KeyValuePair<string, string>("kill_y", ComputeKillY(doc).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)));
+            var baked = lib.Get("worldspawn", overrides).Get<RipNRage.Engine.Ecs.Levels.WorldspawnConfig>().Bake();
+            baked.Version = ++_worldspawnVersion; // every bake is a new one, so the system re-applies after a scene reset too
+            Application.Current.World.Singleton<RipNRage.Engine.Ecs.Levels.Worldspawn>() = baked;
+            return baked.KillY;
         }
 
         /// <summary>Finds levels/&lt;name&gt; next to the executable / cwd / parents.</summary>

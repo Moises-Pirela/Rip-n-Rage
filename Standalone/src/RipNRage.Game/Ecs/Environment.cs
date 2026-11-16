@@ -133,35 +133,4 @@ namespace RipNRage.Game.Ecs
 
     // ================================================================= the sky
 
-    /// <summary>The sky turning: degrees per second and how far it has gone (sim time, so every run turns the same).</summary>
-    public struct SkySpin : IComponent
-    {
-        public float DegreesPerSecond;
-        public float Angle;
-    }
-
-    public static class Sky
-    {
-        /// <summary>Starts the sky turning (the level / test area calls it at load; replaces SkyboxRotator).</summary>
-        public static void Spin(World w, float degreesPerSecond)
-        {
-            ref var s = ref w.Singleton<SkySpin>();
-            s.DegreesPerSecond = degreesPerSecond;
-        }
-    }
-
-    /// <summary>Turns the skybox. Runs alone: <c>RenderSettings</c> is renderer state.</summary>
-    [Exclusive] // RenderSettings.skyboxRotation
-    public sealed class SkySpinSystem : SystemBase, ITick
-    {
-        public override void OnCreate() => World.SingletonEntity<SkySpin>();
-
-        public void Tick(SystemContext ctx)
-        {
-            ref var s = ref World.Singleton<SkySpin>();
-            if (s.DegreesPerSecond == 0f) return;
-            s.Angle = (s.Angle + s.DegreesPerSecond * ctx.DeltaTime) % 360f;
-            RenderSettings.skyboxRotation = s.Angle;
-        }
-    }
 }

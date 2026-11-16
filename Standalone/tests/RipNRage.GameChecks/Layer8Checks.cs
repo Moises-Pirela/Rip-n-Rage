@@ -202,7 +202,7 @@ internal static class Layer8Checks
         using var w = new World(0);
         w.AddSystemsFromAssemblies(typeof(World).Assembly, typeof(PlayerLink).Assembly);
         w.FixedDeltaTime = 1f / 60f;
-        w.Singleton<KillHeight>().Y = -1.5f;
+        w.Singleton<RipNRage.Engine.Ecs.Levels.Worldspawn>().KillY = -1.5f; // the level's environment (10.5)
         var p = w.CreateEntity();
         w.Add(p, LocalTransform.At(new Vector3(0f, 1f, 0f)));
         w.Add(p, new RipNRage.Engine.Ecs.Physics.CharacterMotor());

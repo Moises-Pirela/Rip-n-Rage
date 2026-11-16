@@ -33,8 +33,6 @@ namespace RipNRage.Game.Content
 
             var level = LevelLoader.Load(levelPath);
             Debug.LogWarning($"Level: {levelPath} ({level.document.Brushes.Count} brushes, {level.document.entities.Count} entities)");
-            RipNRage.Game.Ecs.Sky.Spin(World, 1.2f);
-            World.Singleton<RipNRage.Game.Ecs.KillHeight>().Y = level.killY;
             if (spawnPlayer) PlayerPrefab.Spawn(level.playerStart, level.playerRotation.eulerAngles.y);
             else RipNRage.Game.Ecs.MenuViews.Spawn(World, level.playerStart, level.playerRotation); // 9.3: an entity
         }

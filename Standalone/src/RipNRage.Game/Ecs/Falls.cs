@@ -7,11 +7,6 @@ using RipNRage.Game.Ecs.Combat;
 namespace RipNRage.Game.Ecs
 {
     /// <summary>The level's kill height: below it the player has fallen out of the level (set by the level build).</summary>
-    public struct KillHeight : IComponent
-    {
-        public float Y;
-    }
-
     /// <summary>What the last fall was: off an edge, through geometry (a collision bug), or out of nowhere.</summary>
     public enum FallKind { None, Edge, ThroughGeometry, Unknown }
 
@@ -57,7 +52,7 @@ namespace RipNRage.Game.Ecs
     }
 
     /// <summary>
-    /// Watches the player against the level's <see cref="KillHeight"/>. Below it: the fall is classified — the spot of
+    /// Watches the player against the level's kill height (<c>Worldspawn.KillY</c>). Below it: the fall is classified — the spot of
     /// the drop is probed straight down, floor at the level last stood on means the player went <b>through</b>
     /// geometry, none means <b>off an edge</b> — logged, and the player is killed by a fatal
     /// <see cref="DamageEvent"/> (the one door, 8.1). A dead player is not watched.
@@ -71,14 +66,13 @@ namespace RipNRage.Game.Ecs
 
         public override void OnCreate()
         {
-            World.SingletonEntity<KillHeight>(); // claimed outside a phase; the level build writes it
             _players = World.Query().With<FallWatch>().WithReadOnly<LocalTransform>().WithReadOnly<CharacterMotor>()
                 .WithReadOnly<PlayerTag>().Without<Dead>().Build();
         }
 
         public void Tick(SystemContext ctx)
         {
-            float killY = ctx.World.GetSingleton<KillHeight>().Y;
+            float killY = ctx.World.GetSingleton<RipNRage.Engine.Ecs.Levels.Worldspawn>().KillY; // the level's environment (10.5)
             float now = Time.unscaledTime;
             foreach (var chunk in _players)
             {

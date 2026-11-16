@@ -184,6 +184,28 @@ internal static class Layer10Checks
         True(RenderAssets.Textures.NameOf(baked.Texture) == "white", "and the texture is interned under the name a prefab writes");
         True(new SpriteRenderConfig().Bake().Sprite.IsNone, "a sprite-less SpriteRender bakes headless too");
 
+        // ---- the level's environment is a component singleton (10.5)
+        {
+            var cfg = new RipNRage.Engine.Ecs.Levels.WorldspawnConfig { sunElevation = 28f, fogColor = new[] { 0.5f, 0.6f, 0.7f } };
+            var ws = cfg.Bake();
+            True(ws.Given == (RipNRage.Engine.Ecs.Levels.WorldspawnGiven.SunElevation | RipNRage.Engine.Ecs.Levels.WorldspawnGiven.FogColor),
+                "only the keys a level gives are marked given");
+            True(float.IsNaN(ws.KillY) && ws.SkySpin == 1.2f, "an absent kill height is NaN for the loader to derive; the sky turns by default");
+            var lt = new RipNRage.Engine.Graphics.Lighting.LightingSettings { sunElevation = 10f, sunAzimuth = 99f };
+            RipNRage.Engine.Ecs.Levels.WorldspawnSystem.Apply(in ws, lt);
+            True(lt.sunElevation == 28f && lt.sunAzimuth == 99f && lt.fogColor.r == 0.5f && lt.fogColor.g == 0.6f && lt.fogColor.b == 0.7f,
+                "a given key overrides the tunables' value; an absent one leaves it alone");
+            using var wsWorld = new World(0);
+            var sys = wsWorld.AddSystem(new RipNRage.Engine.Ecs.Levels.WorldspawnSystem());
+            True(wsWorld.HasSingleton<RipNRage.Engine.Ecs.Levels.Worldspawn>(), "the system claims the singleton's carrier when it is created");
+            float skyBefore = RipNRage.Engine.Graphics.RenderSettings.skyboxRotation;
+            wsWorld.Singleton<RipNRage.Engine.Ecs.Levels.Worldspawn>().SkySpin = 90f;
+            for (int i = 0; i < 60; i++) wsWorld.Update(1f / 60f);
+            True(MathF.Abs(wsWorld.GetSingleton<RipNRage.Engine.Ecs.Levels.Worldspawn>().SkyAngle - 90f) < 1e-3f && MathF.Abs(RipNRage.Engine.Graphics.RenderSettings.skyboxRotation - 90f) < 1e-3f,
+                "the sky turns on sim time and the renderer is told (headless: no lighting to apply, no crash)");
+            RipNRage.Engine.Graphics.RenderSettings.skyboxRotation = skyBefore;
+        }
+
         // ---- malformed trees
         lib.AddJson(@"{ ""name"": ""badroot"", ""children"": { ""root"": { } } }");
         True(Throws<InvalidDataException>(() => lib.Get("badroot").Spawn(w), "reserved"), "a child named 'root' is refused");

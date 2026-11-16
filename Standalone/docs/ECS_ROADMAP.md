@@ -55,7 +55,7 @@ then start at the first unchecked layer.
   the legacy producer are deleted; the application runs only the World, which drives its own fixed clock; the
   player, the level, the props, cameras, lights, menus, HUD and all four editor tools are entities and screens
   (close-out below)
-- [ ] Layer 10 — Editors on configs **(10.0–10.4 done: the level manifest, prefab trees, the game configs, and every level class as components in a file; 10.5 next)**
+- [ ] Layer 10 — Editors on configs **(10.0–10.5 done: the level manifest, prefab trees, the game configs, every level class as components in a file, the worldspawn as a component singleton; 10.6 next)**
 
 ### Pick-up point for the next session (written 2026-11-15, after 9.8; layer 10 is next)
 
@@ -2045,9 +2045,33 @@ that changes what the level builds.
       **Previews**: a prop's preview is now its own prefab minus what simulates; the `joint_*` markers lost their
       axis bar (the editor draws a wire box and facing line for every entity anyway).
 
-- [ ] 10.5 **Worldspawn singleton.** `Worldspawn` + `WorldspawnConfig` + `WorldspawnSystem`; `ApplyWorldspawn`,
-      `ComputeKillY`'s explicit branch and `LevelBuild`'s `Sky.Spin(1.2f)` fold into it (the derived kill height
-      stays the unset default). The `menu` / `look` shots pin the lighting; `fall`'s `killY` probe pins the height.
+- [x] 10.5 **Worldspawn is a component singleton** (done; `Ecs/Levels/Worldspawn.cs`, `prefabs/level/worldspawn.json`).
+      `Worldspawn` is a component on one carrier entity, reached through `World.Singleton<T>()` exactly like `Flow`
+      and `InputState` — not a static class — holding the level's environment: the sun, sky and fog keys with a
+      `Given` mask (an absent key leaves the tunables' value alone, as before), the kill height, the sky's spin and
+      how far it has turned, and a `Version` whoever writes it bumps. **It is a prefab like every other class**: the
+      map's worldspawn keys are overrides on `worldspawn.json` through the same alias machinery, except that the
+      loader bakes the result **onto the singleton** instead of spawning an entity, and a key the file does not know
+      (a map editor's `mapversion`, `wad`) is a warning rather than an error. `kill_y` absent is derived by the loader
+      from the level (a metre under the water, else under the lowest brush) and handed over as an override.
+      - **`WorldspawnSystem` (engine, `[Exclusive]`)** claims the carrier, pushes the given keys into the renderer's
+        lighting whenever the singleton's `Version` changes **or the lighting object is replaced** — a tunables reload
+        used to wipe a level's sun; now the level wins again a frame later — and turns the sky on sim time.
+      - **Two singletons folded into it**: `KillHeight` (read by `FallSystem`, written by `LevelBuild`) and `SkySpin`
+        + `Sky.Spin` + `SkySpinSystem` (hard-coded 1.2°/s in `LevelBuild`) are deleted; the rate is the prefab's
+        default, the fall watch reads `Worldspawn.KillY`. `LevelLoader.ApplyWorldspawn` is gone with them.
+      - **Engine-side on purpose**: the editor registers only engine systems, and its preview had always applied the
+        worldspawn's lighting (the loader did it inline). Now the editor runs the same system the game does — and its
+        sky turns, which it never did before (WYSIWYG; the editor shot changes by the sky).
+      - The namespace is `RipNRage.Engine.Ecs.Levels`, not `.Environment`: that name shadowed `System.Environment`
+        inside the ECS and broke the build on first try.
+      - **Gate**: `walk` **`054f07cd`** (103), `menu` **`a54bbd91`** (95) — against 10.4, every block identical but
+        the two singletons replaced by one (`Given=SunElevation, SunAzimuth` 28 / 35, the dock's keys). `fall`
+        reports `killY=-1.5` (derived) and classifies EDGE as before; the `look` shot is **0.000%** against the
+        build from before 10.3b — 10.3b, 10.3c, 10.3d, 10.4 and 10.5 together moved not one pixel. Engine checks
+        259 (+5: the `Given` mask, apply-onto-settings, the sky turning headless), game 479 (one fewer: the game
+        system that went); the Tick schedule re-pinned (**25 batches**: `WorldspawnSystem` alone after
+        `EcsInputSystem`, `SkySpinSystem` gone); the editor runs its session clean.
 - [ ] 10.6 **The editor's Entity window.** `PropertyGrid` in `RipNRage.ImGui` (lifted from the vfx editor, which
       then draws through it — its shots pin the move), `Inspect*` attributes on the engine side. The window: prefab
       (combo to swap class, keeping shared overrides), origin / angle, then each config with its fields; overrides in

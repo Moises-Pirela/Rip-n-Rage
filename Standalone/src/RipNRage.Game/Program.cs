@@ -875,7 +875,7 @@ namespace RipNRage.Game
                     // the player (falls are always lethal since 8.4)
                     RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 150 ? new Vector2(1f, 0f) : Vector2.zero;
                     var fr = RipNRage.Game.Ecs.FallSystem.Current;
-                    if (_frame % 30 == 0 && RipNRage.Game.Ecs.PlayerLink.Alive) Debug.LogWarning($"[test] frame {_frame} pos {RipNRage.Game.Ecs.PlayerLink.Position} falls={fr.Count} last={RipNRage.Game.Ecs.Falls.Label(fr.LastKind)} dead={RipNRage.Game.Ecs.PlayerLink.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} killY={Application.Current.World.GetSingleton<RipNRage.Game.Ecs.KillHeight>().Y:0.0}");
+                    if (_frame % 30 == 0 && RipNRage.Game.Ecs.PlayerLink.Alive) Debug.LogWarning($"[test] frame {_frame} pos {RipNRage.Game.Ecs.PlayerLink.Position} falls={fr.Count} last={RipNRage.Game.Ecs.Falls.Label(fr.LastKind)} dead={RipNRage.Game.Ecs.PlayerLink.IsDead} deathEvents={RipNRage.Game.Ecs.PlayerDeathSystem.Deaths} killY={Application.Current.World.GetSingleton<RipNRage.Engine.Ecs.Levels.Worldspawn>().KillY:0.0}");
                     break;
                 }
                 case "strafe":

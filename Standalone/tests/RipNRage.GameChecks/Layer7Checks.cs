@@ -686,9 +686,9 @@ internal static class Layer7Checks
             try
             {
                 var w = NewWorld();
-                Sky.Spin(w, 1.2f);
+                w.Singleton<RipNRage.Engine.Ecs.Levels.Worldspawn>().SkySpin = 1.2f;
                 Tick(w, 60);
-                Equal(1.2f, w.GetSingleton<SkySpin>().Angle, "a second of sim time turns the sky 1.2°");
+                Equal(1.2f, w.GetSingleton<RipNRage.Engine.Ecs.Levels.Worldspawn>().SkyAngle, "a second of sim time turns the sky 1.2°");
                 Equal(1.2f, RenderSettings.skyboxRotation, "and the renderer is told");
                 Close(w);
             }
