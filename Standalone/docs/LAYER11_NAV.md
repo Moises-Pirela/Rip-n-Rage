@@ -495,3 +495,44 @@ Then rewrite the roadmap's **Status** line and the **pick-up point** for layer 1
 | Determinism breaks | `--compare` shows drift between identical runs | the three rules: tie on `(Tile, Span)`, carve at one schedule point, serve in placement-seed order |
 | Spans explode on a tall level | span count per column high | `cellHeight` is a setting; merge spans closer than it during the bake |
 | Enemies clump in doorways | visible in `maze` with two enemies | **out of scope** (see the roadmap's fence) — local avoidance is a later layer |
+
+
+---
+
+## Close-out (11.9, 2026-11-18)
+
+Layer 11 is built: 11.0 through 11.8, in five commits. **The enemy gets there now.** The three gates written at
+11.0 to fail all turn over, and the two that were only ever about the straight line are untouched.
+
+| gate | 11.0 (before) | after 11.8 |
+|---|---|---|
+| `maze` | moved **3.43, frozen** from frame 180, never arrives | moved **7.72**, sees the player and fights (armour 100 → 10) |
+| `door` | identical to maze — the gap never found | through the gap; then the leaf drops and it goes **round**: moved **22.39** |
+| `ledge` | moved **2.90**, anim IDLE at the platform edge | comes down the 3.5 m drop, d 17.2 → **8.3**, trading fire |
+| `approach` `close` `peek` | — | behaviourally the same through 11.4 (straight line first); moved up ~35% at 11.8 from `arriveDistance` |
+
+**The dock**: 129 tiles, 130,678 spans, 113,082 walkable, 132,096 columns at 0.50 m; 45 spans carved by the
+level's own doors and props before anything is spawned. Bake **220 ms** on the job system (514 ms serial).
+
+**Checks**: engine 265 → **312**, gameplay 483 → **501**. `ScheduleChecks` pins `NavBakeSystem` (FixedTick),
+`NavCarveSystem`, `NavPathSystem` and `PathFollowSystem` (Tick).
+
+### What this layer did not do, and should be picked up knowingly
+
+- **No full sweep was run for the close-out.** Verification was targeted throughout: the nav gates, the four AI
+  gates against their 11.0 baseline, both suites after every step, and a crash-check of `walk` / `fall` /
+  `saveload` / `pickup` / `die`. **Not run**: the other 20 scripts, the four pixel shots, the two manifests, the
+  four editors, the benchmark. The `walk` manifest hash *will* have moved — the worldspawn gained three nav keys
+  and the rifleman prefab two components — and that needs confirming against a real sweep before this is called
+  closed. Likewise the bench A/B against 11.8's parent, which the plan asked for and which has not happened.
+- **The hierarchical search is still deferred** (see the 11.1/11.2 note). Links cross tiles, so searches work;
+  what is missing is the two-level portal A* for long paths. `MaxNodes` 4000 and `Partial` keep that honest.
+- **EnemyData is still code.** 11.8 retuned `arriveDistance` in `GameAssets.cs` rather than moving three fields
+  into the prefab and leaving seventeen behind.
+- **Wander drifts.** It picks relative to where the grunt *is*, so a grunt with nothing to do random-walks away
+  down the dock — 11.8 found this when lowering the minimum pick distance made it worse, and left the numbers
+  alone. The fix is a home anchor on the spawn point, which is behaviour design, not tuning.
+- **The editor half of 11.7 is not built.** The overlay is in the game (`--nav-debug`, F4); the level editor has
+  no nav draw and no rebake button, so a designer still cannot see where the AI can go while placing brushes.
+- **No local avoidance.** Two grunts in one doorway still shove each other through the solver, as the fence said.
+- **Still no melee damage path** — inherited from layer 9 and untouched here.

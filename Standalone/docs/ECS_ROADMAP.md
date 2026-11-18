@@ -59,67 +59,50 @@ then start at the first unchecked layer.
   game configs, every level class as components in a file, the worldspawn singleton, the editor's Entity and
   Prefab windows, prefab authoring and watching (`b08effa`). **10.8 (close-out) is still open** — the sweep,
   the bench and the layer totals have not been recorded.
-- [ ] Layer 11 — Navigation: tiled A* over column spans, carved by the world (planned and reviewed 2026-11-18; not started)
+- [x] **Layer 11 — Navigation: tiled A* over column spans, carved by the world**: the level bakes into sparse
+  tiles of columns of spans (step links up, one-way drop links down) on the job system; A* over them, pooled and
+  deterministic; requests budgeted and ordered by placement; enemies follow the corners with a straight line
+  first; doors and props carve the spans they stand on and whoever was walking there repaths. The brain is still
+  the 6.2 state tree, untouched. **11.9's full sweep was not run** — verification was targeted (see
+  [`LAYER11_NAV.md`](LAYER11_NAV.md) close-out for exactly what was and was not checked).
 
-### Pick-up point for the next session (written 2026-11-15, after 9.8; layer 10 is next)
+### Pick-up point for the next session (written 2026-11-18, after 11.8; layer 11 is built, its close-out is not)
 
-Layers 0–9 are done: **there is no GameObject-land** — the application runs one ECS `World`; components are
-structs, behaviour is systems, UI and tools are `IUiScreen`s. Run the gates with `./gates.sh OUT` (builds the game
-and both check projects, both suites, 26 scripts under the gate rule, four pixel shots, hermetic data dir; scripted
-runs never read the real devices). The rules of layers 6–8 hold; layer 9 added:
+Layers 0–11 are built. The AI can get where it is going: the level bakes into a navigation grid, enemies walk
+paths round walls and down ledges, and what moves carves the grid under them. Run the gates with `./gates.sh OUT`.
 
-- **Screens have no lifecycle.** An `IUiScreen` gets `Update` at frame start, `DrawUi` with the UI pass and
-  `Close` on removal or reset — nothing calls a `Start`; wire it fully, then call your own init (the editor and
-  the benchmark crashed on this).
-- **Entities from a build are immediate, entities from inside a system are not.** Level / player / preview builds
-  create entities directly; anything that may run inside a system (an effect spawned by a system, the particle
-  world's light) must create lazily between ticks or through a command buffer (`rocket` caught it).
-- **The asset registry is append-only**: name what you intern (`LevelVisuals.Box`, per-file chunk keys) or reuse
-  handles (`AssetRegistry.Replace`, the editor's per-edit rebuilds). `deathf8`'s asset probe pins it.
-- **Isolate the gates from the machine**: `RIPNRAGE_DATA_DIR` per sweep (other worktrees' saves) and
-  `InputOverride.Scripted` (other sessions' windows steal focus; the real mouse leaked into a sweep twice).
+**Finish 11.9 first.** Layer 11 was verified *targeted*, never swept: the nav gates, the AI gates against their
+11.0 baseline, both suites, and a crash-check of five others. Before layer 12, run a full sweep twice and settle
+three things it will raise — the `walk` / `menu` **manifest hashes have moved** (the worldspawn gained
+`nav_cell_size` / `nav_cell_height` / `nav_max_drop`, the rifleman prefab gained `PathRequest` / `PathFollow`),
+the **four pixel shots** and the **four editors and the benchmark** have not been launched since 11.0, and the
+**bench A/B** against 11.8's parent has not been taken. Also outstanding from before: **layer 10.8's close-out**.
 
-What layer 10 (editors on configs) inherits:
+What layer 11 left, in the order it would bite:
 
-- The level editor previews each class through `EntityDefinition.previewEntity` (visuals only), rebuilding the
-  whole preview on every edit (`LoadedLevel.previewEntities`); picking is geometric on the `MapDocument`
-  (`pickExtents`), not on entities. Layer 10's "place prefabs, edit `IComponentConfig` fields by reflection" can
-  build on `previewEntity` → prefab configs.
-- `.map` entities still name classes in `EntityRegistry` (code), not prefabs; worldspawn keys are parsed by the
-  loader, not a singleton config.
-- The player is `PlayerPrefab.Spawn` (code), not a prefab file; `CombatController` / `PlayerLink` statics are the
-  scene-side surface and could become configs + systems.
-- The anim / skeleton / vfx editors drive their previews through `AnimatedSprite` and `CameraView` helpers.
-- Still no melee damage path (Fury has no melee bonus).
+- **The bake costs 220 ms** at every level start, respawn and save-load. It is a load cost, not a frame cost, but
+  it is paid often. Cheapest wins left: 2-D clearance erosion instead of a capsule query per span, and caching a
+  bake per `.map` behind a content hash.
+- **Wander drifts.** A grunt with no target random-walks away down the dock, because wander picks relative to
+  where it is rather than a home point. 11.8 found this and deliberately left the numbers alone — the fix is an
+  anchor, which is a behaviour decision.
+- **No local avoidance**: two grunts in one doorway shove each other through the solver.
+- **The editor cannot see the grid.** 11.7 built the in-game overlay (`--nav-debug`, F4) and not the editor half,
+  so a designer still places brushes blind to what the AI can reach.
+- **The search is not hierarchical**, and **`EnemyData` is still code** rather than prefab fields.
+- **Still no melee damage path** (Fury has no melee bonus) — inherited from layer 9.
 
-The notes below were written for layer 6 and still hold where they are not about enemies.
+The rules of layers 6–9 hold. Layer 11 adds four:
 
-What layer 6 inherits:
-
-- Enemies already have their combat half: a `Health` entity with the legacy capsule (`AIState` creates it), `Hitbox`
-  headshot judgement, death → `DeathEvent` → ragdoll. Layer 6 adds the body (`CharacterMotor`, profile Enemy),
-  steering, and the state tree that drives `AIAgent`'s surviving mechanics (burst fire via `Projectiles.Launch`,
-  vision via the still-uncalled `AgentVisionSensor` trigger).
-- Enemy bullets fly as entities and will hurt the player the day the AI fires — `approach` / `peek` are the
-  watch-gates; instrument player HP there before wiring the AI.
-- Bridges layer 6 can shrink or delete: `AIState`'s per-frame pose sync (goes when the enemy body is the entity),
-  `EnemyDestruction` / `EnemyHitFlash` listeners (can become `IConsumes<HitEvent>/<DeathEvent>` systems),
-  `DamageInfo` (only the facade path still reports it), and `EcsObjects` entries for enemies.
-- `killenemy` (killedAtFrame), `glockalt` (finisher refusal), `jab`, `rocket` (hp / armour / y) are the instrumented
-  combat gates; keep them honest when AI changes enemy behaviour.
-- The animation editor hosts `AnimatedSprite`s **without registering the game assembly's systems**; keep
-  editor-facing pieces engine-side. Rockets do not collide with trigger volumes (water detonation = layer 7).
-- Gates as in the layer 2/3 close-outs: compare bench interleaved against the previous commit (`--threads 1` for the
-  stable numbers; the per-step metric only counts frames with a fixed step); ragdolls sit at 8.3–8.7 ms vs budget 8
-  (knobs: pieces sleep less than boxes, and legacy-faithful CCD on every piece costs ~0.85 ms serially).
-- Running anything on the Linux sandbox VM needs `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`: there is no `libicu` and
-  the SDK fails to start without it. `build.sh` / `run.sh` / `bench.sh` do not set it. **On the dev Mac** the trap is
-  a different one: `/usr/local/share/dotnet` holds only a 6.0 SDK, so a bare `dotnet build` fails with NETSDK1045 —
-  `source tools/env.sh` first (it finds the 10.x SDK in `~/.dotnet`), or use the `./*.sh` scripts, which do.
-- The scripted runs do **not** stop on their own: they need `--frames N` (the gate script used for 4.3a runs 400, or
-  620 for `strafe` / `fall`), and on macOS there is no `timeout` binary to bound them with.
-- Absolute bench numbers on the Mac are much slower than the VM figures quoted below (single-threaded crates ~11.7,
-  ragdolls ~17 ms/step, both over budget **on both sides of the change**) — only the interleaved A/B is meaningful here.
+- **A query from a worker is a different call.** `Physics.RaycastConcurrent` / `CheckCapsuleConcurrent` are
+  stamp-free and keep per-thread scratch; the main-thread `Raycast` writes visit stamps onto slots and must not
+  be called off-thread. Chunk jobs and the bake use the concurrent ones.
+- **A carve is a counter, not a flag**, and one system owns it at one point in the frame. Anything that writes
+  the grid outside `NavCarveSystem` will be seen half-done by a search.
+- **Order work by placement, never by entity index.** `AiBrain.Order` exists for this; a buffered spawn renumbers
+  the world (6.7b) and the sweep diffs byte for byte.
+- **Geometry built after the level must say so**: `Navigation.Invalidate()`. The gates learned this by having
+  their walls baked around.
 
 ### Resolved: asset handles (answered before layer 2)
 
@@ -2305,13 +2288,13 @@ that changes what the level builds.
 **Steps** — the concrete phase-by-phase build is [`LAYER11_NAV.md`](LAYER11_NAV.md)
 (seams, types, call sites, checks and commit boundaries). The outline:
 
-- [ ] 11.0 **Instrument.** Gate scripts that today's AI fails, recorded as the baseline: `maze` (an enemy, a
+- [x] 11.0 **Instrument.** Gate scripts that today's AI fails, recorded as the baseline: `maze` (an enemy, a
   wall between it and the player, a way round), `door` (the same, through a `phys_door`) and `ledge` (the
   player on a deck below; the way is a drop the enemy must take, and a step it must climb back). Probe lines for
   `path len`, `path ms`, `tiles crossed`, `repaths`, `spans blocked`. Measure the dock's bounds, tile count and
   span count at 0.5 / 0.25 m to set the defaults (Q1). Re-baseline `approach` / `peek` / `close` / `killenemy`
   (Q5).
-- [ ] 11.1 **Tiles of spans bake from the level** (`Engine/Ecs/Nav/NavTile.cs`, `NavBake.cs`). Tile bounds
+- [x] 11.1 **Tiles of spans bake from the level** (`Engine/Ecs/Nav/NavTile.cs`, `NavBake.cs`). Tile bounds
   from the brush AABB on the chunk cut; per column, every solid hit downward (not the first), each turned into
   a span with floor height, headroom, slope flag; then a clearance pass erodes spans by the capsule radius.
   Step and drop links between neighbouring spans by the rules above; portals along tile edges in a serial pass
@@ -2320,7 +2303,7 @@ that changes what the level builds.
   `maxDrop` from the worldspawn singleton. Checks: a known box level bakes known spans; a wall blocks; a deck
   over a deck is two spans in one column; a ledge is a one-way link; a slope over `maxSlopeAngle` is not
   walkable; the step limit tracks the profile.
-- [ ] 11.2 **A\* over spans, inside a tile and across tiles** (`Engine/Ecs/Nav/NavSearch.cs`). Node = (tile,
+- [x] 11.2 **A\* over spans, inside a tile and across tiles** (`Engine/Ecs/Nav/NavSearch.cs`). Node = (tile,
   column, span). 8-neighbour in the plane plus the step / drop links, octile heuristic with the height
   difference folded in, **no corner cutting** (a diagonal needs both orthogonals open), ties on node index. A
   search that leaves its tile goes hierarchical: A* on the portal graph for the corridor, then per-tile A*
@@ -2329,31 +2312,31 @@ that changes what the level builds.
   span surface, broken at every step / drop link (a corner where the height changes stays a corner). Checks:
   optimality on a hand-built maze; a two-tile path equals the one-tile path when the wall between them is
   removed; no corner cut; null when walled off; identical corners across two runs.
-- [ ] 11.3 **Requests are budgeted** (`Game/Ecs/AI/NavPaths.cs`). `PathRequest { Goal, Serial }` and
+- [x] 11.3 **Requests are budgeted** (`Game/Ecs/AI/NavPaths.cs`). `PathRequest { Goal, Serial }` and
   `PathResult { Corners, Serial, Status }`; a system serves at most **N searches per tick** (a tunable; N from
   a probe at 11.0), queue in placement-seed order. A request made while one is pending supersedes it. Checks:
   the budget holds with 50 askers; the order is stable across a reshuffled spawn.
-- [ ] 11.4 **Following, straight line first** (`Game/Ecs/AI/PathFollow.cs`). The system runs after the brain
+- [x] 11.4 **Following, straight line first** (`Game/Ecs/AI/PathFollow.cs`). The system runs after the brain
   and before `SteeringSystem`. For a moving intent it first casts the capsule along the flattened line to the
   goal, drop rule applied to the ground beneath: clear and same span → leave `MoveTo` as the goal. Blocked or
   another span → ask for a path and feed its corners; advance on a corner radius (**not** the 5 m
   `arriveDistance`, which stays the *goal* tolerance); repath when the goal moves past a threshold. On a failed
   search: the straight line, as today. The `maze` and `ledge` gates go from fail to pass here.
-- [ ] 11.5 **The world carves its tile** (`Engine/Ecs/Nav/NavCarve.cs`). `NavObstacle { HalfExtents }` on
+- [x] 11.5 **The world carves its tile** (`Engine/Ecs/Nav/NavCarve.cs`). `NavObstacle { HalfExtents }` on
   `phys_door`, `phys_slider` and `prop_physics` above a size threshold (in the prefabs — layer 10's point).
   A system stamps each one's footprint onto the spans its box overlaps as it moves (increment / decrement),
   only past a movement threshold, at one fixed point in the schedule before the search system; a stamp dirties
   its tile(s) and bumps a **grid version**. Checks: a door closing blocks its doorway span, opening frees it; a
   crate shoved across a tile edge leaves no span stuck on either side; two overlapping props removed one at a
   time leave the span correct.
-- [ ] 11.6 **A carve invalidates the paths that cross it.** A follower whose path touches a dirtied tile
+- [x] 11.6 **A carve invalidates the paths that cross it.** A follower whose path touches a dirtied tile
   (cheap test: the path's tile set) and crosses a changed span (exact test) asks for a repath rather than
   walking into a shut door. The `door` gate passes here.
-- [ ] 11.7 **Seeing it.** A debug overlay behind a flag, off by default: tile bounds, spans by height, blocked
+- [x] 11.7 **Seeing it.** A debug overlay behind a flag, off by default: tile bounds, spans by height, blocked
   spans (static / dynamic in two colours), portals, each enemy's path and corners, one-way drop links as
   arrows. The same in the level editor, with a **rebake** button and the worldspawn's `cellSize` live, so a
   designer sees where the AI can and cannot go while placing brushes. 9.x screen rule: wire fully, then init.
-- [ ] 11.8 **The leftovers.** Delete `Engine/Physics/Navigation.cs` (the dead Unity `NavMesh` stub). Retune
+- [x] 11.8 **The leftovers.** Delete `Engine/Physics/Navigation.cs` (the dead Unity `NavMesh` stub). Retune
   `arriveDistance`, `wanderRadius` and `wanderMinDistance` off their inherited Unity values now that movement
   works, and move them **into the rifleman prefab**, not `GameAssets.cs`.
 - [ ] 11.9 **Close-out.** Full sweep twice, hermetic and device-isolated; bench interleaved against 11.8's
