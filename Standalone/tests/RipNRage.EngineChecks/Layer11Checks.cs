@@ -34,7 +34,7 @@ internal static class Layer11Checks
         var nav = new NavWorld
         {
             Settings = Settings, TileSize = TileSize, OriginX = 0f, OriginZ = 0f,
-            TilesX = 1, TilesZ = 1,
+            TilesX = 1, TilesZ = 1, BakeId = NavWorld.NextBakeId(),
         };
         var tile = new NavTile { X = 0, Z = 0, MinX = 0f, MinZ = 0f, Width = width, Depth = depth, MinY = -10f, MaxY = 10f };
         tile.Columns = new NavColumn[width * depth];
@@ -325,6 +325,29 @@ internal static class Layer11Checks
             True(NavCarve.Stamp(nav, new Vector3(50f, 0.5f, 50f), new Vector3(1f, 1f, 1f), +1) == 0, "nav carve: a stamp off the grid touches no span");
             // a stamp well above the floor does not reach it
             True(NavCarve.Stamp(nav, new Vector3(2.5f, 9f, 1.5f), new Vector3(0.5f, 0.5f, 0.5f), +1) == 0, "nav carve: a stamp in the air does not block the floor under it");
+        }
+
+        // ---- 11.10 a rebake is a new grid with no stamps on it: the carve system must stamp everything again
+        {
+            using var w = new RipNRage.Engine.Ecs.World(0);
+            w.AddSystemsFromAssemblies(typeof(RipNRage.Engine.Ecs.World).Assembly); // the transform and carve systems
+            var first = Grid(".....", ".....", ".....");
+            Navigation.Current = first;
+            var crate = w.CreateEntity();
+            w.Add(crate, new RipNRage.Engine.Ecs.Transforms.LocalTransform { Position = new Vector3(2.5f, 0.5f, 1.5f), Rotation = Quaternion.identity, Scale = Vector3.one });
+            w.Add(crate, new NavObstacle { HalfExtents = new Vector3(0.4f, 0.5f, 0.4f) });
+            w.Update(1f / 60f); w.Update(1f / 60f); // the transform system seeds LocalToWorld, then the carve stamps
+            int blockedFirst = 0; foreach (var sp in first.Tiles[0].Spans) if (sp.Dynamic > 0) blockedFirst++;
+            True(blockedFirst == 1, $"nav rebake: the crate is stamped on the first grid ({blockedFirst} spans)");
+
+            var second = Grid(".....", ".....", ".....");       // a rebake: new object, new BakeId, no stamps
+            True(second.BakeId != first.BakeId, "nav rebake: a new bake has a new id");
+            Navigation.Current = second;
+            w.Update(1f / 60f);
+            int blockedSecond = 0; foreach (var sp in second.Tiles[0].Spans) if (sp.Dynamic > 0) blockedSecond++;
+            True(blockedSecond == 1, $"nav rebake: the unmoved crate is stamped again on the new grid ({blockedSecond} spans) - the 11.9 review's bug");
+
+            Navigation.Current = null;
         }
 
         // ---- determinism and the allocation floor

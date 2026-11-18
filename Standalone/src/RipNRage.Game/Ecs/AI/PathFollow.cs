@@ -28,6 +28,8 @@ namespace RipNRage.Game.Ecs.AI
         public float Recheck;
         /// <summary>The grid version this path was made against (11.6 repaths when a carve moves it on).</summary>
         public int Version;
+        /// <summary>Nodes the last search opened, and how many times this enemy has asked — the probes 11.0 wanted.</summary>
+        public int Nodes, Repaths;
     }
 
     public static class PathFollowing
@@ -165,7 +167,7 @@ namespace RipNRage.Game.Ecs.AI
                     bool stale = follow.Count == 0 || (goal - follow.Goal).sqrMagnitude > PathFollowing.Repath * PathFollowing.Repath;
                     if (stale && !req.Pending)
                     {
-                        req.Goal = goal; req.Serial++; req.Pending = true;
+                        req.Goal = goal; req.Serial++; req.Pending = true; follow.Repaths++;
                     }
 
                     // 3. walk the corners we have

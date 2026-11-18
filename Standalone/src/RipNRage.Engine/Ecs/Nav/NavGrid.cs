@@ -131,6 +131,11 @@ namespace RipNRage.Engine.Ecs.Nav
         public int TotalSpans;
         /// <summary>Bumped by any carve: a cheap "has anything changed at all" for followers.</summary>
         public int Version;
+        /// <summary>Which bake this is (a process-wide counter): a rebake is a new grid with no stamps on it, and
+        /// everyone holding state about the old one — the carve system above all — must notice.</summary>
+        public int BakeId;
+        private static int _bakes;
+        public static int NextBakeId() => ++_bakes;
 
         public NavTile TileAt(int tx, int tz) =>
             tx < 0 || tz < 0 || tx >= TilesX || tz >= TilesZ ? null : Tiles[tz * TilesX + tx];

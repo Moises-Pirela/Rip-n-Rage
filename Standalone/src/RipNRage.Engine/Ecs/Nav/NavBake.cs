@@ -84,7 +84,7 @@ namespace RipNRage.Engine.Ecs.Nav
         /// </summary>
         public static NavWorld Build(World world, in NavSettings settings, float tileSize)
         {
-            var nav = new NavWorld { Settings = settings, TileSize = tileSize };
+            var nav = new NavWorld { Settings = settings, TileSize = tileSize, BakeId = NavWorld.NextBakeId() };
             if (!Bounds(world, out var min, out var max, out var bounding, out var all)) return nav;
 
             nav.OriginX = Mathf.Floor(min.x / tileSize) * tileSize;

@@ -578,7 +578,7 @@ namespace RipNRage.Game
             string way = follow.Direct ? "direct" : follow.Count > 0 ? $"{follow.Status}" : "none";
             Debug.LogWarning($"[test] {tag}: hp {RipNRage.Game.Ecs.PlayerLink.Health:0} armour {RipNRage.Game.Ecs.PlayerLink.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
                              $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0} goal d {goalD:0.0} way {way} corners {follow.Count} at {follow.Corner} " +
-                             $"blocked {RipNRage.Engine.Ecs.Nav.NavCarveSystem.BlockedSpans}");
+                             $"blocked {RipNRage.Engine.Ecs.Nav.NavCarveSystem.BlockedSpans} nodes {follow.Nodes} repaths {follow.Repaths}");
         }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;
@@ -845,6 +845,9 @@ namespace RipNRage.Game
                         Application.Current.World.Commands.Add(leaf, new RipNRage.Engine.Ecs.Nav.NavObstacle());
                         Debug.LogWarning("[test] door: the leaf drops into the gap");
                     }
+                    // 11.10: a rebake while the leaf stands there. The new grid has no stamps; the leaf has not moved.
+                    // The carve must come back by itself, or `blocked` falls to the dock's 45 and the gap reads open.
+                    if (_frame == 150) { NavRebake(); Debug.LogWarning("[test] door: rebake with the leaf in place"); }
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
                     if (_frame == 30) NavProbe();
                     if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"door {_frame}");

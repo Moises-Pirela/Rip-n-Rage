@@ -112,6 +112,7 @@ namespace RipNRage.Game.Ecs.AI
                 follow.Count = status == NavStatus.Unreachable ? 0 : path.Count;
                 follow.Goal = req.Goal;
                 follow.Version = nav.Version;
+                follow.Nodes = _searcher.LastNodes;
             }
             ServedLastTick = served;
         }

@@ -92,6 +92,8 @@ namespace RipNRage.Engine.Ecs.Nav
 
         /// <summary>Spans under a stamp right now — the probe the gates print.</summary>
         public static int BlockedSpans;
+        /// <summary>The bake the stamps were made on. A fresh bake has none, so every obstacle is stamped again.</summary>
+        private int _stampedFor = -1;
 
         public override void OnCreate() => _q = World.Query().With<NavObstacle>().WithReadOnly<LocalToWorld>().Build();
 
@@ -109,6 +111,12 @@ namespace RipNRage.Engine.Ecs.Nav
             if (nav == null || nav.TotalSpans == 0) return;
             float threshold = NavCarve.Threshold(in nav.Settings);
 
+            // a rebake (a respawn, a load, Navigation.Invalidate) is a new grid with no stamps on it, while every
+            // obstacle still believes it is stamped where it stands. Without this a door that has not moved is
+            // never carved again and stands open to the search until something shoves it (found at the 11.9 review).
+            bool fresh = nav.BakeId != _stampedFor;
+            if (fresh) { _stampedFor = nav.BakeId; BlockedSpans = 0; }
+
             foreach (var chunk in _q)
             {
                 var obs = chunk.Get<NavObstacle>(); var ltw = chunk.Get<LocalToWorld>(); var ents = chunk.Entities;
@@ -116,6 +124,7 @@ namespace RipNRage.Engine.Ecs.Nav
                 {
                     if (!chunk.Includes(i)) continue;
                     ref var o = ref obs[i];
+                    if (fresh) o.Stamped = false; // the old stamp is on a grid that no longer exists
                     var half = o.HalfExtents;
                     if (half == Vector3.zero && World.Has<ColliderShape>(ents[i]))
                     {

@@ -69,6 +69,7 @@ namespace RipNRage.Game.Ecs.AI
             var nav = NavBake.Build(World, NavProfile.For(in ws), LevelLoader.MeshChunkSize);
             watch.Stop();
             Navigation.Current = nav;
+            NavPaths.Clear(); // the corners in the side buffer were made on the old grid
 
             int tiles = 0;
             foreach (var t in nav.Tiles) if (t != null) tiles++;
