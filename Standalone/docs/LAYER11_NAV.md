@@ -698,6 +698,27 @@ by frame 500. The existing gates are single-grunt and must not move.
 
 **Commit.** `ECS layer 11.13: enemies make way for each other`
 
+### What 11.13 did (2026-11-18)
+
+`Steering.Avoid`, applied after `Steering.Step` inside the steering job: for every neighbour within 2.5 m that
+the body is closing on, half the separating velocity plus a sideways step, capped at the body's speed; the path
+corner is perturbed, never abandoned. It reads a **snapshot** of every enemy's position and last wanted velocity,
+taken serially before the job, so the chunks stay order-independent. No new system; the schedule is unchanged.
+
+**One thing it got wrong first.** The side was given a sign by placement seed to break ties. But the side is the
+perpendicular of the line between the two bodies, and that line is antisymmetric — the other body's perpendicular
+is already the opposite vector — so the seed's sign flipped it back and both stepped the same way (the check
+caught it: `-1.00 vs -1.00`). No tie-break is needed; head-on pairs part for free.
+
+`crowd` (new, 600 frames): two grunts side by side behind the door wall, one 1.4 m gap. Both engage by frame 200
+(d 8.2 and 5.9) and the player is dead by 350. Honestly read: one grunt walked through the gap (moved 5.4); the
+other found a line of fire *through* it from 2 m away and stood (moved 2.0) — both arrive, neither is stuck,
+but the gate proves "no deadlock in the doorway" more than "both walk through it". A gate with the player out of
+sight of the gap would prove the second; left for whoever needs it. Single-grunt gates are unchanged.
+
+Checks: gameplay 506 → 513 (head-on pairs part to opposite sides, neither turns back, capped at speed, same
+snapshot same answer, a body outside the radius or behind is ignored).
+
 ## Phase 11.14 — The hierarchical search (conditional)
 
 **Decide from 11.10's `path ms` / `nodes` probes.** If the worst search on the dock stays under ~0.3 ms and

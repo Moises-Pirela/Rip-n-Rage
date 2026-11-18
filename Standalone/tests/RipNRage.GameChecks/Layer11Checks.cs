@@ -75,6 +75,29 @@ internal static class Layer11Checks
         True(NavProfile.For(in ws).MaxDrop >= Steering.Drop,
              $"nav profile: the drop rule covers the ledge guard's reach ({NavProfile.For(in ws).MaxDrop} vs {Steering.Drop})");
 
+        // 11.13: local avoidance as a pure function
+        {
+            var a = new RipNRage.Engine.Ecs.Entity(1, 1); var b = new RipNRage.Engine.Ecs.Entity(2, 1);
+            var others = new[]
+            {
+                new Steering.Neighbour { Position = new Vector3(0, 0, 0), Desired = new Vector3(0, 0, 5), Entity = a },
+                new Steering.Neighbour { Position = new Vector3(0, 0, 1.5f), Desired = new Vector3(0, 0, -5), Entity = b },
+            };
+            var va = Steering.Avoid(others[0].Position, others[0].Desired, 5f, a, others, 2);
+            var vb = Steering.Avoid(others[1].Position, others[1].Desired, 5f, b, others, 2);
+            True(va != others[0].Desired && vb != others[1].Desired, "avoid: two bodies head-on both change course");
+            True(Mathf.Abs(va.x) > 0.1f && Mathf.Abs(vb.x) > 0.1f && Mathf.Sign(va.x) != Mathf.Sign(vb.x), $"avoid: they step to opposite sides ({va.x:0.00} vs {vb.x:0.00})");
+            True(va.z > 0f && vb.z < 0f, "avoid: neither turns back - a corner is perturbed, not abandoned");
+            True(va.magnitude <= 5f + 1e-3f && vb.magnitude <= 5f + 1e-3f, "avoid: the result is capped at the body's speed");
+            var va2 = Steering.Avoid(others[0].Position, others[0].Desired, 5f, a, others, 2);
+            True(va == va2, "avoid: the same snapshot gives the same answer");
+
+            var far = new[] { others[0], new Steering.Neighbour { Position = new Vector3(0, 0, 8f), Desired = Vector3.zero, Entity = b } };
+            True(Steering.Avoid(far[0].Position, far[0].Desired, 5f, a, far, 2) == far[0].Desired, "avoid: a body outside the radius is ignored");
+            var behind = new[] { others[0], new Steering.Neighbour { Position = new Vector3(0, 0, -1.5f), Desired = Vector3.zero, Entity = b } };
+            True(Steering.Avoid(behind[0].Position, behind[0].Desired, 5f, a, behind, 2) == behind[0].Desired, "avoid: a body we are walking away from is ignored");
+        }
+
         // 11.11: wander picks a span about Home, never a hole, never far from home however far the grunt has got
         {
             // a 20 x 20 m floor with a 6 x 6 m hole in the middle (cell 1 m); home at the floor's centre-left

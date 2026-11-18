@@ -529,6 +529,25 @@ namespace RipNRage.Game
         // half of that (Noises.WallMuffle), so the grunt hears him through it and chases the sound. What it does
         // next is the gate: today it walks the straight line and grinds, because there is no path to follow.
 
+        /// <summary>11.13: every grunt's distance to the player and how far it has come, in placement order.</summary>
+        private void CrowdProbe(string tag)
+        {
+            var w = Application.Current.World;
+            Enemies.Collect(w, _enemies);
+            _enemies.Sort((a, b) => w.Get<AiBrain>(a).Order.CompareTo(w.Get<AiBrain>(b).Order));
+            var line = $"[test] {tag}:";
+            foreach (var en in _enemies)
+            {
+                var pos = w.Get<LocalTransform>(en).Position;
+                if (!_enemyHome.ContainsKey(en)) _enemyHome[en] = pos;
+                float d = (pos - RipNRage.Game.Ecs.PlayerLink.Position).magnitude;
+                if ((_enemyHome[en] - RipNRage.Game.Ecs.PlayerLink.Position).magnitude > 30f) continue; // the dock's own grunts, far off
+                var brain = w.Get<AiBrain>(en);
+                line += $" | d {d:0.0} moved {(pos - _enemyHome[en]).magnitude:0.00} {brain.State}";
+            }
+            Debug.LogWarning(line + $" | hp {RipNRage.Game.Ecs.PlayerLink.Health:0} armour {RipNRage.Game.Ecs.PlayerLink.Armor:0}");
+        }
+
         /// <summary>The dock floor the nav gates build on, and the spot the player is teleported to.</summary>
         private const float NavFloorY = 0.91f, NavPlayerZ = 8f;
 
@@ -814,6 +833,21 @@ namespace RipNRage.Game
                         NavGrunt(0f, NavFloorY, NavPlayerZ - 30f);
                     }
                     if (_frame == 60 || _frame == 300 || _frame == 590) AiProbe($"stay {_frame}");
+                    break;
+                case "crowd":
+                    // 11.13: two grunts side by side behind the door wall, one 1.4 m gap, the player beyond it. Both
+                    // must get through and engage, instead of shoving each other in the doorway through the solver.
+                    if (_frame == 2)
+                    {
+                        RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(0f, 1.8f, NavPlayerZ), 180f);
+                        NavWall(-6f, 0.7f, NavPlayerZ - 6f);
+                        NavWall(2.1f, 6f, NavPlayerZ - 6f);
+                        NavGrunt(-1.2f, NavFloorY, NavPlayerZ - 12f);
+                        NavGrunt(1.2f, NavFloorY, NavPlayerZ - 12f);
+                    }
+                    if (_frame == 3) NavRebake();
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30;
+                    if (_frame == 60 || _frame == 200 || _frame == 350 || _frame == 500) CrowdProbe($"crowd {_frame}");
                     break;
                 case "maze":
                     // a wall across the run, the grunt behind it. It hears the shot, chases the sound and meets
