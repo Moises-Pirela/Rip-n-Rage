@@ -55,7 +55,11 @@ then start at the first unchecked layer.
   the legacy producer are deleted; the application runs only the World, which drives its own fixed clock; the
   player, the level, the props, cameras, lights, menus, HUD and all four editor tools are entities and screens
   (close-out below)
-- [ ] Layer 10 — Editors on configs **(10.0–10.6 done: the level manifest, prefab trees, the game configs, every level class as components in a file, the worldspawn singleton, the Entity and Prefab windows; 10.7 next — most of it landed with 10.6)**
+- [x] **Layer 10 — Editors on configs**: the level manifest, prefab trees with references and overrides, the
+  game configs, every level class as components in a file, the worldspawn singleton, the editor's Entity and
+  Prefab windows, prefab authoring and watching (`b08effa`). **10.8 (close-out) is still open** — the sweep,
+  the bench and the layer totals have not been recorded.
+- [ ] Layer 11 — Navigation: tiled A* over column spans, carved by the world (planned and reviewed 2026-11-18; not started)
 
 ### Pick-up point for the next session (written 2026-11-15, after 9.8; layer 10 is next)
 
@@ -2224,6 +2228,149 @@ that changes what the level builds.
       after; README: the prefab format (tree, refs, overrides, aliases), the level entity table rewritten as
       "classname = prefab in `prefabs/level/`", the editor's Entity window; the pick-up point rewritten for what
       follows the migration (the general `ROADMAP.md` gaps).
+
+### Layer 11 — Navigation: tiled A* over column spans, carved by the world
+
+**What is there today** (surveyed at 10.7):
+
+| Piece | Where | Shape |
+|---|---|---|
+| The mind | `Ecs/AI/AiBrain.cs` (172) | **already a state tree** (6.2): two branches decided from `Perception` every tick (unaware / engaged), four leaves (`Idle` → `Wander`, `Chase` / `Attack`), stepped as a pure function over the `AiBrain` value. The behaviour tree it replaced is gone. **Layer 11 adds no leaf and rewrites no branch**: it changes where `MoveTo` points |
+| Movement | `Ecs/AI/Steering.cs` (111) | `AiIntent.MoveTo` → a flattened direction × `def.movementSpeed` into `CharacterMotor.Desired`; a turn towards it at `def.turnSpeed` |
+| The only obstacle sense | `Steering.GroundAhead` | one ray 1.5 m ahead, 3 m down, `Noises.WallMask` — a **ledge** guard, not a **wall** guard: an enemy walks into a wall and grinds there until the target moves |
+| Where to go | `AiBrains.Step` | `Wander` picks a point in a disc (`wanderRadius` 15, rejected under `wanderMinDistance` 10) from the brain's own xorshift; `Chase` walks straight at `Perception.LastKnown` |
+| "Arrived" | `AiBrains.Arrived` | `def.arriveDistance` **5 m**, flattened — inherited from the Unity agent's `remainingDistance <= 5`; a chase that arrives just stands 5 m out |
+| The Unity leftover | `Engine/Physics/Navigation.cs` (36) | a `NavMesh` / `NavMeshPath` / `NavMeshHit` stub that only drops a ray to sample ground. **`git grep` finds no caller** — dead since the port |
+| Level collision | `Content/Level/LevelLoader.cs:238` | every non-sky brush is one static collider on `Layers.Walkable` — `StaticBox` when axis-aligned, else `StaticConvex` from its face planes |
+| The body's limits | `Physics/CharacterProfile.cs:35` | `Enemy`: ride 0.35, `groundTolerance` 0.25, `maxSlopeAngle` 50°, mass 85; the capsule is radius 0.3375 × height 1.9 (`prefabs/level/monster_rifleman.json`). There is **no `stepHeight`** on a character: a step is whatever the ride spring swallows |
+| What moves | `prefabs/level/` | `phys_door` (hinge), `phys_slider`, `phys_hinge`, `phys_pendulum`, `prop_physics` crates — real bodies that open, swing and get shoved into doorways |
+| Already chunked | `LevelLoader.MeshChunkSize` 16 m | the level mesh is cut into 16 m cubes for culling; the same cut is a natural tile |
+| Queries available | `Engine/Physics/Physics.cs` | `Raycast`, `ShapeCast` / `CapsuleCast`, `OverlapShape`, `CheckCapsule` with a `QueryFilter` |
+| Parallelism | `Ecs/Query.cs:87` | `ScheduleParallel<TJob>(ref job, batchSize)` over chunks; `ctx.CommandsFor(worker)` inside |
+
+**Direction (reviewed 2026-11-18)**
+
+- **The brain stays a state tree; navigation sits under it.** `AiBrain` is already the data-oriented state tree
+  layer 6 built; nothing in this layer touches its branches or leaves. `Chase` and `Wander` keep writing the
+  *goal* into `AiIntent.MoveTo`; a follower system rewrites it to the *next corner* before `SteeringSystem`
+  reads it. Steering never learns that pathfinding exists. A path is advice, not a rail: the motor still walks
+  with forces and slides on contact, and a failed search degrades to today's straight line — never a freeze.
+- **Straight line first, path second.** A `Chase` with a clear line (one capsule cast along the flattened
+  direction, with the drop rule for the ground between) walks straight and costs nothing — the player is
+  usually in sight, and today's behaviour is right then. The path is asked for only when the cast hits or the
+  goal is on another span. `Wander` always paths (its point is random; half of them are behind something).
+- **Columns of spans, not a height per cell — verticality is a requirement.** A cell `(x, z)` holds a short
+  **list of walkable spans**, each a floor height and the headroom above it (the compact-heightfield idea: a
+  deck over a deck is two spans in one column). The bake drops the column onto every solid in it, not the
+  first; walkable means floor slope within `maxSlopeAngle`, headroom ≥ the capsule, and clearance ≥ its radius.
+  Neighbour spans connect by a **step rule** (up ≤ the ride height + ground tolerance, what the spring swallows
+  — pinned to the profile by a check) and a **drop rule** (down ≤ a tunable `maxDrop`, **one-way**: an edge the
+  search may take down and never up). A ledge is a drop link; a staircase is a run of step links; a cliff is no
+  link.
+- **Tiles, not one grid — spatial partitioning from day one.** The level is cut into `NavTile`s on the
+  `MeshChunkSize` cut (16 m, one tile per culling chunk, so the two chunkings line up); each tile owns its
+  columns and spans and bakes independently — in parallel at level start, and alone when a carve dirties it. A
+  level with no brush in a chunk has no tile there. Searches cross tiles by **portals** — the open span pairs
+  along a shared edge, computed when either side bakes — and a long search runs **hierarchically**: A* over
+  the tile/portal graph first, then A* inside each tile of the corridor. A short search inside one tile is
+  just A* on its spans.
+- **Cell size is a setting, per level.** `cellSize` (and `cellHeight`, the vertical quantum of a span) live on
+  the worldspawn prefab (`prefabs/level/worldspawn.json`, the 10.5 singleton), so a map can be rebaked finer
+  or coarser from the editor without a code change. Default 0.5 m horizontal, 0.2 m vertical; 11.0 measures the
+  dock at both to set them. The enemy's clearance is **not** a setting — it is derived from the profile.
+- **Carving is a counter on spans, applied to a tile.** `NavObstacle` on doors, sliders and large props
+  stamps the spans its footprint covers (increment what it now covers, decrement what it left) only when it
+  has moved past a threshold; a carve dirties the tile(s) it touches and nothing else. Counters, not flags:
+  two crates on one span, one removed, the span stays blocked. Ragdolls, pickups, projectiles, other enemies
+  and the player are **not** carved — the contact solver and 11.4's fallback handle them; carving them would
+  thrash tiles every tick.
+- **Determinism is a requirement.** The gate sweep diffs probe lines byte-for-byte. The open set breaks ties
+  on (tile, column, span) index; carves apply at one fixed schedule point before the search system; the
+  per-tick request budget is served in **placement-seed order**, never entity-iteration order, which a buffered
+  spawn can reshuffle (the 6.7b lesson). Parallel tile bakes write only their own tile; portals are computed in
+  a second, serial pass.
+
+**Answered at review (2026-11-18)**
+
+- **Q1 — cell size**: **adjustable**, a worldspawn field; 0.5 m default, measured at 11.0.
+- **Q2 — one grid or many**: **many — tiles**, partitioned on the level's existing 16 m chunk cut, joined by
+  portals, searched hierarchically.
+- **Q3 — vertical**: **full verticality**: spans per column, step links up, one-way drop links down.
+- **Q4 — straight line when clear**: **yes**; path only when the direct cast is blocked or the goal is on
+  another span.
+- **Q5 — gates re-baseline**: yes; `approach` / `peek` / `close` / `killenemy` get their straight-line values
+  recorded at 11.0 and new values from 11.4.
+- **State tree**: already in place since 6.2; confirmed as the structure the layer builds under.
+
+**Steps** — the concrete phase-by-phase build is [`LAYER11_NAV.md`](LAYER11_NAV.md)
+(seams, types, call sites, checks and commit boundaries). The outline:
+
+- [ ] 11.0 **Instrument.** Gate scripts that today's AI fails, recorded as the baseline: `maze` (an enemy, a
+  wall between it and the player, a way round), `door` (the same, through a `phys_door`) and `ledge` (the
+  player on a deck below; the way is a drop the enemy must take, and a step it must climb back). Probe lines for
+  `path len`, `path ms`, `tiles crossed`, `repaths`, `spans blocked`. Measure the dock's bounds, tile count and
+  span count at 0.5 / 0.25 m to set the defaults (Q1). Re-baseline `approach` / `peek` / `close` / `killenemy`
+  (Q5).
+- [ ] 11.1 **Tiles of spans bake from the level** (`Engine/Ecs/Nav/NavTile.cs`, `NavBake.cs`). Tile bounds
+  from the brush AABB on the chunk cut; per column, every solid hit downward (not the first), each turned into
+  a span with floor height, headroom, slope flag; then a clearance pass erodes spans by the capsule radius.
+  Step and drop links between neighbouring spans by the rules above; portals along tile edges in a serial pass
+  after all tiles. Static blocked count separate from the dynamic one. Baked synchronously at level start like
+  the level build (9.x: builds are immediate, systems are not), tiles in parallel. `cellSize` / `cellHeight` /
+  `maxDrop` from the worldspawn singleton. Checks: a known box level bakes known spans; a wall blocks; a deck
+  over a deck is two spans in one column; a ledge is a one-way link; a slope over `maxSlopeAngle` is not
+  walkable; the step limit tracks the profile.
+- [ ] 11.2 **A\* over spans, inside a tile and across tiles** (`Engine/Ecs/Nav/NavSearch.cs`). Node = (tile,
+  column, span). 8-neighbour in the plane plus the step / drop links, octile heuristic with the height
+  difference folded in, **no corner cutting** (a diagonal needs both orthogonals open), ties on node index. A
+  search that leaves its tile goes hierarchical: A* on the portal graph for the corridor, then per-tile A*
+  through it. A binary heap and the open / closed sets are **pooled per searcher**, not allocated per call — the
+  game allocates 6.0 KB/frame today and 9.8's win was not spending it. Then a **string-pull** pass within a
+  span surface, broken at every step / drop link (a corner where the height changes stays a corner). Checks:
+  optimality on a hand-built maze; a two-tile path equals the one-tile path when the wall between them is
+  removed; no corner cut; null when walled off; identical corners across two runs.
+- [ ] 11.3 **Requests are budgeted** (`Game/Ecs/AI/NavPaths.cs`). `PathRequest { Goal, Serial }` and
+  `PathResult { Corners, Serial, Status }`; a system serves at most **N searches per tick** (a tunable; N from
+  a probe at 11.0), queue in placement-seed order. A request made while one is pending supersedes it. Checks:
+  the budget holds with 50 askers; the order is stable across a reshuffled spawn.
+- [ ] 11.4 **Following, straight line first** (`Game/Ecs/AI/PathFollow.cs`). The system runs after the brain
+  and before `SteeringSystem`. For a moving intent it first casts the capsule along the flattened line to the
+  goal, drop rule applied to the ground beneath: clear and same span → leave `MoveTo` as the goal. Blocked or
+  another span → ask for a path and feed its corners; advance on a corner radius (**not** the 5 m
+  `arriveDistance`, which stays the *goal* tolerance); repath when the goal moves past a threshold. On a failed
+  search: the straight line, as today. The `maze` and `ledge` gates go from fail to pass here.
+- [ ] 11.5 **The world carves its tile** (`Engine/Ecs/Nav/NavCarve.cs`). `NavObstacle { HalfExtents }` on
+  `phys_door`, `phys_slider` and `prop_physics` above a size threshold (in the prefabs — layer 10's point).
+  A system stamps each one's footprint onto the spans its box overlaps as it moves (increment / decrement),
+  only past a movement threshold, at one fixed point in the schedule before the search system; a stamp dirties
+  its tile(s) and bumps a **grid version**. Checks: a door closing blocks its doorway span, opening frees it; a
+  crate shoved across a tile edge leaves no span stuck on either side; two overlapping props removed one at a
+  time leave the span correct.
+- [ ] 11.6 **A carve invalidates the paths that cross it.** A follower whose path touches a dirtied tile
+  (cheap test: the path's tile set) and crosses a changed span (exact test) asks for a repath rather than
+  walking into a shut door. The `door` gate passes here.
+- [ ] 11.7 **Seeing it.** A debug overlay behind a flag, off by default: tile bounds, spans by height, blocked
+  spans (static / dynamic in two colours), portals, each enemy's path and corners, one-way drop links as
+  arrows. The same in the level editor, with a **rebake** button and the worldspawn's `cellSize` live, so a
+  designer sees where the AI can and cannot go while placing brushes. 9.x screen rule: wire fully, then init.
+- [ ] 11.8 **The leftovers.** Delete `Engine/Physics/Navigation.cs` (the dead Unity `NavMesh` stub). Retune
+  `arriveDistance`, `wanderRadius` and `wanderMinDistance` off their inherited Unity values now that movement
+  works, and move them **into the rifleman prefab**, not `GameAssets.cs`.
+- [ ] 11.9 **Close-out.** Full sweep twice, hermetic and device-isolated; bench interleaved against 11.8's
+  parent (`--threads 1`); the bake's cost at level start (serial vs tiles-in-parallel), the search's cost per
+  tick and the carve's cost with a door swinging, all against budget; allocation per frame compared with 10.x
+  (11.2's pooling is what holds it).
+
+**What layer 11 does not do**
+
+- Local avoidance between enemies (they still bump in a doorway — the solver handles it, badly).
+- Flow fields or crowds: one rifleman kind, small counts. If counts go up, a shared field to a common goal
+  beats N searches, and 11.3's budget is where it plugs in.
+- Jumping *up* as a deliberate move, ladders, or doors the AI opens. Links are step and drop only; a gap is no
+  link.
+- A second body size: one clearance class, derived from the Enemy profile. A second kind with a bigger
+  capsule means a second clearance erosion over the same spans, not a second bake.
+- Off-grid movers as **ground** (riding a platform). A moving platform is carved as an obstacle, not walked on.
 
 ## Conventions
 
