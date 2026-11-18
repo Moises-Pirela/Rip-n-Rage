@@ -1,0 +1,39 @@
+// The melee grunt (11.15): the rifleman's body and sheets until it has its own; it swings instead of shooting.
+// The AR grunt's prefab, renamed: a character capsule riding its spring, its health and hitbox, its mind, senses and gun, and a
+// sprite child the visual system drives. The capsule numbers follow the Enemy profile's ride height (0.35): the
+// body floats half the 2.25 m figure plus the ride above the floor, and a game check pins them to the profile.
+{ "name": "monster_brawler",
+  "description": "melee grunt (brawler)",
+  "keys": { "health": "Health.max" },
+  "editor": { "gizmoColor": [1, 0.3, 0.3, 1], "pickExtents": [0.5, 1.1, 0.5], "defaults": { "angle": "180" } },
+  "components": {
+    "LocalTransform": { "position": [0, 1.475, 0] },
+    "ColliderShape": { "kind": "Capsule", "radius": 0.3375, "height": 1.9, "center": [0, -0.175, 0] },
+    "CollisionFilter": { "layer": 12 },
+    "Body": { "mass": 85, "interpolate": true, "freezeRotation": true, "canSleep": false },
+    "BodyVelocity": {},
+    "CharacterMotor": { "profile": "Enemy", "rideHeight": 0.35 },
+    "Health": { "max": 600 },
+    "Hitbox": { "height": 2.25, "headFraction": 0.76 },
+    "Enemy": { "kind": "monster_brawler" },
+    "Heading": {},
+    "Perception": {},
+    "AiBrain": { "monster": "monster_brawler" },
+    "AiIntent": {},
+    "EnemyWeapon": {},
+    "PathRequest": {},
+    "PathFollow": {},
+    "EnemyVisual": { "sprite": "sprite" },
+    "LevelRef": {}
+  },
+  "children": {
+    "sprite": {
+      "components": {
+        "LocalTransform": { "position": [0, -0.35, 0], "scale": [0.439453125, 0.439453125, 0.439453125] },
+        "SpriteRender": { "billboard": true, "lit": true },
+        "SpriteFx": {} }
+    },
+    "ghost": { "previewOnly": true,
+      "components": {
+        "LocalTransform": { "position": [0, -0.35, 0], "scale": [0.439453125, 0.439453125, 0.439453125] },
+        "SpriteRender": { "sprite": "Rifleman/idle", "billboard": true, "lit": true } } } } }

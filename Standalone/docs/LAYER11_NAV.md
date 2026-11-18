@@ -764,6 +764,25 @@ brawler closes to melee range through the `maze` wall.
 
 **Commit.** `ECS layer 11.15: enemies are files; the brawler is the second`
 
+### What 11.15 did (2026-11-18)
+
+`enemies/*.json` is the whole of an `EnemyData` per kind — `EnemyDefinitions` reads the folder (found like the
+prefabs', or `RIPNRAGE_ENEMIES`) in name order and builds `Enemies.All`; the rifleman's block of numbers left
+`GameAssets.cs` and a check pins, field by field, that `enemies/monster_rifleman.json` bakes to what the code
+built. `monster_brawler` is the second kind — the rifleman's body and sheets until it has art, `melee: true`,
+`attackRange` = arm's length, quicker on its feet — with its level prefab. `EnemyData` gained `melee` and
+`meleeDamage` for 11.16 to read.
+
+**A side effect worth knowing.** Kinds load alphabetically, so the brawler is kind 0 and the rifleman kind 1. The
+brain's dice are seeded by placement *salted by kind*, so every rifleman rolls differently than before: `maze`'s
+route changed (moved 7.72 → 21.75, still arriving and fighting) while `killenemy`, which never rolls, did not. Not
+a regression — a reseed — but it is why the AI gates moved at a phase that changed no behaviour.
+
+`brawler` (new): gets round the maze wall to **d 1.0** — arm's length — and attacks. Until 11.16 it attacks by
+shooting; the gate's job here is the kind existing and closing.
+
+Checks: gameplay 513 → 523.
+
 ## Phase 11.16 — The melee damage path
 
 **Goal.** `meleeAttackRange` has a reader; Fury's melee bonus has something to apply to.

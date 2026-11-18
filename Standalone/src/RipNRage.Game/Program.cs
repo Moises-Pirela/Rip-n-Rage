@@ -559,7 +559,7 @@ namespace RipNRage.Game
 
         /// <summary>The grunt the nav gates watch: on the floor (or a platform top), facing +z — towards the player.</summary>
         private static void NavGrunt(float x, float y, float z) =>
-            Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData), new Vector3(x, y, z), 0f);
+            Enemies.Spawn(Application.Current.World, Enemies.KindByClassname("monster_rifleman"), new Vector3(x, y, z), 0f);
 
         /// <summary>The gates build their walls after the level was baked: the grid has to be told to look again.</summary>
         private static void NavRebake() => RipNRage.Engine.Ecs.Nav.Navigation.Invalidate();
@@ -745,7 +745,7 @@ namespace RipNRage.Game
                 {
                     // spawn a rifleman close by, aim at it, kill it with the MG, then watch the hit flash + dissolve
                     var world = Application.Current.World;
-                    if (_frame == 2) Enemies.Spawn(world, Enemies.KindOf(GameAssets.RiflemanData), new Vector3(-1.5f, 0.91f, -6f), 0f);
+                    if (_frame == 2) Enemies.Spawn(world, Enemies.KindByClassname("monster_rifleman"), new Vector3(-1.5f, 0.91f, -6f), 0f);
                     if (_frame == 5) CombatController.OnChangeWeapon1();
                     var camPos = RipNRage.Game.Ecs.PlayerCamera.Position; var camFwd = RipNRage.Game.Ecs.PlayerCamera.Forward;
                     Enemies.Collect(world, _enemies);
@@ -849,6 +849,19 @@ namespace RipNRage.Game
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30;
                     if (_frame == 60 || _frame == 200 || _frame == 350 || _frame == 500) CrowdProbe($"crowd {_frame}");
                     break;
+                case "brawler":
+                    // 11.15 / 11.16: the second kind. The maze again, with a brawler: it has to get round the wall and
+                    // up to arm's length, and when 11.16 lands, hurt the player with a swing rather than a shot.
+                    if (_frame == 2)
+                    {
+                        RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(0f, 1.8f, NavPlayerZ), 180f);
+                        NavWall(-6f, 6f, NavPlayerZ - 6f);
+                        Enemies.Spawn(Application.Current.World, Enemies.KindByClassname("monster_brawler"), new Vector3(0f, NavFloorY, NavPlayerZ - 12f), 0f);
+                    }
+                    if (_frame == 3) NavRebake();
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30;
+                    if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"brawler {_frame}");
+                    break;
                 case "maze":
                     // a wall across the run, the grunt behind it. It hears the shot, chases the sound and meets
                     // 12 m of wall with a 6 m way round either end. Today: it grinds on the wall and never arrives.
@@ -918,7 +931,7 @@ namespace RipNRage.Game
                 case "evade":
                     // a grunt spawns in front and engages; the player runs at it, then dashes across its line of
                     // fire: being shot at and moving fills CALM (nothing here fills FURY — the player never shoots)
-                    if (_frame == 2) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
+                    if (_frame == 2) Enemies.Spawn(Application.Current.World, Enemies.KindByClassname("monster_rifleman"),
                         RipNRage.Game.Ecs.PlayerCamera.Position + RipNRage.Game.Ecs.PlayerCamera.Forward * 14f - Vector3.up * 1.3f, 180f);
                     // weave in front of the grunt instead of running off the dock: strafe one way, then the other
                     RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 120 ? new Vector2(0f, 1f)
@@ -949,7 +962,7 @@ namespace RipNRage.Game
                     // two grunts killed with the MG fill the Fury meter; at frame 310 the player presses the
                     // activation (Q / D-pad left) and spends it on a third grunt: ENRAGED hits harder and the
                     // blows feed the player (the probe prints hp / armour), then the meter drains and it ends
-                    if (_frame == 2 || _frame == 150 || _frame == 320) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
+                    if (_frame == 2 || _frame == 150 || _frame == 320) Enemies.Spawn(Application.Current.World, Enemies.KindByClassname("monster_rifleman"),
                         RipNRage.Game.Ecs.PlayerCamera.Position + RipNRage.Game.Ecs.PlayerCamera.Forward * 6f - Vector3.up * 1.3f, 0f);
                     if (_frame == 5) CombatController.OnChangeWeapon3();
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = (_frame > 20 && _frame < 140) || (_frame > 160 && _frame < 300) || (_frame > 330 && _frame < 395);
@@ -1047,7 +1060,7 @@ namespace RipNRage.Game
                 {
                     // (the style meter is gone; the script is kept as the Fury-gain probe) a grunt killed with the
                     // Glock, then one with the MG: hits, kills and the close-range bonus fill the meter
-                    if (_frame == 2 || _frame == 130) Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData),
+                    if (_frame == 2 || _frame == 130) Enemies.Spawn(Application.Current.World, Enemies.KindByClassname("monster_rifleman"),
                         RipNRage.Game.Ecs.PlayerCamera.Position + RipNRage.Game.Ecs.PlayerCamera.Forward * 6f - Vector3.up * 1.3f, 0f);
                     if (_frame == 5) CombatController.OnChangeWeapon1();
                     if (_frame == 135) CombatController.OnChangeWeapon3();

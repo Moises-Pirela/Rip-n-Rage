@@ -36,6 +36,9 @@ namespace RipNRage.Game.Ecs.AI
         public float meleeAttackRange;
         public float turnSpeed;
         public float fireRate;
+        /// <summary>This kind swings instead of shooting (11.16): within <see cref="meleeAttackRange"/> the attack is a blow for <see cref="meleeDamage"/>.</summary>
+        public bool melee;
+        public float meleeDamage;
 
         // attack readability
         /// <summary>Seconds the enemy telegraphs (flash + aim glow + sound) before the first shot.</summary>

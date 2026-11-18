@@ -1,0 +1,17 @@
+// The AR grunt. Every number the systems read about this kind, in one place (11.15): movement and engagement, the
+// attack's readability, the state tree's numbers, the senses, the status, the sheets and the skeleton.
+{ "name": "RiflemanData", "classname": "monster_rifleman",
+  "movementSpeed": 11, "attackRange": 10, "meleeAttackRange": 2, "turnSpeed": 3600, "fireRate": 1.1,
+  "melee": false, "meleeDamage": 0,
+  "attackWindup": 0.35, "burstCount": 3, "burstInterval": 0.09, "staggerTime": 0.25, "alertDelay": 0.2,
+  "wanderWait": 1, "wanderRadius": 10, "wanderMinDistance": 4, "arriveDistance": 2,
+  "sightRange": 10, "sightFov": 180, "memory": 5, "noise": 30,
+  "muzzleOffset": [0, 0.225, 0.45],
+  "maxHealth": 1000, "maxArmor": 0,
+  "skeleton": "rifleman",
+  "sheets": {
+    "idle":   { "frames": 1, "sides": 4, "fps": 1, "texture": "Sprites/Enemies/Rifleman/Rifleman_Idle.png" },
+    "attack": { "frames": 4, "sides": 1, "fps": 4, "texture": "Sprites/Enemies/Rifleman/Rifleman_Attack.png" },
+    "move":   { "frames": 4, "sides": 4, "fps": 5, "texture": "Sprites/Enemies/Rifleman/Rifleman_Run.png" },
+    "death":  { "frames": 4, "sides": 4, "fps": 5, "texture": "Sprites/Enemies/Rifleman/Rifleman_Death.png" },
+    "dead":   { "frames": 1, "sides": 4, "fps": 1, "texture": "Sprites/Enemies/Rifleman/Rifleman_Dead.png" } } }

@@ -13,6 +13,16 @@ using System.Collections.Generic;
 /// </summary>
 internal static class Layer11Checks
 {
+    /// <summary>The repo's enemies/ folder, from wherever the checks run.</summary>
+    private static string FindEnemiesFolder()
+    {
+        var d = new System.IO.DirectoryInfo(System.IO.Directory.GetCurrentDirectory());
+        while (d != null) { var c = System.IO.Path.Combine(d.FullName, "enemies"); if (System.IO.Directory.Exists(c)) return c; d = d.Parent; }
+        d = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        while (d != null) { var c = System.IO.Path.Combine(d.FullName, "enemies"); if (System.IO.Directory.Exists(c)) return c; d = d.Parent; }
+        return null;
+    }
+
     /// <summary>A one-tile grid from a character map ('.' floor, '#' nothing), linked by the real builder — the engine suite's helper, kept small here.</summary>
     private static NavWorld HandGrid(string[] rows)
     {
@@ -74,6 +84,29 @@ internal static class Layer11Checks
         // 11.4: the drop rule is at least the ledge guard's reach, or navigation refuses what blind walking allowed
         True(NavProfile.For(in ws).MaxDrop >= Steering.Drop,
              $"nav profile: the drop rule covers the ledge guard's reach ({NavProfile.For(in ws).MaxDrop} vs {Steering.Drop})");
+
+        // 11.15: the enemy definitions are files, and the rifleman's bakes to what GameAssets used to build
+        {
+            var defs = RipNRage.Game.Content.EnemyDefinitions.Load(_ => null, FindEnemiesFolder());
+            True(defs.Length >= 2, $"enemies: at least the rifleman and the brawler are files ({defs.Length})");
+            EnemyData r = null, b = null;
+            foreach (var d in defs) { if (d.classname == "monster_rifleman") r = d; if (d.classname == "monster_brawler") b = d; }
+            True(r != null && b != null, "enemies: monster_rifleman and monster_brawler load by classname");
+            // the numbers the code block carried (GameAssets, before 11.15), field by field
+            True(r.movementSpeed == 11f && r.attackRange == 10f && r.meleeAttackRange == 2f && r.turnSpeed == 3600f && Mathf.Abs(r.fireRate - 1.1f) < 1e-5f,
+                 "enemies: the rifleman's movement and engagement numbers are the code's");
+            True(Mathf.Abs(r.attackWindup - 0.35f) < 1e-5f && r.burstCount == 3 && Mathf.Abs(r.burstInterval - 0.09f) < 1e-5f && Mathf.Abs(r.staggerTime - 0.25f) < 1e-5f && Mathf.Abs(r.alertDelay - 0.2f) < 1e-5f,
+                 "enemies: the rifleman's attack readability numbers are the code's");
+            True(r.wanderWait == 1f && r.wanderRadius == 10f && r.wanderMinDistance == 4f && r.arriveDistance == 2f,
+                 "enemies: the rifleman's state tree numbers are the code's (as retuned at 11.8 / 11.11)");
+            True(r.sightRange == 10f && r.sightFov == 180f && r.memory == 5f && r.noise == 30f, "enemies: the rifleman's senses are the code's");
+            True(r.maxHealth == 1000f && r.maxArmor == 0f && r.skeleton == "rifleman" && !r.melee, "enemies: the rifleman's status and skeleton are the code's, and it shoots");
+            True(Mathf.Abs(r.muzzleOffset.y - 0.225f) < 1e-5f && Mathf.Abs(r.muzzleOffset.z - 0.45f) < 1e-5f, "enemies: the muzzle offset is the prefab's, scene-scaled");
+            True(r.enemyAnimationData.MoveAnimation.AnimationFrames == 4 && r.enemyAnimationData.MoveAnimation.Sides == 4 && r.enemyAnimationData.IdleAnimation.Sides == 4,
+                 "enemies: the sheets' frame and side counts are the code's");
+            True(b.melee && b.meleeDamage > 0f && b.attackRange <= b.meleeAttackRange && b.movementSpeed > r.movementSpeed,
+                 "enemies: the brawler swings, hurts, closes to arm's length and is quicker on its feet");
+        }
 
         // 11.13: local avoidance as a pure function
         {

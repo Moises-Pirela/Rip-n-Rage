@@ -24,6 +24,9 @@ namespace RipNRage.Game.Ecs.AI
 
         public static int KindOf(EnemyData data) => System.Array.IndexOf(All, data);
 
+        /// <summary>The definition that claims <paramref name="classname"/> (null = unknown).</summary>
+        public static EnemyData ByClassname(string classname) { int k = KindByClassname(classname); return k < 0 ? null : All[k]; }
+
         /// <summary>The kind whose definition claims <paramref name="classname"/> (-1 = unknown).</summary>
         public static int KindByClassname(string classname)
         {

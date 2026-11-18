@@ -32,7 +32,7 @@ namespace RipNRage.Game.Content
 
         // ---- scriptable data ----
         public static WeaponData GlockData, M1887Data, MG338Data, RocketLauncherData;
-        public static EnemyData RiflemanData;
+        public static EnemyData RiflemanData => Enemies.ByClassname("monster_rifleman");
 
         public static bool Loaded { get; private set; }
 
@@ -447,38 +447,11 @@ namespace RipNRage.Game.Content
                 weaponPosition = new Vector3(-0.158f, 0.365f, 0), weaponScale = 0.12f,
             };
 
-            // Assets/_Game/ScriptableObjects/EnemyData/RiflemanData.asset
-            Enemies.All = new EnemyData[1]; // filled below (self-reference)
-            RiflemanData = new EnemyData
-            {
-                name = "RiflemanData",
-                classname = "monster_rifleman",
-                // attackRange: the asset says 12, but the tree's InAttackRange node carried its own 10 and that is
-                // the value that ever decided anything (6.2 moved the node's numbers here)
-                movementSpeed = 11, attackRange = 10, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
-                attackWindup = 0.35f, burstCount = 3, burstInterval = 0.09f, staggerTime = 0.25f, alertDelay = 0.2f,
-                // 11.11: wander picks a span about the grunt's Home now, so the numbers that made it drift (11.8)
-                // are safe to lower - a 10 m minimum threw most picks in a 15 m disc away, and the rest walked it
-                // off the dock. 4 and 10 keep it roaming a patch.
-                wanderWait = 1f, wanderRadius = 10f, wanderMinDistance = 4f,
-                // 11.8: arriving 5 m short was the Unity agent's remainingDistance <= 5, written for an agent that
-                // steered itself the last stretch; with a path to follow it just left the grunt standing in the open.
-                arriveDistance = 2f,
-                // senses (6.3): the vision trigger was a 10 m sphere — all round; the cone and the memory are new
-                sightRange = 10f, sightFov = 180f, memory = 5f, noise = 30f,
-                muzzleOffset = new Vector3(0f, 0.1f, 0.2f) * 2.25f, // the prefab's ProjectileSpawnPostion, scene-scaled
-                maxHealth = 1000, maxArmor = 0,
-                skeleton = "rifleman",
-                enemyAnimationData = new EnemyAnimationData
-                {
-                    IdleAnimation = new AnimationSheet { AnimationFrames = 1, Sides = 4, AnimationFramesPerSecond = 1, TextureSheet = RiflemanIdle },
-                    AttackAnimation = new AnimationSheet { AnimationFrames = 4, Sides = 1, AnimationFramesPerSecond = 4, TextureSheet = RiflemanAttack },
-                    MoveAnimation = new AnimationSheet { AnimationFrames = 4, Sides = 4, AnimationFramesPerSecond = 5, TextureSheet = RiflemanRun },
-                    DeathAnimation = new AnimationSheet { AnimationFrames = 4, Sides = 4, AnimationFramesPerSecond = 5, TextureSheet = RiflemanDeath },
-                    DeadAnimation = new AnimationSheet { AnimationFrames = 1, Sides = 4, AnimationFramesPerSecond = 1, TextureSheet = RiflemanDead },
-                },
-            };
-            Enemies.All[0] = RiflemanData;
+            // 11.15: the enemy kinds are files (enemies/*.json), one source of truth per kind - the rifleman's block of
+            // numbers that used to live here is enemies/monster_rifleman.json, and a check pins that it bakes to what
+            // this code built. Sheets load through the asset root as they always did.
+            Enemies.All = EnemyDefinitions.Load(rel => Texture2D.Load(A(rel)));
+            if (Enemies.All.Length == 0) Debug.LogWarning("enemies: no definitions found (enemies/*.json) - no kinds can be spawned");
         }
     }
 }
