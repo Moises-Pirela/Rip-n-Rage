@@ -536,3 +536,225 @@ level's own doors and props before anything is spawned. Bake **220 ms** on the j
   no nav draw and no rebake button, so a designer still cannot see where the AI can go while placing brushes.
 - **No local avoidance.** Two grunts in one doorway still shove each other through the solver, as the fence said.
 - **Still no melee damage path** — inherited from layer 9 and untouched here.
+
+
+---
+
+# Part two — what is left, in the order it bites (planned 2026-11-18)
+
+Layer 11 is built and verified targeted. What follows is the rest of the layer: the books, four things the
+build found and put down, the features the plan fenced off, and the editor pass **last**, once 11.10–11.16 have
+said exactly what a designer needs to see. Same rules as part one: one phase, one commit, the sweep's probe lines
+move only where the phase says they will.
+
+## The seams part two attaches to
+
+| Seam | Where | Why it matters |
+|---|---|---|
+| The grid's identity | `NavBakeSystem.FixedTick` sets `Navigation.Current = nav` (`Game/Ecs/AI/Navigation.cs:71`) | a rebake is a **new object**; nothing downstream notices yet |
+| The carve's skip | `NavCarveSystem.Tick`, `if (o.Stamped && …) continue;` (`Engine/Ecs/Nav/NavCarve.cs:136`) | an unmoved obstacle after a rebake is never re-stamped — **a bug** |
+| The side buffer | `NavPaths` dictionary, forgotten only by `OnEntityDestroyed` (`NavPaths.cs:70`) | never cleared on a level start |
+| The wander pick | `AiBrains.Step`, `self + (cos, 0, sin) * dist` (`AiBrain.cs:128`) | a disc about the grunt, not a span; relative to where it is, so it drifts |
+| Melee | `EnemyData.meleeAttackRange` | **no reader anywhere** |
+| The straight-line test | `PathFollowing.StraightLineClear` | one capsule cast + up to 24 rays per enemy per 0.2 s; the place local avoidance would also read |
+| The bake's cost | `NavBake.BakeTile`: down-ray, up-ray, roof-ray, capsule per candidate span | 220 ms on the dock at 8 threads |
+| The probe | `AiProbe` prints `way / corners / at / blocked` | 11.0 asked for `path ms`, `repaths`, `tiles crossed` too — never added |
+| Enemy tuning | `GameAssets.RiflemanData` (code) + `EnemyConfig.kind` (classname only) | the definition is not authored |
+
+## Phase 11.10 — Close the books, and fix what the review found
+
+**Goal.** Layer 11 is actually closed, with the two defects the close-out review turned up fixed first, because a
+sweep that bakes them into the baseline is a sweep that has to be redone.
+
+**Build.**
+
+1. **Rebake re-stamps.** `NavWorld` gets a `BakeId` (a counter the bake increments). `NavCarveSystem` remembers
+   the id it stamped for; when it differs, every `NavObstacle.Stamped` is cleared and `BlockedSpans` reset before
+   the tick's stamping. Check: bake, stamp a door, rebake, the door's spans are blocked again without it moving.
+   Gate: `door` with a `NavRebake()` after the leaf drops — `blocked` must not fall to 45.
+2. **The side buffer is cleared on a level start** (`NavPaths.Clear()` from `NavBakeSystem` when the bake id
+   changes — the same moment). Check: `NavPaths.Count` is 0 after a rebuild.
+3. **The probes 11.0 asked for.** `NavPathSystem` records per-serve `LastNodes` and elapsed ticks; `PathFollow`
+   counts repaths; `AiProbe` prints `nodes N ms T repaths R`. Expected movement: the AI gates' probe lines gain
+   fields and nothing else.
+4. **The sweep, twice**, hermetic and device-isolated. **Re-baseline** `walk` and `menu` manifests (the worldspawn's
+   three nav keys and the rifleman's two components are the only expected differences — read the manifest diff
+   and say so in the commit). Four pixel shots, four editors, the benchmark. Bench interleaved against `0f39630`
+   (11.0) with `--threads 1`: frame time must be flat in the noise; game allocation per frame must be within
+   ~0.5 KB of 10.x (the side buffer, the queue and the searcher are pooled — if it is not flat, one of them is
+   allocating, and that is the finding).
+5. **Layer 10.8's close-out**, which has been open since before this layer: run it with the same sweep.
+
+**Done when.** Both sweeps byte-identical to each other; every diff against the 11.0 sweep is one the commit
+names; the roadmap's Status line for layer 11 loses its "not swept" caveat.
+
+**Commit.** `ECS layer 11.10: the books are closed — rebake re-stamps, the side buffer resets, the sweep is run`
+
+## Phase 11.11 — Wander lives on the grid
+
+**Goal.** A grunt with nothing to do stays where it was put and only ever walks to places it can stand.
+
+**Build.**
+
+- `AiBrain` gains `Home` (set at spawn: the floor position; the prefab bake sets it from `ctx.Position`).
+- The wander pick becomes **a span**: roll a disc about `Home` (not `self`), `Navigation.Current.TryFindSpan`
+  the point with the drop reach, reject if none or not `Open`; three rolls, then idle. `wanderMinDistance` is
+  measured from `self` as before. With picks guaranteed walkable, the 3 s `WanderTimeout` becomes a backstop
+  rather than the usual exit.
+- The rolls still come from `b.Rng` — same dice, same run.
+- **Then** retune: `wanderMinDistance` 10 → 4, `wanderRadius` 15 → 10, now that the thing that made lowering
+  them a drift is gone.
+
+**Checks (game).** A hand-placed grid with a hole: no wander pick lands in the hole across 1000 rolls; the pick is
+within `wanderRadius` of `Home` after the grunt has been displaced 20 m.
+
+**Gates.** `approach` / `close` / `peek` move — the grunt no longer leaves. Record the new values. New gate
+`stay:600`: a grunt alone on the dock for ten seconds ends within `wanderRadius` of where it started.
+
+**Commit.** `ECS layer 11.11: wander picks a span about a home, not a point about itself`
+
+## Phase 11.12 — The bake pays once
+
+**Goal.** Level start, respawn and save-load stop paying 220 ms each.
+
+**Build, in order, measuring after each — stop when the number is good enough:**
+
+1. **2-D clearance erosion.** Replace the per-span `CheckCapsuleConcurrent` with a pass over each tile after
+   sampling: a walkable span whose 8 neighbours (at step height) include a non-walkable or missing one within
+   `ceil(Radius / CellSize)` cells is `Tight`. Conservative by up to one cell; no physics query. Expect −100 ms.
+   Check: the hand-built grid's erosion matches a brute-force distance test.
+2. **Rows as job items**, not tiles: `TileJob` over `(tile, row)` so a long thin pier's tiles stop being the
+   long pole on 8 workers. Expect the 2–2.5× to become 4–5×.
+3. **A cache per map.** Serialize the `NavWorld` (settings, tiles, spans, links) to
+   `$RIPNRAGE_DATA_DIR/nav/<map>-<hash>.bin`, hash = brushes + worldspawn nav keys + the `NavSettings` the body
+   derived (so a profile change misses the cache). Load instead of bake when it hits; bake and write when it
+   misses. Static `Dynamic` counters are zero in the file by construction. Check: round-trip equality; a changed
+   setting misses. **Determinism**: a loaded grid and a baked one must be byte-identical — the `nav` probe is
+   the gate, run cold and warm.
+
+**Done when.** Cold bake < 120 ms, warm (cache hit) < 20 ms on the dock; the `nav` probe identical cold and warm.
+
+**Commit.** `ECS layer 11.12: the bake erodes in 2-D, jobs by row, and is cached per map`
+
+## Phase 11.13 — Local avoidance
+
+**Goal.** Two grunts in one doorway get through it instead of shoving each other through the solver.
+
+**Build.** A **velocity-space** term in `Steering.Step`, not a position hack: each enemy reads the positions and
+`Desired` velocities of neighbours within `AvoidRadius` (~2.5 m) from a snapshot taken **before** the steering
+job (a small array filled serially, read-only in the job — order-independent, so the chunk job stays
+deterministic), and adjusts its own `Desired` by the reciprocal half of the separating velocity (RVO-lite: each
+side does half the work, so two symmetric grunts do not mirror each other for ever). A path corner is not
+abandoned for it — avoidance only perturbs the velocity towards the corner. Capped at the body's speed.
+
+**Checks (game).** Two bodies head-on in a 1.4 m corridor pass; neither stops; the result is identical over two
+runs. Three in a 2 m corridor do not deadlock within 5 s.
+
+**Gates.** New `crowd:600`: two grunts spawned side by side behind the `door` wall, one gap, both arrive and fight
+by frame 500. The existing gates are single-grunt and must not move.
+
+**Commit.** `ECS layer 11.13: enemies make way for each other`
+
+## Phase 11.14 — The hierarchical search (conditional)
+
+**Decide from 11.10's `path ms` / `nodes` probes.** If the worst search on the dock stays under ~0.3 ms and
+under 2000 nodes, **skip this phase and say so**. Otherwise:
+
+- Per tile, a **portal graph**: the open span pairs across each edge, grouped into portals (runs of adjacent
+  cross-tile links), with portal-to-portal costs inside the tile precomputed at bake (Dijkstra per portal, cached
+  in the tile; invalidated with the tile's `Version` on a carve).
+- `NavSearcher.Search` goes two-level when `from` and `to` are in different tiles: A* over portals for the tile
+  corridor, then A* within each tile of the corridor. Same tie-break rules; same `Partial` on budget.
+
+**Checks.** The two-level answer equals the flat answer's length on the two-tile grid and on a hand-built 4×1
+corridor; a carve inside a tile invalidates only that tile's portal costs.
+
+**Commit.** `ECS layer 11.14: long searches go portal to portal`
+
+## Phase 11.15 — The enemy definition is a file, and there is a second enemy
+
+**Goal.** `EnemyData` is authored, whole, and a second kind proves it is.
+
+**Build.**
+
+- `enemies/<classname>.json` with every field of `EnemyData` (movement, engagement, attack readability, the state
+  tree's numbers, the senses, the status, the sheets by sprite name, the skeleton). `Enemies.All` is built from
+  the folder at `GameAssets.Load`; `GameAssets.RiflemanData` becomes `Enemies.ByClassname("monster_rifleman")`.
+  The layer-10 property grid edits it (`[InspectTip]`s carry over), and the prefab watcher reloads it.
+- The rifleman's numbers move into `enemies/monster_rifleman.json` — all of them, in one commit, so the
+  definition has one source of truth. A check pins that the file bakes to what `GameAssets` used to build.
+- **A second kind**: `monster_brawler` — the melee grunt. Same body and sheets as the rifleman for now (the art
+  comes later), `attackRange` = `meleeAttackRange`, no burst, higher `movementSpeed`. It exists to make 11.16
+  real and to prove a kind is data.
+
+**Gates.** The `nav` probe and all AI gates unchanged (same numbers, different source). New `brawler:400`: a
+brawler closes to melee range through the `maze` wall.
+
+**Commit.** `ECS layer 11.15: enemies are files; the brawler is the second`
+
+## Phase 11.16 — The melee damage path
+
+**Goal.** `meleeAttackRange` has a reader; Fury's melee bonus has something to apply to.
+
+**Build.**
+
+- `EnemyAttack`: when the target is within `meleeAttackRange` the attack is a **swing**, not a burst — the same
+  windup telegraph, then a `DamageEvent { Cause = Melee, Instigator = enemy }` on the target if still in range and
+  in the cone at the moment of the swing (one capsule overlap, no projectile). Stagger and the rage hooks
+  (`Instigator`) already read `DamageEvent`.
+- The player side: the fist combo's hits (`AltFire`) post `DamageEvent { Cause = Melee }` where they currently
+  post whatever they post, and `Rage` applies the Fury melee multiplier to `Cause == Melee` — closing layer 9's
+  "still no melee damage path".
+- `DamageCause.Melee` added if absent; the HUD's hit marker does not change.
+
+**Checks (game).** A brawler at 1.5 m swings and the player loses health; at 3 m it does not; a Fury-state jab
+does more than a calm one by exactly the multiplier.
+
+**Gates.** `brawler` now ends with the player hurt; `jab` moves (its probe prints the combo step; add the
+damage); everything else unchanged.
+
+**Commit.** `ECS layer 11.16: melee has a damage path, both ways`
+
+## Phase 11.17 — The editor pass (last, by design)
+
+**Deferred until here on purpose**: by now 11.10–11.16 have said what a designer actually needs to see, instead
+of guessing at 11.7. The needs list to carry in, to be confirmed against what the phases found:
+
+- the grid drawn in the level editor (reuse `NavDebug.Draw`, viewer = the editor camera), with **static vs carved
+  vs tight** as three colours — 11.12's erosion makes *tight* the common reason a doorway is shut, and that is
+  the thing a designer most needs to see;
+- a **Rebake** button and the worldspawn's three nav keys live in the property grid (the editor world has no
+  `NavBakeSystem`; it calls `NavBake.Build` directly — engine-side, no game assembly needed);
+- `NavObstacle` footprints as gizmos on the doors and props that carry them;
+- the `enemies/*.json` definitions (11.15) in the Prefab window, editable;
+- **wander homes and radii** (11.11) drawn for placed monsters, so a designer sees where a grunt will roam;
+- a **reachability paint**: pick a span, flood-fill, tint what it can reach — the question "can the AI get from
+  here to there" answered without running the game;
+- a coverage readout: walkable spans, tight spans, carved spans, unreachable islands.
+
+**Done when.** A designer can place a wall in the editor, press Rebake, and see the doorway shut. The editor is
+a gate in `gates.sh` already; add the nav draw to its script.
+
+**Commit.** `ECS layer 11.17: the editor sees the grid`
+
+## Missing features beyond this layer (for layer 12's survey, not phased here)
+
+Things the AI does not do that the grid now makes possible. Listed so layer 12's plan starts from them rather
+than rediscovers them; none is started.
+
+- **Investigate**: `Chase` walks to `LastKnown` and stands. A grunt that arrives and finds nothing should look —
+  a short search pattern on nearby spans before giving up. Needs 11.11's span picking.
+- **Alert propagation**: hearing passes a target along; nothing passes *alarm*. A grunt that sees the player
+  could make a noise others act on (shout → `Noise` with its own target).
+- **Cover and flank**: spans with a wall between them and the target are cover; a search that weights by
+  exposure finds a flank. Both are span attributes the bake could add cheaply (one ray per span per target is
+  not cheap — do it lazily for the engaged grunt only).
+- **Spawners on the grid**: `monster_spawner` places at its origin; it should place on a walkable span, and
+  not one the player can see.
+- **Off-grid as ground**: riding a moving platform. Carved as an obstacle today; a platform is a span whose
+  floor moves, which the structure cannot express. Only if a level needs it.
+- **Jumping up** as a deliberate move. The drop rule is one-way by design; a jump link is the opposite edge and
+  needs the body to be able to jump, which it currently cannot.
+- **Flow fields** if counts go past ~20 engaged grunts with one target; 11.3's budget is where it would plug in.
+- **Save/load of the nav state**: `PathFollow` / `PathRequest` are runtime and rebuild themselves; carves
+  re-stamp (after 11.10). Nothing to save — confirmed, not assumed, when 11.10 runs `saveload`.
