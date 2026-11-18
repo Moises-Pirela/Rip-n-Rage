@@ -32,7 +32,7 @@ internal static class Layer11Checks
         // the three map keys, and what they fall back to when a level does not say
         var ws = new WorldspawnConfig().Bake();
         var s = NavProfile.For(in ws);
-        True(s.CellSize == 0.5f && s.CellHeight == 0.2f && s.MaxDrop == 2.5f,
+        True(s.CellSize == 0.5f && s.CellHeight == 0.2f && s.MaxDrop == 4f,
              "nav profile: a level that says nothing gets the default cell size, cell height and drop");
 
         var given = new WorldspawnConfig { navCellSize = 0.25f, navCellHeight = 0.1f, navMaxDrop = 4f }.Bake();
@@ -41,5 +41,15 @@ internal static class Layer11Checks
              "nav profile: a level's nav_cell_size / nav_cell_height / nav_max_drop are used");
         True(s2.Radius == NavProfile.Radius && s2.StepUp == NavProfile.StepUp,
              "nav profile: the body's limits are not settings - a map cannot override them");
+
+        // 11.3: the serving order is the placement seed, never the entity index
+        True(NavPathSystem.CompareAskers(10u, 999, 20u, 1) < 0, "nav paths: the lower placement seed is served first, whatever the entity index");
+        True(NavPathSystem.CompareAskers(20u, 1, 10u, 999) > 0, "nav paths: and the higher one second");
+        True(NavPathSystem.CompareAskers(7u, 3, 7u, 9) < 0, "nav paths: two identical placements fall back to the entity index");
+        True(NavPathSystem.CompareAskers(7u, 4, 7u, 4) == 0, "nav paths: the same asker ties with itself");
+
+        // 11.4: the drop rule is at least the ledge guard's reach, or navigation refuses what blind walking allowed
+        True(NavProfile.For(in ws).MaxDrop >= Steering.Drop,
+             $"nav profile: the drop rule covers the ledge guard's reach ({NavProfile.For(in ws).MaxDrop} vs {Steering.Drop})");
     }
 }

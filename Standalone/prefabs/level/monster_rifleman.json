@@ -20,6 +20,8 @@
     "AiBrain": { "monster": "monster_rifleman" },
     "AiIntent": {},
     "EnemyWeapon": {},
+    "PathRequest": {},
+    "PathFollow": {},
     "EnemyVisual": { "sprite": "sprite" },
     "LevelRef": {}
   },

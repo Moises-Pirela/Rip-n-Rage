@@ -520,6 +520,9 @@ namespace RipNRage.Game
         private static void NavGrunt(float x, float y, float z) =>
             Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData), new Vector3(x, y, z), 0f);
 
+        /// <summary>The gates build their walls after the level was baked: the grid has to be told to look again.</summary>
+        private static void NavRebake() => RipNRage.Engine.Ecs.Nav.Navigation.Invalidate();
+
         /// <summary>
         /// The layer-6 watch line: what the nearest enemy is doing and what it has done to the player, read
         /// straight off the world (the enemy is only an entity since 6.6).
@@ -549,8 +552,10 @@ namespace RipNRage.Game
             Vector3 self = w.Get<LocalTransform>(nearest).Position;
             Vector3 goal = brain.MoveTo; goal.y = self.y;
             float goalD = brain.State == AiState.Idle ? -1f : (goal - self).magnitude;
+            var follow = w.Has<RipNRage.Game.Ecs.AI.PathFollow>(nearest) ? w.Get<RipNRage.Game.Ecs.AI.PathFollow>(nearest) : default;
+            string way = follow.Direct ? "direct" : follow.Count > 0 ? $"{follow.Status}" : "none";
             Debug.LogWarning($"[test] {tag}: hp {RipNRage.Game.Ecs.PlayerLink.Health:0} armour {RipNRage.Game.Ecs.PlayerLink.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
-                             $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0} goal d {goalD:0.0} path -1 corners -1");
+                             $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0} goal d {goalD:0.0} way {way} corners {follow.Count} at {follow.Corner}");
         }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;
@@ -785,6 +790,7 @@ namespace RipNRage.Game
                         NavWall(-6f, 6f, NavPlayerZ - 6f);
                         NavGrunt(0f, NavFloorY, NavPlayerZ - 12f);
                     }
+                    if (_frame == 3) NavRebake(); // the wall went up after the level was baked
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
                     if (_frame == 30) NavProbe();
                     if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"maze {_frame}");
@@ -802,6 +808,7 @@ namespace RipNRage.Game
                             new Vector3(0.7f, NavFloorY, NavPlayerZ - 6f), Quaternion.Euler(0f, 90f, 0f));
                         NavGrunt(0f, NavFloorY, NavPlayerZ - 12f);
                     }
+                    if (_frame == 3) NavRebake(); // the wall went up after the level was baked
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
                     if (_frame == 30) NavProbe();
                     if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"door {_frame}");
@@ -819,6 +826,7 @@ namespace RipNRage.Game
                             new Vector3(8f, 3.5f, 8f), Layers.Walkable);
                         NavGrunt(0f, NavFloorY + 3.5f, NavPlayerZ - 18f);
                     }
+                    if (_frame == 3) NavRebake(); // the wall went up after the level was baked
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
                     if (_frame == 30) NavProbe();
                     if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"ledge {_frame}");

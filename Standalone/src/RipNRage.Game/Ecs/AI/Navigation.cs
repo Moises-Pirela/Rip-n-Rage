@@ -61,8 +61,9 @@ namespace RipNRage.Game.Ecs.AI
         public void FixedTick(SystemContext ctx)
         {
             ref var ws = ref World.Singleton<Worldspawn>();
-            if (ws.Version == _bakedVersion) return;
+            if (ws.Version == _bakedVersion && !Navigation.Stale) return;
             _bakedVersion = ws.Version;
+            Navigation.Stale = false;
 
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var nav = NavBake.Build(World, NavProfile.For(in ws), LevelLoader.MeshChunkSize);

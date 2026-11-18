@@ -106,9 +106,18 @@ namespace RipNRage.Game.Ecs.AI
         [InspectAsset(AssetKind.Classname), InspectTip("salts the placement seed, exactly as the kind did")]
         public string monster;
         public override AiBrain Bake() => new AiBrain { State = state };
-        public override AiBrain Bake(in BakeContext ctx) =>
-            new AiBrain { State = state, Rng = ctx.HasEntity ? AiBrains.Seed(ctx.Position, EnemyConfig.KindOf(monster)) : 0u };
+        public override AiBrain Bake(in BakeContext ctx)
+        {
+            uint seed = ctx.HasEntity ? AiBrains.Seed(ctx.Position, EnemyConfig.KindOf(monster)) : 0u;
+            return new AiBrain { State = state, Rng = seed, Order = seed };
+        }
     }
+
+    /// <summary>What this enemy has asked the navigation for (11.3): runtime state, nothing to author.</summary>
+    public sealed class PathRequestConfig : ComponentConfig<PathRequest> { public override PathRequest Bake() => default; }
+
+    /// <summary>The way it is walking (11.4): runtime state, nothing to author.</summary>
+    public sealed class PathFollowConfig : ComponentConfig<PathFollow> { public override PathFollow Bake() => default; }
 
     /// <summary>The look: which entity carries the sprite, and alive (<c>DeadTime</c> &lt; 0).</summary>
     public sealed class EnemyVisualConfig : ComponentConfig<EnemyVisual>

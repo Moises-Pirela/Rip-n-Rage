@@ -80,9 +80,12 @@ namespace RipNRage.Game.Ecs.AI
             w.Add(e, new Enemy { Kind = kind });
             w.Add(e, new Heading { Yaw = yaw }); // the body never turns (6.4): facing is data
             w.Add(e, new Perception());
-            w.Add(e, new AiBrain { Rng = AiBrains.Seed(floorPosition, kind) }); // seeded by the placement: the same run every time
+            var seed = AiBrains.Seed(floorPosition, kind); // seeded by the placement: the same run every time
+            w.Add(e, new AiBrain { Rng = seed, Order = seed });
             w.Add(e, new AiIntent());
             w.Add(e, new EnemyWeapon());
+            w.Add(e, new PathRequest());
+            w.Add(e, new PathFollow());
             w.Add(e, new LevelRef { Index = -1, SpawnerIndex = -1 });
             return e;
         }
@@ -128,9 +131,12 @@ namespace RipNRage.Game.Ecs.AI
             cmd.Add(e, new Enemy { Kind = kind });
             cmd.Add(e, new Heading { Yaw = yaw });
             cmd.Add(e, new Perception());
-            cmd.Add(e, new AiBrain { Rng = AiBrains.Seed(floorPosition, kind) }); // a deferred entity's index is not final
+            var bufferedSeed = AiBrains.Seed(floorPosition, kind); // a deferred entity's index is not final
+            cmd.Add(e, new AiBrain { Rng = bufferedSeed, Order = bufferedSeed });
             cmd.Add(e, new AiIntent());
             cmd.Add(e, new EnemyWeapon());
+            cmd.Add(e, new PathRequest());
+            cmd.Add(e, new PathFollow());
             cmd.Add(e, new LevelRef { Index = -1, SpawnerIndex = spawnerIndex });
             return e;
         }

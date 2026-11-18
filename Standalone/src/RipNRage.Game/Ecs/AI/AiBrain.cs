@@ -31,6 +31,11 @@ namespace RipNRage.Game.Ecs.AI
         /// <summary>This brain's own dice (xorshift state; 0 reseeds itself): wander picks do not touch the shared
         /// <c>Random</c>, so a scripted run plays out the same way every time.</summary>
         public uint Rng;
+        /// <summary>
+        /// The placement seed as it was handed out, never rolled: a stable identity to order this brain by. Path
+        /// requests are served in this order and not in entity order, which a buffered spawn reshuffles (6.7b).
+        /// </summary>
+        public uint Order;
     }
 
     /// <summary>

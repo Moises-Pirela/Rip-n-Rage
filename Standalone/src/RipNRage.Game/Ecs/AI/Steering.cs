@@ -70,7 +70,7 @@ namespace RipNRage.Game.Ecs.AI
     /// it reads what the brain just wrote.
     /// </summary>
     [UpdateAfter(typeof(AiBrainSystem))]
-    [Reads(typeof(Dead), typeof(EnemyWeapon))]
+    [Reads(typeof(Dead), typeof(EnemyWeapon), typeof(PathFollow))]
     public sealed class SteeringSystem : SystemBase, ITick
     {
         private Query _q;
@@ -100,7 +100,10 @@ namespace RipNRage.Game.Ecs.AI
                     var def = Enemies.All[kinds[i].Kind];
                     Vector3 self = ltw[i].Position;
                     float reach = 0.5f * Enemies.Height + m.RideHeight + Steering.Drop; // centre → feet → a drop below
-                    bool ground = !intents[i].Move || Steering.GroundAhead(self, intents[i].MoveTo - self, reach);
+                    // the ledge guard is for a body walking blind. On a path it stands down: every link the search
+                    // used is inside the body's step and drop rules, so the ground ahead is known to be there.
+                    bool onPath = World.Has<PathFollow>(ents[i]) && World.Get<PathFollow>(ents[i]).Count > 0;
+                    bool ground = onPath || !intents[i].Move || Steering.GroundAhead(self, intents[i].MoveTo - self, reach);
                     Steering.Step(ref m, ref headings[i], in intents[i], def, self, ground, Dt);
 
                     ref var v = ref visuals[i];

@@ -10,6 +10,12 @@ namespace RipNRage.Engine.Ecs.Nav
     {
         public static NavWorld Current;
         public static bool Ready => Current != null && Current.TotalSpans > 0;
+
+        /// <summary>Set when something added or removed level geometry after the bake; the bake system rebuilds next step.</summary>
+        public static bool Stale;
+
+        /// <summary>The level's shape changed — rebake. (Moving things do not need this: they carve, 11.5.)</summary>
+        public static void Invalidate() => Stale = true;
     }
 
     /// <summary>What a span is good for. A span that is not <see cref="Walkable"/> is still *there* — it holds the

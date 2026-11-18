@@ -48,7 +48,8 @@ namespace RipNRage.Game.Ecs.AI
     [UpdateAfter(typeof(EnemyAttackSystem))]
     [Writes(typeof(LocalTransform), typeof(ColliderShape), typeof(CollisionFilter), typeof(Body), typeof(BodyVelocity), typeof(CharacterMotor),
             typeof(Health), typeof(Armor), typeof(Hitbox), typeof(Parent), typeof(SpriteRender), typeof(SpriteFx), typeof(EnemyVisual), typeof(Enemy),
-            typeof(Heading), typeof(Perception), typeof(AiBrain), typeof(AiIntent), typeof(EnemyWeapon), typeof(LevelRef))] // everything Enemies.Spawn builds
+            typeof(Heading), typeof(Perception), typeof(AiBrain), typeof(AiIntent), typeof(EnemyWeapon), typeof(PathRequest), typeof(PathFollow),
+            typeof(LevelRef))] // everything Enemies.Spawn builds
     public sealed class SpawnerSystem : SystemBase, ITick
     {
         private Query _spawners, _players, _monsters;
