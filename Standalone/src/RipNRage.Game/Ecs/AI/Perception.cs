@@ -61,7 +61,7 @@ namespace RipNRage.Game.Ecs.AI
         {
             Vector3 d = to - from;
             float len = d.magnitude;
-            return len < 1e-3f || !PhysicsApi.Raycast(from, d / len, len, WallMask);
+            return len < 1e-3f || !PhysicsApi.RaycastConcurrent(from, d / len, len, WallMask); // worker-safe: SightSystem is a chunk job
         }
     }
 
@@ -84,11 +84,17 @@ namespace RipNRage.Game.Ecs.AI
             _players = World.Query().With<PlayerTag>().WithReadOnly<LocalToWorld>().Without<Dead>().Build();
         }
 
-        public void Tick(SystemContext ctx)
+        /// <summary>
+        /// One chunk of eyes on one worker. Each eye reads the players (a query nothing writes during this system)
+        /// and writes only its own <see cref="Perception"/>, so the chunks split any way at all and the result is
+        /// the same; the line-of-sight ray is the worker-safe one.
+        /// </summary>
+        private struct SightJob : IChunkJob
         {
-            float dt = ctx.DeltaTime;
-            foreach (var chunk in _eyes)
+            public SightSystem Owner; public float Dt;
+            public void Execute(in Chunk chunk, int worker)
             {
+                var World = Owner.World;
                 var ps = chunk.Get<Perception>(); var kinds = chunk.Get<Enemy>(); var heads = chunk.Get<Heading>(); var ltw = chunk.Get<LocalToWorld>();
                 for (int i = 0; i < chunk.Length; i++)
                 {
@@ -100,24 +106,30 @@ namespace RipNRage.Game.Ecs.AI
 
                     bool wasSeen = p.Seen;
                     p.Seen = false;
-                    foreach (var pc in _players)
+                    foreach (var pc in Owner._players)
                     {
                         var pl = pc.Get<LocalToWorld>(); var pe = pc.Entities;
                         for (int j = 0; j < pc.Length; j++)
                         {
                             if (!pc.Includes(j)) continue;
                             // a DEPRESSED player is harder to see and sooner forgotten: the state to break contact in (7.3)
-                            if (!CanSee(ltw[i].Position, heads[i].Forward, pl[j].Position, def, SightScale(pe[j]))) continue;
+                            if (!CanSee(ltw[i].Position, heads[i].Forward, pl[j].Position, def, Owner.SightScale(pe[j]))) continue;
                             p.Target = pe[j]; p.LastKnown = pl[j].Position; p.Seen = true; p.SinceSeen = 0f;
                         }
                     }
 
                     p.LostSight = wasSeen && !p.Seen;
                     if (p.Seen || p.Target.IsNull) continue;
-                    p.SinceSeen += dt;
-                    if (p.SinceSeen > def.memory * MemoryScale(p.Target)) p = default;
+                    p.SinceSeen += Dt;
+                    if (p.SinceSeen > def.memory * Owner.MemoryScale(p.Target)) p = default;
                 }
             }
+        }
+
+        public void Tick(SystemContext ctx)
+        {
+            var job = new SightJob { Owner = this, Dt = ctx.DeltaTime };
+            _eyes.ScheduleParallel(ref job, 16);
         }
 
         /// <summary>How much of its sight range an enemy gets against this target (1 for anything with no rage).</summary>

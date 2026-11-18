@@ -396,6 +396,44 @@ namespace RipNRage.Engine
         /// <summary>Concurrent queries are counted per worker by the caller and added here once (no shared counter in the hot loop).</summary>
         internal void AddConcurrentQueries(int n) => _queriesConcurrent += n;
 
+        [ThreadStatic] private static List<ColliderTable.Slot> _concurrentScratchTs;
+        /// <summary>A worker's own candidate list: the shared pool and the visit stamps are the two things a query must not touch off-thread.</summary>
+        private static List<ColliderTable.Slot> ConcurrentScratch { get { var l = _concurrentScratchTs ??= new List<ColliderTable.Slot>(32); l.Clear(); return l; } }
+
+        /// <summary>
+        /// A raycast that is safe from worker threads (the nav bake's columns, the AI's sight and ledge rays): the
+        /// candidates come from <see cref="QueryBoundsConcurrent"/> over the ray's segment box — no visit stamps, a
+        /// thread's own scratch list, one interlocked add for the frame counter — and each is tested with
+        /// <see cref="RaycastSlot"/>, which only reads a baked static. Same answer as <see cref="Raycast"/>; it gives
+        /// up the grid walk's early-out, which is why the main-thread path keeps its stamps. Valid only while
+        /// nothing inserts or moves colliders — inside a system tick, that holds.
+        /// </summary>
+        internal bool RaycastConcurrent(Ray ray, float maxDistance, QueryFilter filter, out RaycastHit hit)
+        {
+            hit = default;
+            if (ray.direction.sqrMagnitude < 1E-12f) return false;
+            float reach = float.IsFinite(maxDistance) ? maxDistance : Physics.MaxCastDistance;
+            var region = new Bounds(ray.origin, ray.origin);
+            region.Encapsulate(ray.GetPoint(reach));
+            var candidates = ConcurrentScratch;
+            QueryBoundsConcurrent(region, filter, candidates);
+            System.Threading.Interlocked.Increment(ref _queriesConcurrent);
+            float best = reach; bool found = false;
+            foreach (var e in candidates)
+                if (RaycastSlot(e, ray, best, out var h) && h.distance < best) { best = h.distance; hit = h; found = true; }
+            return found;
+        }
+
+        /// <summary>Does anything the filter accepts overlap <paramref name="shape"/>? Worker-safe, as <see cref="RaycastConcurrent"/> (the narrow phase's scratch is already per thread).</summary>
+        internal bool OverlapsAnyConcurrent(in CollisionShape shape, QueryFilter filter)
+        {
+            var candidates = ConcurrentScratch;
+            QueryBoundsConcurrent(shape.bounds, filter, candidates);
+            System.Threading.Interlocked.Increment(ref _queriesConcurrent);
+            foreach (var c in candidates) if (Overlaps(c, in shape)) return true;
+            return false;
+        }
+
         // ------------------------------------------------------------------ raycast
 
         public bool Raycast(Ray ray, float maxDistance, QueryFilter filter, out RaycastHit hit)

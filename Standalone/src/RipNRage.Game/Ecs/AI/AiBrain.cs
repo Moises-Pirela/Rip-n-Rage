@@ -144,7 +144,11 @@ namespace RipNRage.Game.Ecs.AI
         }
     }
 
-    /// <summary>Steps every live enemy's brain. A dead enemy's brain stops and its intent reads quiet.</summary>
+    /// <summary>
+    /// Steps every live enemy's brain, as a chunk job on the world's workers: a brain reads its own row and the
+    /// shared definitions and writes its own row, so the rows split any way at all and the result is the same.
+    /// A dead enemy's brain stops and its intent reads quiet.
+    /// </summary>
     [Reads(typeof(Enemy), typeof(Perception), typeof(LocalToWorld), typeof(Dead)), Writes(typeof(AiBrain), typeof(AiIntent))]
     public sealed class AiBrainSystem : SystemBase, ITick
     {
@@ -153,10 +157,10 @@ namespace RipNRage.Game.Ecs.AI
         public override void OnCreate() =>
             _q = World.Query().With<AiBrain>().With<AiIntent>().WithReadOnly<Enemy>().WithReadOnly<Perception>().WithReadOnly<LocalToWorld>().Build();
 
-        public void Tick(SystemContext ctx)
+        private struct BrainJob : IChunkJob
         {
-            float dt = ctx.DeltaTime;
-            foreach (var chunk in _q)
+            public World World; public float Dt;
+            public void Execute(in Chunk chunk, int worker)
             {
                 var brains = chunk.Get<AiBrain>(); var intents = chunk.Get<AiIntent>(); var ps = chunk.Get<Perception>();
                 var kinds = chunk.Get<Enemy>(); var ltw = chunk.Get<LocalToWorld>(); var ents = chunk.Entities;
@@ -164,9 +168,15 @@ namespace RipNRage.Game.Ecs.AI
                 {
                     if (!chunk.Includes(i)) continue;
                     if (World.Has<Dead>(ents[i])) { intents[i] = default; continue; }
-                    AiBrains.Step(ref brains[i], ref intents[i], Enemies.All[kinds[i].Kind], ltw[i].Position, in ps[i], dt);
+                    AiBrains.Step(ref brains[i], ref intents[i], Enemies.All[kinds[i].Kind], ltw[i].Position, in ps[i], Dt);
                 }
             }
+        }
+
+        public void Tick(SystemContext ctx)
+        {
+            var job = new BrainJob { World = World, Dt = ctx.DeltaTime };
+            _q.ScheduleParallel(ref job, 64);
         }
     }
 }

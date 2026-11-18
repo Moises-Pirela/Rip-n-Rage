@@ -4,5 +4,6 @@
   "description": "The level's environment: sun, sky, fog, the kill height, the sky's spin",
   "keys": { "message": "Worldspawn.message", "sun_elevation": "Worldspawn.sunElevation", "sun_azimuth": "Worldspawn.sunAzimuth",
             "sun_color": "Worldspawn.sunColor", "sky_zenith": "Worldspawn.skyZenith", "sky_horizon": "Worldspawn.skyHorizon",
-            "fog_color": "Worldspawn.fogColor", "kill_y": "Worldspawn.killY", "sky_spin": "Worldspawn.skySpin" },
+            "fog_color": "Worldspawn.fogColor", "kill_y": "Worldspawn.killY", "sky_spin": "Worldspawn.skySpin",
+            "nav_cell_size": "Worldspawn.navCellSize", "nav_cell_height": "Worldspawn.navCellHeight", "nav_max_drop": "Worldspawn.navMaxDrop" },
   "components": { "Worldspawn": { "skySpin": 1.2 } } }

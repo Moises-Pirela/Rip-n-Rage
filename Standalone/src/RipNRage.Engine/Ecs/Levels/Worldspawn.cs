@@ -26,6 +26,8 @@ namespace RipNRage.Engine.Ecs.Levels
         public float SunElevation, SunAzimuth;
         public Color SunColor, SkyZenith, SkyHorizon, FogColor;
         public float KillY;
+        /// <summary>The navigation bake's cell size and vertical quantum, and how far the AI may drop (11.1).</summary>
+        public float NavCellSize, NavCellHeight, NavMaxDrop;
         /// <summary>Degrees per second the sky turns (0 = still).</summary>
         public float SkySpin;
         public float SkyAngle;
@@ -46,9 +48,20 @@ namespace RipNRage.Engine.Ecs.Levels
         [InspectRange(-90, 90, 0.1f), InspectTip("degrees per second the sky turns")]
         public float skySpin = 1.2f;
 
+        [InspectRange(0.1f, 2f, 0.05f), InspectTip("navigation: metres per grid cell. Smaller is finer and costs memory (the dock is 8 MB at 0.5, 33 MB at 0.25)")]
+        public float navCellSize = 0.5f;
+        [InspectRange(0.05f, 1f, 0.05f), InspectTip("navigation: the vertical quantum - two floors closer than this in one column are one span")]
+        public float navCellHeight = 0.2f;
+        [InspectRange(0f, 10f, 0.25f), InspectTip("navigation: how far the AI may drop down on purpose")]
+        public float navMaxDrop = 2.5f;
+
         public override Worldspawn Bake()
         {
-            var ws = new Worldspawn { KillY = killY, SkySpin = skySpin };
+            var ws = new Worldspawn
+            {
+                KillY = killY, SkySpin = skySpin,
+                NavCellSize = navCellSize, NavCellHeight = navCellHeight, NavMaxDrop = navMaxDrop,
+            };
             if (sunElevation.HasValue) { ws.Given |= WorldspawnGiven.SunElevation; ws.SunElevation = sunElevation.Value; }
             if (sunAzimuth.HasValue) { ws.Given |= WorldspawnGiven.SunAzimuth; ws.SunAzimuth = sunAzimuth.Value; }
             if (sunColor != null) { ws.Given |= WorldspawnGiven.SunColor; ws.SunColor = ConfigUtil.Color(sunColor); }

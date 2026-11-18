@@ -53,6 +53,7 @@ internal static class Program
             Layer4Checks.Run(True);
             Layer5Checks.Run(True);
             Layer10Checks.Run(True);
+            Layer11Checks.Run(True);
             Console.WriteLine($"PASS: {_assertions} bounded engine math assertions");
             return 0;
         }

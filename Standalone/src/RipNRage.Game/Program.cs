@@ -452,6 +452,28 @@ namespace RipNRage.Game
             return _pickups.Count;
         }
 
+        /// <summary>
+        /// 11.1: what the bake made of the real level. The unit checks run on hand-built grids (the bake needs the
+        /// physics world); this is the gate on the sampling itself — tiles, spans and the settings they were cut
+        /// with, which must not drift between runs.
+        /// </summary>
+        private static void NavProbe()
+        {
+            var nav = RipNRage.Engine.Ecs.Nav.Navigation.Current;
+            if (nav == null) { Debug.LogWarning("[test] nav: not baked"); return; }
+            int tiles = 0, walkable = 0, columns = 0;
+            foreach (var t in nav.Tiles)
+            {
+                if (t == null) continue;
+                tiles++;
+                columns += t.Columns.Length;
+                foreach (var sp in t.Spans) if (sp.Walkable) walkable++;
+            }
+            Debug.LogWarning($"[test] nav: tiles {tiles} spans {nav.TotalSpans} walkable {walkable} columns {columns} " +
+                             $"cell {nav.Settings.CellSize:0.00} step {nav.Settings.StepUp:0.00} drop {nav.Settings.MaxDrop:0.00} " +
+                             $"radius {nav.Settings.Radius:0.000} height {nav.Settings.Height:0.00}");
+        }
+
         /// <summary>9.1: interned meshes / textures / materials — the same before and after a level rebuild, or it leaks
         /// (the physics props' 13 boxes per build still do, until 9.2).</summary>
         private static void MeshProbe() =>
@@ -484,84 +506,6 @@ namespace RipNRage.Game
         // way): it is told where he is by the **gunshot** at frame 30 — a 30 m noise, and a wall only muffles past
         // half of that (Noises.WallMuffle), so the grunt hears him through it and chases the sound. What it does
         // next is the gate: today it walks the straight line and grinds, because there is no path to follow.
-
-        /// <summary>
-        /// 11.0 scaffolding, deleted at 11.1: what a nav bake of this level would cost. Walks the static colliders
-        /// for the level's bounds, then samples every column at a cell size by casting down through it and counting
-        /// the walkable tops (the bake's step 1-3, minus the clearance erosion). Prints the numbers that set the
-        /// worldspawn defaults. Run with `--script navmeasure --frames 20`.
-        /// </summary>
-        private static void NavMeasure()
-        {
-            var w = Application.Current.World;
-            // the level's extent, from the static colliders the brushes became. A convex brush carries its world
-            // vertices, so it measures exactly; the dock's water and sky planes are hundreds of metres across and
-            // are *excluded* — they are what makes a naive bounds unusable (see the numbers in LAYER11_NAV.md).
-            var q = w.Query().WithReadOnly<RipNRage.Engine.Ecs.Physics.ColliderShape>().WithReadOnly<LocalToWorld>().Build();
-            Vector3 lo = new Vector3(1e9f, 1e9f, 1e9f), hi = new Vector3(-1e9f, -1e9f, -1e9f);
-            Vector3 allLo = lo, allHi = hi;
-            int statics = 0, huge = 0;
-            const float HugeExtent = 200f;
-            foreach (var chunk in q)
-            {
-                var shapes = chunk.Get<RipNRage.Engine.Ecs.Physics.ColliderShape>(); var ltw = chunk.Get<LocalToWorld>();
-                for (int i = 0; i < chunk.Length; i++)
-                {
-                    if (!chunk.Includes(i) || !shapes[i].IsStatic) continue;
-                    statics++;
-                    Vector3 blo, bhi;
-                    if (shapes[i].Kind == RipNRage.Engine.Ecs.Physics.ShapeKind.Convex)
-                    {
-                        var asset = RipNRage.Engine.Ecs.Physics.PhysicsAssets.Hulls.Resolve(shapes[i].Hull);
-                        if (asset == null || asset.Vertices.Length == 0) continue;
-                        blo = bhi = asset.Vertices[0];           // StaticConvex interns world-space vertices
-                        foreach (var v in asset.Vertices) { blo = Vector3.Min(blo, v); bhi = Vector3.Max(bhi, v); }
-                    }
-                    else
-                    {
-                        var c = ltw[i].Position + shapes[i].Center;
-                        var e = shapes[i].Kind == RipNRage.Engine.Ecs.Physics.ShapeKind.Box ? shapes[i].Size * 0.5f
-                              : new Vector3(shapes[i].Radius, Mathf.Max(shapes[i].Radius, shapes[i].Height * 0.5f), shapes[i].Radius);
-                        blo = c - e; bhi = c + e;
-                    }
-                    allLo = Vector3.Min(allLo, blo); allHi = Vector3.Max(allHi, bhi);
-                    if (bhi.x - blo.x > HugeExtent || bhi.z - blo.z > HugeExtent) { huge++; continue; }
-                    lo = Vector3.Min(lo, blo); hi = Vector3.Max(hi, bhi);
-                }
-            }
-            Debug.LogWarning($"[test] nav bounds all ({allLo.x:0.0} {allLo.y:0.0} {allLo.z:0.0}) .. ({allHi.x:0.0} {allHi.y:0.0} {allHi.z:0.0}) " +
-                             $"size {allHi.x - allLo.x:0.0} x {allHi.z - allLo.z:0.0}; statics {statics}, {huge} over {HugeExtent:0} m excluded");
-            Debug.LogWarning($"[test] nav bounds played ({lo.x:0.0} {lo.y:0.0} {lo.z:0.0}) .. ({hi.x:0.0} {hi.y:0.0} {hi.z:0.0}) " +
-                             $"size {hi.x - lo.x:0.0} x {hi.y - lo.y:0.0} x {hi.z - lo.z:0.0}");
-            float tile = LevelLoader.MeshChunkSize;
-            Debug.LogWarning($"[test] nav tiles at {tile:0} m: {Mathf.CeilToInt((hi.x - lo.x) / tile)} x {Mathf.CeilToInt((hi.z - lo.z) / tile)}");
-
-            foreach (float cell in new[] { 0.5f, 0.25f })
-            {
-                int nx = Mathf.CeilToInt((hi.x - lo.x) / cell), nz = Mathf.CeilToInt((hi.z - lo.z) / cell);
-                int columns = nx * nz, spans = 0, occupied = 0;
-                float top = hi.y + 1f, span = hi.y - lo.y + 2f;
-                for (int iz = 0; iz < nz; iz++)
-                    for (int ix = 0; ix < nx; ix++)
-                    {
-                        var at = new Vector3(lo.x + (ix + 0.5f) * cell, top, lo.z + (iz + 0.5f) * cell);
-                        int here = 0; float y = top;
-                        for (int guard = 0; guard < 16; guard++) // every solid top in the column, not just the first
-                        {
-                            if (!RipNRage.Engine.Physics.Raycast(new Vector3(at.x, y, at.z), Vector3.down, out var hit, y - lo.y + 1f, Noises.WallMask)) break;
-                            here++;
-                            y = hit.point.y - 0.05f;
-                            if (y <= lo.y) break;
-                        }
-                        spans += here;
-                        if (here > 0) occupied++;
-                    }
-                // NavSpan is 16 bytes, NavColumn 8
-                double mb = (spans * 16.0 + columns * 8.0) / (1024 * 1024);
-                Debug.LogWarning($"[test] nav cell {cell:0.00} m: {nx} x {nz} = {columns} columns, {occupied} with ground, " +
-                                 $"{spans} spans ({(occupied > 0 ? (float)spans / occupied : 0f):0.00} per occupied column), {mb:0.00} MB");
-            }
-        }
 
         /// <summary>The dock floor the nav gates build on, and the spot the player is teleported to.</summary>
         private const float NavFloorY = 0.91f, NavPlayerZ = 8f;
@@ -832,10 +776,6 @@ namespace RipNRage.Game
                     RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 55 ? new Vector2(-0.25f, 1f) : Vector2.zero;
                     if (_frame == 60 || _frame == 150 || _frame == 290) AiProbe($"close {_frame}");
                     break;
-                case "navmeasure":
-                    // 11.0 scaffolding (not in the sweep): sizes the bake. Deleted at 11.1.
-                    if (_frame == 5) NavMeasure();
-                    break;
                 case "maze":
                     // a wall across the run, the grunt behind it. It hears the shot, chases the sound and meets
                     // 12 m of wall with a 6 m way round either end. Today: it grinds on the wall and never arrives.
@@ -846,6 +786,7 @@ namespace RipNRage.Game
                         NavGrunt(0f, NavFloorY, NavPlayerZ - 12f);
                     }
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
+                    if (_frame == 30) NavProbe();
                     if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"maze {_frame}");
                     break;
                 case "door":
@@ -862,6 +803,7 @@ namespace RipNRage.Game
                         NavGrunt(0f, NavFloorY, NavPlayerZ - 12f);
                     }
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
+                    if (_frame == 30) NavProbe();
                     if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"door {_frame}");
                     break;
                 case "ledge":
@@ -878,6 +820,7 @@ namespace RipNRage.Game
                         NavGrunt(0f, NavFloorY + 3.5f, NavPlayerZ - 18f);
                     }
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
+                    if (_frame == 30) NavProbe();
                     if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"ledge {_frame}");
                     break;
                 case "evade":

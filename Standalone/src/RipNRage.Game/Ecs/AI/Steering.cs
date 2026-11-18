@@ -58,14 +58,16 @@ namespace RipNRage.Game.Ecs.AI
         {
             direction.y = 0f;
             if (direction.sqrMagnitude < 1e-6f) return true;
-            return PhysicsApi.Raycast(self + direction.normalized * LookAhead, Vector3.down, reach, Noises.WallMask);
+            return PhysicsApi.RaycastConcurrent(self + direction.normalized * LookAhead, Vector3.down, reach, Noises.WallMask); // worker-safe: SteeringSystem is a chunk job
         }
     }
 
     /// <summary>
     /// Moves every enemy body on its brain's intent: the motor gets the wanted velocity, the heading turns, and the
-    /// sheet shows walking or standing (never over an attack or a death the GameObject half is playing). A dead
-    /// enemy's body is braked. Runs alone (the ledge guard is a physics query).
+    /// sheet shows walking or standing (never over an attack or a death the visual system is playing). A dead
+    /// enemy's body is braked. A chunk job: each row reads its own components (and the shared definitions) and
+    /// writes its own; the ledge guard is the worker-safe raycast. Still a batch of its own in the schedule —
+    /// it reads what the brain just wrote.
     /// </summary>
     [UpdateAfter(typeof(AiBrainSystem))]
     [Reads(typeof(Dead), typeof(EnemyWeapon))]
@@ -77,10 +79,10 @@ namespace RipNRage.Game.Ecs.AI
             _q = World.Query().With<CharacterMotor>().With<Heading>().With<EnemyVisual>()
                 .WithReadOnly<AiIntent>().WithReadOnly<Enemy>().WithReadOnly<LocalToWorld>().Build();
 
-        public void Tick(SystemContext ctx)
+        private struct SteerJob : IChunkJob
         {
-            float dt = ctx.DeltaTime;
-            foreach (var chunk in _q)
+            public World World; public float Dt;
+            public void Execute(in Chunk chunk, int worker)
             {
                 var motors = chunk.Get<CharacterMotor>(); var headings = chunk.Get<Heading>(); var visuals = chunk.Get<EnemyVisual>();
                 var intents = chunk.Get<AiIntent>(); var kinds = chunk.Get<Enemy>(); var ltw = chunk.Get<LocalToWorld>(); var ents = chunk.Entities;
@@ -99,13 +101,19 @@ namespace RipNRage.Game.Ecs.AI
                     Vector3 self = ltw[i].Position;
                     float reach = 0.5f * Enemies.Height + m.RideHeight + Steering.Drop; // centre → feet → a drop below
                     bool ground = !intents[i].Move || Steering.GroundAhead(self, intents[i].MoveTo - self, reach);
-                    Steering.Step(ref m, ref headings[i], in intents[i], def, self, ground, dt);
+                    Steering.Step(ref m, ref headings[i], in intents[i], def, self, ground, Dt);
 
                     ref var v = ref visuals[i];
                     if (v.State == AnimationState.IDLE || v.State == AnimationState.MOVING)
                         v.State = m.Desired.sqrMagnitude > 0f ? AnimationState.MOVING : AnimationState.IDLE;
                 }
             }
+        }
+
+        public void Tick(SystemContext ctx)
+        {
+            var job = new SteerJob { World = World, Dt = ctx.DeltaTime };
+            _q.ScheduleParallel(ref job, 32);
         }
     }
 }

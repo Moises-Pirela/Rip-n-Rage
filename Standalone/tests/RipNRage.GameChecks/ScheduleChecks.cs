@@ -28,8 +28,10 @@ internal static class ScheduleChecks
         },
         ["FixedTick"] = new[]
         {
+            // NavBakeSystem (11.1) is a batch of its own, after PhysicsSyncSystem: it reads the broadphase the
+            // sync system has just filled, and writes engine-side shared data rather than components
             "PhysicsSyncSystem", "RagdollSystem", "JointSystem", "KinematicMoverSystem", "CameraShakeSystem",
-            "PlayerMoveSystem", "CharacterMotorSystem", "PhysicsStepSystem", "PhysicsWriteBackSystem", "TriggerSystem",
+            "NavBakeSystem", "PlayerMoveSystem", "CharacterMotorSystem", "PhysicsStepSystem", "PhysicsWriteBackSystem", "TriggerSystem",
             "SliderPatrolSystem",
         },
         ["LateTick"] = new[]

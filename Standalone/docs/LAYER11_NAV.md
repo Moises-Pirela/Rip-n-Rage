@@ -217,6 +217,101 @@ two runs and across two searcher instances; allocation after warm-up is zero.
 
 ---
 
+## What 11.1 / 11.2 actually did (2026-11-18), and where they left the spec
+
+Built in one pass. `Engine/Ecs/Nav/`: `NavGrid.cs` (types + `Navigation.Current`), `NavBake.cs`,
+`NavSearch.cs`. Game side: `Game/Ecs/AI/Navigation.cs` (`NavProfile`, `NavBakeSystem`). Checks:
+`EngineChecks/Layer11Checks.cs` (+35 assertions, 300 total), `GameChecks/Layer11Checks.cs` (+11, 494 total).
+
+**The dock bakes**: 129 tiles, 130,678 spans, 113,082 of them walkable, over 132,096 columns, at cell 0.50 m —
+with the derived limits the probe prints and the checks pin: step 0.60, radius 0.338, headroom 1.90.
+
+**Four places the build departed from the plan, and why:**
+
+1. **The bake is a system, not a call in `LevelBuild.Build`.** A brush becomes a static collider through
+   `PhysicsEntities`, and those *register at the next fixed step* — at the end of the build the broadphase is
+   still empty, so the planned synchronous bake cast its rays through nothing. `NavBakeSystem` runs after
+   `PhysicsSyncSystem`, rebaking whenever `Worldspawn.Version` changes (the same hook `WorldspawnSystem` uses,
+   which already covers a scene reset). It creates no entities, so the 9.x build/system rule is not in play.
+   The schedule check caught the new system immediately and `ScheduleChecks.Expected` is updated — 6.7c working
+   as designed.
+2. **Links cross tiles directly; the two-level portal A* is deferred.** Links are built in one pass after every
+   tile has its spans, so a link may already span a tile edge — that *is* the spec's portal, and a search
+   crosses tiles today (there is a check for it). What is not built is the **hierarchical** search (A* over a
+   portal graph, then inside each tile). Plain A* with a node budget is correct and simpler; the hierarchy is
+   an optimisation that should be driven by a measurement, and 11.9's bench is where that measurement belongs.
+   `NavSearcher.MaxNodes` (4000) and the `Partial` status exist so a long search degrades instead of stalling.
+3. **Bounds and ground are two different questions.** The 11.0 finding said to exclude scenery over 200 m from
+   the level's extent. The first implementation then also refused to *stand* on it — and lost 21,000 spans,
+   because the dock's floor plane is one of those huge colliders. `NavBake.Bounds` now returns two lists: what
+   sizes the grid (scenery excluded) and what can hold a body up (everything). A column no solid covers at all
+   is still skipped without casting.
+4. **The unit checks build their grids by hand.** A baked check needs the process-wide `Physics.World`, which
+   every other suite in the same process has also been writing to; two static boxes in a fresh check world gave
+   only one queryable collider, for reasons that are not navigation's. The checks now construct `NavWorld`s from
+   a character map and link them with **`NavBake.Link` — the real link builder, made public for exactly this** —
+   so the step, drop and corner rules under test are the shipping rules. The bake's own sampling is gated on the
+   real level instead, by the `[test] nav:` probe in `maze` / `door` / `ledge`.
+
+**The open problem: the bake costs 513 ms on the dock**, against the 50 ms the risk table set as the sign of
+trouble. It is a load-time cost, not a frame cost, and it is paid again on every level build (a respawn, a save
+load). Where it goes: ~137 ms in the per-span capsule clearance check, the rest in the two raycasts per column.
+The planned answer — tiles in parallel — was **not taken**, because `PhysicsWorld.Raycast` increments a shared
+counter and nothing else in the engine queries it off-thread; a data race in the one system that must stay
+byte-deterministic is a bad trade for a load-time win. The cheap deterministic win was taken instead (skip
+columns no solid covers, ~55 ms). Real options, in order of preference, for a follow-up phase:
+2-D clearance erosion per span level instead of a capsule query per span; caching a bake per `.map` behind a
+content hash; and only then threading, after making the query path provably side-effect free.
+
+**The bake and the AI are on the job system (same day, after the above).** The open problem's first answer
+turned out to be the engine's own: `PhysicsWorld.QueryBoundsConcurrent` already existed — a stamp-free broadphase
+the rigid solver's narrow phase runs on its workers. What was missing was a raycast and an overlap on top of it.
+`RaycastConcurrent` / `OverlapsAnyConcurrent` (and the `Physics.RaycastConcurrent` / `CheckCapsuleConcurrent`
+facade) take their candidates from it over the ray's segment box, test each with `RaycastSlot` (reads a baked
+static), keep a `[ThreadStatic]` scratch list instead of the shared pool, and count with one interlocked add
+instead of the shared counter. The narrow phase's own scratch was already per thread. They give the main-thread
+answer hit for hit — checked — and give up only the grid walk's early-out, which is why the main-thread path
+keeps its stamps.
+
+On that: **the bake's tiles are items of one `IJob` on `World.Jobs`** (item i fills slot i and nothing else;
+linking stays the serial pass), and **`AiBrainSystem`, `SteeringSystem` and `SightSystem` are chunk jobs**
+(`ScheduleParallel`, batches of 64 / 32 / 16). `HearingSystem` stays serial: it writes across two queries and
+destroys entities, and noises are few. The schedule is unchanged — each AI system is still a batch of its own,
+because each reads what the one before it wrote; what changed is that each batch now uses every worker.
+
+| | serial | on the job system (8-thread pool) |
+|---|---|---|
+| dock bake | 514 ms | **208–260 ms**, same 129 tiles / 130,678 spans / 113,082 walkable |
+| `maze` `door` `ledge` `approach` `peek` `close` `killenemy` | — | **byte-identical** probe lines |
+
+Why that stays deterministic, in three facts rather than hope: a brain, a body or an eye reads its own row (and
+shared immutable data) and writes its own row, so a chunk's result does not depend on which worker ran it or
+when; a tile writes its own arrays and reads a broadphase nothing moves inside a fixed tick, and the spans are
+numbered in tile order afterwards; and the gate sweep runs the ECS pool at **8 threads** even under
+`--threads 1` (that flag sizes the rigid solver's pool, not the world's), so the byte-identical sweep *is* the
+parallel case, not a single-threaded alibi. The bake's speed-up is only ~2–2.5× on eight threads: the dock is
+a long pier whose tiles are unequal (one item per tile, no splitting inside a tile), and the M1 is four fast
+cores and four slow ones. A finer item — a tile's rows — is the next step if 250 ms still matters.
+
+**Two things the agreement check turned up.** First, a capsule wholly inside a box reads as *not* overlapping
+on both query paths — the GJK deep-overlap blind spot the physics suite's own box report already notes. The bake
+had leaned on the capsule to reject a floor span *inside* a wall's footprint (the ground under a brush), and the
+up-ray cannot see that wall either, because it starts inside it. The bake now casts a **roof ray** down from the
+top of the body's height to just above the floor: an enclosing solid's top is found in between, and the span is
+LowCeiling. It fired on nothing in the dock (same 130,678 / 113,082) and costs ~50 ms, and stays: the `maze`
+wall sits on the floor plane, which is exactly this case, and 11.4 will path around it. Second, the check world
+in this process cannot produce a positive capsule overlap at all — not even touching the face — while the game's
+bake marks thousands of spans Tight with the same call; the check therefore asserts only that the two paths
+agree, which is its claim, and leaves which answer is right to the physics suite.
+
+**Not yet true of 11.2** (the spec's wording, honestly scored): the search is deterministic, pooled and
+zero-allocation once warm (all three checked), string-pulls, refuses corner cuts, honours one-way drops and the
+carve counter. It is *not* hierarchical, and its string pull is purely geometric — the spec's "within a span
+surface" phrasing anticipated a physics-aware pull, which would cost a cast per corner and is not needed while
+11.4 keeps the straight-line test in front of it.
+
+---
+
 ## Phase 11.3 — Requests are budgeted
 
 **Goal.** A gameplay-side service: ask for a path, get one within a bounded per-tick cost, in an order that does

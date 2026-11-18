@@ -130,6 +130,18 @@ namespace RipNRage.Engine
 
         // ---- ray queries ----
 
+        /// <summary>
+        /// The worker-thread raycast (see <c>PhysicsWorld.RaycastConcurrent</c>): the same hit as <see cref="Raycast"/>,
+        /// callable from a chunk job or a bake job. Solids only.
+        /// </summary>
+        public static bool RaycastConcurrent(Vector3 origin, Vector3 direction, out RaycastHit hit, float maxDistance = float.PositiveInfinity, int layerMask = DefaultRaycastLayers) =>
+            World.RaycastConcurrent(new Ray(origin, direction), maxDistance, QueryFilter.Solids(layerMask), out hit);
+        public static bool RaycastConcurrent(Vector3 origin, Vector3 direction, float maxDistance = float.PositiveInfinity, int layerMask = DefaultRaycastLayers) =>
+            World.RaycastConcurrent(new Ray(origin, direction), maxDistance, QueryFilter.Solids(layerMask), out _);
+        /// <summary>The worker-thread <see cref="CheckCapsule"/>.</summary>
+        public static bool CheckCapsuleConcurrent(Vector3 point1, Vector3 point2, float radius, int layerMask = DefaultRaycastLayers) =>
+            World.OverlapsAnyConcurrent(CapsuleShape(point1, point2, radius), QueryFilter.Solids(layerMask));
+
         public static bool Raycast(Vector3 origin, Vector3 direction, out RaycastHit hit, float maxDistance = float.PositiveInfinity, int layerMask = DefaultRaycastLayers, bool includeTriggers = false) =>
             World.Raycast(new Ray(origin, direction), maxDistance, new QueryFilter { layerMask = layerMask, includeTriggers = includeTriggers }, out hit);
         public static bool Raycast(Vector3 origin, Vector3 direction, float maxDistance = float.PositiveInfinity, int layerMask = DefaultRaycastLayers) =>
