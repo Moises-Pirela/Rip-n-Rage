@@ -458,7 +458,12 @@ namespace RipNRage.Game.Content
                 movementSpeed = 11, attackRange = 10, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
                 attackWindup = 0.35f, burstCount = 3, burstInterval = 0.09f, staggerTime = 0.25f, alertDelay = 0.2f,
                 wanderWait = 1f, wanderRadius = 15f, wanderMinDistance = 10f, // BehaviorTree2: Wait(1), RandomLocation(r=15, min=10)
-                arriveDistance = 5f, // AIAgent.HasReachedLocation: remainingDistance <= 5
+                // 11.8: arriving 5 m short was the Unity agent's remainingDistance <= 5, written for an agent that
+                // steered itself the last stretch. With a path to follow it just left the grunt standing in the
+                // open. The wander numbers are deliberately NOT retuned with it: wander picks relative to where the
+                // grunt *is*, so accepting more picks makes it random-walk off the dock faster (min 4 sent it 43 m
+                // out in 290 frames). Anchoring wander to a home point is the fix, and that is behaviour design.
+                arriveDistance = 2f,
                 // senses (6.3): the vision trigger was a 10 m sphere — all round; the cone and the memory are new
                 sightRange = 10f, sightFov = 180f, memory = 5f, noise = 30f,
                 muzzleOffset = new Vector3(0f, 0.1f, 0.2f) * 2.25f, // the prefab's ProjectileSpawnPostion, scene-scaled

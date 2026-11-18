@@ -76,6 +76,7 @@ namespace RipNRage.Game
                     case "--no-vsync": options.VSync = false; break;
                     case "--ecs-demo": ecsDemo = true; break;
                     case "--overlay": DebugOverlay.ForcedMode = int.Parse(Next()); break;
+                    case "--nav-debug": RipNRage.Engine.Ecs.Nav.NavDebug.Enabled = true; break;
                     case "--windowed": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Windowed; displayFromCli = true; break;
                     case "--borderless": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Borderless; displayFromCli = true; break;
                     case "--fullscreen": options.DisplayMode = RipNRage.Engine.Platform.DisplayMode.Fullscreen; displayFromCli = true; break;
@@ -223,6 +224,25 @@ namespace RipNRage.Game
         public bool visible { get => mode > 0; set => mode = value ? 2 : 0; }
         private static string _message = ""; private static float _messageTimer;
 
+        /// <summary>11.7: the grid around the camera and what each enemy is walking (--nav-debug, or F4).</summary>
+        private static readonly System.Collections.Generic.List<Entity> _navEnemies = new System.Collections.Generic.List<Entity>();
+
+        private static void DrawNavDebug()
+        {
+            if (!RipNRage.Engine.Ecs.Nav.NavDebug.Enabled) return;
+            var w = Application.Current?.World;
+            if (w == null) return;
+            RipNRage.Engine.Ecs.Nav.NavDebug.Draw(RipNRage.Game.Ecs.PlayerCamera.Position);
+            Enemies.Collect(w, _navEnemies);
+            foreach (var e in _navEnemies)
+            {
+                if (!w.Has<RipNRage.Game.Ecs.AI.PathFollow>(e)) continue;
+                var f = w.Get<RipNRage.Game.Ecs.AI.PathFollow>(e);
+                if (f.Count <= 0 || !RipNRage.Game.Ecs.AI.NavPaths.TryGet(e, out var path)) continue;
+                RipNRage.Engine.Ecs.Nav.NavDebug.DrawPath(path, f.Corner, f.Count, new Color(0.3f, 0.8f, 1f, 0.9f));
+            }
+        }
+
         public DebugOverlay()
         {
             Current = this;
@@ -239,6 +259,8 @@ namespace RipNRage.Game
             if (Input.GetKeyDown(KeyCode.F7)) RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.LoadCheckpoint, debug: true);
             if (Input.GetKeyDown(KeyCode.F8)) RipNRage.Game.Ecs.Flows.Ask(RipNRage.Game.Ecs.FlowAction.Restart, debug: true);
             if (Input.GetKeyDown(KeyCode.F3)) { mode = (mode + 1) % 3; RipNRage.Game.Content.GraphicsSettings.Current.overlayMode = mode; RipNRage.Game.Content.GraphicsSettings.Save(); }
+            if (Input.GetKeyDown(KeyCode.F4)) RipNRage.Engine.Ecs.Nav.NavDebug.Enabled = !RipNRage.Engine.Ecs.Nav.NavDebug.Enabled; // 11.7
+            DrawNavDebug();
             if (Input.GetKeyDown(KeyCode.F4)) Application.Current.Renderer.PostFx.Enabled = !Application.Current.Renderer.PostFx.Enabled;
             if (Input.GetKeyDown(KeyCode.F5)) { Application.Current.Tunables?.Reload(); ShaderLibrary.ReloadAll(); }
             if (Input.GetKeyDown(KeyCode.F12)) Application.Current.Screenshot("screenshot_" + Time.frameCount + ".png");
