@@ -735,6 +735,14 @@ corridor; a carve inside a tile invalidates only that tile's portal costs.
 
 **Commit.** `ECS layer 11.14: long searches go portal to portal`
 
+### 11.14 — skipped, with the numbers (2026-11-18)
+
+The phase was conditional on 11.10's probes: build the two-level portal search only if the worst search on the
+dock passes ~2000 nodes. It does not. `nodes` on the gates: `maze` 415, `ledge` 256, `door` 685 (the reroute
+round the whole wall), `approach` / `close` / `peek` 0 (straight line, no search at all). A fifth of the budget,
+on a level 724 m long. The flat A* with `MaxNodes` 4000 and `Partial` stays; the portal graph is written down in
+the plan above for the level that needs it.
+
 ## Phase 11.15 — The enemy definition is a file, and there is a second enemy
 
 **Goal.** `EnemyData` is authored, whole, and a second kind proves it is.
