@@ -350,6 +350,34 @@ internal static class Layer11Checks
             Navigation.Current = null;
         }
 
+        // ---- 11.12 the cache: written and read back, the grid is the same grid; another setting is another key
+        {
+            var nav = Grid(".....",
+                           "..#..",
+                           "..s..",
+                           ".d...");
+            string file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ripnrage-navcache-check-{System.Diagnostics.Process.GetCurrentProcess().Id}.nav");
+            try
+            {
+                NavCache.Save(file, nav);
+                True(NavCache.TryLoad(file, nav.Settings, nav.TileSize, out var back), "nav cache: a saved grid loads");
+                True(NavCache.SameGrid(nav, back), "nav cache: the loaded grid is the baked grid - tiles, columns, spans and links");
+                True(back.BakeId != nav.BakeId, "nav cache: a loaded grid is a new bake to the carve system");
+                var other = nav.Settings; other.Radius += 0.1f;
+                True(!NavCache.TryLoad(file, other, nav.TileSize, out _), "nav cache: a grid baked for another body is not loaded");
+                True(!NavCache.TryLoad(file, nav.Settings, nav.TileSize + 1f, out _), "nav cache: nor one cut to another tile size");
+
+                using var w = new RipNRage.Engine.Ecs.World(0);
+                w.AddSystemsFromAssemblies(typeof(RipNRage.Engine.Ecs.World).Assembly);
+                RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(w, new Vector3(0, -0.5f, 0), Quaternion.identity, new Vector3(8, 1, 8), Layers.Walkable);
+                for (int i = 0; i < 3; i++) w.Update(1f / 60f);
+                ulong k1 = NavCache.Key(w, nav.Settings, 16f), k2 = NavCache.Key(w, nav.Settings, 16f), k3 = NavCache.Key(w, other, 16f);
+                True(k1 == k2, "nav cache: the same level and settings key the same");
+                True(k1 != k3, "nav cache: another body keys differently");
+            }
+            finally { try { System.IO.File.Delete(file); } catch { } }
+        }
+
         // ---- determinism and the allocation floor
         {
             var nav = Grid(".....",

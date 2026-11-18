@@ -120,7 +120,7 @@ namespace RipNRage.Engine.Ecs.Nav
             for (int i = 0; i < work.Count; i++)
                 if (job.Out[i] != null && job.Out[i].Spans.Length > 0) nav.Tiles[work[i].tz * nav.TilesX + work[i].tx] = job.Out[i];
 
-            Link(nav);
+            Link(nav, world.Jobs);
             return nav;
         }
 
@@ -129,12 +129,23 @@ namespace RipNRage.Engine.Ecs.Nav
         /// has its spans, so a link may cross a tile edge (the spec's portals). Public because a grid can be built
         /// without the physics world (the checks hand-build one and link it with exactly this code).
         /// </summary>
-        public static void Link(NavWorld nav)
+        public static void Link(NavWorld nav, JobSystem jobs = null)
         {
             int next = 0;
-            foreach (var t in nav.Tiles) { if (t == null) continue; t.SpanBase = next; next += t.Spans.Length; }
+            var tiles = new List<NavTile>();
+            foreach (var t in nav.Tiles) { if (t == null) continue; t.SpanBase = next; next += t.Spans.Length; tiles.Add(t); }
             nav.TotalSpans = next;
-            foreach (var t in nav.Tiles) if (t != null) BuildLinks(nav, t);
+            // a tile's links read its neighbours' spans - immutable by now - and write only its own arrays, so the
+            // tiles are independent items and the result does not depend on who ran which. This was the ~100 ms
+            // both a cold bake and a warm load were paying serially (11.12).
+            if (jobs != null && jobs.ThreadCount > 1 && tiles.Count > 1) jobs.Run(new LinkJob { Nav = nav, Tiles = tiles }, tiles.Count, 1);
+            else foreach (var t in tiles) BuildLinks(nav, t);
+        }
+
+        private sealed class LinkJob : IJob
+        {
+            public NavWorld Nav; public List<NavTile> Tiles;
+            public void Execute(int stage, int start, int end, int worker) { for (int i = start; i < end; i++) BuildLinks(Nav, Tiles[i]); }
         }
 
         /// <summary>One item per tile on the world's job system; item i fills <see cref="Out"/>[i] and nothing else.</summary>

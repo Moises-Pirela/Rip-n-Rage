@@ -62,11 +62,38 @@ namespace RipNRage.Game.Ecs.AI
         {
             ref var ws = ref World.Singleton<Worldspawn>();
             if (ws.Version == _bakedVersion && !Navigation.Stale) return;
+            bool stale = ws.Version == _bakedVersion; // not a level load: something changed the geometry under us
             _bakedVersion = ws.Version;
             Navigation.Stale = false;
 
+            var settings = NavProfile.For(in ws);
+            float tileSize = LevelLoader.MeshChunkSize;
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            var nav = NavBake.Build(World, NavProfile.For(in ws), LevelLoader.MeshChunkSize);
+
+            // 11.12: read the grid back if this level, with these settings, has been baked before. The key is what
+            // the bake consumes (every static collider's box, the derived body limits, the map keys), so a changed
+            // brush or a changed profile misses and bakes. A gate script's wall also misses - which is right.
+            // The cache is for level loads only. An Invalidate() rebake is told the geometry changed, and it must
+            // believe that over the key: the first version loaded the bare grid back for the maze gate's wall,
+            // because a collider built that frame is in the broadphase (the rays see it) before the ECS query does
+            // (the key did not) - 30 statics either side of the wall. A stale bake is never read from the cache
+            // and never written to it, so it cannot poison the level's entry either.
+            ulong key = NavCache.Key(World, in settings, tileSize);
+            string map = System.IO.Path.GetFileNameWithoutExtension(RipNRage.Game.Content.GameSession.LevelPath ?? "level");
+            string file = System.IO.Path.Combine(Application.persistentDataPath, "nav", $"{map}-{key:x16}.nav");
+            // Save only when the two views of the level agree: the ECS query the key hashes, and the broadphase the
+            // rays sample. A collider built this very frame can be in one and not the other (seen both ways on the
+            // gates: door's frame-2 bake once saw part of its wall), and a grid saved under a key that does not
+            // describe it would be read back wrong for ever.
+            NavBake.Bounds(World, out _, out _, out _, out var allBoxes);
+            bool consistent = allBoxes.Count == RipNRage.Engine.Physics.World.StaticCount;
+            NavWorld nav = null;
+            bool warm = !stale && NavCache.TryLoad(file, in settings, tileSize, out nav, World.Jobs);
+            if (!warm)
+            {
+                nav = NavBake.Build(World, in settings, tileSize);
+                if (!stale && consistent && nav.TotalSpans > 0) { try { NavCache.Save(file, nav); } catch (System.Exception e) { Debug.LogWarning($"nav cache: could not write {file}: {e.Message}"); } }
+            }
             watch.Stop();
             Navigation.Current = nav;
             NavPaths.Clear(); // the corners in the side buffer were made on the old grid
@@ -74,7 +101,7 @@ namespace RipNRage.Game.Ecs.AI
             int tiles = 0;
             foreach (var t in nav.Tiles) if (t != null) tiles++;
             if (tiles > 0) // a world with no level (the checks, the title before its backdrop) has nothing to say
-                Debug.LogWarning($"nav: baked {tiles} tiles, {nav.TotalSpans} spans at {nav.Settings.CellSize:0.00} m in {watch.Elapsed.TotalMilliseconds:0.0} ms");
+                Debug.LogWarning($"nav: {(warm ? "loaded" : stale ? "rebaked" : "baked")} {tiles} tiles, {nav.TotalSpans} spans at {nav.Settings.CellSize:0.00} m in {watch.Elapsed.TotalMilliseconds:0.0} ms (key {key:x16}{(consistent ? "" : ", views disagree: not cached")})");
         }
     }
 }

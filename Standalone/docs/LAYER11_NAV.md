@@ -636,6 +636,49 @@ within `wanderRadius` of `Home` after the grunt has been displaced 20 m.
 
 **Commit.** `ECS layer 11.12: the bake erodes in 2-D, jobs by row, and is cached per map`
 
+### What 11.12 did (2026-11-18)
+
+**Built: the cache per map, and linking on the job system.** `NavCache` keys a level by what the bake consumes —
+every static collider's world box, the body's derived limits, the three map keys, the tile size, a format version
+— and writes spans and columns (never the carve counters); a loaded grid links itself with `NavBake.Link`, which
+now runs its tiles as job items (each tile writes only its own links from neighbours' immutable spans), so
+linking stopped being the ~100 ms both a cold bake and a warm load were paying serially.
+
+| | before | after |
+|---|---|---|
+| cold (bake + save) | 220 ms | **170–200 ms** |
+| warm (load + link) | — | **52–64 ms** |
+| probe cold vs warm | — | identical: 129 / 130,678 / 113,082 |
+
+**Two rules it ended with, both found by a gate, not by thought:**
+
+1. **An `Invalidate()` rebake never touches the cache.** The first version loaded the *bare* dock back for the
+   `maze` wall: a collider built that frame was already in the broadphase (the rays see it) but not yet in the
+   ECS query the key hashes — 30 statics either side of the wall, same key, cache hit, no wall. A stale rebake is
+   told the geometry changed and believes that over the key: it always bakes and never saves (a stale grid saved
+   under the bare key would have poisoned it).
+2. **A level-load bake is cached only when the two views agree** — the ECS static count equals
+   `PhysicsWorld.StaticCount`. `door`'s frame-2 bake once saw *part* of its wall (130,682 spans against the bare
+   130,678) and would have saved that under a key describing neither. With the guard, across `walk maze door
+   ledge walk maze` exactly one file is written — the bare dock from `walk` — and every gate's level-load bake
+   says `views disagree: not cached`.
+
+**An open question for the ECS core, with data.** A static collider created through `PhysicsEntities` from a UI
+screen at frame N is registered in the broadphase by frame N+1's `PhysicsSyncSystem` (its `_unregistered`
+query sees it) while a fresh `World.Query().WithReadOnly<ColliderShape>()` built inside a system in the same
+fixed tick does not. Both are ECS queries over the same component. Something about when a query built mid-tick
+picks up an archetype created at the last playback. Not chased here; the cache is correct without knowing, and
+the sweep's determinism never depended on it.
+
+**Not done, deliberately:**
+
+- **2-D clearance erosion.** A brush standing on the floor plane leaves the floor span inside its footprint without
+  a reliable ceiling marker (the roof ray fired on nothing in the dock), so an erosion rule has no trustworthy
+  "solid at my height" signal and would silently gain or lose walkable spans beside walls. The capsule query is
+  geometric truth and stays; the cache makes its cost a once-per-map-edit cost.
+- **Rows as job items.** With the cache, a cold bake happens once per map change; splitting tiles into rows buys
+  ~2× on a path that is now rare. Left until a level makes cold bakes frequent.
+
 ## Phase 11.13 — Local avoidance
 
 **Goal.** Two grunts in one doorway get through it instead of shoving each other through the solver.
