@@ -444,7 +444,9 @@ internal static class Layer5Checks
             w.Add(victim, LocalTransform.At(new Vector3(800f, 1.125f, 0.8f)));
             w.Add(victim, new RipNRage.Engine.Ecs.Physics.ColliderShape { Kind = RipNRage.Engine.Ecs.Physics.ShapeKind.Capsule, Radius = 0.34f, Height = 1.9f });
             w.Add(victim, new RipNRage.Engine.Ecs.Physics.CollisionFilter { Layer = Layers.Enemies, Mask = ~0, UseLayerMatrix = false });
-            w.Add(victim, new Health { Current = 100f, Max = 100f });
+            // 200 hp, not 100: since 11.16 the two jabs before the grab land too (AltFireSystem.JabDamage each), and a
+            // victim at 100 would be dead at 0 - which cannot tell the jabs from the blows. 200 - 2x20 - 2x30 = 100.
+            w.Add(victim, new Health { Current = 200f, Max = 200f });
             w.Add(victim, new Hitbox { Height = 2.25f, HeadFraction = 0.76f });
             w.Update(1f / 60f);
 
@@ -454,7 +456,8 @@ internal static class Layer5Checks
             for (int i = 0; i < 60 && !w.Get<AltFire>(p).Finisher.IsNull; i++) w.Update(1f / 60f);
             True(w.Get<AltFire>(p).Finisher.IsNull && w.Get<AltFire>(p).Step == 0, "the grapple plays out and the combo resets");
             Equal(8f, w.Get<Inventory>(p).Ammo[(int)AmmoType.LIGHT], "two rounds went through the normal fire path");
-            Equal(40f, w.Get<Health>(victim).Current, "and both landed on the grabbed victim (100 - 2 x 30)");
+            Equal(200f - 2f * AltFireSystem.JabDamage - 60f, w.Get<Health>(victim).Current,
+                  "and the two jabs and both shots landed on the grabbed victim (200 - 2 x jab - 2 x 30)");
             True(Mathf.Abs(Mathf.DeltaAngle(w.Get<RipNRage.Game.Ecs.PlayerLook>(p).Yaw, 0f)) < 10f,
                 "the view snapped onto the victim");
 

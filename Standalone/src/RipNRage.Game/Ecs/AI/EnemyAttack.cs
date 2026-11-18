@@ -39,6 +39,25 @@ namespace RipNRage.Game.Ecs.AI
         public Vector3 Aim;
     }
 
+    /// <summary>The swing's reach, as a pure rule the check can pin.</summary>
+    public static class EnemyAttacks
+    {
+        /// <summary>Degrees either side of the facing a blow can land in.</summary>
+        public const float SwingHalfAngle = 60f;
+        /// <summary>The blow lands a little past the range it was started at: the target may have stepped back during the wind-up.</summary>
+        public const float SwingReachScale = 1.25f;
+
+        /// <summary>Is <paramref name="target"/> at arm's length and in front of a body at <paramref name="self"/> facing <paramref name="forward"/>?</summary>
+        public static bool InReach(Vector3 self, Vector3 forward, Vector3 target, float range)
+        {
+            Vector3 to = target - self; to.y = 0f; forward.y = 0f;
+            float reach = range * SwingReachScale;
+            if (to.sqrMagnitude > reach * reach) return false;
+            if (to.sqrMagnitude < 1e-6f || forward.sqrMagnitude < 1e-6f) return true;
+            return Vector3.Angle(forward, to) <= SwingHalfAngle;
+        }
+    }
+
     /// <summary>
     /// Engagement: the alert reaction on the acquisition edge, an <see cref="EnemyAttack"/> entity spawned when the
     /// brain asks and the gun is ready, and that entity's telegraph → burst → recover. A hit staggers (which the
@@ -148,7 +167,7 @@ namespace RipNRage.Game.Ecs.AI
                     if (a.BurstTimer > 0f) continue;
 
                     var def = Enemies.All[World.Get<Enemy>(enemy).Kind];
-                    Shoot(World, enemy, in a, def);
+                    if (def.melee) Swing(ctx, enemy, def); else Shoot(World, enemy, in a, def);
                     a.BurstTimer = def.burstInterval;
                     if (--a.ShotsLeft > 0) continue;
 
@@ -168,6 +187,30 @@ namespace RipNRage.Game.Ecs.AI
             Noises.Emit(w.Commands, muzzle, enemy, def.noise); // the others hear it
             Sfx.Play(ProceduralSounds.EnemyShot, 0.9f);
             GameVfx.Spawn("enemy_muzzle", muzzle, direction.normalized);
+        }
+
+        /// <summary>
+        /// A melee kind's attack (11.16): the same telegraph, then one blow on the target if it is still at arm's
+        /// length and in front - a DamageEvent with Melee set, no projectile. The target is who the senses hold.
+        /// </summary>
+        private static void Swing(SystemContext ctx, Entity enemy, EnemyData def)
+        {
+            var w = ctx.World;
+            var target = w.Has<Perception>(enemy) ? w.Get<Perception>(enemy).Target : Entity.Null;
+            Vector3 self = w.Get<LocalToWorld>(enemy).Position;
+            float yaw = w.Has<Heading>(enemy) ? w.Get<Heading>(enemy).Yaw : 0f;
+            Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+            Sfx.Play(ProceduralSounds.EnemyShot, 0.5f); // the swing's own sound comes with the brawler's art
+            if (target.IsNull || !w.IsAlive(target) || !w.Has<Health>(target) || w.Has<Dead>(target)) return;
+            Vector3 at = w.Get<LocalToWorld>(target).Position;
+            if (!EnemyAttacks.InReach(self, forward, at, def.meleeAttackRange)) return;
+            Vector3 dir = at - self; dir.y = 0f; dir = dir.sqrMagnitude > 1e-6f ? dir.normalized : forward;
+            ctx.Post(new DamageEvent
+            {
+                Instigator = enemy, Target = target, Amount = def.meleeDamage, Melee = true,
+                Point = at + Vector3.up * 0.9f, Direction = dir, Impulse = 8f,
+            });
+            GameVfx.Blood(at + Vector3.up * 0.9f, -dir, "melee", 1f);
         }
 
         /// <summary>Where the barrel is: the definition's offset, turned by the enemy's heading.</summary>

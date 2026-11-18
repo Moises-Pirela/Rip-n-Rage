@@ -73,6 +73,8 @@ namespace RipNRage.Game.Ecs.Combat
         public bool Explosive;
         public float ExplosionRadius;
         public bool Headshot;
+        /// <summary>A blow struck at arm's length (11.16): the fist combo, the brawler's swing. Fury pays it a bonus.</summary>
+        public bool Melee;
         /// <summary>Kills outright, whatever the armour and the rage states say: the blow takes all the health that is
         /// left and the armour is not touched (8.1: the lethal fall — death has one door, and a fall goes through it).</summary>
         public bool Fatal;
@@ -122,7 +124,7 @@ namespace RipNRage.Game.Ecs.Combat
                 if (h.Current <= 0f) continue; // killed earlier in this same span: the tag is not added until playback
 
                 // ENRAGED hits harder, DEPRESSED takes less: the multipliers are the state's, read off each end
-                float amount = e.Fatal ? h.Current : e.Amount * Rages.DamageDealtBy(w, e.Instigator) * Rages.DamageTakenBy(w, e.Target);
+                float amount = e.Fatal ? h.Current : e.Amount * Rages.DamageDealtBy(w, e.Instigator, e.Melee) * Rages.DamageTakenBy(w, e.Target);
                 if (!e.Fatal && w.Has<Armor>(e.Target))
                 {
                     ref var a = ref w.Get<Armor>(e.Target);

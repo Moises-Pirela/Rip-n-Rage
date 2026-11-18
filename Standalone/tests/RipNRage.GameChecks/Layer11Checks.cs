@@ -2,6 +2,7 @@ using System;
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs.Levels;
 using RipNRage.Engine.Ecs.Physics;
+using RipNRage.Game.Ecs;
 using RipNRage.Game.Ecs.AI;
 using RipNRage.Engine.Ecs.Nav;
 using System.Collections.Generic;
@@ -84,6 +85,22 @@ internal static class Layer11Checks
         // 11.4: the drop rule is at least the ledge guard's reach, or navigation refuses what blind walking allowed
         True(NavProfile.For(in ws).MaxDrop >= Steering.Drop,
              $"nav profile: the drop rule covers the ledge guard's reach ({NavProfile.For(in ws).MaxDrop} vs {Steering.Drop})");
+
+        // 11.16: melee has a damage path - the reach rule and Fury's melee bonus
+        {
+            var self = Vector3.zero; var fwd = Vector3.forward;
+            True(EnemyAttacks.InReach(self, fwd, new Vector3(0, 0, 1.5f), 2f), "swing: a target 1.5 m ahead is in reach of a 2 m arm");
+            True(!EnemyAttacks.InReach(self, fwd, new Vector3(0, 0, 3f), 2f), "swing: 3 m ahead is not");
+            True(!EnemyAttacks.InReach(self, fwd, new Vector3(0, 0, -1.5f), 2f), "swing: 1.5 m behind is not - the blow lands in front");
+            True(EnemyAttacks.InReach(self, fwd, new Vector3(0, 0, 2.4f), 2f), "swing: the blow reaches a little past the range it was started at");
+            True(EnemyAttacks.InReach(self, fwd, new Vector3(1.2f, 0, 1.2f), 2f), "swing: 45 degrees off the facing is in the arc");
+            True(!EnemyAttacks.InReach(self, fwd, new Vector3(1.9f, 0, 0.2f), 2f), "swing: 84 degrees off is not");
+
+            var calm = new Rage(); var hot = new Rage { State = RageState.Enraged };
+            True(Rages.DamageDealt(in calm, melee: true) == 1f && Rages.DamageDealt(in calm, melee: false) == 1f, "rage: calm pays no bonus either way");
+            True(Rages.DamageDealt(in hot, melee: false) == Rages.DamageDealt(in hot), "rage: an enraged shot is the shot multiplier it always was");
+            True(Rages.DamageDealt(in hot, melee: true) > Rages.DamageDealt(in hot, melee: false), "rage: an enraged melee blow pays more than an enraged shot - the melee bonus the spec assumed");
+        }
 
         // 11.15: the enemy definitions are files, and the rifleman's bakes to what GameAssets used to build
         {

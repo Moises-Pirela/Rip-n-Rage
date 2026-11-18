@@ -73,13 +73,13 @@ namespace RipNRage.Game.Ecs.Combat
                     if (!pressed || m.Step >= 3 || m.JabTimer > 0f) continue;
 
                     m.Step++;
-                    if (m.Step < 3) Jab(ref m, ref gun, in rigs[i]);
+                    if (m.Step < 3) Jab(ctx, ents[i], ref m, ref gun, in rigs[i]);
                     else SpawnFinisher(ctx, ents[i], ref m, ref gun, in rigs[i]);
                 }
             }
         }
 
-        private void Jab(ref AltFire m, ref Weapon gun, in PlayerViewRig rig)
+        private void Jab(SystemContext ctx, Entity player, ref AltFire m, ref Weapon gun, in PlayerViewRig rig)
         {
             // the gun comes off screen while the fists are out
             gun.Holstered = true;
@@ -90,9 +90,17 @@ namespace RipNRage.Game.Ecs.Combat
             m.JabTimer = 0.005f;
             m.ComboTimer = 0.75f;
 
-            if (Probe(in rig).IsNull) return;
+            var struck = Probe(in rig, out var hit);
+            if (struck.IsNull) return;
             PlayerCamera.Kick();
             RipNRage.Engine.Ecs.Audio.Sfx.Play(GameAssets.MeleeHit);
+            // 11.16: the jab is a blow. It never was - layer 9's "still no melee damage path" - the fist kicked the
+            // camera and played a sound. Fury's melee bonus (Rages.DamageDealt with melee) applies to this.
+            ctx.Post(new DamageEvent
+            {
+                Instigator = player, Target = struck, Amount = JabDamage, Melee = true,
+                Point = hit.point, Direction = hit.normal == Vector3.zero ? Vector3.forward : -hit.normal, Impulse = 8f,
+            });
         }
 
         /// <summary>
@@ -123,10 +131,15 @@ namespace RipNRage.Game.Ecs.Combat
         }
 
         /// <summary>Whatever damageable thing stands within arm's reach of the camera.</summary>
-        private Entity Probe(in PlayerViewRig rig)
+        /// <summary>What one jab does to what it reaches.</summary>
+        public const float JabDamage = 20f;
+
+        private Entity Probe(in PlayerViewRig rig) => Probe(in rig, out _);
+
+        private Entity Probe(in PlayerViewRig rig, out RipNRage.Engine.RaycastHit hit)
         {
             var eye = World.Get<LocalToWorld>(rig.Camera);
-            return PhysicsApi.Raycast(eye.Position, eye.Forward, out var hit, Reach, Weapons.HitMask)
+            return PhysicsApi.Raycast(eye.Position, eye.Forward, out hit, Reach, Weapons.HitMask)
                    && World.Has<Health>(hit.entity) && !World.Has<Dead>(hit.entity) ? hit.entity : Entity.Null;
         }
     }

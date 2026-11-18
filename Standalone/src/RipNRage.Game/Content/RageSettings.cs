@@ -34,7 +34,7 @@ namespace RipNRage.Game.Content
 
         // ---- what the states are worth ----
         public float enragedSpeed = 1.2f;
-        public float enragedDamageDealt = 1.5f, depressedDamageTaken = 0.5f;
+        public float enragedDamageDealt = 1.5f, enragedMeleeDamage = 2.5f, depressedDamageTaken = 0.5f;
         public float lifestealPerHit = 2f, lifestealPerKill = 15f;
         public float armorRegenPerSecond = 5f;
         public float depressedDashCooldown = 0.5f;
@@ -69,6 +69,7 @@ namespace RipNRage.Game.Content
 
             d.enragedSpeed = F("enraged_speed", d.enragedSpeed);
             d.enragedDamageDealt = F("enraged_damage_dealt", d.enragedDamageDealt);
+            d.enragedMeleeDamage = F("enraged_melee_damage", d.enragedMeleeDamage);
             d.depressedDamageTaken = F("depressed_damage_taken", d.depressedDamageTaken);
             d.lifestealPerHit = F("lifesteal_per_hit", d.lifestealPerHit); d.lifestealPerKill = F("lifesteal_per_kill", d.lifestealPerKill);
             d.armorRegenPerSecond = F("armor_regen", d.armorRegenPerSecond);
@@ -114,6 +115,7 @@ namespace RipNRage.Game.Content
                 (s, "depressed_duration", F(depressedDuration), "seconds a full CALM meter lasts"),
                 (s, "enraged_speed", F(enragedSpeed), "movement multiplier while ENRAGED"),
                 (s, "enraged_damage_dealt", F(enragedDamageDealt), "damage multiplier for blows the player strikes"),
+                (s, "enraged_melee_damage", F(enragedMeleeDamage), "damage multiplier for melee blows the player strikes while ENRAGED (the fist combo)"),
                 (s, "depressed_damage_taken", F(depressedDamageTaken), "damage multiplier for blows the player takes"),
                 (s, "lifesteal_per_hit", F(lifestealPerHit), "health per hit while ENRAGED"),
                 (s, "lifesteal_per_kill", F(lifestealPerKill), "health per kill while ENRAGED"),

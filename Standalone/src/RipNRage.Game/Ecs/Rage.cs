@@ -60,6 +60,8 @@ namespace RipNRage.Game.Ecs
         public static float SpeedMultiplier(in Rage r) => r.State == RageState.Enraged ? Def.enragedSpeed : 1f;
 
         public static float DamageDealt(in Rage r) => r.State == RageState.Enraged ? Def.enragedDamageDealt : 1f;
+        /// <summary>The multiplier on a blow struck, a melee blow paying Fury's bonus (11.16: the melee path the rage spec always assumed).</summary>
+        public static float DamageDealt(in Rage r, bool melee) => r.State == RageState.Enraged ? (melee ? Def.enragedMeleeDamage : Def.enragedDamageDealt) : 1f;
         public static float DamageTaken(in Rage r) => r.State == RageState.Depressed ? Def.depressedDamageTaken : 1f;
         public static float SightRangeScale(in Rage r) => r.State == RageState.Depressed ? Def.depressedSightRange : 1f;
         public static float MemoryScale(in Rage r) => r.State == RageState.Depressed ? Def.depressedMemory : 1f;
@@ -69,6 +71,8 @@ namespace RipNRage.Game.Ecs
         /// <summary>The multiplier an entity's state puts on a blow it struck (1 for anything with no rage).</summary>
         public static float DamageDealtBy(World w, Entity e) =>
             !e.IsNull && w.IsAlive(e) && w.Has<Rage>(e) ? DamageDealt(w.Get<Rage>(e)) : 1f;
+        public static float DamageDealtBy(World w, Entity e, bool melee) =>
+            !e.IsNull && w.IsAlive(e) && w.Has<Rage>(e) ? DamageDealt(w.Get<Rage>(e), melee) : 1f;
 
         /// <summary>The multiplier an entity's state puts on a blow it is taking.</summary>
         public static float DamageTakenBy(World w, Entity e) =>

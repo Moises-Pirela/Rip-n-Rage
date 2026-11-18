@@ -806,6 +806,22 @@ damage); everything else unchanged.
 
 **Commit.** `ECS layer 11.16: melee has a damage path, both ways`
 
+### What 11.16 did (2026-11-18)
+
+`DamageEvent.Melee`. The brawler's attack keeps the rifleman's telegraph and then **swings** instead of shooting:
+one blow on the target its senses hold, if it is still at arm's length and in front (`EnemyAttacks.InReach`:
+1.25× the range, 60° either side — pinned), posted as a melee `DamageEvent` with no projectile. The jab, which
+since layer 9 kicked the camera and played a sound and did nothing else, posts a melee `DamageEvent` for
+`AltFire.JabDamage` (20) on what it reaches. `Rages.DamageDealt(in rage, melee)` pays Fury's melee bonus —
+`enraged_melee_damage` (2.5) against the shot's 1.5 — and `HealthSystem` passes the flag through. Layer 9's
+"still no melee damage path" is closed from both sides.
+
+`brawler`: round the wall to d 0.9 and the player's armour goes 100 → 55 — blows, not bullets (`burstCount` 1,
+`noise` 0, no muzzle). `jab`'s probe prints the combo step and does not show the damage; the reach rule and the
+multiplier are pinned by checks instead. Single-grunt gates unchanged.
+
+Checks: gameplay 523 → 532.
+
 ## Phase 11.17 — The editor pass (last, by design)
 
 **Deferred until here on purpose**: by now 11.10–11.16 have said what a designer actually needs to see, instead
