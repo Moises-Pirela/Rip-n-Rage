@@ -555,7 +555,8 @@ namespace RipNRage.Game
             var follow = w.Has<RipNRage.Game.Ecs.AI.PathFollow>(nearest) ? w.Get<RipNRage.Game.Ecs.AI.PathFollow>(nearest) : default;
             string way = follow.Direct ? "direct" : follow.Count > 0 ? $"{follow.Status}" : "none";
             Debug.LogWarning($"[test] {tag}: hp {RipNRage.Game.Ecs.PlayerLink.Health:0} armour {RipNRage.Game.Ecs.PlayerLink.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
-                             $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0} goal d {goalD:0.0} way {way} corners {follow.Count} at {follow.Corner}");
+                             $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0} goal d {goalD:0.0} way {way} corners {follow.Count} at {follow.Corner} " +
+                             $"blocked {RipNRage.Engine.Ecs.Nav.NavCarveSystem.BlockedSpans}");
         }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;
@@ -809,6 +810,19 @@ namespace RipNRage.Game
                         NavGrunt(0f, NavFloorY, NavPlayerZ - 12f);
                     }
                     if (_frame == 3) NavRebake(); // the wall went up after the level was baked
+                    // 11.6: the door shuts while the grunt is walking through the gap. It is a NavObstacle, so the
+                    // grid is not rebaked - its footprint is *carved* onto the spans, and whoever was walking over
+                    // them has to ask for another way.
+                    if (_frame == 90)
+                    {
+                        var leaf = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World,
+                            new Vector3(1.4f, NavFloorY + 2f, NavPlayerZ - 6f), Quaternion.identity,
+                            new Vector3(1.4f, 4f, 0.6f), Layers.Walkable);
+                        // PhysicsEntities builds through the command buffer: the entity is not alive until
+                        // playback, so the component goes the same way (the 9.x rule).
+                        Application.Current.World.Commands.Add(leaf, new RipNRage.Engine.Ecs.Nav.NavObstacle());
+                        Debug.LogWarning("[test] door: the leaf drops into the gap");
+                    }
                     RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
                     if (_frame == 30) NavProbe();
                     if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"door {_frame}");

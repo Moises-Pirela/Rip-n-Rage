@@ -20,7 +20,10 @@ internal static class ScheduleChecks
     {
         ["Tick"] = new[]
         {
-            "AnimationSystem + LifetimeSystem", "RagdollSystem", "EcsInputSystem", "WorldspawnSystem", "EnemyVisualSystem + HearingSystem",
+            // NavCarveSystem (11.5) is exclusive - it writes the grid, not components - so it is a batch of its own;
+            // it only has to be ahead of NavPathSystem, which asks for it by [UpdateAfter]
+            "AnimationSystem + LifetimeSystem", "RagdollSystem", "EcsInputSystem", "WorldspawnSystem", "NavCarveSystem",
+            "EnemyVisualSystem + HearingSystem",
             "SightSystem", "AiBrainSystem", "NavPathSystem", "PathFollowSystem", "SteeringSystem", "EnemyAttackSystem", "SpawnerSystem", "BobSystem",
             "AltFireSystem", "BashFinisherSystem", "GrappleFinisherSystem", "PointBlankFinisherSystem",
             "WeaponFireSystem", "FallSystem", "FlowSystem", "DeathCamSystem", "MenuSwingSystem",

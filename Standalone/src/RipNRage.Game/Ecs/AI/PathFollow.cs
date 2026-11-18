@@ -42,6 +42,27 @@ namespace RipNRage.Game.Ecs.AI
         public const float GroundStep = 1.5f;
 
         /// <summary>
+        /// Does what is left of this path run over a span something has since been parked on? Corner to corner,
+        /// sampled at the cell size — a shut door is wider than a cell, so stepping the segments finds it.
+        /// </summary>
+        public static bool Crosses(NavWorld nav, NavPath path, int from, int count)
+        {
+            float cell = nav.Settings.CellSize;
+            for (int i = Mathf.Max(1, from); i < count && i < path.Count; i++)
+            {
+                Vector3 a = path.Corners[i - 1], b = path.Corners[i];
+                int steps = Mathf.Clamp(Mathf.CeilToInt((b - a).magnitude / cell), 1, 64);
+                for (int k = 0; k <= steps; k++)
+                {
+                    var at = Vector3.Lerp(a, b, (float)k / steps);
+                    if (!nav.TryFindSpan(at, out int span)) return true;          // the floor itself went
+                    if (nav.Locate(span, out var tile, out int local) && !tile.Spans[local].Open) return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Can the body just walk at the goal? A capsule cast along the flattened line says whether anything is in
         /// the way; then the ground is sampled along it, because a clear line over a hole is still not a way — that
         /// is the `ledge` gate, where the wall is an absence of floor.
@@ -130,7 +151,17 @@ namespace RipNRage.Game.Ecs.AI
 
                     if (nav == null || nav.TotalSpans == 0) continue; // no grid: the straight line, as before
 
-                    // 2. ask, when there is no path or the goal has wandered off the one we have
+                    // 2a. the world carved since this path was made (11.6): the cheap test is the version, the
+                    //     exact one is whether a corner still to be walked now stands on a blocked span. A door
+                    //     shut somewhere else in the level costs one integer compare and nothing more.
+                    if (follow.Count > 0 && follow.Version != nav.Version)
+                    {
+                        follow.Version = nav.Version;
+                        if (NavPaths.TryGet(ents[i], out var walking) && PathFollowing.Crosses(nav, walking, follow.Corner, follow.Count))
+                            follow.Count = 0; // dropped: ask again below, and walk the straight line until it comes
+                    }
+
+                    // 2b. ask, when there is no path or the goal has wandered off the one we have
                     bool stale = follow.Count == 0 || (goal - follow.Goal).sqrMagnitude > PathFollowing.Repath * PathFollowing.Repath;
                     if (stale && !req.Pending)
                     {

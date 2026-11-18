@@ -19,6 +19,7 @@
     "ShapeSize": { "size": [1.2, 2.4, 0.12] },
     "Body": { "mass": 25, "collisionDetection": "Continuous" },
     "BodyVelocity": {},
+    "NavObstacle": {},
     "StandOnBase": { "clearance": 0.01 },
     "Joint": { "kind": "Hinge", "limits": [-110, 110], "springDamping": 3, "motorForce": 60 },
     "HingeOnEdge": { "edge": "Left" }

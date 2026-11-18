@@ -16,5 +16,6 @@
     "ShapeSize": { "size": [1, 1, 1] },
     "Body": { "mass": 10, "collisionDetection": "Continuous" },
     "BodyVelocity": {},
+    "NavObstacle": {},
     "StandOnBase": { "clearance": 0.02 }
   } }

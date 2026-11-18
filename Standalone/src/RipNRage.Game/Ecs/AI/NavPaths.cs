@@ -51,6 +51,7 @@ namespace RipNRage.Game.Ecs.AI
     /// order every run, or the sweep's probe lines drift.
     /// </summary>
     [UpdateAfter(typeof(AiBrainSystem))]
+    [UpdateAfter(typeof(RipNRage.Engine.Ecs.Nav.NavCarveSystem))]
     [UpdateBefore(typeof(SteeringSystem))]
     [Reads(typeof(Dead))]
     public sealed class NavPathSystem : SystemBase, ITick, IOnEntityDestroyed

@@ -291,6 +291,42 @@ internal static class Layer11Checks
             True(!tile.Spans[0].Open, "nav: a carve is a counter, not a flag - two on a span, one gone, still shut");
         }
 
+        // ---- 11.5 the carve: a footprint stamped on the spans it covers, lifted off the ones it leaves
+        {
+            var nav = Grid(".....",
+                           ".....",
+                           ".....");
+            int from = At(nav, 0.5f, 1.5f), to = At(nav, 4.5f, 1.5f);
+            True(search.Search(nav, from, to, path) == NavStatus.Ok, "nav carve: the open floor is crossed");
+            int v0 = nav.Version;
+
+            // a 1 m box over the middle column, standing on the floor
+            int n = NavCarve.Stamp(nav, new Vector3(2.5f, 0.5f, 1.5f), new Vector3(0.4f, 1f, 1.4f), +1);
+            True(n == 3, $"nav carve: the stamp covered the middle column's three spans (got {n})");
+            True(nav.Version > v0, "nav carve: a stamp moves the grid version on");
+            True(search.Search(nav, from, to, path) != NavStatus.Ok, "nav carve: and the way through it is shut");
+
+            NavCarve.Stamp(nav, new Vector3(2.5f, 0.5f, 1.5f), new Vector3(0.4f, 1f, 1.4f), -1);
+            True(search.Search(nav, from, to, path) == NavStatus.Ok, "nav carve: lifting it opens the way again");
+
+            // two things on one span, one taken away: still shut. A flag would get this wrong; a counter does not.
+            NavCarve.Stamp(nav, new Vector3(2.5f, 0.5f, 1.5f), new Vector3(0.4f, 1f, 1.4f), +1);
+            NavCarve.Stamp(nav, new Vector3(2.5f, 0.5f, 1.5f), new Vector3(0.4f, 1f, 1.4f), +1);
+            NavCarve.Stamp(nav, new Vector3(2.5f, 0.5f, 1.5f), new Vector3(0.4f, 1f, 1.4f), -1);
+            True(search.Search(nav, from, to, path) != NavStatus.Ok, "nav carve: two on a span, one gone, still shut");
+            NavCarve.Stamp(nav, new Vector3(2.5f, 0.5f, 1.5f), new Vector3(0.4f, 1f, 1.4f), -1);
+            True(search.Search(nav, from, to, path) == NavStatus.Ok, "nav carve: and the second lift opens it");
+
+            // the counter never goes below zero, however many lifts arrive
+            NavCarve.Stamp(nav, new Vector3(2.5f, 0.5f, 1.5f), new Vector3(0.4f, 1f, 1.4f), -1);
+            True(search.Search(nav, from, to, path) == NavStatus.Ok, "nav carve: an extra lift does not wrap the counter");
+
+            // a stamp that reaches nothing touches nothing
+            True(NavCarve.Stamp(nav, new Vector3(50f, 0.5f, 50f), new Vector3(1f, 1f, 1f), +1) == 0, "nav carve: a stamp off the grid touches no span");
+            // a stamp well above the floor does not reach it
+            True(NavCarve.Stamp(nav, new Vector3(2.5f, 9f, 1.5f), new Vector3(0.5f, 0.5f, 0.5f), +1) == 0, "nav carve: a stamp in the air does not block the floor under it");
+        }
+
         // ---- determinism and the allocation floor
         {
             var nav = Grid(".....",

@@ -19,6 +19,7 @@
     "ShapeSize": { "size": [1, 1, 1] },
     "Body": { "mass": 15, "collisionDetection": "Continuous" },
     "BodyVelocity": {},
+    "NavObstacle": {},
     "StandOnBase": { "clearance": 0.01 },
     "Joint": { "kind": "Slider", "axis": [1, 0, 0], "limits": [-2, 2], "motorForce": 300, "springDamping": 10 },
     "SliderPatrol": { "enabled": false }
