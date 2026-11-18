@@ -865,3 +865,37 @@ than rediscovers them; none is started.
 - **Flow fields** if counts go past ~20 engaged grunts with one target; 11.3's budget is where it would plug in.
 - **Save/load of the nav state**: `PathFollow` / `PathRequest` are runtime and rebuild themselves; carves
   re-stamp (after 11.10). Nothing to save — confirmed, not assumed, when 11.10 runs `saveload`.
+
+
+---
+
+## Part two — where it stands (2026-11-18, after 11.16)
+
+Built in nine commits: 11.10 through 11.16, with 11.14 a documented skip. **11.17, the editor pass, is not
+started by design** — it waits for its own planning session, with the needs list above as the starting point.
+
+| phase | what | checks (engine / game) |
+|---|---|---|
+| 11.10 | the rebake re-stamp bug, the side buffer reset, `nodes` / `repaths` probes | 315 / 501 |
+| 11.11 | wander picks a span about a home; the retune that drift had blocked | 315 / 506 |
+| 11.12 | a cache per map; linking on the job system; two rules the gates forced | 322 / 506 |
+| 11.13 | local avoidance, as a pure function over a snapshot; `crowd` | 322 / 513 |
+| 11.14 | skipped: worst dock search 685 nodes against a 2000 threshold | — |
+| 11.15 | enemies are files; the brawler; a kind reseed recorded | 322 / 523 |
+| 11.16 | melee has a damage path both ways; the grapple check re-pinned | 322 / 532 |
+
+**The dock today**: bake 170–200 ms cold, **52–64 ms warm**; 129 tiles, 130,678 spans, 113,082 walkable; nine
+nav gates (`maze door ledge stay crowd brawler` + `approach close peek`), all arriving.
+
+**Still not done, carried forward honestly:**
+
+- **No full sweep has been run since 11.0.** Every phase was verified targeted (its own gates, the AI gates
+  against the 11.0 baseline, both suites after each step). The `walk` / `menu` manifests have moved (worldspawn
+  keys, two prefab components, a second monster prefab), the pixel shots, editors and benchmark have not been
+  launched, the bench A/B has not been taken, and **layer 10.8's close-out is still open**. The first thing the
+  next session should do is run `./gates.sh` twice and reconcile.
+- **One mistake in the record**: 11.16's first commit went in with a failing check; it was amended in place with
+  the check re-pinned and the amend gated on the suite. Commits from here gate on the suite.
+- **The editor pass** (11.17) — separate planning.
+- **2-D erosion and rows as job items** (11.12) — deferred with reasons; **hierarchical search** (11.14) —
+  skipped with numbers; the ECS query-vs-broadphase timing question (11.12) — written down, not chased.

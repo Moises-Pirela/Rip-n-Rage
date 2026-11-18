@@ -2340,11 +2340,11 @@ that changes what the level builds.
   `arriveDistance`, `wanderRadius` and `wanderMinDistance` off their inherited Unity values now that movement
   works, and move them **into the rifleman prefab**, not `GameAssets.cs`.
 - [x] 11.9 **Close-out.** Full sweep twice, hermetic and device-isolated; bench interleaved against 11.8's Verified targeted, not swept — see `LAYER11_NAV.md`.
-- [ ] **Part two** (planned 2026-11-18, `LAYER11_NAV.md` → "Part two"): 11.10 close the books (the rebake
-  re-stamp bug, the side buffer, the probes, the full sweep, 10.8) · 11.11 wander on the grid about a home ·
-  11.12 the bake pays once (2-D erosion, rows as items, a cache per map) · 11.13 local avoidance ·
-  11.14 hierarchical search (conditional on 11.10's probes) · 11.15 enemies are files + the brawler ·
-  11.16 the melee damage path · **11.17 the editor pass, last** — plus the missing-features list for layer 12.
+- [x] **Part two** (2026-11-18, `LAYER11_NAV.md` → "Part two"): 11.10 the books (rebake re-stamp bug, side
+  buffer, probes) · 11.11 wander about a home on the grid · 11.12 a cache per map + linking on the job system
+  (warm 52–64 ms) · 11.13 local avoidance · 11.14 skipped with numbers · 11.15 enemies are files + the brawler ·
+  11.16 melee has a damage path both ways. **Not done**: 11.17 the editor pass (its own planning), the full
+  sweep (none since 11.0), the bench A/B, and layer 10.8's close-out.
   parent (`--threads 1`); the bake's cost at level start (serial vs tiles-in-parallel), the search's cost per
   tick and the carve's cost with a door swinging, all against budget; allocation per frame compared with 10.x
   (11.2's pooling is what holds it).
