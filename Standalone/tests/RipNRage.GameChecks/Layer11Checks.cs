@@ -3,6 +3,8 @@ using RipNRage.Engine;
 using RipNRage.Engine.Ecs.Levels;
 using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Game.Ecs.AI;
+using RipNRage.Engine.Ecs.Nav;
+using System.Collections.Generic;
 
 /// <summary>
 /// Layer 11.1: the grid is baked for a particular body. These pin every derived limit to the thing it is derived
@@ -11,6 +13,27 @@ using RipNRage.Game.Ecs.AI;
 /// </summary>
 internal static class Layer11Checks
 {
+    /// <summary>A one-tile grid from a character map ('.' floor, '#' nothing), linked by the real builder — the engine suite's helper, kept small here.</summary>
+    private static NavWorld HandGrid(string[] rows)
+    {
+        int depth = rows.Length, width = rows[0].Length;
+        var settings = new NavSettings { CellSize = 1f, CellHeight = 0.2f, MaxDrop = 2.5f, Radius = 0.3f, Height = 1.8f, StepUp = 0.6f, MaxSlopeDeg = 50f };
+        var nav = new NavWorld { Settings = settings, TileSize = 32f, OriginX = 0f, OriginZ = 0f, TilesX = 1, TilesZ = 1, BakeId = NavWorld.NextBakeId() };
+        var tile = new NavTile { X = 0, Z = 0, MinX = 0f, MinZ = 0f, Width = width, Depth = depth, MinY = -10f, MaxY = 10f, Columns = new NavColumn[width * depth] };
+        var spans = new List<NavSpan>();
+        for (int z = 0; z < depth; z++)
+            for (int x = 0; x < width; x++)
+            {
+                int first = spans.Count;
+                if (rows[z][x] != '#') spans.Add(new NavSpan { Floor = 0f, Headroom = 2f, Flags = NavSpanFlags.Walkable });
+                tile.Columns[z * width + x] = new NavColumn { First = first, Count = spans.Count - first };
+            }
+        tile.Spans = spans.ToArray();
+        nav.Tiles = new[] { tile };
+        NavBake.Link(nav);
+        return nav;
+    }
+
     public static void Run(Action<bool, string> True)
     {
         var profile = CharacterProfiles.Enemy;
@@ -51,5 +74,47 @@ internal static class Layer11Checks
         // 11.4: the drop rule is at least the ledge guard's reach, or navigation refuses what blind walking allowed
         True(NavProfile.For(in ws).MaxDrop >= Steering.Drop,
              $"nav profile: the drop rule covers the ledge guard's reach ({NavProfile.For(in ws).MaxDrop} vs {Steering.Drop})");
+
+        // 11.11: wander picks a span about Home, never a hole, never far from home however far the grunt has got
+        {
+            // a 20 x 20 m floor with a 6 x 6 m hole in the middle (cell 1 m); home at the floor's centre-left
+            var rows = new string[20];
+            for (int z = 0; z < 20; z++) { var r = new char[20]; for (int x = 0; x < 20; x++) r[x] = (x >= 7 && x < 13 && z >= 7 && z < 13) ? '#' : '.'; rows[z] = new string(r); }
+            var nav = HandGrid(rows);
+            Navigation.Current = nav;
+            var def = new EnemyData { wanderRadius = 8f, wanderMinDistance = 1f };
+            var brain = new AiBrain { Rng = 12345u, Home = new Vector3(5f, 0f, 10f) };
+            int picks = 0, inHole = 0, farFromHome = 0;
+            var self = new Vector3(5f, 0f, 10f);
+            for (int i = 0; i < 1000; i++)
+            {
+                if (!AiBrains.PickWander(ref brain, def, self, out var p)) continue;
+                picks++;
+                if (p.x >= 7f && p.x < 13f && p.z >= 7f && p.z < 13f) inHole++;
+                var d = p - brain.Home; d.y = 0f;
+                if (d.magnitude > def.wanderRadius + 0.75f) farFromHome++; // + half a cell: the pick is snapped to a span centre
+            }
+            True(picks > 500, $"wander: most rolls find a span ({picks} of 1000)");
+            True(inHole == 0, $"wander: no pick lands in the hole ({inHole})");
+            True(farFromHome == 0, $"wander: no pick is outside the radius about home ({farFromHome})");
+
+            // displaced 15 m: the picks still gather about Home, not about where the grunt is
+            var away = new Vector3(18f, 0f, 2f);
+            int nearSelf = 0, total = 0;
+            for (int i = 0; i < 300; i++)
+            {
+                if (!AiBrains.PickWander(ref brain, def, away, out var p)) continue;
+                total++;
+                var dh = p - brain.Home; dh.y = 0f; var ds = p - away; ds.y = 0f;
+                if (ds.magnitude < dh.magnitude) nearSelf++;
+            }
+            True(total > 0 && nearSelf < total / 4, $"wander: a displaced grunt's picks are about home, not about itself ({nearSelf} of {total} nearer itself)");
+
+            // the same dice, the same picks: the run is repeatable
+            var a = new AiBrain { Rng = 777u, Home = self }; var b = new AiBrain { Rng = 777u, Home = self };
+            AiBrains.PickWander(ref a, def, self, out var pa); AiBrains.PickWander(ref b, def, self, out var pb);
+            True(pa == pb, "wander: the same seed rolls the same pick");
+            Navigation.Current = null;
+        }
     }
 }

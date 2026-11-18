@@ -36,6 +36,9 @@ namespace RipNRage.Game.Ecs.AI
         /// requests are served in this order and not in entity order, which a buffered spawn reshuffles (6.7b).
         /// </summary>
         public uint Order;
+        /// <summary>Where this enemy was placed. Wander picks about <b>this</b>, not about wherever the enemy has got
+        /// to, so a grunt with nothing to do roams a patch instead of random-walking off down the dock (11.11).</summary>
+        public Vector3 Home;
     }
 
     /// <summary>
@@ -124,9 +127,7 @@ namespace RipNRage.Game.Ecs.AI
                     if (entered)
                     {
                         // a point too close is rejected and the pick retried next tick, as the random-location node did
-                        float angle = Roll(ref b.Rng) * 2f * Mathf.PI, dist = Roll(ref b.Rng) * def.wanderRadius;
-                        var point = self + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * dist;
-                        if (dist <= def.wanderMinDistance) { b.StateTime = 0f; break; }
+                        if (!PickWander(ref b, def, self, out var point)) { b.StateTime = 0f; break; }
                         b.MoveTo = point;
                     }
                     if (Arrived(self, b.MoveTo, def) || b.StateTime > WanderTimeout) { Enter(ref b, AiState.Idle); break; }
@@ -140,6 +141,36 @@ namespace RipNRage.Game.Ecs.AI
                     intent.Attack = true; intent.FacePoint = b.MoveTo;
                     break;
             }
+        }
+
+        /// <summary>Rolls a wander pick may make before giving the tick up.</summary>
+        public const int WanderRolls = 3;
+
+        /// <summary>
+        /// A wander point: a roll in the disc about <see cref="AiBrain.Home"/>, kept only if it lands on an open span
+        /// (the grid says the body can stand there and nothing is parked on it) and is not too close to where the
+        /// enemy already is. Three rolls, then this tick is given up. Without a grid the old pick stands: a point in
+        /// the disc, unchecked. Same dice either way — <c>b.Rng</c> — so a scripted run plays the same.
+        /// </summary>
+        public static bool PickWander(ref AiBrain b, EnemyData def, Vector3 self, out Vector3 point)
+        {
+            var nav = RipNRage.Engine.Ecs.Nav.Navigation.Current;
+            bool onGrid = nav != null && nav.TotalSpans > 0;
+            Vector3 home = b.Home == default ? self : b.Home;
+            for (int roll = 0; roll < WanderRolls; roll++)
+            {
+                float angle = Roll(ref b.Rng) * 2f * Mathf.PI, dist = Roll(ref b.Rng) * def.wanderRadius;
+                point = home + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * dist;
+                Vector3 away = point - self; away.y = 0f;
+                if (away.sqrMagnitude <= def.wanderMinDistance * def.wanderMinDistance) continue;
+                if (!onGrid) return true;
+                if (!nav.TryFindSpan(point, out int span, nav.Settings.MaxDrop)) continue;
+                if (!nav.Locate(span, out var tile, out int local) || !tile.Spans[local].Open) continue;
+                point = nav.PositionOf(tile, local);
+                return true;
+            }
+            point = default;
+            return false;
         }
 
         private static void Enter(ref AiBrain b, AiState state)

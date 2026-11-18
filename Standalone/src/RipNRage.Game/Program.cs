@@ -804,6 +804,17 @@ namespace RipNRage.Game
                     RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 55 ? new Vector2(-0.25f, 1f) : Vector2.zero;
                     if (_frame == 60 || _frame == 150 || _frame == 290) AiProbe($"close {_frame}");
                     break;
+                case "stay":
+                    // 11.11: a grunt with nothing to do roams a patch about where it was put. Ten seconds alone, out
+                    // of sight and earshot of the player; `moved` is distance from its first position, and the gate
+                    // is that it stays inside its wander radius (10 m) rather than random-walking off the dock.
+                    if (_frame == 2)
+                    {
+                        RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(0f, 1.8f, NavPlayerZ), 0f); // facing away
+                        NavGrunt(0f, NavFloorY, NavPlayerZ - 30f);
+                    }
+                    if (_frame == 60 || _frame == 300 || _frame == 590) AiProbe($"stay {_frame}");
+                    break;
                 case "maze":
                     // a wall across the run, the grunt behind it. It hears the shot, chases the sound and meets
                     // 12 m of wall with a 6 m way round either end. Today: it grinds on the wall and never arrives.

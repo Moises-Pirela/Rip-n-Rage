@@ -457,12 +457,12 @@ namespace RipNRage.Game.Content
                 // the value that ever decided anything (6.2 moved the node's numbers here)
                 movementSpeed = 11, attackRange = 10, meleeAttackRange = 2, turnSpeed = 3600, fireRate = 1.1f,
                 attackWindup = 0.35f, burstCount = 3, burstInterval = 0.09f, staggerTime = 0.25f, alertDelay = 0.2f,
-                wanderWait = 1f, wanderRadius = 15f, wanderMinDistance = 10f, // BehaviorTree2: Wait(1), RandomLocation(r=15, min=10)
+                // 11.11: wander picks a span about the grunt's Home now, so the numbers that made it drift (11.8)
+                // are safe to lower - a 10 m minimum threw most picks in a 15 m disc away, and the rest walked it
+                // off the dock. 4 and 10 keep it roaming a patch.
+                wanderWait = 1f, wanderRadius = 10f, wanderMinDistance = 4f,
                 // 11.8: arriving 5 m short was the Unity agent's remainingDistance <= 5, written for an agent that
-                // steered itself the last stretch. With a path to follow it just left the grunt standing in the
-                // open. The wander numbers are deliberately NOT retuned with it: wander picks relative to where the
-                // grunt *is*, so accepting more picks makes it random-walk off the dock faster (min 4 sent it 43 m
-                // out in 290 frames). Anchoring wander to a home point is the fix, and that is behaviour design.
+                // steered itself the last stretch; with a path to follow it just left the grunt standing in the open.
                 arriveDistance = 2f,
                 // senses (6.3): the vision trigger was a 10 m sphere — all round; the cone and the memory are new
                 sightRange = 10f, sightFov = 180f, memory = 5f, noise = 30f,
