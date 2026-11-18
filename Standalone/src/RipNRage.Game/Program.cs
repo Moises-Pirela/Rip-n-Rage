@@ -478,6 +478,104 @@ namespace RipNRage.Game
 
         private readonly System.Collections.Generic.List<Entity> _enemies = new System.Collections.Generic.List<Entity>();
 
+        // ---- layer 11.0: the navigation gates' geometry.
+        // All three build on the dock's open run north of info_player_start (0, 1.61, 8), floor y 0.91, the player
+        // teleported to a fixed spot and facing -z. The enemy never *sees* the player (a wall or a drop is in the
+        // way): it is told where he is by the **gunshot** at frame 30 — a 30 m noise, and a wall only muffles past
+        // half of that (Noises.WallMuffle), so the grunt hears him through it and chases the sound. What it does
+        // next is the gate: today it walks the straight line and grinds, because there is no path to follow.
+
+        /// <summary>
+        /// 11.0 scaffolding, deleted at 11.1: what a nav bake of this level would cost. Walks the static colliders
+        /// for the level's bounds, then samples every column at a cell size by casting down through it and counting
+        /// the walkable tops (the bake's step 1-3, minus the clearance erosion). Prints the numbers that set the
+        /// worldspawn defaults. Run with `--script navmeasure --frames 20`.
+        /// </summary>
+        private static void NavMeasure()
+        {
+            var w = Application.Current.World;
+            // the level's extent, from the static colliders the brushes became. A convex brush carries its world
+            // vertices, so it measures exactly; the dock's water and sky planes are hundreds of metres across and
+            // are *excluded* — they are what makes a naive bounds unusable (see the numbers in LAYER11_NAV.md).
+            var q = w.Query().WithReadOnly<RipNRage.Engine.Ecs.Physics.ColliderShape>().WithReadOnly<LocalToWorld>().Build();
+            Vector3 lo = new Vector3(1e9f, 1e9f, 1e9f), hi = new Vector3(-1e9f, -1e9f, -1e9f);
+            Vector3 allLo = lo, allHi = hi;
+            int statics = 0, huge = 0;
+            const float HugeExtent = 200f;
+            foreach (var chunk in q)
+            {
+                var shapes = chunk.Get<RipNRage.Engine.Ecs.Physics.ColliderShape>(); var ltw = chunk.Get<LocalToWorld>();
+                for (int i = 0; i < chunk.Length; i++)
+                {
+                    if (!chunk.Includes(i) || !shapes[i].IsStatic) continue;
+                    statics++;
+                    Vector3 blo, bhi;
+                    if (shapes[i].Kind == RipNRage.Engine.Ecs.Physics.ShapeKind.Convex)
+                    {
+                        var asset = RipNRage.Engine.Ecs.Physics.PhysicsAssets.Hulls.Resolve(shapes[i].Hull);
+                        if (asset == null || asset.Vertices.Length == 0) continue;
+                        blo = bhi = asset.Vertices[0];           // StaticConvex interns world-space vertices
+                        foreach (var v in asset.Vertices) { blo = Vector3.Min(blo, v); bhi = Vector3.Max(bhi, v); }
+                    }
+                    else
+                    {
+                        var c = ltw[i].Position + shapes[i].Center;
+                        var e = shapes[i].Kind == RipNRage.Engine.Ecs.Physics.ShapeKind.Box ? shapes[i].Size * 0.5f
+                              : new Vector3(shapes[i].Radius, Mathf.Max(shapes[i].Radius, shapes[i].Height * 0.5f), shapes[i].Radius);
+                        blo = c - e; bhi = c + e;
+                    }
+                    allLo = Vector3.Min(allLo, blo); allHi = Vector3.Max(allHi, bhi);
+                    if (bhi.x - blo.x > HugeExtent || bhi.z - blo.z > HugeExtent) { huge++; continue; }
+                    lo = Vector3.Min(lo, blo); hi = Vector3.Max(hi, bhi);
+                }
+            }
+            Debug.LogWarning($"[test] nav bounds all ({allLo.x:0.0} {allLo.y:0.0} {allLo.z:0.0}) .. ({allHi.x:0.0} {allHi.y:0.0} {allHi.z:0.0}) " +
+                             $"size {allHi.x - allLo.x:0.0} x {allHi.z - allLo.z:0.0}; statics {statics}, {huge} over {HugeExtent:0} m excluded");
+            Debug.LogWarning($"[test] nav bounds played ({lo.x:0.0} {lo.y:0.0} {lo.z:0.0}) .. ({hi.x:0.0} {hi.y:0.0} {hi.z:0.0}) " +
+                             $"size {hi.x - lo.x:0.0} x {hi.y - lo.y:0.0} x {hi.z - lo.z:0.0}");
+            float tile = LevelLoader.MeshChunkSize;
+            Debug.LogWarning($"[test] nav tiles at {tile:0} m: {Mathf.CeilToInt((hi.x - lo.x) / tile)} x {Mathf.CeilToInt((hi.z - lo.z) / tile)}");
+
+            foreach (float cell in new[] { 0.5f, 0.25f })
+            {
+                int nx = Mathf.CeilToInt((hi.x - lo.x) / cell), nz = Mathf.CeilToInt((hi.z - lo.z) / cell);
+                int columns = nx * nz, spans = 0, occupied = 0;
+                float top = hi.y + 1f, span = hi.y - lo.y + 2f;
+                for (int iz = 0; iz < nz; iz++)
+                    for (int ix = 0; ix < nx; ix++)
+                    {
+                        var at = new Vector3(lo.x + (ix + 0.5f) * cell, top, lo.z + (iz + 0.5f) * cell);
+                        int here = 0; float y = top;
+                        for (int guard = 0; guard < 16; guard++) // every solid top in the column, not just the first
+                        {
+                            if (!RipNRage.Engine.Physics.Raycast(new Vector3(at.x, y, at.z), Vector3.down, out var hit, y - lo.y + 1f, Noises.WallMask)) break;
+                            here++;
+                            y = hit.point.y - 0.05f;
+                            if (y <= lo.y) break;
+                        }
+                        spans += here;
+                        if (here > 0) occupied++;
+                    }
+                // NavSpan is 16 bytes, NavColumn 8
+                double mb = (spans * 16.0 + columns * 8.0) / (1024 * 1024);
+                Debug.LogWarning($"[test] nav cell {cell:0.00} m: {nx} x {nz} = {columns} columns, {occupied} with ground, " +
+                                 $"{spans} spans ({(occupied > 0 ? (float)spans / occupied : 0f):0.00} per occupied column), {mb:0.00} MB");
+            }
+        }
+
+        /// <summary>The dock floor the nav gates build on, and the spot the player is teleported to.</summary>
+        private const float NavFloorY = 0.91f, NavPlayerZ = 8f;
+
+        /// <summary>A static wall segment on Walkable, standing on the floor: x from <paramref name="x0"/> to <paramref name="x1"/>, at <paramref name="z"/>.</summary>
+        private static void NavWall(float x0, float x1, float z, float height = 4f, float thick = 0.6f) =>
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World,
+                new Vector3((x0 + x1) * 0.5f, NavFloorY + height * 0.5f, z), Quaternion.identity,
+                new Vector3(x1 - x0, height, thick), Layers.Walkable);
+
+        /// <summary>The grunt the nav gates watch: on the floor (or a platform top), facing +z — towards the player.</summary>
+        private static void NavGrunt(float x, float y, float z) =>
+            Enemies.Spawn(Application.Current.World, Enemies.KindOf(GameAssets.RiflemanData), new Vector3(x, y, z), 0f);
+
         /// <summary>
         /// The layer-6 watch line: what the nearest enemy is doing and what it has done to the player, read
         /// straight off the world (the enemy is only an entity since 6.6).
@@ -502,8 +600,13 @@ namespace RipNRage.Game
             var anim = w.Has<EnemyVisual>(nearest) ? w.Get<EnemyVisual>(nearest).State : AnimationState.IDLE;
             float moved = (w.Get<LocalTransform>(nearest).Position - _enemyHome[nearest]).magnitude;
             float ehp = w.Has<Health>(nearest) ? w.Get<Health>(nearest).Current : 0f;
+            // 11.0: how far the grunt still is from where it is trying to get to, and the path it is walking.
+            // `path`/`corners` are -1 until 11.3 gives it one: a gate that reads -1 is a grunt on the straight line.
+            Vector3 self = w.Get<LocalTransform>(nearest).Position;
+            Vector3 goal = brain.MoveTo; goal.y = self.y;
+            float goalD = brain.State == AiState.Idle ? -1f : (goal - self).magnitude;
             Debug.LogWarning($"[test] {tag}: hp {RipNRage.Game.Ecs.PlayerLink.Health:0} armour {RipNRage.Game.Ecs.PlayerLink.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
-                             $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0}");
+                             $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0} goal d {goalD:0.0} path -1 corners -1");
         }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;
@@ -728,6 +831,54 @@ namespace RipNRage.Game
                     // walk up to the rifleman standing near the spawn
                     RipNRage.Engine.Ecs.Input.InputOverride.Move = _frame < 55 ? new Vector2(-0.25f, 1f) : Vector2.zero;
                     if (_frame == 60 || _frame == 150 || _frame == 290) AiProbe($"close {_frame}");
+                    break;
+                case "navmeasure":
+                    // 11.0 scaffolding (not in the sweep): sizes the bake. Deleted at 11.1.
+                    if (_frame == 5) NavMeasure();
+                    break;
+                case "maze":
+                    // a wall across the run, the grunt behind it. It hears the shot, chases the sound and meets
+                    // 12 m of wall with a 6 m way round either end. Today: it grinds on the wall and never arrives.
+                    if (_frame == 2)
+                    {
+                        RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(0f, 1.8f, NavPlayerZ), 180f);
+                        NavWall(-6f, 6f, NavPlayerZ - 6f);
+                        NavGrunt(0f, NavFloorY, NavPlayerZ - 12f);
+                    }
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
+                    if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"maze {_frame}");
+                    break;
+                case "door":
+                    // the same wall with a 1.4 m gap, and a door hung in the gap — spawned swung open, so the way
+                    // through exists. The straight line still runs into the left segment. 11.6 shuts it mid-path.
+                    if (_frame == 2)
+                    {
+                        RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(0f, 1.8f, NavPlayerZ), 180f);
+                        NavWall(-6f, 0.7f, NavPlayerZ - 6f);
+                        NavWall(2.1f, 6f, NavPlayerZ - 6f);
+                        // hinged on its left edge at the gap's left post, swung 90 deg out of the doorway
+                        GamePrefabs.Library.Get("phys_door").Spawn(Application.Current.World,
+                            new Vector3(0.7f, NavFloorY, NavPlayerZ - 6f), Quaternion.Euler(0f, 90f, 0f));
+                        NavGrunt(0f, NavFloorY, NavPlayerZ - 12f);
+                    }
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
+                    if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"door {_frame}");
+                    break;
+                case "ledge":
+                    // the grunt starts on a 3.5 m platform; the player is on the floor below. The drop is further
+                    // than the ledge guard's reach (1.125 + 0.35 + 3 = 4.475 m under the body centre), so today the
+                    // grunt hears the shot, turns, and stands at the edge for the rest of the run. The platform is
+                    // 18 m off so the player is never *seen* (sight is 10 m): the grunt has to come down to him.
+                    if (_frame == 2)
+                    {
+                        RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(0f, 1.8f, NavPlayerZ), 180f);
+                        RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(Application.Current.World,
+                            new Vector3(0f, NavFloorY + 1.75f, NavPlayerZ - 18f), Quaternion.identity,
+                            new Vector3(8f, 3.5f, 8f), Layers.Walkable);
+                        NavGrunt(0f, NavFloorY + 3.5f, NavPlayerZ - 18f);
+                    }
+                    RipNRage.Engine.Ecs.Input.InputOverride.Fire = _frame % 60 == 30; // a shot a second: the chase never lapses on memory
+                    if (_frame == 60 || _frame == 180 || _frame == 300 || _frame == 390) AiProbe($"ledge {_frame}");
                     break;
                 case "evade":
                     // a grunt spawns in front and engages; the player runs at it, then dashes across its line of

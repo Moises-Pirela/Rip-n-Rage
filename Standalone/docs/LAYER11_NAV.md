@@ -54,6 +54,46 @@ defaults. Nothing in `Ecs/Nav` exists yet.
 `to target` not shrinking (the enemy grinding on the wall). The dock's measurements are written into this file
 under 11.1's defaults. `approach` / `peek` / `close` / `killenemy` re-baselined into the sweep.
 
+### What 11.0 recorded (2026-11-18)
+
+The grunt never *sees* the player in these three — a wall or a drop is in the way. It is told where he is by the
+**gunshot**: a 30 m noise, and `Noises.WallMuffle` only muffles past half of that, so it hears him through the
+wall and chases the sound. A shot every second (`_frame % 60 == 30`) keeps the chase from lapsing on the 5 s
+memory, so a stalled grunt stays stalled for the whole run instead of quietly going Idle.
+
+| Gate | Frame 60 | Frame 180 | Frame 300 | Frame 390 |
+|---|---|---|---|---|
+| `maze` | d 10.1, moved 0.00, Chase | d 6.7, **moved 3.43** | d 6.7, **moved 3.43** | d 6.7, **moved 3.43** |
+| `door` | d 10.1, moved 0.00, Chase | d 6.7, **moved 3.43** | d 6.7, **moved 3.43** | d 6.7, **moved 3.43** |
+| `ledge` | d 17.2, moved 0.00, Chase | d 14.4, **moved 2.90**, anim IDLE | d 14.4, **moved 2.90** | d 14.4, **moved 2.90** |
+
+`moved` freezes before frame 180 and never changes again: the grunt reaches the wall (or the platform edge) and
+stays there for 220 frames, still in `Chase`, still wanting the player. `maze` and `door` are identical today —
+the straight line hits the same wall segment and the gap is never found; they separate at 11.4 (`door` finds the
+gap) and 11.6 (the door shuts across the path). On `ledge` the animation is **IDLE**, not MOVING: the ledge guard
+has zeroed `Desired`, so the grunt is not even pushing.
+
+**Measurement (`--script navmeasure`, deleted at 11.1).** 29 static colliders on the dock.
+
+| | bounds | tiles @16 m | cell 0.5 m | cell 0.25 m |
+|---|---|---|---|---|
+| all statics | 1732 × 1000 m | 109 × 63 | 6.93 M columns, **167 MB** | 27.7 M columns, **669 MB** |
+| playable (6 planes over 200 m excluded) | 724 × 36 × 176 m | 46 × 11 | 510 k columns, 285 k spans, **8.2 MB** | 2.04 M columns, 1.14 M spans, **32.9 MB** |
+
+**Three findings that bind 11.1:**
+
+1. **Bounds must come from the playable brushes, not from every static collider.** The dock's water and sky
+   planes are 1000 m across; taking them in costs **167 MB** at 0.5 m against 8.2 MB without them — a 20×
+   difference that decides whether this layer is viable. The bake excludes colliders whose horizontal extent
+   exceeds a threshold, and a check pins that.
+2. **Tiles must be sparse.** Only ~52% of columns in the playable box have any ground under them (267 k of
+   510 k), and the box is 46 × 11 tiles for a level that is mostly a long thin pier. A tile with no brush is
+   `null`, as the spec already says — this is the measurement that says how much that saves.
+3. **Defaults confirmed: `cellSize` 0.5, `cellHeight` 0.2.** 8.2 MB is cheap. 0.25 m is affordable at 33 MB if a
+   level ever needs it, which is exactly why it is a worldspawn key. Spans per occupied column is **1.06** — the
+   dock has little stacked geometry, so the column-of-spans structure costs almost nothing where it is not used,
+   and is there for the levels that do stack.
+
 **Commit.** `ECS layer 11.0: instrument the gates; maze, door and ledge fail today`
 
 ---
