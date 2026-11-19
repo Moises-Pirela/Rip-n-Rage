@@ -199,6 +199,8 @@ namespace RipNRage.Game.Ecs
         public float[] size = { 200f, 100f, 200f };
         [InspectRange(0, 2000, 1), InspectTip("how far the water reaches down when size is \"w l\"")]
         public float depth = 100f;
+        [InspectTip("the open sea: water everywhere below the surface, however far the level runs (size then only sets how much of it is drawn)")]
+        public bool infinite;
         public override WaterVolume Bake() => From(Vector3.zero);
         public override WaterVolume Bake(in BakeContext ctx) => From(ctx.HasEntity ? ctx.Position : Vector3.zero);
 
@@ -210,6 +212,7 @@ namespace RipNRage.Game.Ecs
             {
                 Min = surface - new Vector3(w * 0.5f, h, l * 0.5f),
                 Max = surface + new Vector3(w * 0.5f, 0f, l * 0.5f),
+                Infinite = infinite,
             };
         }
     }

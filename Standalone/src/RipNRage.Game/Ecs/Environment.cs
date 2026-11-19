@@ -2,6 +2,7 @@ using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Engine.Ecs.View;
+using RipNRage.Engine.Ecs.Rendering;
 using RipNRage.Game.Content.Level;
 
 namespace RipNRage.Game.Ecs
@@ -16,9 +17,20 @@ namespace RipNRage.Game.Ecs
     [NotInPreview] public struct WaterVolume : IComponent
     {
         public Vector3 Min, Max;
+        /// <summary>
+        /// The open sea: everything below the surface, as far as there is anywhere to go. The box's horizontal
+        /// extent stops meaning anything — only <see cref="Max"/>.y, the surface height, does. A harbour is a box;
+        /// an ocean is a half-space, and a chase that runs for kilometres cannot be a box.
+        /// </summary>
+        public bool Infinite;
+
+        /// <summary>The surface height (the top of the box).</summary>
+        public float SurfaceY => Max.y;
 
         public bool Contains(Vector3 p) =>
-            p.x >= Min.x && p.x <= Max.x && p.y >= Min.y && p.y <= Max.y && p.z >= Min.z && p.z <= Max.z;
+            Infinite
+                ? p.y <= Max.y
+                : p.x >= Min.x && p.x <= Max.x && p.y >= Min.y && p.y <= Max.y && p.z >= Min.z && p.z <= Max.z;
     }
 
     /// <summary>Whether the view is under water, and the sky setting it found on the way in (put back on the way out).</summary>
@@ -31,15 +43,75 @@ namespace RipNRage.Game.Ecs
     public static class Waters
     {
         /// <summary>A water box: <paramref name="surface"/> is the middle of the top face. Immediate (level load).</summary>
-        public static Entity Spawn(World w, Vector3 surface, Vector3 size)
+        public static Entity Spawn(World w, Vector3 surface, Vector3 size, bool infinite = false)
         {
             var e = w.CreateEntity();
             w.Add(e, new WaterVolume
             {
                 Min = surface - new Vector3(size.x * 0.5f, size.y, size.z * 0.5f),
                 Max = surface + new Vector3(size.x * 0.5f, 0f, size.z * 0.5f),
+                Infinite = infinite,
             });
             return e;
+        }
+
+        /// <summary>
+        /// The height of the water at a point — one function, so that what you swim in, what you drown under and
+        /// (when hulls float, V4) what holds a boat up are all the same surface. Flat today; a sum of waves later.
+        /// </summary>
+        public static float HeightAt(World w, float x, float z, out bool any)
+        {
+            any = false;
+            float best = float.NegativeInfinity;
+            foreach (var chunk in w.Query().WithReadOnly<WaterVolume>().Build())
+            {
+                var volumes = chunk.Get<WaterVolume>();
+                for (int i = 0; i < chunk.Length; i++)
+                {
+                    if (!chunk.Includes(i)) continue;
+                    ref readonly var v = ref volumes[i];
+                    if (!v.Infinite && (x < v.Min.x || x > v.Max.x || z < v.Min.z || z > v.Max.z)) continue;
+                    if (v.SurfaceY > best) { best = v.SurfaceY; any = true; }
+                }
+            }
+            return any ? best : 0f;
+        }
+    }
+
+    /// <summary>
+    /// The sea follows the eye. An infinite <see cref="WaterVolume"/> is water everywhere below its surface, and
+    /// this keeps the thing you *see* under the camera to match: the plane is re-centred horizontally on the view
+    /// every frame, its height untouched.
+    ///
+    /// <para>Nothing swims or shimmers as it moves, because the water shader takes its ripples, its normals and
+    /// its waves from the world position of each pixel (<c>vWorldPos.xz * _Tiling</c>), not from the mesh's own
+    /// coordinates. The surface is anchored to the world; only the patch of it we bother to draw follows.</para>
+    /// </summary>
+    [UpdateAfter(typeof(TransformSystem))]
+    [Writes(typeof(LocalTransform))]
+    public sealed class OceanSurfaceSystem : SystemBase, ILateTick
+    {
+        private Query _cameras, _ocean;
+
+        public override void OnCreate()
+        {
+            _cameras = ActiveCamera.BuildQuery(World);
+            _ocean = World.Query().WithReadOnly<WaterVolume>().With<LocalTransform>().WithReadOnly<PlaneMesh>().Build();
+        }
+
+        public void LateTick(SystemContext ctx)
+        {
+            if (!ActiveCamera.TryGet(_cameras, out var eye, out _)) return;
+            foreach (var chunk in _ocean)
+            {
+                var volumes = chunk.Get<WaterVolume>(); var xforms = chunk.Get<LocalTransform>();
+                for (int i = 0; i < chunk.Length; i++)
+                {
+                    if (!chunk.Includes(i) || !volumes[i].Infinite) continue;
+                    ref var lt = ref xforms[i];
+                    lt.Position = new Vector3(eye.Position.x, lt.Position.y, eye.Position.z);
+                }
+            }
         }
     }
 

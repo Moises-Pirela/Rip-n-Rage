@@ -1,9 +1,13 @@
 // Water: one object, two things about it - what you see (a plane with the water shader) and what you swim in
 // (the volume hanging under that surface). Both take their extent from the same key.
+//
+// "infinite 1" makes it the open sea: water everywhere below the surface, however far the level runs, and the
+// drawn patch follows the camera (OceanSurfaceSystem). The size key then only says how much of it is drawn -
+// make it comfortably past the fog. A harbour stays a box.
 { "name": "water_plane",
-  "description": "Animated water plane (size w l)",
-  "keys": { "size": ["PlaneMesh.size", "WaterVolume.size"] },
-  "editor": { "gizmoColor": [0.3, 0.6, 1, 1], "pickExtents": [2, 0.2, 2], "defaults": { "size": "200 200" },
+  "description": "Animated water plane (size w l; infinite 1 = open sea that follows the camera)",
+  "keys": { "size": ["PlaneMesh.size", "WaterVolume.size"], "infinite": "WaterVolume.infinite" },
+  "editor": { "gizmoColor": [0.3, 0.6, 1, 1], "pickExtents": [2, 0.2, 2], "defaults": { "size": "200 200", "infinite": "0" },
               "numeric": [ { "key": "height", "step": 0.25 } ] },
   "components": {
     "PlaneMesh": { "size": [200, 200], "uvScale": 0.0625 },
