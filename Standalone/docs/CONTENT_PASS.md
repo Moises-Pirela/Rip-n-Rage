@@ -1,6 +1,6 @@
 # Content pass — plan
 
-Status: **V1–V1e, V4, V5 built** (2026-11-19), plus swimming and caustics; the rest planned. Scope: the two unfinished weapons (katana, sonic shotgun),
+Status: **V1–V1e, V2, V4, V5 built** (2026-11-19), plus swimming and caustics; the rest planned. Scope: the two unfinished weapons (katana, sonic shotgun),
 throwables, more enemy kinds, and the Harbor — one sprawling level ending in a speedboat chase onto a container
 ship. Written from a survey of the code as of `07afed7` (layer 11 closed); paths are relative to `Standalone/`.
 
@@ -420,26 +420,89 @@ the carried crate is handed the deck's velocity.
 
 **Commit.** `Content V1c: the infinite ocean`
 
-### V2. Compound bodies
+### V2. Compound bodies — **BUILT**
 
-The fix for #3, in the engine.
+The fix for #3. A `Body` plus a `CompoundShape` (an asset of parts: shape, pose, density) makes one rigid body
+from many colliders (`Physics/CompoundBody.cs`, `CompoundShapeConfig` for prefabs).
 
-- **Child shapes**: a body owns N child shapes (box, sphere, capsule, **convex hull**), each with its own local
-  pose. Dynamic convex hulls are new (static brush hulls exist).
-- **Mass properties**: from the children's volumes × density. Combined with the parallel-axis theorem into a full
-  inertia tensor, then diagonalised into a principal frame. The solver keeps its diagonal
-  `inverseInertiaLocal`, expressed in that frame.
-- **Collision**: broadphase proxies per child mapping to one body; contact generation and CCD sweeps per child.
-  Queries (ray, shape cast, ground probe) resolve to the body's entity, so `CharacterMotor.Ground` is the boat.
-- **Sleeping and islands** treat the compound as one body.
+**What it does:**
+- **Parts of every kind**: box, sphere, capsule and **convex hull**. Moving convex hulls are new. Each part is
+  posed every step by a polytope that shares its template's topology, so posing allocates nothing.
+- **Mass**: shared out by volume × density. The centre of mass is the parts'. The **full inertia tensor** comes from
+  each part's own inertia, turned into the body frame and moved by parallel axes, then diagonalised (Jacobi) into a
+  principal frame (`inertiaFrame`). The solver keeps its diagonal; only the frame it is diagonal in is new.
+- **Narrow phase**: a compound collides part by part, and a single body collides with a compound's part as that
+  part. The pair rules are a single body's, applied per slot pair, so each pair is generated exactly once whichever
+  side holds the compound. Every part names the body and its entity: a ray, a contact or a ground probe on any part
+  is on the boat, so `CharacterMotor.Ground` is the boat.
+- **Continuous collision**: each part sweeps, and a fast body sweeps against a compound's parts, not its overall box.
+- **Buoyancy** takes an explicit **displacement box** (the hull's envelope), so a hull floats on what it encloses,
+  not on its parts. In passing: buoyancy sampled an off-centre shape from the centre of mass *and* its offset,
+  twice over. It is measured from the entity's origin now. That was harmless for the centred shapes used until
+  then, and wrong for everything else.
 
-**Checks.**
-- The inertia of an L-shaped compound matches the analytic value.
-- A compound dropped on a slope tumbles the way the analytic tensor predicts.
-- 100 compounds stack and settle (a new benchmark case).
-- A ray hit on any child names the parent entity.
+**Checks** (`tests/RipNRage.EngineChecks/CompoundChecks.cs`):
 
-**Commit.** `Content V2: compound rigid bodies with dynamic convex hulls`
+- *Mass*:
+  - A one-part compound turns under a torque exactly as the box it is made of.
+  - An L of two boxes turns as a tensor computed independently in the check says, off-diagonal terms included.
+  - A turned part equals the same part built turned.
+  - Density moves the centre of mass where it should.
+- *Collision*:
+  - A four-legged table settles on its legs, level and still.
+  - A ray between its legs passes under it; one in line stops at the first leg's face.
+  - A crate stacks on its top.
+  - A compound thrown at 80 m/s does not tunnel through a 20 cm wall.
+  - A prefab of five parts, convex among them, settles on its lowest part.
+  - A ray onto the convex part hits its slope, not a box round it.
+  - A hundred compounds stacked three high settle and none goes through the floor.
+- *Vessels*:
+  - A speedboat (heavy hull, rails, a cabin with roof and front wall) floats on its envelope at the predicted
+    height, near level.
+  - A character aboard is not left behind as it gets under way, walks forward into the cabin, and is stopped by its
+    front wall.
+- *Boarding and offboarding*, each a walk and a jump, judged by what the character is standing on afterwards:
+  - **boat → ship** at rest, onto a deck 2.7 m above the boat's;
+  - **ship → boat**, stepping off the deck, and the boat sinks by the rider's weight and comes back up when they
+    leave;
+  - **boat → ship at 20 m/s**: the ship becomes the frame and they stay where they landed;
+  - **ship → quay**: the frame becomes still ground.
+- *Aboard the ship* under way:
+  - in through the deckhouse door, under its roof, stopped by its back wall;
+  - down the ramp through the hatch into the hold, on under the deck, and back up.
+
+**Found on the way — a real bug for the chase.** Characters are drawn interpolated between the last two physics
+steps. Kinematic bodies were never interpolated, and boats were not by default, so a player standing on a moving deck
+was **drawn up to a whole step's motion off it**: 13 cm at 8 m/s, 42 cm at a speedboat's 25 m/s. On screen that is
+judder into the cabin wall every frame.
+
+It surfaced as what looked like the character sinking 13 cm into a moving wall. It took six experiments to pin down:
+- not compounds (a single kinematic wall did the same);
+- not the contact solver (a plain box pressed into the moving wall stopped at 1 mm);
+- not the new traction (still ground: 1 mm, as before);
+- the measurement — the character's *drawn* pose against the wall's true one.
+
+The fix: kinematic bodies interpolate like any other, and **whatever carries an interpolated character is drawn
+interpolated with it**, so a designer cannot forget the flag on a vessel. A check walks frame times that never line
+up with the physics step: a character standing on a deck doing 25 m/s must be drawn standing still (< 1 cm).
+Removing the fix fails it.
+
+**Gates**: the full sweep, 36 of 36, is **byte-identical** to the previous commit in every probe line, and the four
+pixel gates are identical to the pixel. Single-shape scenes are untouched.
+
+**Cost**: the contact-heaviest benchmark (1000+ crates) is about 2% slower per step (12.19 → 12.43 ms, three runs
+each; run-to-run noise about 0.17 ms). The likely cause is the larger body object and one more branch per pair.
+
+**Limits** (all recorded where they live):
+- Parts assume a body at unit scale.
+- A convex part's own inertia is its bounding box's (its mass and centre are exact).
+- A convex part sweeps as its own box (it can only stop a little early, never late).
+- Explosion impulses on a compound use its overall box.
+- One displacement box per hull; several, from hull brushes, come with V3.
+- The ship is a kinematic stand-in with a `PlatformMotion`. Its own simulated motion (heavy-vessel dynamics) and its
+  moving-frame navigation are V9.
+
+**Commit.** `Content V2: compound rigid bodies - hulls, decks and the parts of a ship`
 
 ### V3. Brush entities
 
