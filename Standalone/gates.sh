@@ -69,7 +69,7 @@ tail -1 "$OUT/engine-checks.log"
 dotnet run -c Release --no-build --project tests/RipNRage.GameChecks > "$OUT/game-checks.log" 2>&1 || fail=1
 tail -1 "$OUT/game-checks.log"
 
-for entry in $SLICE; dofor entry in $SLICE; do
+for entry in $SLICE; do
     name=${entry%%:*}; frames=${entry##*:}
     if [ -n "${GATES:-}" ] && [[ " $GATES " != *" $name "* ]]; then continue; fi
     log="$OUT/$name.log"

@@ -2337,14 +2337,15 @@ that changes what the level builds.
   11.15 enemies are files + the brawler · 11.16 melee has a damage path both ways; then a review and three fix
   passes (11.10b/c/d — the safe set, the hash-moving set, and level-start bake / query leak / watched
   definitions / one test grid / batched sweep).
-- [ ] **11.17 the editor pass** (`LAYER11_EDITOR.md`, planned and begun 2026-11-19): **11.17.0 instrument and
-  11.17.1 collision on demand are done** — the editor builds the level's static collision (brushes and the
-  prefabs' child colliders) and bakes the game's grid to within 0.05% of spans. **Left**: 11.17.2 the panel
-  (Rebake, readout, stale badge, draw switch), 11.17.3 the three-colour draw with a radius slider, 11.17.4 the
-  reachability paint from the player start, 11.17.5 obstacle footprints and wander radii, 11.17.6 the Level tab's
-  nav keys marking the grid stale, 11.17.7 close-out.
-- [ ] **Verification debt**: no full sweep since 11.0 (`./gates.sh --batch k/n` now makes it four short runs),
-  the `walk` / `menu` manifests to re-baseline, shots, editors, the bench A/B, and layer 10.8's close-out.
+- [x] **11.17 the editor pass** (`LAYER11_EDITOR.md`): the editor builds the level's static collision on demand
+  (brushes and the prefabs' child colliders), bakes the grid the game would bake to within 0.05% of spans, and
+  shows it — one panel (F6), one Rebake button, a stale badge, a five-colour draw with a radius slider and a span
+  cap, the reachability paint flooded from the player start, and gizmos for what will carve and where grunts roam.
+- [x] **The sweep ran** (2026-11-19, four batches): 32 scripts, engine 322 and gameplay 540 in each, six shots
+  per batch, both manifests, the three editor gates; batch 1 twice and `--compare` clean. The `walk` manifest
+  moved 103 → 104 entities for a named reason (`PathRequest`, `PathFollow`, `NavObstacle`, and `NavStats`'s
+  singleton carrier). **Left**: the interleaved bench A/B against the pre-layer parent — which is also the last
+  thing layer 10.8's close-out wants.
   sweep (none since 11.0), the bench A/B, and layer 10.8's close-out.
   parent (`--threads 1`); the bake's cost at level start (serial vs tiles-in-parallel), the search's cost per
   tick and the carve's cost with a door swinging, all against budget; allocation per frame compared with 10.x

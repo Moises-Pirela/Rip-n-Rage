@@ -79,7 +79,7 @@ see. The navigation rules and types are in [`LAYER11_NAV.md`](LAYER11_NAV.md); t
   has.
 - [x] **11.17.6 Live settings.** The Level tab's three nav keys mark the grid stale and (optionally) rebake on
   release. Nothing new to build in the grid — only to act on its edits.
-- [ ] **11.17.7 Close-out.** Editor gate green with the nav steps, both screenshots, the doc, and the roadmap's
+- [x] **11.17.7 Close-out.** Editor gate green with the nav steps, both screenshots, the doc, and the roadmap's
   layer 11 line finally closed.
 
 ## What 11.17 does not do
@@ -153,3 +153,31 @@ drop scenery ground).
 **Placements** (11.17.5) are drawn from the same data the game reads: a class carrying `NavObstacle` gets the
 footprint it will stamp when it moves — the grid never shows it, because the editor does not carve — and a
 monster gets the circle it will wander inside, from its `enemies/*.json` definition.
+
+
+## 11.17.7 — close-out (2026-11-19)
+
+**The sweep ran, in four batches** (`./gates.sh --batch k/4`), which is what the batching was built for. All four
+green: 32 scripts, both suites in every batch (engine **322**, gameplay **540**), six screenshots each, both
+manifests, and the three editor gates — `edit`, `properties` and the new `editnav` — in every batch.
+
+**The batching had a bug and the sweep found it.** `--batch … --list` worked because it exits early; the loop
+header underneath had been duplicated by the 11.10d edit (`for entry in $SLICE; dofor entry in $SLICE; do`) and
+no run had ever reached it. Fixed, `bash -n` clean, and then four batches passed.
+
+**Determinism**: batch 1 was run twice and `./gates.sh --compare` reports no differing probe lines.
+
+**The gates are at the values the layer recorded**, unchanged by the editor work: `maze` moved 21.05 at d 9.4 ·
+`door` 21.44 at d 8.8 · `ledge` 12.32 at d 5.0 · `stay` 5.51 at d 21.0 · `brawler` 10.91 at d 0.9 · `crowd` all
+three grunts in and the player down.
+
+**The manifest moved, as predicted, and the cause is named**: 103 → 104 entities, hash `054f07cd` → `7b22b147`.
+The classes new to it are exactly layer 11's — `PathRequest` and `PathFollow` on the enemies, `NavObstacle` on
+the doors and props, and `NavStats`, whose singleton carrier is the extra entity.
+
+**Layer 10.8's close-out is covered except the bench**: this sweep is the checks, the scripts, the shots, the two
+manifests and the editor gates it asked for. What it still wants, and what layer 11 owes with it, is the
+**interleaved bench A/B** (`--threads 1`) against the pre-layer parent. That is the one close-out item left.
+
+**One thing this close-out's own review caught**: `DrawNavPlacements` resolved a prefab per entity per frame, and
+the editor draws every frame. The placements are resolved once now and rebuilt with the grid.

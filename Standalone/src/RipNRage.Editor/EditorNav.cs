@@ -56,6 +56,7 @@ namespace RipNRage.Editor
                 }
             }
             NavFlood(nav);
+            _navPlacements = null; // resolved again with the grid
             _navStale = false;
             _navStatus = $"baked in {_navMs:0} ms";
         }
@@ -102,7 +103,7 @@ namespace RipNRage.Editor
         }
 
         /// <summary>The grid is older than the level: every edit goes through Rebuild, which says so.</summary>
-        public void NavMarkStale() { _navStale = true; _navStatus = "the level changed since this grid was baked"; }
+        public void NavMarkStale() { _navStale = true; _navPlacements = null; _navStatus = "the level changed since this grid was baked"; }
 
         /// <summary>Called from DrawGizmos: the grid around the camera, with the panel's switches.</summary>
         private void DrawNavGizmos()
@@ -127,8 +128,25 @@ namespace RipNRage.Editor
         private void DrawNavPlacements()
         {
             if (!_navOpen || !_navDraw) return;
+            if (_navPlacements == null) BuildNavPlacements();
             var carve = new Color(1f, 0.35f, 0.3f, 0.8f);
             var roam = new Color(0.6f, 0.85f, 1f, 0.5f);
+            foreach (var (centre, half, radius) in _navPlacements)
+            {
+                if (half != Vector3.zero) RipNRage.Engine.Graphics.DebugDraw.Box(centre - half, centre + half, carve, false);
+                if (radius > 0f) NavCircle(centre, radius, roam);
+            }
+        }
+
+        /// <summary>
+        /// The placements, resolved once: a prefab lookup per entity per frame is what the first version did, and
+        /// the editor draws every frame. Rebuilt when the grid is (Rebake) or when the document changes.
+        /// </summary>
+        private List<(Vector3 centre, Vector3 half, float radius)> _navPlacements;
+
+        private void BuildNavPlacements()
+        {
+            _navPlacements = new List<(Vector3, Vector3, float)>();
             _navEnemyDefs ??= RipNRage.Game.Content.EnemyDefinitions.Load(_ => null);
             foreach (var e in doc.entities)
             {
@@ -137,18 +155,11 @@ namespace RipNRage.Editor
                 RipNRage.Engine.Ecs.Prefab prefab;
                 try { prefab = RipNRage.Game.Content.Level.GamePrefabs.Library.Get(def.prefab); } catch { continue; }
 
-                if (prefab.Get<NavObstacleConfig>() != null)
-                {
-                    var half = NavFootprint(prefab);
-                    if (half != Vector3.zero)
-                        RipNRage.Engine.Graphics.DebugDraw.Box(e.origin - half, e.origin + half, carve, false);
-                }
+                var half = prefab.Get<NavObstacleConfig>() != null ? NavFootprint(prefab) : Vector3.zero;
+                float radius = 0f;
                 foreach (var enemy in _navEnemyDefs)
-                {
-                    if (!string.Equals(enemy.classname, e.classname, System.StringComparison.OrdinalIgnoreCase)) continue;
-                    NavCircle(e.origin, enemy.wanderRadius, roam);
-                    break;
-                }
+                    if (string.Equals(enemy.classname, e.classname, System.StringComparison.OrdinalIgnoreCase)) { radius = enemy.wanderRadius; break; }
+                if (half != Vector3.zero || radius > 0f) _navPlacements.Add((e.origin, half, radius));
             }
         }
 
