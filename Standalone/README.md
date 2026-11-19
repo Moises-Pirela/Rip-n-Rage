@@ -1161,7 +1161,8 @@ switching stay in sync; the `0` glyph of the built-in font is plain.
 ## Known gaps / next steps
 
 * Physics: rigid bodies are boxes, spheres, capsules, or compounds of those and convex hulls (a hull, its cabin, a
-  ship's decks; parts assume unit scale, and a convex part's own inertia is its bounding box's), joints are
+  ship's decks; scaled compounds are exact except that a sphere or capsule part under non-uniform scale takes the
+  largest scale across it), joints are
   ball / distance / spring / hinge / slider / fixed (no cone-twist or 6-DOF configurable joint), continuous
   collision is translational (orientation is not swept within a substep), movers push bodies but are not pushed
   back, mesh triggers overlap by bounds, the simulation is not deterministic with `threads > 1` (the order in

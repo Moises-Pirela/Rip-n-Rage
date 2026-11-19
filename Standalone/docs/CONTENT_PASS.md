@@ -872,16 +872,23 @@ Every limit the V steps have recorded, in one place, each with where it gets fix
 
 Sizes are relative: S is a commit, M a few, L a step of its own.
 
-#### 1. Fix now — "V2b", before V3 (all S)
+#### 1. V2b — **BUILT**
 
-V3 turns brushes into vessels, and every brush is a convex hull. These four would be baked into every hull it builds.
+All four closed, plus two bugs found on the way. Checks are in `tests/RipNRage.EngineChecks/CompoundLimitsChecks.cs`;
+each was built so the old behaviour would fail it.
 
-| # | Limit | Consequence | Fix | Proved by |
-|---|---|---|---|---|
-| L1 | A convex part's inertia is its bounding box's | A hull brush's roll and pitch inertia is wrong in proportion to how un-box-like it is. A V-bottomed hull rolls as if it were a box. | Exact polyhedral inertia by signed tetrahedra: the decomposition the volume and centroid code already uses, carried to second moments. | A convex box part matches the box formula exactly; a tetrahedron matches its analytic tensor. |
-| L2 | A convex part sweeps as its box | A fast hull is stopped a little early by the corners its box has and it doesn't. It can never tunnel, but it can stop short. | `CollisionShape.Translated` does **not** move polytopes (its own comment: "they are static geometry"), so the sweep can't move a hull today. Give polytope shapes a translation that `Support` adds, then sweep each convex part at its substep pose. | A wedge thrown at a wall stops at its true face, not at its box. The gates stay byte-identical, since only moving polytopes change and none existed before V2. |
-| L3 | Blasts on a compound use its overall box | A rocket by a boat's cabin roof pushes the boat as if it struck the envelope: the wrong lever arm, the wrong spin. | `SolverBody.AddExplosionForce` takes the closest point over the parts (`ConvexShape.ClosestPoint`, or the rounded shapes' own). | The same blast beside the cabin roof and beside the keel spins the boat in opposite directions. |
-| L4 | Parts assume unit scale, **silently** | An editor-scaled vessel draws scaled and collides unscaled. That mismatch would surface as "the boat is haunted". | **Now**: registration refuses a non-unit-scale compound with a warning (the sync already has `Skip`). **Later, if a level wants it**: scale part positions and sizes at registration, the way `SetupEcs` scales a single shape. | A scaled compound is reported, not simulated wrong. |
+| # | Was | Now | Proved by |
+|---|---|---|---|
+| L1 | A convex part's inertia was its bounding box's | Exact. Each part contributes a full tensor; a convex part's comes from the tetrahedra its volume already used (∫x·xᵀ dV = V/20·(s·sᵀ + Σvᵢ·vᵢᵀ) each), moved to its centroid. | A convex part shaped as a box turns exactly as the box. Turned arbitrarily, it turns exactly as the turned box, off-diagonal terms included. |
+| L2 | A convex part swept as its box | Swept as itself. **And a latent tunnelling bug under it**: `CollisionShape.Translated` moved a polytope's centre and none of its vertices, so a hull could not be swept at all. Polytopes now carry an `offset` that `Support()` and `bounds` honour. Static ones keep it at zero, so nothing that existed changed. | A wedge at 80 m/s is held back exactly where its slope meets a bar (±5 cm). With the old box sweep put back, it is held where its box would be — the check fails. |
+| L3 | Blasts on a compound used its overall box | The closest point over the parts. | A blast within reach of the box round an open deck, but of none of its parts, does not move the boat. The same blast beside the deckhouse roof does. |
+| L4 | Parts assumed unit scale, **silently** | **Supported fully** (decided). Uniform scale scales everything. Under non-uniform scale an axis-aligned box stays a box; a turned box becomes the parallelepiped it really is (an exact convex part); convex parts are transformed exactly (vertices by S·R, planes by its inverse transpose, mirroring included, no point cap). Spheres and capsules take the single-shape rule, the largest scale across them. A runtime change of scale sets the parts up again in place. Buoyancy envelopes and authored volumes, and propeller positions, scale too. | An L at scale 2 equals one built twice the size. Under (1, 2, 1), a box is twice as tall and a turned box becomes a stretched diamond, its corner and sides where they should be. A wedge mirrored by a negative scale slopes the other way, not inside out. A table at scale 2 stands on its scaled legs, and rescaled to 1.5 while standing it is set up again. A hull at scale 2 floats on its scaled envelope. |
+
+**Found on the way**: the propeller's position was measured from the centre of mass rather than the hull's origin —
+the same bug buoyancy had. It was harmless for a centred box, but misplaced V2's compound speedboat's propeller by its
+centre-of-mass offset. It is measured from the origin now.
+
+**Gates**: 36 of 36, byte-identical to the previous commit, pixel-identical.
 
 #### 2. Fix with the hull physics — "V4b", after V3 (L)
 
@@ -927,17 +934,14 @@ V3 turns brushes into vessels, and every brush is a convex hull. These four woul
 |---|---|---|
 | Ground lighter than rider ÷ 10 is solved as rider ÷ 10 (`maxMassRatio`) | An iterative solver cannot converge a stiff spring over a very light body against a rigid floor. Such a floating prop feels only part of a rider's weight, and could not hold a person up anyway. | A design wants characters riding very light floating things |
 | Grip limit off by default (`RideConstraint.grip`) | The motor runs at about 7 g for feel; real friction (~1 g) makes every deck ice | A slippery-deck design, which sets it per deck |
-| **Walk-off shove**: pushing off a light crate slides it about a metre | Newton's third law, honestly: the motor's 7 g push-off is real force on what it pushes | **Needs a decision** — see below |
+| **Walk-off shove**: pushing off a light crate slides it about a metre | Newton's third law, honestly: the motor's 7 g push-off is real force on what it pushes. **Decided: kept honest.** | A design where pushing off light props reads as wrong in play |
 | Caustics use one water level (the highest surface) | Every level so far has one sea | A level with two water heights in view |
 | Only the player swims | Nothing else needs to yet | An enemy design that swims |
 
-**Decisions this needs:**
-
-1. **Walk-off shove.** Either keep it honest (recommended — the chase is heavy boats, not light crates), or cap
-   the reaction on *dynamic* ground at μ × support force. The cap is a deliberate break of Newton's third law: the
-   rider keeps the full feel, and the ground feels only what real feet could give it.
-2. **Scale.** Refuse non-unit-scale compounds (recommended, and part of V2b), or support scaled compounds outright.
-3. **Order.** V2b, then V3, then V4b (recommended, because V4b is the chase-speed risk and needs V3's hull brushes), then V6.
+**Decided** (2026-11-19):
+- The walk-off shove stays honest.
+- Scaled compounds are fully supported (built in V2b).
+- The order is V2b (done), then V3, then V4b, then V6.
 
 Engine-wide gaps in the README that are not on this pass's path — joint types, mesh triggers overlapping by
 bounds, movers that are not pushed back, the mesh ghost-edge heuristic — stay in the README's list.
