@@ -49,6 +49,7 @@ internal static class Program
             True(Mathf.Approximately(1f, 1f + 0.0000001f), "Approximately small delta");
             EcsChecks.Run(True);
             PhysicsEcsChecks.Run(True);
+            PlatformChecks.Run(True);
             Layer3Checks.Run(True);
             Layer4Checks.Run(True);
             Layer5Checks.Run(True);

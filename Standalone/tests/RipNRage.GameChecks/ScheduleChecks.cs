@@ -33,6 +33,10 @@ internal static class ScheduleChecks
         {
             // NavBakeSystem (11.1) is a batch of its own, after PhysicsSyncSystem: it reads the broadphase the
             // sync system has just filled, and writes engine-side shared data rather than components
+            //
+            // The two movers come first, before the sync: a deck's velocity and the pose of everything riding it
+            // are this step's inputs, so they must be written before the sync pushes them at the solver.
+            "PlatformMotionSystem", "CarrySystem",
             "PhysicsSyncSystem", "RagdollSystem", "JointSystem", "KinematicMoverSystem", "CameraShakeSystem",
             "NavBakeSystem", "PlayerMoveSystem", "CharacterMotorSystem", "PhysicsStepSystem", "PhysicsWriteBackSystem", "TriggerSystem",
             "SliderPatrolSystem",
@@ -40,7 +44,9 @@ internal static class ScheduleChecks
         ["LateTick"] = new[]
         {
             "AudioSystem", "EffectSystem", "PhysicsInterpolationSystem", "RodSystem", "PlayerViewSystem", "CameraShakeSystem",
-            "WeaponSwaySystem", "TransformSystem", "UnderwaterSystem",
+            // the ocean is re-centred on the eye after the transforms have placed it, and before the underwater
+            // test reads where the eye is
+            "WeaponSwaySystem", "TransformSystem", "OceanSurfaceSystem", "UnderwaterSystem",
         },
     };
 
