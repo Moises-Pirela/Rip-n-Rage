@@ -57,10 +57,10 @@ see. The navigation rules and types are in [`LAYER11_NAV.md`](LAYER11_NAV.md); t
 
 ## Phases
 
-- [ ] **11.17.0 Instrument.** Extend the editor's `session` script with nav steps and a `[test] nav editor:`
+- [x] **11.17.0 Instrument.** Extend the editor's `session` script with nav steps and a `[test] nav editor:`
   probe (tiles, spans, walkable, tight, time). Today it prints "no grid": that is the baseline. The editor gate
   already runs in the sweep, so this costs no new gate.
-- [ ] **11.17.1 Geometry on demand.** `LevelLoader.BuildCollisionOnly(doc)` — the brush collider loop, callable
+- [x] **11.17.1 Geometry on demand.** `LevelLoader.BuildCollisionOnly(doc)` — the brush collider loop, callable
   from the editor, **plus** a static collider per map entity whose prefab carries a `ColliderShape` and no
   `Body` (Q4). The colliders go in a list the editor destroys on rebuild. Check: a preview world plus collision
   has the same static count as the game's build of the same map.
@@ -89,3 +89,37 @@ see. The navigation rules and types are in [`LAYER11_NAV.md`](LAYER11_NAV.md); t
 - Edit the grid by hand (painted blockers, off-mesh links): the grid is derived, and a designer changes it by
   changing the level.
 - Replace the ray sampler with a document sampler — option (2) above, written down, not taken here.
+
+
+---
+
+## 11.17.0 / 11.17.1 — done (2026-11-19)
+
+**The baseline, now a gate** (`editnav`, a second short editor run beside `session`):
+
+```
+[test] nav editor start: grid none | static colliders 0 | broadphase 0
+```
+
+**Collision on demand.** `LevelLoader.BuildBrushCollision` is the brush loop lifted out of `BuildBrushes` (the
+game build calls it, unchanged), and `BuildCollisionOnly` adds a static collider for every map entity's class
+that has a collider, no body and no trigger — **walking the prefab's children**, which is where a class usually
+keeps it. The editor builds this on demand and destroys it on `Rebuild`; it is deliberately not part of the
+preview, which is rebuilt on every edit.
+
+| | colliders | tiles | spans |
+|---|---|---|---|
+| editor, root configs only (first try) | 18 | — | — |
+| editor, children walked | **24** | **131** | **130,634** |
+| the game, same map | 30 (raw static count) | **131** | **130,700** |
+
+**Two things the measurement taught.** The root-only version found 18 of 30: the dock's six lamp posts and four
+joint anchors keep their colliders on a *child*, so a third of the level was missing. And the collider *counts*
+are the wrong proxy — the game's 30 includes triggers (the checkpoint, the ammo pickups, the water), which are
+static colliders that rays skip, so they can never be in the grid. The right comparison is the grid, and it is
+**the same 131 tiles and within 0.05% on spans** (130,634 against 130,700), baked in 164 ms.
+
+The 66-span difference is the honest limit of a config-level bake: the game runs placement systems at spawn
+(`StandOnBase`, `HingeOnEdge`) that nudge transforms before the colliders register, and this walks configs
+without running them; capsule and convex children are skipped too. The editor's grid is a preview of the game's —
+accurate enough to answer "can the AI get there", and documented as not a substitute for it.

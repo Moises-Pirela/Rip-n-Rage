@@ -238,30 +238,103 @@ namespace RipNRage.Game.Content.Level
                 }
             }
 
-            if (!preview)
+            if (!preview) BuildBrushCollision(doc, null);
+        }
+
+        /// <summary>
+        /// The brushes' collision: one static collider per solid brush, face-tagged for the impact effects. The game
+        /// build makes this as part of <see cref="BuildBrushes"/>; the editor asks for it on demand (11.17.1), which
+        /// is why it is its own function and why it can report what it made.
+        /// </summary>
+        public static void BuildBrushCollision(MapDocument doc, List<RipNRage.Engine.Ecs.Entity> into)
+        {
+            var world = Application.Current.World;
+            foreach (var b in doc.Brushes)
             {
-                foreach (var b in doc.Brushes)
+                if (!b.IsValid) continue;
+                if (b.IsSky) continue;
+                // collision: an ECS static collider, tagged with the surface of every face for the impact effects
+                // (hit normal → face → texture → surface)
+                RipNRage.Engine.Ecs.Entity collider;
+                if (b.IsAxisAligned)
+                    collider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, (b.boundsMin + b.boundsMax) * 0.5f, Quaternion.identity, b.boundsMax - b.boundsMin, Layers.Walkable);
+                else
                 {
-                    if (!b.IsValid) continue;
-                    if (b.IsSky) continue;
-                    // collision: an ECS static collider, tagged with the surface of every face for the impact effects
-                    // (hit normal → face → texture → surface)
-                    var world = Application.Current.World;
-                    RipNRage.Engine.Ecs.Entity collider;
-                    if (b.IsAxisAligned)
-                        collider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, (b.boundsMin + b.boundsMax) * 0.5f, Quaternion.identity, b.boundsMax - b.boundsMin, Layers.Walkable);
-                    else
-                    {
-                        var planes = new Plane[b.faces.Count];
-                        var verts = new List<Vector3>();
-                        for (int i = 0; i < b.faces.Count; i++) { planes[i] = b.faces[i].plane; verts.AddRange(b.faces[i].polygon); }
-                        collider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticConvex(world, planes, verts.ToArray(), Layers.Walkable);
-                    }
-                    var normals = new Vector3[b.faces.Count]; var ids = new int[b.faces.Count];
-                    for (int i = 0; i < b.faces.Count; i++) { normals[i] = b.faces[i].plane.normal; ids[i] = Surfaces.Id(LevelTextures.Get(b.faces[i].texture).surface); }
-                    Surfaces.TagFaces(world, collider, new RipNRage.Game.Ecs.BrushFaces(normals, ids, ids.Length > 0 ? ids[0] : 0));
+                    var planes = new Plane[b.faces.Count];
+                    var verts = new List<Vector3>();
+                    for (int i = 0; i < b.faces.Count; i++) { planes[i] = b.faces[i].plane; verts.AddRange(b.faces[i].polygon); }
+                    collider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticConvex(world, planes, verts.ToArray(), Layers.Walkable);
                 }
+                var normals = new Vector3[b.faces.Count]; var ids = new int[b.faces.Count];
+                for (int i = 0; i < b.faces.Count; i++) { normals[i] = b.faces[i].plane.normal; ids[i] = Surfaces.Id(LevelTextures.Get(b.faces[i].texture).surface); }
+                Surfaces.TagFaces(world, collider, new RipNRage.Game.Ecs.BrushFaces(normals, ids, ids.Length > 0 ? ids[0] : 0));
+                into?.Add(collider);
             }
+        }
+
+        /// <summary>
+        /// The level's collision and nothing else (11.17.1): the brushes, plus one static collider for every map
+        /// entity whose class has a collider, no body and is not a trigger — the solid, unmoving furniture a body
+        /// cannot walk through. A prop with a body is **not** here: the game does not bake those into the grid
+        /// either, it carves them at runtime (11.5), and the editor draws their footprints instead.
+        ///
+        /// The editor builds this on demand so it can bake the grid the game would bake, then destroys it again.
+        /// </summary>
+        public static void BuildCollisionOnly(MapDocument doc, List<RipNRage.Engine.Ecs.Entity> into)
+        {
+            BuildBrushCollision(doc, into);
+            var world = Application.Current.World;
+            foreach (var e in doc.entities)
+            {
+                var def = EntityRegistry.Get(e.classname);
+                if (def?.prefab == null) continue; // a code class builds its own collision, if it has any
+                RipNRage.Engine.Ecs.Prefab prefab;
+                try
+                {
+                    var overrides = new List<KeyValuePair<string, string>>();
+                    foreach (var kv in e.properties) if (!IsUniversalKey(kv.Key)) overrides.Add(kv);
+                    prefab = overrides.Count == 0 ? GamePrefabs.Library.Get(def.prefab) : GamePrefabs.Library.Get(def.prefab, overrides);
+                }
+                catch { continue; } // a bad key is the preview's problem to report, not collision's
+                CollisionOf(prefab, e.origin, Quaternion.Euler(0f, e.angle, 0f), into, world);
+            }
+        }
+
+        /// <summary>
+        /// One prefab node's collision, and its children's. A class often keeps its collider on a **child** — the
+        /// dock's lamp posts and joint anchors do — so the root alone finds a third of the level (measured at
+        /// 11.17.1: 18 colliders against the game's 30). A node with a body is skipped **with its children**: the
+        /// whole thing moves, so the game carves it rather than baking it.
+        /// </summary>
+        private static void CollisionOf(RipNRage.Engine.Ecs.Prefab node, Vector3 origin, Quaternion rotation,
+                                        List<RipNRage.Engine.Ecs.Entity> into, RipNRage.Engine.Ecs.World world)
+        {
+            if (node.PreviewOnly) return;                                                   // a ghost is not solid
+            if (node.Get<RipNRage.Engine.Ecs.Physics.BodyConfig>() != null) return;          // moves: carved, not baked
+            var local = node.Get<RipNRage.Engine.Ecs.Transforms.LocalTransformConfig>();
+            var offset = local?.position != null && local.position.Length == 3
+                ? new Vector3(local.position[0], local.position[1], local.position[2]) : Vector3.zero;
+            var at = origin + rotation * offset;
+
+            var shapeConfig = node.Get<RipNRage.Engine.Ecs.Physics.ColliderShapeConfig>();
+            if (shapeConfig != null && node.Get<RipNRage.Engine.Ecs.Physics.TriggerConfig>() == null)
+            {
+                var shape = shapeConfig.Bake();
+                var sized = node.Get<RipNRage.Engine.Ecs.Physics.ShapeSizeConfig>();
+                if (sized?.size != null && sized.size.Length == 3) shape.Size = new Vector3(sized.size[0], sized.size[1], sized.size[2]);
+                var centre = at + rotation * shape.Center;
+                RipNRage.Engine.Ecs.Entity collider = RipNRage.Engine.Ecs.Entity.Null;
+                switch (shape.Kind)
+                {
+                    case RipNRage.Engine.Ecs.Physics.ShapeKind.Box:
+                        collider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(world, centre, rotation, shape.Size, Layers.Walkable); break;
+                    case RipNRage.Engine.Ecs.Physics.ShapeKind.Sphere:
+                        collider = RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticSphere(world, centre, shape.Radius, Layers.Walkable); break;
+                    default: break; // a convex or mesh class would need its asset; none of the level's static classes uses one
+                }
+                if (!collider.IsNull) into?.Add(collider);
+            }
+            foreach (var child in node.Children) CollisionOf(child, at, rotation, into, world);
         }
 
         private static int _worldspawnVersion;

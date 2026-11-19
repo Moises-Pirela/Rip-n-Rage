@@ -134,8 +134,53 @@ namespace RipNRage.Editor
             Rebuild();
         }
 
+        /// <summary>
+        /// 11.17.1: the level's collision, built on demand. The preview has none — it is visuals — so there is
+        /// nothing for a navigation bake to cast rays at until this runs. It is deliberately **not** part of
+        /// <see cref="Rebuild"/>: the editor rebuilds on every edit and this is per-brush work.
+        /// </summary>
+        private readonly List<RipNRage.Engine.Ecs.Entity> _navColliders = new List<RipNRage.Engine.Ecs.Entity>();
+
+        /// <summary>Builds the collision and puts it in the broadphase; returns how many colliders there are.</summary>
+        public int BuildNavCollision()
+        {
+            ClearNavCollision();
+            LevelLoader.BuildCollisionOnly(doc, _navColliders);
+            RipNRage.Engine.Ecs.Physics.PhysicsEntities.FlushRegistrations(Application.Current.World);
+            return _navColliders.Count;
+        }
+
+        /// <summary>
+        /// Bakes the navigation grid from the collision just built, as the game bakes it: the same
+        /// <c>NavBake.Build</c>, the same settings off the worldspawn, the same tile size. The editor keeps its own
+        /// query (11.10d) and never writes the cache — its world has the level's static furniture but not the
+        /// game's props, so its grid is a preview of the game's, not a substitute for it.
+        /// </summary>
+        public RipNRage.Engine.Ecs.Nav.NavWorld BakeNav()
+        {
+            var w = Application.Current.World;
+            _navQuery ??= RipNRage.Engine.Ecs.Nav.NavBake.StaticQuery(w);
+            ref var ws = ref w.Singleton<RipNRage.Engine.Ecs.Levels.Worldspawn>();
+            var settings = RipNRage.Game.Ecs.AI.NavProfile.For(in ws);
+            var nav = RipNRage.Engine.Ecs.Nav.NavBake.Build(w, in settings, LevelLoader.MeshChunkSize, _navQuery);
+            RipNRage.Engine.Ecs.Nav.Navigation.Current = nav;
+            return nav;
+        }
+
+        private RipNRage.Engine.Ecs.Query _navQuery;
+
+        /// <summary>Throws the collision away (the document changed, or the nav view was turned off).</summary>
+        public void ClearNavCollision()
+        {
+            var w = Application.Current.World;
+            foreach (var ent in _navColliders) if (w.IsAlive(ent)) w.DestroyEntity(ent);
+            _navColliders.Clear();
+            RipNRage.Engine.Ecs.Nav.Navigation.Current = null; // the grid was baked from what just went away
+        }
+
         private void Rebuild()
         {
+            ClearNavCollision(); // the geometry it was built from is about to change
             if (_preview != null)
             {
                 var w = Application.Current.World;

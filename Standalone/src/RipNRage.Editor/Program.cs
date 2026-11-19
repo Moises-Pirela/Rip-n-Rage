@@ -139,7 +139,19 @@ namespace RipNRage.Editor
                     // 11.17.0: what the editor knows about navigation. Today: nothing - the preview builds no
                     // colliders, so there is no geometry to bake from and no grid to draw. This is the baseline the
                     // phases move: the probe prints the grid, the collision the editor has, and the broadphase.
-                    if (_frame == 10 || _frame == 30) NavEditorProbe("start");
+                    if (_frame == 10) NavEditorProbe("start");
+                    // 11.17.1: the collision the editor can bake from, built on demand and thrown away on a rebuild
+                    if (_frame == 14) Debug.LogWarning($"[test] nav editor: built {_ed.BuildNavCollision()} colliders");
+                    if (_frame == 16)
+                    {
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        var nav = _ed.BakeNav();
+                        sw.Stop();
+                        Debug.LogWarning($"[test] nav editor: baked in {sw.Elapsed.TotalMilliseconds:0} ms");
+                    }
+                    if (_frame == 18) NavEditorProbe("with collision");
+                    if (_frame == 22) { _ed.ClearNavCollision(); }
+                    if (_frame == 26) NavEditorProbe("cleared");
                     break;
                 case "paint":
                     // paint strokes on the dock top, a second colour, erase a bit, drop a spawner, save
