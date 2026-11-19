@@ -87,6 +87,9 @@ namespace RipNRage.Engine
         /// <summary>Whether the two bodies may still collide with each other (off for ragdoll limbs that overlap at the joint).</summary>
         public bool collideConnected = false;
         public bool broken { get; internal set; }
+        /// <summary>In the physics world's list. The world drops a constraint when either of its bodies goes, so an
+        /// owner that keeps one across bodies (a character's ride, re-placed on whatever it stands on) asks this.</summary>
+        public bool registered { get; internal set; }
         public event Action<Constraint> Broke;
         /// <summary>Largest linear impulse transmitted in one substep of the last step (N·s).</summary>
         public float lastImpulse { get; internal set; }
@@ -539,6 +542,192 @@ namespace RipNRage.Engine
             float corr = Mathf.Clamp(c * p.baumgarte, -p.maxLinearCorrection, p.maxLinearCorrection);
             ApplyPositionImpulse(bodyA, bodyB, _rA, _rB, _axis * (-_mass * corr));
         }
+    }
+
+    /// <summary>
+    /// What a floating character stands on: a one-sided soft spring along <see cref="normal"/>, between the character
+    /// (<see cref="Constraint.bodyA"/>) and the ground under it (<see cref="Constraint.bodyB"/>, or the world for
+    /// static ground), holding the gap at <see cref="rideHeight"/>. Push only — the ground holds you up, it never
+    /// pulls you down.
+    ///
+    /// <para>It replaces a spring the character motor used to apply to the character's velocity before the step,
+    /// with the reaction thrown at the ground body as a force. That was right on average and wrong at every
+    /// moment that mattered: when an 80 kg character landed on a 2 kg crate the spring caught them at its limit and
+    /// put several thousand newtons into the crate in one step, which no contact solve afterwards could hold — the
+    /// crate went through the floor. Solved here, with the contacts, the floor holds the crate while the crate holds
+    /// the character, and the impulse each body takes is bounded by the effective mass of the pair.</para>
+    ///
+    /// <para>The spring is a physical one, k = m·ω² and c = 2·m·ζ·ω with <b>the rider's</b> mass, so a character
+    /// sags the same g/ω² whatever it stands on. Solved through <see cref="Softness.FromSpring"/> it is
+    /// unconditionally stable, which matters against a light body: the relative motion of the pair is far
+    /// stiffer than either alone.</para>
+    /// </summary>
+    public sealed class RideConstraint : Constraint
+    {
+        /// <summary>World direction the ground pushes (up, for a character that hovers upright).</summary>
+        public Vector3 normal = Vector3.up;
+        /// <summary>Spring stiffness (N/m) and damping (N·s/m).</summary>
+        public float stiffness, damping;
+        /// <summary>The most the ground may push, in newtons (the motor's MaxRideAcceleration × the rider's mass).</summary>
+        public float maxForce = float.PositiveInfinity;
+        /// <summary>The contact point, in bodyB's frame (world, if bodyB is null).</summary>
+        public Vector3 localAnchorB;
+        /// <summary>The separation along the normal, character centre to contact, at which the gap is the ride height.</summary>
+        public float targetSeparation;
+        /// <summary>
+        /// How many times lighter than the rider the ground may be before the ride treats it as heavier than it is.
+        /// An iterative solver cannot converge a stiff spring above a light body and a rigid floor below it: an 80 kg
+        /// character on a 2 kg crate rattled the crate between the two at ±15 m/s a step until it was squeezed up
+        /// through the character and out through the floor. Bodies heavier than rider ÷ this ratio are exact; a lighter
+        /// one is treated as rider ÷ ratio in this row only. Everything else about it — its contacts, its buoyancy,
+        /// what hits it — still uses its real mass. The cost is honest and small: a floating prop that light, stood
+        /// on, feels only part of the rider's weight. One that light could not hold a person up anyway.
+        /// </summary>
+        public float maxMassRatio = 10f;
+
+        // ---- traction: the rider's feet, driving the velocity *between* rider and ground ----
+        /// <summary>Drive the horizontal velocity relative to the ground towards <see cref="targetVelocity"/>.</summary>
+        public bool traction;
+        /// <summary>The horizontal velocity the rider wants, relative to what it stands on (the motor's Desired).</summary>
+        public Vector3 targetVelocity;
+        /// <summary>The hardest the feet may push sideways, in newtons (the motor's acceleration × the rider's mass).</summary>
+        public float maxTractionForce;
+        /// <summary>
+        /// Friction coefficient bounding traction by the support force (μ × N): the grip limit. Infinite by default,
+        /// on purpose — the motor accelerates at several g for the feel of the game, real friction is about one, and a
+        /// grip limit at real friction would make every deck feel like ice. A slippery deck sets it.
+        /// </summary>
+        public float grip = float.PositiveInfinity;
+
+        private float _impulse, _mass, _separation, _maxImpulse, _scaleB;
+        private float _impulseX, _impulseZ, _massX, _massZ, _maxTraction;
+        private Vector3 _rB;
+        private Softness _spring;
+
+        protected override Vector3 LocalAnchorB => localAnchorB;
+
+        public RideConstraint() { collideConnected = true; } // you still bump into the crate you are standing on
+
+        /// <summary>
+        /// Puts the ride under <paramref name="rider"/> for this step: the ground (null = static), where it was struck,
+        /// how far the character is above it now and how far it should be.
+        /// </summary>
+        public void Place(SolverBody rider, SolverBody ground, Vector3 groundPoint, Vector3 up, float gapNow, float rideHeight)
+        {
+            if (ground != bodyB) ClearImpulses(); // new ground: what was being pushed on is gone
+            bodyA = rider; bodyB = ground;
+            normal = up;
+            localAnchorB = ground != null ? Quaternion.Inverse(ground.rotation) * (groundPoint - ground.position) : groundPoint;
+            float separationNow = Vector3.Dot(rider.position - groundPoint, up);
+            targetSeparation = separationNow - gapNow + rideHeight;
+        }
+
+        public override void ClearImpulses() { _impulse = 0f; _impulseX = 0f; _impulseZ = 0f; }
+
+        internal override bool Prepare(in SolverParams p)
+        {
+            if (!BodiesReady()) return false;
+            Geometry();
+            _spring = Softness.FromSpring(stiffness, damping, _mass, p.h);
+            _maxImpulse = maxForce * p.h;
+            _maxTraction = traction ? maxTractionForce * p.h : 0f;
+            if (!traction) { _impulseX = 0f; _impulseZ = 0f; }
+            if (!p.warmStart) ClearImpulses();
+            return true;
+        }
+
+        private void Geometry()
+        {
+            _rB = bodyB != null ? bodyB.RotateToWorld(localAnchorB) : Vector3.zero;
+            Vector3 pB = bodyB != null ? bodyB.position + _rB : localAnchorB;
+            _separation = Vector3.Dot(bodyA.position - pB, normal);
+
+            // how the ground answers this row: its real response, unless it is too light to be solved against
+            _scaleB = 1f;
+            if (Dynamic(bodyB) && bodyA.mass > 0f && maxMassRatio > 0f)
+                _scaleB = MathF.Min(1f, bodyB.mass * maxMassRatio / bodyA.mass);
+            _mass = RowMass(normal);
+            _massX = RowMass(Vector3.right);
+            _massZ = RowMass(Vector3.forward);
+        }
+
+        /// <summary>Effective mass of a linear row along <paramref name="axis"/>, with the ground's response scaled.</summary>
+        private float RowMass(Vector3 axis)
+        {
+            float k = Dynamic(bodyA) ? bodyA.inverseMass : 0f;
+            if (Dynamic(bodyB))
+                k += _scaleB * (bodyB.inverseMass + Vector3.Dot(Vector3.Cross(bodyB.ApplyInverseInertia(Vector3.Cross(_rB, axis)), _rB), axis));
+            return k > 0f ? 1f / k : 0f;
+        }
+
+        /// <summary>Push the rider along the normal by <paramref name="impulse"/> and the ground the other way, through
+        /// the ground's (possibly mass-capped) response.</summary>
+        private void Push(float impulse) => Push(normal * impulse);
+
+        /// <summary>An impulse on the rider, and its reaction on the ground.</summary>
+        private void Push(Vector3 P)
+        {
+            if (Dynamic(bodyA)) bodyA.linearVelocity += P * bodyA.inverseMass; // a character never spins
+            if (Dynamic(bodyB))
+            {
+                bodyB.linearVelocity -= P * (bodyB.inverseMass * _scaleB);
+                bodyB.angularVelocity -= bodyB.ApplyInverseInertia(Vector3.Cross(_rB, P)) * _scaleB;
+            }
+        }
+
+        /// <summary>How fast the character is leaving the ground along the normal.</summary>
+        private float SeparatingVelocity() => Vector3.Dot(PointVelocity(bodyA, Vector3.zero) - PointVelocity(bodyB, _rB), normal);
+
+        internal override void WarmStart()
+        {
+            Geometry();
+            if (_impulse > 0f) Push(_impulse);
+            if (traction && (_impulseX != 0f || _impulseZ != 0f)) Push(new Vector3(_impulseX, 0f, _impulseZ));
+        }
+
+        internal override void SolveVelocity(bool useBias, in SolverParams p)
+        {
+            Geometry();
+            if (traction) SolveTraction();
+            if (!useBias) return; // the spring is soft in the biased pass only, as every spring here (the relax pass would make it rigid)
+            float c = _separation - targetSeparation; // < 0: pressed closer than the ride height → push apart
+            float impulse = -_mass * _spring.massScale * (SeparatingVelocity() + c * _spring.biasRate) - _spring.impulseScale * _impulse;
+            float total = Mathf.Clamp(_impulse + impulse, 0f, _maxImpulse); // push only, and no harder than the motor allows
+            impulse = total - _impulse; _impulse = total;
+            Push(impulse);
+            TrackPeak(_impulse);
+        }
+
+        /// <summary>
+        /// The feet: drive the horizontal velocity of the rider relative to the ground point towards the target, no
+        /// harder than the motor allows (and the grip, if one is set). Solved here rather than applied by the motor
+        /// before the step, because the motor did it by setting the rider's velocity and throwing the reaction at the
+        /// ground: matching a *relative* velocity by pushing both bodies, and ignoring that the second one moves too,
+        /// overshoots by (1 + rider ÷ ground). An 80 kg character on an 8 kg crate overshot eleven-fold every step,
+        /// and the crate buzzed under them at several metres a second. Solved with the contacts it cannot overshoot,
+        /// and a crate held by friction on the floor resists the push the way it should.
+        /// </summary>
+        private void SolveTraction()
+        {
+            Vector3 rel = PointVelocity(bodyA, Vector3.zero) - PointVelocity(bodyB, _rB);
+            float limit = _maxTraction;
+            if (!float.IsPositiveInfinity(grip)) limit = MathF.Min(limit, grip * _impulse);
+
+            float ix = -_massX * (rel.x - targetVelocity.x);
+            float iz = -_massZ * (rel.z - targetVelocity.z);
+            float nx = _impulseX + ix, nz = _impulseZ + iz;
+            // one budget for both directions: the feet push with one force, however it is split
+            float len = MathF.Sqrt(nx * nx + nz * nz);
+            if (len > limit && len > 0f) { float k = limit / len; nx *= k; nz *= k; }
+            Vector3 P = new Vector3(nx - _impulseX, 0f, nz - _impulseZ);
+            _impulseX = nx; _impulseZ = nz;
+            Push(P);
+        }
+
+        internal override void SolvePosition(in SolverParams p) { } // a spring, not a hard limit: nothing to correct
+
+        /// <summary>The push the ground is giving right now (N), for whoever wants to know what a deck is carrying.</summary>
+        public float Force(float substep) => substep > 0f ? _impulse / substep : 0f;
     }
 
     /// <summary>

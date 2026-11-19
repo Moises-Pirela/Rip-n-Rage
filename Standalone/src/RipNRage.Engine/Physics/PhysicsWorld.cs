@@ -63,8 +63,13 @@ namespace RipNRage.Engine
         public IReadOnlyList<Constraint> Constraints => _constraints;
         internal List<Constraint> ConstraintList => _constraints;
         /// <summary>Adds a constraint to the simulation (it is removed automatically when it breaks or one of its bodies is destroyed).</summary>
-        public void AddConstraint(Constraint c) { if (c != null && !_constraints.Contains(c)) _constraints.Add(c); }
-        public void RemoveConstraint(Constraint c) => _constraints.Remove(c);
+        public void AddConstraint(Constraint c)
+        {
+            if (c == null || c.registered) return;
+            if (!_constraints.Contains(c)) _constraints.Add(c);
+            c.registered = true;
+        }
+        public void RemoveConstraint(Constraint c) { if (c != null && _constraints.Remove(c)) c.registered = false; }
         /// <summary>Alias of <see cref="Constraints"/> kept for the joint-only callers.</summary>
         public IReadOnlyList<Constraint> Joints => _constraints;
         public void AddJoint(Constraint j) => AddConstraint(j);
@@ -807,7 +812,7 @@ namespace RipNRage.Engine
         internal void RemoveRigidBody(SolverBody b)
         {
             _rigidBodies.Remove(b);
-            _constraints.RemoveAll(c => c.bodyA == b || c.bodyB == b);
+            _constraints.RemoveAll(c => { bool gone = c.bodyA == b || c.bodyB == b; if (gone) c.registered = false; return gone; });
         }
 
         /// <summary>Once per rendered frame: the query counters roll over.</summary>
@@ -834,7 +839,9 @@ namespace RipNRage.Engine
         public void Clear()
         {
             for (int i = 0; i < _table.Capacity; i++) { var e = _table[i]; if (e != null && e.alive) { Extract(e); _table.Free(e); } }
-            _rigidBodies.Clear(); _constraints.Clear();
+            _rigidBodies.Clear();
+            foreach (var c in _constraints) c.registered = false;
+            _constraints.Clear();
         }
     }
 }

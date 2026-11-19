@@ -111,11 +111,31 @@ namespace RipNRage.Engine.Ecs.Physics
     /// <summary>Steps every <see cref="CharacterMotor"/>: ground probe, dash, ride spring, motor (fixed step, before the solver).</summary>
     [UpdateAfter(typeof(PhysicsSyncSystem)), UpdateBefore(typeof(PhysicsStepSystem))]
     [Exclusive] // owns state outside components: the physics world
-    public sealed class CharacterMotorSystem : SystemBase, IFixedTick
+    public sealed class CharacterMotorSystem : SystemBase, IFixedTick, IOnEntityDestroyed, IOnSimEnd
     {
         private Query _q;
         private PhysicsSyncSystem _sync;
         private float _time;
+        /// <summary>Each character's ride: one constraint per character, re-placed every step on whatever it stands
+        /// on, and solved with the contacts (see <see cref="RideConstraint"/>).</summary>
+        private readonly Dictionary<Entity, RideConstraint> _rides = new Dictionary<Entity, RideConstraint>();
+
+        public void OnEntityDestroyed(SystemContext ctx, Entity e)
+        {
+            if (_rides.TryGetValue(e, out var ride)) { PhysicsApi.World.RemoveConstraint(ride); _rides.Remove(e); }
+        }
+
+        public void OnSimEnd(SystemContext ctx)
+        {
+            foreach (var ride in _rides.Values) PhysicsApi.World.RemoveConstraint(ride);
+            _rides.Clear();
+        }
+
+        private RideConstraint RideOf(Entity e)
+        {
+            if (!_rides.TryGetValue(e, out var ride)) _rides[e] = ride = new RideConstraint { enabled = false };
+            return ride;
+        }
         public override void OnCreate() => _q = World.Query().With<CharacterMotor>().WithReadOnly<PhysicsHandle>().Build();
 
         public void FixedTick(SystemContext ctx)
@@ -133,7 +153,7 @@ namespace RipNRage.Engine.Ecs.Physics
                     var body = _sync.BodyOf(ents[i]);
                     if (body == null || body.collider == null) continue;
                     if (!float.IsNaN(motors[i].PendingHeight)) { SetHeight(ents[i], ref motors[i], body, motors[i].PendingHeight); motors[i].PendingHeight = float.NaN; }
-                    Step(ref motors[i], body, dt);
+                    Step(ents[i], ref motors[i], body, dt);
                 }
             }
         }
@@ -178,19 +198,6 @@ namespace RipNRage.Engine.Ecs.Physics
             m.StopDeceleration = p.stopDeceleration; m.JumpGrace = p.jumpGrace;
         }
 
-        /// <summary>
-        /// Press on whatever carries this character, at the point it carries them. Only dynamic ground feels it —
-        /// the world and a kinematic deck are both immovable, the first by nature and the second by decision.
-        /// </summary>
-        private void PressDown(in CharacterMotor m, Vector3 force)
-        {
-            if (!m.PressesOnGround || force == Vector3.zero || m.Ground.IsNull) return;
-            var ground = _sync?.BodyOf(m.Ground);
-            if (ground == null || ground.isKinematic) return;
-            ground.AddForceAtPosition(force, m.GroundPoint);
-            ground.WakeUp();
-        }
-
         /// <summary>The horizontal part of a velocity.</summary>
         private static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);
 
@@ -203,7 +210,7 @@ namespace RipNRage.Engine.Ecs.Physics
             b.gravityScale = m.GravityScale;
         }
 
-        internal void Step(ref CharacterMotor m, SolverBody b, float dt)
+        internal void Step(Entity e, ref CharacterMotor m, SolverBody b, float dt)
         {
             if (!m.Configured) Configure(ref m, b);
             ApplyProfile(ref m);
@@ -236,6 +243,8 @@ namespace RipNRage.Engine.Ecs.Physics
             if (!float.IsNaN(m.PendingMinVerticalSpeed)) { if (v.y < m.PendingMinVerticalSpeed) v.y = m.PendingMinVerticalSpeed; m.PendingMinVerticalSpeed = float.NaN; }
 
             ProbeGround(ref m, b);
+            var ride = RideOf(e);
+            ride.enabled = false; // until the ride block below finds there is something to stand on
 
             // ---- the frame we move in: the ground while we stand on it, frozen while we are off it ----
             // Wall running writes its own frame (the wall's velocity) from gameplay; only the ground overwrites it.
@@ -254,32 +263,53 @@ namespace RipNRage.Engine.Ecs.Physics
                 else { b.linearVelocity = m.DashVelocity; return; }
             }
 
-            // ---- ride spring: hover at the ride height, damped against the ground's motion ----
+            // ---- the ride: hover at the ride height ----
+            // Holding the character up is the ground's job, and the ground is a body in the solver: the support is
+            // a constraint solved there with the contacts (RideConstraint), so a crate under a character is held up
+            // by the floor under the crate, and whatever carries the character carries its weight - exactly, not on
+            // average. What stays here is the one thing the ground does not do: a character lifted over the ride
+            // height (cresting a bump, stepping down) is held to the ground rather than floating off it. That pull is
+            // the motor's, not a contact force, so nothing pushes back for it.
             if (m.IsGrounded && _time >= m.UngroundedUntil)
             {
                 float error = m.RideHeight - m.GroundDistance;
                 float omega = 2f * MathF.PI * MathF.Max(m.RideFrequency, 0.1f);
                 float relVel = v.y - m.GroundVelocity.y;
-                float a = error * omega * omega - relVel * 2f * m.RideDamping * omega;
-                a = Mathf.Clamp(a, -m.MaxRideAcceleration, m.MaxRideAcceleration);
-                v.y += a * dt;
-                // and the ground takes the other half of it: this is the character's weight, carried
-                PressDown(in m, new Vector3(0f, -a * b.mass, 0f));
-            }
+                float spring = error * omega * omega - relVel * 2f * m.RideDamping * omega;
+                if (spring < 0f) v.y += MathF.Max(spring, -m.MaxRideAcceleration) * dt; // stick: the spring would pull
 
-            // ---- motor: accelerate the horizontal velocity towards the request, in the frame we move in ----
-            // In the air the frame is the one we jumped from, so air control steers relative to that deck instead
-            // of braking towards a standstill the sea is not in. On still ground the frame is zero and this is
-            // the line it always was.
-            Vector3 horizontal = new Vector3(v.x, 0f, v.z);
+                var ground = _sync?.BodyOf(m.Ground);
+                ride.Place(b, ground, m.GroundPoint, Vector3.up, m.GroundDistance, m.RideHeight);
+                ride.stiffness = b.mass * omega * omega;            // the rider's own spring: the sag is g/ω² on any ground
+                ride.damping = 2f * m.RideDamping * b.mass * omega;
+                ride.maxForce = m.MaxRideAcceleration * b.mass;
+                ride.enabled = true;
+                if (!ride.registered) PhysicsApi.World.AddConstraint(ride);
+            }
+            else ride.ClearImpulses();
+
+            // ---- motor: the horizontal velocity, towards the request, in the frame we move in ----
             Vector3 request = new Vector3(m.Desired.x, 0f, m.Desired.z);
-            Vector3 target = request + Flat(m.FrameVelocity);
-            // braking is judged on what was *asked for*, so letting go on a moving deck still stops you on the deck
-            float accel = !m.IsGrounded ? m.AirAcceleration : (request.sqrMagnitude > 0.01f ? m.Acceleration : m.StopDeceleration);
-            Vector3 delta = Vector3.ClampMagnitude(target - horizontal, accel * dt);
-            v.x += delta.x; v.z += delta.z;
-            // what we push off to get going, pushes back
-            if (m.IsGrounded && dt > 0f) PressDown(in m, -delta * (b.mass / dt));
+            if (ride.enabled)
+            {
+                // On the ground the feet are the ride's: it drives the velocity relative to the ground point towards
+                // the request, solved with the contacts (RideConstraint.SolveTraction) - braking judged on what was
+                // asked for, as it always was, so letting go on a moving deck stops you on the deck.
+                ride.traction = true;
+                ride.targetVelocity = request;
+                ride.maxTractionForce = (request.sqrMagnitude > 0.01f ? m.Acceleration : m.StopDeceleration) * b.mass;
+            }
+            else
+            {
+                // In the air there is nothing to push against, so air control is the motor's own: it steers relative
+                // to the deck we jumped from instead of braking towards a standstill the sea is not in. On still
+                // ground the frame is zero and this is the line it always was.
+                ride.traction = false;
+                Vector3 horizontal = new Vector3(v.x, 0f, v.z);
+                Vector3 target = request + Flat(m.FrameVelocity);
+                Vector3 delta = Vector3.ClampMagnitude(target - horizontal, m.AirAcceleration * dt);
+                v.x += delta.x; v.z += delta.z;
+            }
             b.linearVelocity = v;
             b.angularVelocity = Vector3.zero;
         }

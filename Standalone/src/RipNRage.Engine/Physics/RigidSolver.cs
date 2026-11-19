@@ -558,7 +558,7 @@ namespace RipNRage.Engine
             // 6. breaking, cache, sleep (islands), reporting
             Profiler.Begin("rigid finish");
             foreach (var c in _activeConstraints) c.Finish(h);
-            constraints.RemoveAll(c => c.broken);
+            constraints.RemoveAll(c => { if (c.broken) c.registered = false; return c.broken; });
             foreach (var m in _manifolds) Contacts.Store(m);
             Contacts.EndStep();
 
