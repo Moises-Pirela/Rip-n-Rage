@@ -37,7 +37,9 @@ internal static class ScheduleChecks
             // The two movers come first, before the sync: a deck's velocity and the pose of everything riding it
             // are this step's inputs, so they must be written before the sync pushes them at the solver.
             "PlatformMotionSystem", "CarrySystem",
-            "PhysicsSyncSystem", "RagdollSystem", "JointSystem", "KinematicMoverSystem", "CameraShakeSystem",
+            // buoyancy and the engines add forces onto the bodies before the solver steps them
+            "PhysicsSyncSystem", "RagdollSystem", "BuoyancySystem", "JointSystem", "KinematicMoverSystem",
+            "VesselEngineSystem", "CameraShakeSystem",
             "NavBakeSystem", "PlayerMoveSystem", "CharacterMotorSystem", "PhysicsStepSystem", "PhysicsWriteBackSystem", "TriggerSystem",
             "SliderPatrolSystem",
         },

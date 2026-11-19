@@ -50,6 +50,7 @@ internal static class Program
             EcsChecks.Run(True);
             PhysicsEcsChecks.Run(True);
             PlatformChecks.Run(True);
+            BuoyancyChecks.Run(True);
             Layer3Checks.Run(True);
             Layer4Checks.Run(True);
             Layer5Checks.Run(True);

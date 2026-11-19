@@ -23,6 +23,13 @@ namespace RipNRage.Engine.Ecs.Physics
         // ---- ride + motor tunables (overwritten from the profile unless Custom) ----
         public float RideHeight, RideFrequency, RideDamping, MaxRideAcceleration, GroundTolerance, MaxSlopeAngle;
         public float Acceleration, AirAcceleration, StopDeceleration, JumpGrace;
+        /// <summary>
+        /// Press back on what we stand on (Newton's third law). The ride spring and the motor push this character
+        /// about; the same forces, reversed, go into whatever is carrying it. A deck dips under boarders, a dinghy
+        /// is shoved by someone running across it, and a crate is pressed down rather than merely stood upon.
+        /// Off for nothing: the ground is usually the world, which does not care.
+        /// </summary>
+        public bool PressesOnGround;
         /// <summary>Collider layers that count as ground.</summary>
         public int GroundMask;
         // ---- intent ----
@@ -71,6 +78,8 @@ namespace RipNRage.Engine.Ecs.Physics
         public Vector3 Relative(Vector3 worldVelocity) => worldVelocity - FrameVelocity;
         /// <summary>From the capsule bottom to the ground (infinity = none in reach).</summary>
         public float GroundDistance;
+        /// <summary>Where the ground probe struck: where this character's weight is actually carried.</summary>
+        public Vector3 GroundPoint;
         // ---- internal timers (sim time) ----
         internal float UngroundedUntil, DashUntil;
         internal Vector3 DashVelocity;
@@ -85,6 +94,8 @@ namespace RipNRage.Engine.Ecs.Physics
         public float rideHeight = 0.5f, rideFrequency = 6f, rideDamping = 0.8f, maxRideAcceleration = 90f, groundTolerance = 0.25f, maxSlopeAngle = 50f;
         [InspectTip("m/s² on the ground and in the air, braking, seconds a jump is still honoured after leaving the ground")]
         public float acceleration = 70f, airAcceleration = 20f, stopDeceleration = 60f, jumpGrace = 0.25f;
+        [InspectTip("press back on what you stand on: a deck dips under boarders, a dinghy is shoved by a run across it")]
+        public bool pressesOnGround = true;
         public int groundMask = ~0;
         public float gravityScale = 1f;
         public override CharacterMotor Bake() => new CharacterMotor
@@ -92,7 +103,7 @@ namespace RipNRage.Engine.Ecs.Physics
             GravityScale = gravityScale,
             Profile = profile, RideHeight = rideHeight, RideFrequency = rideFrequency, RideDamping = rideDamping, MaxRideAcceleration = maxRideAcceleration,
             GroundTolerance = groundTolerance, MaxSlopeAngle = maxSlopeAngle, Acceleration = acceleration, AirAcceleration = airAcceleration,
-            StopDeceleration = stopDeceleration, JumpGrace = jumpGrace, GroundMask = groundMask,
+            StopDeceleration = stopDeceleration, JumpGrace = jumpGrace, GroundMask = groundMask, PressesOnGround = pressesOnGround,
             PendingMinVerticalSpeed = float.NaN, PendingHeight = float.NaN, GroundNormal = Vector3.up, GroundDistance = float.PositiveInfinity,
         };
     }
@@ -167,6 +178,19 @@ namespace RipNRage.Engine.Ecs.Physics
             m.StopDeceleration = p.stopDeceleration; m.JumpGrace = p.jumpGrace;
         }
 
+        /// <summary>
+        /// Press on whatever carries this character, at the point it carries them. Only dynamic ground feels it —
+        /// the world and a kinematic deck are both immovable, the first by nature and the second by decision.
+        /// </summary>
+        private void PressDown(in CharacterMotor m, Vector3 force)
+        {
+            if (!m.PressesOnGround || force == Vector3.zero || m.Ground.IsNull) return;
+            var ground = _sync?.BodyOf(m.Ground);
+            if (ground == null || ground.isKinematic) return;
+            ground.AddForceAtPosition(force, m.GroundPoint);
+            ground.WakeUp();
+        }
+
         /// <summary>The horizontal part of a velocity.</summary>
         private static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);
 
@@ -237,7 +261,10 @@ namespace RipNRage.Engine.Ecs.Physics
                 float omega = 2f * MathF.PI * MathF.Max(m.RideFrequency, 0.1f);
                 float relVel = v.y - m.GroundVelocity.y;
                 float a = error * omega * omega - relVel * 2f * m.RideDamping * omega;
-                v.y += Mathf.Clamp(a, -m.MaxRideAcceleration, m.MaxRideAcceleration) * dt;
+                a = Mathf.Clamp(a, -m.MaxRideAcceleration, m.MaxRideAcceleration);
+                v.y += a * dt;
+                // and the ground takes the other half of it: this is the character's weight, carried
+                PressDown(in m, new Vector3(0f, -a * b.mass, 0f));
             }
 
             // ---- motor: accelerate the horizontal velocity towards the request, in the frame we move in ----
@@ -251,6 +278,8 @@ namespace RipNRage.Engine.Ecs.Physics
             float accel = !m.IsGrounded ? m.AirAcceleration : (request.sqrMagnitude > 0.01f ? m.Acceleration : m.StopDeceleration);
             Vector3 delta = Vector3.ClampMagnitude(target - horizontal, accel * dt);
             v.x += delta.x; v.z += delta.z;
+            // what we push off to get going, pushes back
+            if (m.IsGrounded && dt > 0f) PressDown(in m, -delta * (b.mass / dt));
             b.linearVelocity = v;
             b.angularVelocity = Vector3.zero;
         }
@@ -271,6 +300,7 @@ namespace RipNRage.Engine.Ecs.Physics
             {
                 m.GroundDistance = MathF.Max(0f, hit.distance - r * 0.05f); // the probe is slightly smaller than the capsule
                 m.GroundNormal = hit.normal;
+                m.GroundPoint = hit.point;
                 m.Ground = hit.entity;
                 m.IsGrounded = hit.normal.y >= cosSlope && m.GroundDistance <= m.RideHeight + m.GroundTolerance && _time >= m.UngroundedUntil;
                 var gb = PhysicsApi.World.Table.BodyOf(hit.proxy);
