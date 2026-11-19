@@ -66,43 +66,35 @@ then start at the first unchecked layer.
   the 6.2 state tree, untouched. **11.9's full sweep was not run** — verification was targeted (see
   [`LAYER11_NAV.md`](LAYER11_NAV.md) close-out for exactly what was and was not checked).
 
-### Pick-up point for the next session (written 2026-11-18, after 11.8; layer 11 is built, its close-out is not)
+### Pick-up point for the next session (written 2026-11-19, after 11.17.1)
 
-Layers 0–11 are built. The AI can get where it is going: the level bakes into a navigation grid, enemies walk
-paths round walls and down ledges, and what moves carves the grid under them. Run the gates with `./gates.sh OUT`.
+Layers 0–11 are built. The AI gets where it is going: the level bakes into a navigation grid at level start (and
+reads it back from a per-map cache in ~50 ms), enemies walk paths round walls and down ledges, make way for each
+other, wander a patch about a home, and what moves carves the grid under them. Enemies are files, there are two
+kinds, and melee hurts both ways. Run the gates with `./gates.sh OUT`, or `./gates.sh --batch k/4 OUT` for a
+quarter of them.
 
-**Finish 11.9 first.** Layer 11 was verified *targeted*, never swept: the nav gates, the AI gates against their
-11.0 baseline, both suites, and a crash-check of five others. Before layer 12, run a full sweep twice and settle
-three things it will raise — the `walk` / `menu` **manifest hashes have moved** (the worldspawn gained
-`nav_cell_size` / `nav_cell_height` / `nav_max_drop`, the rifleman prefab gained `PathRequest` / `PathFollow`),
-the **four pixel shots** and the **four editors and the benchmark** have not been launched since 11.0, and the
-**bench A/B** against 11.8's parent has not been taken. Also outstanding from before: **layer 10.8's close-out**.
+**In order:**
 
-What layer 11 left, in the order it would bite:
+1. **The editor pass, 11.17.2 → 11.17.7** (`LAYER11_EDITOR.md`). The collision and the bake work from a script;
+   what is missing is the designer's side of it: a panel with Rebake, the readout and a stale badge; the
+   three-colour draw (walkable / blocked by the level / **too tight for the body**) with a radius slider and a
+   cap; the reachability paint flood-filled from the player start; footprints for what will carve and radii for
+   where grunts roam; the Level tab's three nav keys marking the grid stale. Decisions are taken and written.
+2. **The verification debt.** No full sweep since 11.0. Four batched runs, the manifests re-baselined (worldspawn
+   keys, two prefab components, a second monster prefab — every move has a cause in the layer's commits), the
+   shots, the editors, the bench A/B against 11.0, and layer 10.8's close-out.
+3. **Pre-existing leaks found along the way**, not nav's: the level *build* registers ~3 queries per build and the
+   world outlives the level (`World.QueryCount` shows it); the title backdrop bakes a 200 ms grid for a level with
+   no AI.
+4. **Then layer 12** — the AI behaviour the grid makes cheap: investigate on arrival, alert propagation, cover and
+   flank, spawners placing on walkable spans. The list is at the end of `LAYER11_NAV.md`.
 
-- **The bake costs 220 ms** at every level start, respawn and save-load. It is a load cost, not a frame cost, but
-  it is paid often. Cheapest wins left: 2-D clearance erosion instead of a capsule query per span, and caching a
-  bake per `.map` behind a content hash.
-- **Wander drifts.** A grunt with no target random-walks away down the dock, because wander picks relative to
-  where it is rather than a home point. 11.8 found this and deliberately left the numbers alone — the fix is an
-  anchor, which is a behaviour decision.
-- **No local avoidance**: two grunts in one doorway shove each other through the solver.
-- **The editor cannot see the grid.** 11.7 built the in-game overlay (`--nav-debug`, F4) and not the editor half,
-  so a designer still places brushes blind to what the AI can reach.
-- **The search is not hierarchical**, and **`EnemyData` is still code** rather than prefab fields.
-- **Still no melee damage path** (Fury has no melee bonus) — inherited from layer 9.
-
-The rules of layers 6–9 hold. Layer 11 adds four:
-
-- **A query from a worker is a different call.** `Physics.RaycastConcurrent` / `CheckCapsuleConcurrent` are
-  stamp-free and keep per-thread scratch; the main-thread `Raycast` writes visit stamps onto slots and must not
-  be called off-thread. Chunk jobs and the bake use the concurrent ones.
-- **A carve is a counter, not a flag**, and one system owns it at one point in the frame. Anything that writes
-  the grid outside `NavCarveSystem` will be seen half-done by a search.
-- **Order work by placement, never by entity index.** `AiBrain.Order` exists for this; a buffered spawn renumbers
-  the world (6.7b) and the sweep diffs byte for byte.
-- **Geometry built after the level must say so**: `Navigation.Invalidate()`. The gates learned this by having
-  their walls baked around.
+The rules of layers 6–9 hold. Layer 11 added: a query from a worker is a different call (`*Concurrent`); a carve
+is a counter with one writer at one point in the frame; order work by placement (`AiBrain.Order`), never by
+entity index; geometry built after the level calls `Navigation.Invalidate()`; the ECS has a new collider at once
+and the broadphase one fixed step later (`PhysicsEntities.FlushRegistrations` closes the gap); a commit's gate
+is the suite; destroy hooks declare `[EntityFilter]`; a system on the main-thread query path is `[Exclusive]`.
 
 ### Resolved: asset handles (answered before layer 2)
 
@@ -2340,10 +2332,19 @@ that changes what the level builds.
   `arriveDistance`, `wanderRadius` and `wanderMinDistance` off their inherited Unity values now that movement
   works, and move them **into the rifleman prefab**, not `GameAssets.cs`.
 - [x] 11.9 **Close-out.** Full sweep twice, hermetic and device-isolated; bench interleaved against 11.8's Verified targeted, not swept — see `LAYER11_NAV.md`.
-- [x] **Part two** (2026-11-18, `LAYER11_NAV.md` → "Part two"): 11.10 the books (rebake re-stamp bug, side
-  buffer, probes) · 11.11 wander about a home on the grid · 11.12 a cache per map + linking on the job system
-  (warm 52–64 ms) · 11.13 local avoidance · 11.14 skipped with numbers · 11.15 enemies are files + the brawler ·
-  11.16 melee has a damage path both ways. **Not done**: 11.17 the editor pass (its own planning), the full
+- [x] **Part two** (2026-11-18, `LAYER11_NAV.md` → "Part two"): 11.10 the books · 11.11 wander about a home ·
+  11.12 a cache per map + linking on the job system · 11.13 local avoidance · 11.14 skipped with numbers ·
+  11.15 enemies are files + the brawler · 11.16 melee has a damage path both ways; then a review and three fix
+  passes (11.10b/c/d — the safe set, the hash-moving set, and level-start bake / query leak / watched
+  definitions / one test grid / batched sweep).
+- [ ] **11.17 the editor pass** (`LAYER11_EDITOR.md`, planned and begun 2026-11-19): **11.17.0 instrument and
+  11.17.1 collision on demand are done** — the editor builds the level's static collision (brushes and the
+  prefabs' child colliders) and bakes the game's grid to within 0.05% of spans. **Left**: 11.17.2 the panel
+  (Rebake, readout, stale badge, draw switch), 11.17.3 the three-colour draw with a radius slider, 11.17.4 the
+  reachability paint from the player start, 11.17.5 obstacle footprints and wander radii, 11.17.6 the Level tab's
+  nav keys marking the grid stale, 11.17.7 close-out.
+- [ ] **Verification debt**: no full sweep since 11.0 (`./gates.sh --batch k/n` now makes it four short runs),
+  the `walk` / `menu` manifests to re-baseline, shots, editors, the bench A/B, and layer 10.8's close-out.
   sweep (none since 11.0), the bench A/B, and layer 10.8's close-out.
   parent (`--threads 1`); the bake's cost at level start (serial vs tiles-in-parallel), the search's cost per
   tick and the carve's cost with a door swinging, all against budget; allocation per frame compared with 10.x
