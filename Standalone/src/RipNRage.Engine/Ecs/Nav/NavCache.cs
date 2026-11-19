@@ -20,8 +20,12 @@ namespace RipNRage.Engine.Ecs.Nav
         /// <summary>Bump when the file layout or the bake's meaning changes: every cached grid misses.</summary>
         public const int FormatVersion = 1;
 
-        /// <summary>The key for this level and these settings (FNV-1a over the bit patterns; stable across runs).</summary>
-        public static ulong Key(World world, in NavSettings s, float tileSize)
+        /// <summary>
+        /// The key for this level and these settings (FNV-1a over the bit patterns; stable across runs).
+        /// <paramref name="all"/> is the boxes the caller already measured — the key does not go and query for them
+        /// again (11.10d: that query was built, and leaked, on every call).
+        /// </summary>
+        public static ulong Key(List<(Vector3 lo, Vector3 hi)> all, in NavSettings s, float tileSize)
         {
             ulong h = 14695981039346656037ul;
             void Mix(uint v) { h = (h ^ v) * 1099511628211ul; }
@@ -34,7 +38,7 @@ namespace RipNRage.Engine.Ecs.Nav
             foreach (byte b in typeof(NavBake).Assembly.ManifestModule.ModuleVersionId.ToByteArray()) Mix(b);
             MixF(s.CellSize); MixF(s.CellHeight); MixF(s.MaxDrop); MixF(s.Radius); MixF(s.Height); MixF(s.StepUp); MixF(s.MaxSlopeDeg);
             MixF(tileSize); MixF(NavBake.SceneryExtent);
-            if (NavBake.Bounds(world, out _, out _, out _, out var all))
+            if (all != null && all.Count > 0)
             {
                 // the boxes in a stable order: entity iteration order can change with archetype layout
                 all.Sort((a, b) => { int c = a.lo.x.CompareTo(b.lo.x); if (c != 0) return c; c = a.lo.z.CompareTo(b.lo.z); if (c != 0) return c; c = a.lo.y.CompareTo(b.lo.y); if (c != 0) return c; c = a.hi.x.CompareTo(b.hi.x); if (c != 0) return c; c = a.hi.z.CompareTo(b.hi.z); return c != 0 ? c : a.hi.y.CompareTo(b.hi.y); });

@@ -29,7 +29,15 @@ namespace RipNRage.Engine.Ecs.Nav
         /// scenery included: the dock's floor plane is 1000 m across and must not stretch the grid, but it is
         /// still the floor, and a column over it has somewhere to stand.
         /// </summary>
+        /// <summary>The query the bake reads the level through. Build it once and keep it: <c>Query()…Build()</c>
+        /// registers a new query on the world every call and nothing removes it (11.10d).</summary>
+        public static Query StaticQuery(World world) => world.Query().WithReadOnly<ColliderShape>().Build();
+
         public static bool Bounds(World world, out Vector3 min, out Vector3 max,
+                                  out List<(Vector3 lo, Vector3 hi)> bounding, out List<(Vector3 lo, Vector3 hi)> all)
+            => Bounds(world, null, out min, out max, out bounding, out all);
+
+        public static bool Bounds(World world, Query statics, out Vector3 min, out Vector3 max,
                                   out List<(Vector3 lo, Vector3 hi)> bounding, out List<(Vector3 lo, Vector3 hi)> all)
         {
             min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
@@ -38,7 +46,7 @@ namespace RipNRage.Engine.Ecs.Nav
             all = new List<(Vector3, Vector3)>();
             // ColliderShape alone: a level brush built by PhysicsEntities has a LocalTransform and no
             // LocalToWorld until something parents it, so asking for both finds nothing at all.
-            var q = world.Query().WithReadOnly<ColliderShape>().Build();
+            var q = statics ?? StaticQuery(world);
             foreach (var chunk in q)
             {
                 var shapes = chunk.Get<ColliderShape>(); var ents = chunk.Entities;
@@ -82,10 +90,10 @@ namespace RipNRage.Engine.Ecs.Nav
         /// Bakes the level. <paramref name="tileSize"/> is the level's render-chunk size, so a nav tile and a
         /// culling chunk are the same box. Tiles with no static geometry over them stay null.
         /// </summary>
-        public static NavWorld Build(World world, in NavSettings settings, float tileSize)
+        public static NavWorld Build(World world, in NavSettings settings, float tileSize, Query statics = null)
         {
             var nav = new NavWorld { Settings = settings, TileSize = tileSize, BakeId = NavWorld.NextBakeId() };
-            if (!Bounds(world, out var min, out var max, out var bounding, out var all)) return nav;
+            if (!Bounds(world, statics, out var min, out var max, out var bounding, out var all)) return nav;
 
             nav.OriginX = Mathf.Floor(min.x / tileSize) * tileSize;
             nav.OriginZ = Mathf.Floor(min.z / tileSize) * tileSize;

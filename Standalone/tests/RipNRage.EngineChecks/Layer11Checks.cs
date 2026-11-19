@@ -17,49 +17,10 @@ internal static class Layer11Checks
 {
     private const float Cell = 1f, TileSize = 16f;
 
-    private static NavSettings Settings => new NavSettings
-    {
-        CellSize = Cell, CellHeight = 0.2f, MaxDrop = 2.5f,
-        Radius = 0.3f, Height = 1.8f, StepUp = 0.6f, MaxSlopeDeg = 50f,
-    };
+    private static NavSettings Settings => NavTestGrids.Settings(Cell);
 
-    /// <summary>
-    /// A one-tile grid from a map of characters, one per column, row 0 at z = 0:
-    /// <c>.</c> floor at y 0, <c>#</c> nothing (a wall: no span at all), <c>s</c> a 0.4 m step up,
-    /// <c>d</c> a 2 m drop down, <c>D</c> a 4 m drop (deeper than MaxDrop), <c>x</c> a floor that is not walkable.
-    /// </summary>
-    private static NavWorld Grid(params string[] rows)
-    {
-        int depth = rows.Length, width = rows[0].Length;
-        var nav = new NavWorld
-        {
-            Settings = Settings, TileSize = TileSize, OriginX = 0f, OriginZ = 0f,
-            TilesX = 1, TilesZ = 1, BakeId = NavWorld.NextBakeId(),
-        };
-        var tile = new NavTile { X = 0, Z = 0, MinX = 0f, MinZ = 0f, Width = width, Depth = depth, MinY = -10f, MaxY = 10f };
-        tile.Columns = new NavColumn[width * depth];
-        var spans = new List<NavSpan>();
-        for (int z = 0; z < depth; z++)
-            for (int x = 0; x < width; x++)
-            {
-                int first = spans.Count;
-                char c = rows[z][x];
-                if (c != '#')
-                {
-                    float floor = c == 's' ? 0.4f : c == 'd' ? -2f : c == 'D' ? -4f : 0f;
-                    spans.Add(new NavSpan
-                    {
-                        Floor = floor, Headroom = 2f,
-                        Flags = c == 'x' ? NavSpanFlags.Tight : NavSpanFlags.Walkable,
-                    });
-                }
-                tile.Columns[z * width + x] = new NavColumn { First = first, Count = spans.Count - first };
-            }
-        tile.Spans = spans.ToArray();
-        nav.Tiles = new[] { tile };
-        NavBake.Link(nav);
-        return nav;
-    }
+    /// <summary>A one-tile grid from a character map (the shared builder; see NavTestGrids for the alphabet).</summary>
+    private static NavWorld Grid(params string[] rows) => NavTestGrids.Grid(Settings, TileSize, rows);
 
     /// <summary>Two tiles side by side in x, both flat: the grid a cross-tile search runs over.</summary>
     private static NavWorld TwoTiles(bool wallBetween)
@@ -371,7 +332,8 @@ internal static class Layer11Checks
                 w.AddSystemsFromAssemblies(typeof(RipNRage.Engine.Ecs.World).Assembly);
                 RipNRage.Engine.Ecs.Physics.PhysicsEntities.StaticBox(w, new Vector3(0, -0.5f, 0), Quaternion.identity, new Vector3(8, 1, 8), Layers.Walkable);
                 for (int i = 0; i < 3; i++) w.Update(1f / 60f);
-                ulong k1 = NavCache.Key(w, nav.Settings, 16f), k2 = NavCache.Key(w, nav.Settings, 16f), k3 = NavCache.Key(w, other, 16f);
+                NavBake.Bounds(w, out _, out _, out _, out var boxes);
+                ulong k1 = NavCache.Key(boxes, nav.Settings, 16f), k2 = NavCache.Key(boxes, nav.Settings, 16f), k3 = NavCache.Key(boxes, other, 16f);
                 True(k1 == k2, "nav cache: the same level and settings key the same");
                 True(k1 != k3, "nav cache: another body keys differently");
             }

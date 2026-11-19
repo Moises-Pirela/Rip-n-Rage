@@ -24,26 +24,8 @@ internal static class Layer11Checks
         return null;
     }
 
-    /// <summary>A one-tile grid from a character map ('.' floor, '#' nothing), linked by the real builder — the engine suite's helper, kept small here.</summary>
-    private static NavWorld HandGrid(string[] rows)
-    {
-        int depth = rows.Length, width = rows[0].Length;
-        var settings = new NavSettings { CellSize = 1f, CellHeight = 0.2f, MaxDrop = 2.5f, Radius = 0.3f, Height = 1.8f, StepUp = 0.6f, MaxSlopeDeg = 50f };
-        var nav = new NavWorld { Settings = settings, TileSize = 32f, OriginX = 0f, OriginZ = 0f, TilesX = 1, TilesZ = 1, BakeId = NavWorld.NextBakeId() };
-        var tile = new NavTile { X = 0, Z = 0, MinX = 0f, MinZ = 0f, Width = width, Depth = depth, MinY = -10f, MaxY = 10f, Columns = new NavColumn[width * depth] };
-        var spans = new List<NavSpan>();
-        for (int z = 0; z < depth; z++)
-            for (int x = 0; x < width; x++)
-            {
-                int first = spans.Count;
-                if (rows[z][x] != '#') spans.Add(new NavSpan { Floor = 0f, Headroom = 2f, Flags = NavSpanFlags.Walkable });
-                tile.Columns[z * width + x] = new NavColumn { First = first, Count = spans.Count - first };
-            }
-        tile.Spans = spans.ToArray();
-        nav.Tiles = new[] { tile };
-        NavBake.Link(nav);
-        return nav;
-    }
+    /// <summary>A one-tile grid from a character map (the shared builder).</summary>
+    private static NavWorld HandGrid(string[] rows) => NavTestGrids.Grid(NavTestGrids.Settings(), 32f, rows);
 
     public static void Run(Action<bool, string> True)
     {
@@ -85,6 +67,27 @@ internal static class Layer11Checks
         // 11.4: the drop rule is at least the ledge guard's reach, or navigation refuses what blind walking allowed
         True(NavProfile.For(in ws).MaxDrop >= Steering.Drop,
              $"nav profile: the drop rule covers the ledge guard's reach ({NavProfile.For(in ws).MaxDrop} vs {Steering.Drop})");
+
+        // 11.10d: a reload of the definitions keeps every kind in the slot it had - Enemy.Kind is an index, and it
+        // is stored on live entities, so renumbering the table mid-session would repoint every grunt in the level
+        {
+            EnemyData Def(string classname, float speed = 1f) => new EnemyData { name = classname, classname = classname, movementSpeed = speed };
+            var current = new[] { Def("monster_rifleman", 11f), Def("monster_brawler", 14f) };
+
+            // the folder now also holds an archer, which sorts first by name
+            var loaded = new[] { Def("monster_archer", 9f), Def("monster_brawler", 14f), Def("monster_rifleman", 11f) };
+            var merged = RipNRage.Game.Content.EnemyDefinitions.Merge(current, loaded);
+            True(merged.Length == 3, $"enemies reload: the new kind is there ({merged.Length})");
+            True(merged[0].classname == "monster_rifleman" && merged[1].classname == "monster_brawler",
+                 "enemies reload: the kinds that existed keep their slots, whatever the file order");
+            True(merged[2].classname == "monster_archer", "enemies reload: a new kind goes on the end");
+
+            // an edited file replaces its definition in place
+            var edited = RipNRage.Game.Content.EnemyDefinitions.Merge(merged, new[] { Def("monster_rifleman", 99f) });
+            True(edited[0].classname == "monster_rifleman" && edited[0].movementSpeed == 99f, "enemies reload: an edit lands in the same slot");
+            True(edited.Length == 3 && edited[1].classname == "monster_brawler" && edited[2].classname == "monster_archer",
+                 "enemies reload: a file that is not there keeps its slot - something may be standing on it");
+        }
 
         // 11.16: melee has a damage path - the reach rule and Fury's melee bonus
         {

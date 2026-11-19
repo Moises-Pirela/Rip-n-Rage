@@ -37,6 +37,9 @@ namespace RipNRage.Game.Content
             UiScreens.BeforeFrame = RunFrameStart;
             InputSystem.LockCursorInGameplay = true; // the gameplay scheme locks the mouse; UI screens release it
             LevelBuild.Build(levelPath);
+            // 11.10d: the navigation grid is built here, with the level, not inside the first fixed tick where its
+            // cost came out of the step budget. The bake flushes the collider registrations it needs itself.
+            RipNRage.Game.Ecs.AI.NavBaking.Bake(Application.Current.World, "level start");
             UiScreens.Add(new PauseMenu());
             OnSceneBuilt?.Invoke();
         }

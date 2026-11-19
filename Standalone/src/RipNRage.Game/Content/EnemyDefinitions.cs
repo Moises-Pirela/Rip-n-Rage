@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using RipNRage.Game.Ecs.AI;
 
@@ -55,6 +56,56 @@ namespace RipNRage.Game.Content
                 }
             }
             return null;
+        }
+
+        /// <summary>Called when a definition file changed on disk and the table was rebuilt (the editor re-previews).</summary>
+        public static Action OnReloaded;
+
+        private static readonly Dictionary<string, DateTime> _stamps = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private static float _nextPoll;
+
+        /// <summary>
+        /// Re-reads the definitions that changed since the last look, and notices new ones (as the prefabs are
+        /// watched, 10.7). Returns how many files were re-read. The table keeps its order — see <see cref="Merge"/>.
+        /// </summary>
+        public static int PollReload(Func<string, Texture2D> loadTexture, float interval = 0.5f)
+        {
+            if (Time.unscaledTime < _nextPoll) return 0;
+            _nextPoll = Time.unscaledTime + interval;
+            string dir = Folder;
+            if (dir == null || !System.IO.Directory.Exists(dir)) return 0;
+            int changed = 0;
+            foreach (var file in System.IO.Directory.GetFiles(dir, "*.json"))
+            {
+                DateTime stamp;
+                try { stamp = File.GetLastWriteTimeUtc(file); } catch { continue; }
+                if (_stamps.TryGetValue(file, out var known) && known == stamp) continue;
+                _stamps[file] = stamp;
+                changed++;
+            }
+            if (changed == 0) return 0;
+            RipNRage.Game.Ecs.AI.Enemies.All = Merge(RipNRage.Game.Ecs.AI.Enemies.All, Load(loadTexture, dir));
+            OnReloaded?.Invoke();
+            return changed;
+        }
+
+        /// <summary>
+        /// The reloaded table, with every kind that already existed **in the slot it already had**. <c>Enemy.Kind</c>
+        /// is an index and it is stored on live entities: renumbering the table mid-session would repoint every
+        /// grunt in the level at another definition. New kinds go on the end; a kind whose file has gone keeps its
+        /// slot with the numbers it last had, because something may still be standing on it.
+        /// </summary>
+        public static EnemyData[] Merge(EnemyData[] current, EnemyData[] loaded)
+        {
+            var result = new List<EnemyData>(current ?? Array.Empty<EnemyData>());
+            for (int i = 0; i < result.Count; i++)
+            {
+                var fresh = loaded.FirstOrDefault(d => string.Equals(d.classname, result[i].classname, StringComparison.OrdinalIgnoreCase));
+                if (fresh != null) result[i] = fresh;
+            }
+            foreach (var d in loaded)
+                if (!result.Any(x => string.Equals(x.classname, d.classname, StringComparison.OrdinalIgnoreCase))) result.Add(d);
+            return result.ToArray();
         }
 
         /// <summary>Reads every file in the folder into <paramref name="loadTexture"/>-backed definitions, in name order.</summary>

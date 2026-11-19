@@ -3,6 +3,7 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../shared/NavTestGrids.cs" Link="NavTestGrids.cs" />
     <ProjectReference Include="../../src/RipNRage.Engine/RipNRage.Engine.csproj" />
   </ItemGroup>
 </Project>

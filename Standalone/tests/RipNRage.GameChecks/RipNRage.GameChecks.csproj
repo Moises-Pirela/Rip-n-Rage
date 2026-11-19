@@ -5,6 +5,7 @@
     <RootNamespace></RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../shared/NavTestGrids.cs" Link="NavTestGrids.cs" />
     <ProjectReference Include="../../src/RipNRage.Game/RipNRage.Game.csproj" />
   </ItemGroup>
 </Project>

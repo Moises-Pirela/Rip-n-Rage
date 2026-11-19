@@ -653,8 +653,10 @@ linking stopped being the ~100 ms both a cold bake and a warm load were paying s
 **Two rules it ended with, both found by a gate, not by thought:**
 
 1. **An `Invalidate()` rebake never touches the cache.** The first version loaded the *bare* dock back for the
-   `maze` wall: a collider built that frame was already in the broadphase (the rays see it) but not yet in the
-   ECS query the key hashes — 30 statics either side of the wall, same key, cache hit, no wall. A stale rebake is
+   `maze` wall: the key (which the ECS measures) already counted the wall while the rays (which read the
+   broadphase) could not yet see it — same key, cache hit, no wall. **The direction stated here first was
+   backwards and 11.10d corrected it**: the ECS has a new collider immediately, the broadphase one step later.
+   A stale rebake is
    told the geometry changed and believes that over the key: it always bakes and never saves (a stale grid saved
    under the bare key would have poisoned it).
 2. **A level-load bake is cached only when the two views agree** — the ECS static count equals
@@ -663,12 +665,11 @@ linking stopped being the ~100 ms both a cold bake and a warm load were paying s
    ledge walk maze` exactly one file is written — the bare dock from `walk` — and every gate's level-load bake
    says `views disagree: not cached`.
 
-**An open question for the ECS core, with data.** A static collider created through `PhysicsEntities` from a UI
-screen at frame N is registered in the broadphase by frame N+1's `PhysicsSyncSystem` (its `_unregistered`
-query sees it) while a fresh `World.Query().WithReadOnly<ColliderShape>()` built inside a system in the same
-fixed tick does not. Both are ECS queries over the same component. Something about when a query built mid-tick
-picks up an archetype created at the last playback. Not chased here; the cache is correct without knowing, and
-the sweep's determinism never depended on it.
+**Answered at 11.10d (it was not a query problem at all).** Instrumenting the bake to count the same statics
+three ways — a fresh query, a query built in `OnCreate`, and the broadphase — gave 30 / 30 / **29** on the frame
+the level was built and 30 / 30 / 30 on the next. The two queries always agree (`RegisterQuery` seeds a new query
+from every existing archetype), so nothing is stale. The broadphase is what lags: a collider reaches it only when
+`PhysicsSyncSystem` next runs. The bake samples with rays, so the broadphase is what it actually depends on.
 
 **Not done, deliberately:**
 
@@ -934,3 +935,50 @@ left until one of them has to change); and **the full sweep has still not been r
 verified targeted.
 
 Checks after the pass: engine 322, gameplay 535.
+
+
+---
+
+## 11.10d — the remaining fixes, with their evidence (2026-11-18)
+
+Five items the review left open, all taken, each with the measurement that says it works.
+
+**1. The bake runs at level start, not inside the first fixed tick.** `PhysicsEntities.FlushRegistrations` plays
+the world's command buffer back and runs `PhysicsSyncSystem`'s registration on demand, so a caller can query a
+level it has just built. `GameSession.StartLevel` bakes straight after `LevelBuild.Build`; `NavBakeSystem` is now
+only the invalidation path and a backstop for a level built another way (the title backdrop, which the `menu`
+gate still exercises). The 200 ms no longer comes out of a fixed step's budget.
+
+*Evidence, and a thing it caught:* the first version flushed **before** playing the buffer back and baked 5
+tiles / 70 spans — the brushes were still in the command buffer. With the playback first, the level-start bake
+finds **131 tiles / 130,700 spans** where the fixed-tick bake found 129 / 130,678: the old one had been missing a
+collider that registered late. The gates' `nav` probe moves with it (the `maze` rebake: 130,726 → 130,754 spans).
+All nine AI gates — `maze` `door` `ledge` `stay` `crowd` `brawler` `approach` `close` `peek` — are **identical**
+to their pre-fix values, so the behaviour is unchanged; only the grid is more complete.
+
+**2. The bake stopped leaking queries.** `QueryBuilder.Build()` registers a query on the world and nothing removes
+it, and `NavBake.Bounds` built one per call — three per cold bake, with the world outliving a level. `Bounds` and
+`Build` now take a query the caller owns, `NavCache.Key` takes the boxes already measured, and the bake keeps one
+query per world. `World.QueryCount` makes it visible.
+
+*Evidence:* the bake's own delta, printed on its log line, is **+1 on the first bake of a process and +0 on every
+bake after**. (The world's total still climbs ~3 per level *build* — that is the level build, not the navigation;
+a separate, pre-existing leak worth its own look.)
+
+**3. The enemy definitions are watched.** `EnemyDefinitions.PollReload` stats the folder like the prefab watcher,
+and the editor polls it beside `GamePrefabs.PollReload`. The reload goes through `Merge`, which keeps every kind
+in the slot it had: `Enemy.Kind` is an index stored on live entities, so renumbering mid-session would repoint
+every grunt in the level. New kinds go on the end; a kind whose file has gone keeps its slot.
+
+*Evidence:* five assertions — an archer added to the folder (sorting first by name) leaves rifleman at 0 and
+brawler at 1 and lands at 2; an edited file replaces in place; a vanished file keeps its slot.
+
+**4. One test grid builder.** `tests/shared/NavTestGrids.cs`, linked into both check projects; the engine suite's
+`Grid` and the game suite's `HandGrid` are one-line delegations. Both suites pass unchanged (322 / 540).
+
+**5. The sweep can be run in pieces.** `./gates.sh --batch k/n` runs every n-th script, so the 31-script sweep
+fits in four short runs instead of one long one that keeps being cut off; `--list` prints a slice and runs
+nothing. The slice is interleaved, so each batch mixes cheap and dear scripts.
+
+*Evidence:* `--batch 3/4 --list` → `ledge walk saveload rocket die pickup fall flowmoves`, in 0.04 s (it used to
+build and run both suites before printing).

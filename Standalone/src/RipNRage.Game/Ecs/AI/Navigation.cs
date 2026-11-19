@@ -46,69 +46,97 @@ namespace RipNRage.Game.Ecs.AI
     }
 
     /// <summary>
-    /// Bakes the level's navigation grid, once per level.
+    /// Bakes the level's navigation grid.
     ///
-    /// **Why a system and not a call in <c>LevelBuild.Build</c>** (where 11.1's spec first put it): a brush becomes
-    /// a static collider through <c>PhysicsEntities</c>, and those "register at the next fixed step" — at the end
-    /// of the build the broadphase is still empty, so a bake there would cast its rays through nothing and find no
-    /// floor anywhere. This runs after <see cref="PhysicsSyncSystem"/> has taken them in. It creates no entities,
-    /// so the 9.x "builds are immediate, systems are not" rule is not in play.
-    ///
-    /// It rebakes whenever the worldspawn's <see cref="Worldspawn.Version"/> changes — which the loader bumps on
-    /// every level build, a scene reset included, exactly as <c>WorldspawnSystem</c> uses it.
+    /// **Where it runs, and why** (11.10d, after measuring): the bake samples with rays, so it needs the
+    /// *broadphase*. A collider built outside a fixed step is in the ECS immediately and in the broadphase only
+    /// after the next <c>PhysicsSyncSystem</c> — measured at the gates: 30 statics in the ECS against 29 in the
+    /// broadphase on the frame the level was built. (The 11.12 note said this the other way round; it was wrong.)
+    /// So the bake asks <see cref="PhysicsEntities.FlushRegistrations"/> for the broadphase to catch up, and then
+    /// it can run anywhere — at level start, synchronously, instead of inside the first fixed tick where its
+    /// 200 ms came out of the frame's step budget.
     /// </summary>
-    [UpdateAfter(typeof(PhysicsSyncSystem))]
-    [Exclusive] // reads the physics broadphase and writes engine-side shared data, not components
-    public sealed class NavBakeSystem : SystemBase, IFixedTick
+    public static class NavBaking
     {
-        private int _bakedVersion = int.MinValue;
+        /// <summary>The worldspawn version the current grid was baked for.</summary>
+        public static int BakedVersion = int.MinValue;
 
-        public override void OnCreate() => World.SingletonEntity<Worldspawn>();
+        // one query, kept: Query().Build() registers a new query on the world every call and nothing removes it,
+        // and the world outlives a level (ResetScene destroys the entities, not the world) - 11.10d.
+        private static Query _statics;
+        private static World _statics_world;
 
-        public void FixedTick(SystemContext ctx)
+        private static Query Statics(World world)
         {
-            ref var ws = ref World.Singleton<Worldspawn>();
-            if (ws.Version == _bakedVersion && !Navigation.Stale) return;
-            bool stale = ws.Version == _bakedVersion; // not a level load: something changed the geometry under us
-            _bakedVersion = ws.Version;
-            Navigation.Stale = false;
+            if (!ReferenceEquals(world, _statics_world)) { _statics_world = world; _statics = NavBake.StaticQuery(world); }
+            return _statics;
+        }
 
+        /// <summary>Bakes (or loads) the grid for the level in <paramref name="world"/> now.</summary>
+        public static void Bake(World world, string reason)
+        {
+            ref var ws = ref world.Singleton<Worldspawn>();
             var settings = NavProfile.For(in ws);
             float tileSize = LevelLoader.MeshChunkSize;
+            bool stale = reason == "rebake";
+
+            PhysicsEntities.FlushRegistrations(world); // the rays need the broadphase, not the ECS
+            int queriesBefore = world.QueryCount;
             var watch = System.Diagnostics.Stopwatch.StartNew();
 
-            // 11.12: read the grid back if this level, with these settings, has been baked before. The key is what
-            // the bake consumes (every static collider's box, the derived body limits, the map keys), so a changed
-            // brush or a changed profile misses and bakes. A gate script's wall also misses - which is right.
-            // The cache is for level loads only. An Invalidate() rebake is told the geometry changed, and it must
-            // believe that over the key: the first version loaded the bare grid back for the maze gate's wall,
-            // because a collider built that frame is in the broadphase (the rays see it) before the ECS query does
-            // (the key did not) - 30 statics either side of the wall. A stale bake is never read from the cache
-            // and never written to it, so it cannot poison the level's entry either.
-            ulong key = NavCache.Key(World, in settings, tileSize);
+            var statics = Statics(world);
+            NavBake.Bounds(world, statics, out _, out _, out _, out var allBoxes);
+            // the two views of the level must agree before a grid is written down under a key the ECS measured:
+            // the rays read the broadphase, and a collider reaches it one step after the ECS has it.
+            bool consistent = allBoxes.Count == RipNRage.Engine.Physics.World.StaticCount;
+
+            ulong key = NavCache.Key(allBoxes, in settings, tileSize);
             string map = System.IO.Path.GetFileNameWithoutExtension(RipNRage.Game.Content.GameSession.LevelPath ?? "level");
             string file = System.IO.Path.Combine(Application.persistentDataPath, "nav", $"{map}-{key:x16}.nav");
-            // Save only when the two views of the level agree: the ECS query the key hashes, and the broadphase the
-            // rays sample. A collider built this very frame can be in one and not the other (seen both ways on the
-            // gates: door's frame-2 bake once saw part of its wall), and a grid saved under a key that does not
-            // describe it would be read back wrong for ever.
-            NavBake.Bounds(World, out _, out _, out _, out var allBoxes);
-            bool consistent = allBoxes.Count == RipNRage.Engine.Physics.World.StaticCount;
+
             NavWorld nav = null;
-            bool warm = !stale && NavCache.TryLoad(file, in settings, tileSize, out nav, World.Jobs);
+            bool warm = !stale && NavCache.TryLoad(file, in settings, tileSize, out nav, world.Jobs);
             if (!warm)
             {
-                nav = NavBake.Build(World, in settings, tileSize);
-                if (!stale && consistent && nav.TotalSpans > 0) { try { NavCache.Save(file, nav); } catch (System.Exception e) { Debug.LogWarning($"nav cache: could not write {file}: {e.Message}"); } }
+                nav = NavBake.Build(world, in settings, tileSize, statics);
+                if (!stale && consistent && nav.TotalSpans > 0)
+                {
+                    try { NavCache.Save(file, nav); } catch (System.Exception e) { Debug.LogWarning($"nav cache: could not write {file}: {e.Message}"); }
+                }
             }
             watch.Stop();
+
             Navigation.Current = nav;
+            Navigation.Stale = false;
+            BakedVersion = ws.Version;
             NavPaths.Clear(); // the corners in the side buffer were made on the old grid
 
             int tiles = 0;
             foreach (var t in nav.Tiles) if (t != null) tiles++;
             if (tiles > 0) // a world with no level (the checks, the title before its backdrop) has nothing to say
-                Debug.LogWarning($"nav: {(warm ? "loaded" : stale ? "rebaked" : "baked")} {tiles} tiles, {nav.TotalSpans} spans at {nav.Settings.CellSize:0.00} m in {watch.Elapsed.TotalMilliseconds:0.0} ms (key {key:x16}{(consistent ? "" : ", views disagree: not cached")})");
+                Debug.LogWarning($"nav: {(warm ? "loaded" : "baked")} {tiles} tiles, {nav.TotalSpans} spans at {nav.Settings.CellSize:0.00} m "
+                                 + $"in {watch.Elapsed.TotalMilliseconds:0.0} ms ({reason}, key {key:x16}"
+                                 + $"{(consistent ? "" : ", views disagree: not cached")}, queries +{world.QueryCount - queriesBefore} of {world.QueryCount})");
+        }
+    }
+
+    /// <summary>
+    /// The grid's keeper inside the frame: it bakes when something invalidated the level's geometry
+    /// (<see cref="Navigation.Invalidate"/> — a gate's wall, one day an editor edit), and as a backstop for a
+    /// level that was built without going through <c>GameSession.StartLevel</c>. The ordinary level start bakes
+    /// synchronously there, so in the common case this system does nothing at all.
+    /// </summary>
+    [UpdateAfter(typeof(PhysicsSyncSystem))]
+    [Exclusive] // reads the physics broadphase and writes engine-side shared data, not components
+    public sealed class NavBakeSystem : SystemBase, IFixedTick
+    {
+        public override void OnCreate() => World.SingletonEntity<Worldspawn>();
+
+        public void FixedTick(SystemContext ctx)
+        {
+            ref var ws = ref World.Singleton<Worldspawn>();
+            if (!Navigation.Stale && ws.Version == NavBaking.BakedVersion) return;
+            NavBaking.Bake(World, Navigation.Stale ? "rebake" : "level built outside StartLevel");
         }
     }
 }

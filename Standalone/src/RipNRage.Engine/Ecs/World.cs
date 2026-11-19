@@ -294,6 +294,10 @@ namespace RipNRage.Engine.Ecs
             return a;
         }
 
+        /// <summary>Queries registered on this world. Every one is considered when an archetype is created, so a
+        /// system that builds a query per call rather than once in OnCreate shows up here as a climbing number.</summary>
+        public int QueryCount => _queries.Count;
+
         internal void RegisterQuery(Query q)
         {
             _queries.Add(q);

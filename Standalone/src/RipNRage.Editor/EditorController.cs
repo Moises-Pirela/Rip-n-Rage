@@ -264,6 +264,7 @@ namespace RipNRage.Editor
             if (Input.GetKeyDown(KeyCode.I)) showInspector = !showInspector;
             // 10.7: a prefab file changed outside the editor (an edit by hand, another tool) is picked up and re-previewed
             GamePrefabs.PollReload();
+            RipNRage.Game.Content.EnemyDefinitions.PollReload(rel => Texture2D.Load(Application.AssetPath(rel))); // 11.10d
             if (Input.GetKeyDown(KeyCode.F5)) Play();
             if (ctrl && Input.GetKeyDown(KeyCode.S)) Save();
             if (ctrl && Input.GetKeyDown(KeyCode.Z)) Undo();

@@ -21,6 +21,18 @@ if [ "${1:-}" = "--compare" ]; then
     exit $status
 fi
 
+# --batch k/n runs only the k-th slice of the script list, so a sweep fits in four short runs instead of one long
+# one (11.10d: the full sweep kept being cut off). --list prints the slice and runs nothing.
+BATCH=""; LIST=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --batch) BATCH="$2"; shift 2 ;;
+        --list) LIST=1; shift ;;
+        *) break ;;
+    esac
+done
+
+SLICE_PENDING=1
 OUT="${1:-gates-out}"
 mkdir -p "$OUT"
 # hermetic: every sweep gets its own saves / graphics.json / controls.json (other worktrees run the game too, and
@@ -28,6 +40,25 @@ mkdir -p "$OUT"
 export RIPNRAGE_DATA_DIR="$(cd "$OUT" && pwd)/data"
 rm -rf "$RIPNRAGE_DATA_DIR"; mkdir -p "$RIPNRAGE_DATA_DIR"
 fail=0
+
+# script:frames — the 20 of the 7.8 sweep, then fall / pause (in the sweep since 8.0) and checkpoint (new in 8.0)
+ALL="maze:400 door:400 ledge:400 stay:600 crowd:600 brawler:400 walk:400 fire:400 weapons:400 rage:400 saveload:400 jab:400 m1887:400 glockfire:400 rocket:400 glockalt:400
+killenemy:400 style:400 die:400 peek:400 close:400 approach:400 pickup:400 water:400 surface:400 evade:400
+fall:620 pause:400 checkpoint:400 menu:400 flowmoves:400 deathf8:400"
+
+# the slice: entries k, k+n, k+2n ... so every batch mixes cheap and dear scripts
+SLICE="$ALL"
+if [ -n "$BATCH" ]; then
+    k=${BATCH%%/*}; n=${BATCH##*/}
+    SLICE=""; i=0
+    for entry in $ALL; do
+        if [ $(( i % n + 1 )) -eq "$k" ]; then SLICE="$SLICE $entry"; fi
+        i=$(( i + 1 ))
+    done
+fi
+
+if [ "$LIST" = 1 ]; then echo $SLICE | tr ' ' '\n' | sed '/^$/d'; exit 0; fi
+[ -n "$BATCH" ] && echo "batch $BATCH: $(echo $SLICE | tr '\n' ' ')"
 
 dotnet build -c Release --nologo -v q src/RipNRage.Game/RipNRage.Game.csproj || exit 1
 dotnet build -c Release --nologo -v q tests/RipNRage.EngineChecks || exit 1
@@ -38,12 +69,7 @@ tail -1 "$OUT/engine-checks.log"
 dotnet run -c Release --no-build --project tests/RipNRage.GameChecks > "$OUT/game-checks.log" 2>&1 || fail=1
 tail -1 "$OUT/game-checks.log"
 
-# script:frames — the 20 of the 7.8 sweep, then fall / pause (in the sweep since 8.0) and checkpoint (new in 8.0)
-ALL="maze:400 door:400 ledge:400 stay:600 crowd:600 brawler:400 walk:400 fire:400 weapons:400 rage:400 saveload:400 jab:400 m1887:400 glockfire:400 rocket:400 glockalt:400
-killenemy:400 style:400 die:400 peek:400 close:400 approach:400 pickup:400 water:400 surface:400 evade:400
-fall:620 pause:400 checkpoint:400 menu:400 flowmoves:400 deathf8:400"
-
-for entry in $ALL; do
+for entry in $SLICE; dofor entry in $SLICE; do
     name=${entry%%:*}; frames=${entry##*:}
     if [ -n "${GATES:-}" ] && [[ " $GATES " != *" $name "* ]]; then continue; fi
     log="$OUT/$name.log"

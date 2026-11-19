@@ -79,6 +79,21 @@ namespace RipNRage.Engine.Ecs.Physics
             PushExternalChanges();
         }
 
+        /// <summary>
+        /// Registers the colliders created since the last fixed step, now. A collider built outside a step is in the
+        /// ECS immediately but in the broadphase only after the next <see cref="FixedTick"/>, so anything that wants
+        /// to *query* a level it has just built — the navigation bake at level start — has to ask for this first.
+        /// </summary>
+        public void RegisterPending(World world)
+        {
+            // the colliders a level build just made are still in the world's command buffer: nothing exists to
+            // register until that is played back (measured: a bake straight after LevelBuild.Build found 5 tiles)
+            world.Commands.Playback();
+            var ctx = new SystemContext { World = world, Commands = world.Commands };
+            RegisterNew(ctx);
+            world.Commands.Playback(); // the PhysicsHandle marks them registered
+        }
+
         private void RegisterNew(SystemContext ctx)
         {
             foreach (var chunk in _unregistered)
@@ -434,6 +449,9 @@ namespace RipNRage.Engine.Ecs.Physics
     /// <summary>Code-side construction of physics entities (level loading, generated props); they register at the next fixed step.</summary>
     public static class PhysicsEntities
     {
+        /// <summary>Puts every collider built so far into the broadphase, without waiting for the next fixed step.</summary>
+        public static void FlushRegistrations(World world) => world.GetSystem<PhysicsSyncSystem>()?.RegisterPending(world);
+
         public static Entity StaticBox(World world, Vector3 center, Quaternion rotation, Vector3 size, int layer = 0, bool trigger = false) =>
             Create(world, new LocalTransform { Position = center, Rotation = rotation, Scale = Vector3.one },
                 new ColliderShape { Kind = ShapeKind.Box, Size = size, IsStatic = true }, layer, trigger);
