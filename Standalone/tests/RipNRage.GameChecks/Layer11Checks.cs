@@ -102,6 +102,11 @@ internal static class Layer11Checks
             True(Rages.DamageDealt(in hot, melee: true) > Rages.DamageDealt(in hot, melee: false), "rage: an enraged melee blow pays more than an enraged shot - the melee bonus the spec assumed");
         }
 
+        // 11.10c: a kind's salt is its name, so adding a kind does not reseed the others
+        True(AiBrains.Salt("monster_rifleman") == AiBrains.Salt("monster_rifleman"), "salt: the same name salts the same");
+        True(AiBrains.Salt("monster_rifleman") != AiBrains.Salt("monster_brawler"), "salt: two kinds salt differently");
+        True(AiBrains.Salt("") == 0 && AiBrains.Salt(null) == 0, "salt: no name is the plain seed");
+
         // 11.15: the enemy definitions are files, and the rifleman's bakes to what GameAssets used to build
         {
             var defs = RipNRage.Game.Content.EnemyDefinitions.Load(_ => null, FindEnemiesFolder());

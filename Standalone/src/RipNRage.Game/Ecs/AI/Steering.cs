@@ -160,10 +160,13 @@ namespace RipNRage.Game.Ecs.AI
                     var def = Enemies.All[kinds[i].Kind];
                     Vector3 self = ltw[i].Position;
                     float reach = 0.5f * Enemies.Height + m.RideHeight + Steering.Drop; // centre → feet → a drop below
-                    // the ledge guard is for a body walking blind. On a path it stands down: every link the search
-                    // used is inside the body's step and drop rules, so the ground ahead is known to be there.
-                    bool onPath = World.Has<PathFollow>(ents[i]) && World.Get<PathFollow>(ents[i]).Count > 0;
-                    bool ground = onPath || !intents[i].Move || Steering.GroundAhead(self, intents[i].MoveTo - self, reach);
+                    // the ledge guard is for a body walking blind. It stands down whenever the follower has judged the
+                    // line - on a path (every link is inside the step and drop rules) or Direct (the straight line
+                    // was sampled with the same rules). Two rules for one drop is how the 11.10b capsule fix stranded
+                    // the ledge grunt: the follower rightly called a 3.5 m drop clear under MaxDrop 4 and asked for no
+                    // path, then this guard, 3 m and path-only, refused it. The follower's rule is the rule.
+                    bool vetted = World.Has<PathFollow>(ents[i]) && (World.Get<PathFollow>(ents[i]).Count > 0 || World.Get<PathFollow>(ents[i]).Direct);
+                    bool ground = vetted || !intents[i].Move || Steering.GroundAhead(self, intents[i].MoveTo - self, reach);
                     Steering.Step(ref m, ref headings[i], in intents[i], def, self, ground, Dt);
                     if (m.Desired.sqrMagnitude > 0f && Count > 1)
                         m.Desired = Steering.Avoid(self, m.Desired, def.movementSpeed, ents[i], Others, Count);

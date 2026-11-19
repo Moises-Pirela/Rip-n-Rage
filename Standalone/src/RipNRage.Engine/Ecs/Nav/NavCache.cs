@@ -27,6 +27,11 @@ namespace RipNRage.Engine.Ecs.Nav
             void Mix(uint v) { h = (h ^ v) * 1099511628211ul; }
             void MixF(float f) => Mix(BitConverter.SingleToUInt32Bits(f));
             Mix((uint)FormatVersion);
+            // the bake's rules are code: a change to how BakeTile samples (the roof ray was one) with no FormatVersion
+            // bump would read stale grids back from a developer's data folder for ever. The engine module's build id
+            // makes any rebuild of the engine a miss; a bake costs 200 ms once per build, and the sweep's hermetic
+            // folder never had the problem.
+            foreach (byte b in typeof(NavBake).Assembly.ManifestModule.ModuleVersionId.ToByteArray()) Mix(b);
             MixF(s.CellSize); MixF(s.CellHeight); MixF(s.MaxDrop); MixF(s.Radius); MixF(s.Height); MixF(s.StepUp); MixF(s.MaxSlopeDeg);
             MixF(tileSize); MixF(NavBake.SceneryExtent);
             if (NavBake.Bounds(world, out _, out _, out _, out var all))

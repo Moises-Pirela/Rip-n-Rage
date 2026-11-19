@@ -108,7 +108,7 @@ namespace RipNRage.Game.Ecs.AI
         public override AiBrain Bake() => new AiBrain { State = state };
         public override AiBrain Bake(in BakeContext ctx)
         {
-            uint seed = ctx.HasEntity ? AiBrains.Seed(ctx.Position, EnemyConfig.KindOf(monster)) : 0u;
+            uint seed = ctx.HasEntity ? AiBrains.Seed(ctx.Position, AiBrains.Salt(monster)) : 0u; // by name: no table needed, no index to drift
             return new AiBrain { State = state, Rng = seed, Order = seed, Home = ctx.HasEntity ? ctx.Position : default };
         }
     }

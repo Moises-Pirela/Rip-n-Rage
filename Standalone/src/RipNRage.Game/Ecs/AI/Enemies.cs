@@ -83,7 +83,7 @@ namespace RipNRage.Game.Ecs.AI
             w.Add(e, new Enemy { Kind = kind });
             w.Add(e, new Heading { Yaw = yaw }); // the body never turns (6.4): facing is data
             w.Add(e, new Perception());
-            var seed = AiBrains.Seed(floorPosition, kind); // seeded by the placement: the same run every time
+            var seed = AiBrains.Seed(floorPosition, AiBrains.Salt(def.classname)); // seeded by the placement, salted by the name: the same run every time
             w.Add(e, new AiBrain { Rng = seed, Order = seed, Home = floorPosition });
             w.Add(e, new AiIntent());
             w.Add(e, new EnemyWeapon());
@@ -134,7 +134,7 @@ namespace RipNRage.Game.Ecs.AI
             cmd.Add(e, new Enemy { Kind = kind });
             cmd.Add(e, new Heading { Yaw = yaw });
             cmd.Add(e, new Perception());
-            var bufferedSeed = AiBrains.Seed(floorPosition, kind); // a deferred entity's index is not final
+            var bufferedSeed = AiBrains.Seed(floorPosition, AiBrains.Salt(All[kind].classname)); // a deferred entity's index is not final
             cmd.Add(e, new AiBrain { Rng = bufferedSeed, Order = bufferedSeed, Home = floorPosition });
             cmd.Add(e, new AiIntent());
             cmd.Add(e, new EnemyWeapon());

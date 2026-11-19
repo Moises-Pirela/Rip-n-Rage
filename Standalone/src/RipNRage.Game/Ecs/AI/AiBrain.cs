@@ -79,6 +79,22 @@ namespace RipNRage.Game.Ecs.AI
             }
         }
 
+        /// <summary>
+        /// The salt a kind contributes to its brains' seeds: a hash of the <b>classname</b>, not the kind's index.
+        /// Kinds load in file order, so an index changes the day a file is added (11.15 made every rifleman roll
+        /// differently by adding the brawler); a name does not. Pinned by a check.
+        /// </summary>
+        public static int Salt(string classname)
+        {
+            if (string.IsNullOrEmpty(classname)) return 0;
+            unchecked
+            {
+                uint h = 2166136261u;
+                foreach (char c in classname) h = (h ^ c) * 16777619u;
+                return (int)h;
+            }
+        }
+
         /// <summary>The next roll in [0, 1) from the brain's own generator (xorshift32).</summary>
         public static float Roll(ref uint state)
         {

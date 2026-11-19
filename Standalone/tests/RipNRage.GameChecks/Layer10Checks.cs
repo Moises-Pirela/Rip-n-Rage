@@ -77,7 +77,7 @@ internal static class Layer10Checks
         var floor = new Vector3(-5f, 0.91f, -16f);
         var grunt = lib.Get("grunt").Spawn(w, floor, Quaternion.Euler(0f, 180f, 0f));
         Equal(180f, w.Get<Heading>(grunt.Root).Yaw, "a facing comes from the instance rotation (the map's angle)");
-        True(w.Get<AiBrain>(grunt.Root).Rng == AiBrains.Seed(floor, 0), "the brain's dice are seeded from where the prefab was placed, salted by its kind");
+        True(w.Get<AiBrain>(grunt.Root).Rng == AiBrains.Seed(floor, AiBrains.Salt("monster_rifleman")), "the brain's dice are seeded from where the prefab was placed, salted by its kind");
         True(w.Get<EnemyVisual>(grunt.Root).Sprite == grunt["sprite"] && w.Get<EnemyVisual>(grunt.Root).DeadTime == -1f, "the look points at the sprite child and starts alive");
         True(w.Get<LevelRef>(grunt.Root).Index == -1 && w.Get<LevelRef>(grunt.Root).SpawnerIndex == -1, "a level reference starts unstamped");
         var spawned = Enemies.Spawn(w, 0, floor, 180f);
