@@ -860,6 +860,88 @@ After flat water is solid:
 7. **The interior/exterior seam** (V9b): the sea mask, the lighting-zone blend and the underwater state all change
    at a doorway. Any mismatch between them shows as a flash or a leak. Test it in a doorway first.
 
+### The limits, and what to do about each
+
+Every limit the V steps have recorded, in one place, each with where it gets fixed. They fall into five kinds:
+
+- **fix now**, before V3 builds vessels on top of them;
+- **fix with the hull physics** that V3 makes possible;
+- **already scheduled** in a later step;
+- **watch**, with a measurement that would turn it into work;
+- **accepted by design**, with what would make us revisit it.
+
+Sizes are relative: S is a commit, M a few, L a step of its own.
+
+#### 1. Fix now — "V2b", before V3 (all S)
+
+V3 turns brushes into vessels, and every brush is a convex hull. These four would be baked into every hull it builds.
+
+| # | Limit | Consequence | Fix | Proved by |
+|---|---|---|---|---|
+| L1 | A convex part's inertia is its bounding box's | A hull brush's roll and pitch inertia is wrong in proportion to how un-box-like it is. A V-bottomed hull rolls as if it were a box. | Exact polyhedral inertia by signed tetrahedra: the decomposition the volume and centroid code already uses, carried to second moments. | A convex box part matches the box formula exactly; a tetrahedron matches its analytic tensor. |
+| L2 | A convex part sweeps as its box | A fast hull is stopped a little early by the corners its box has and it doesn't. It can never tunnel, but it can stop short. | `CollisionShape.Translated` does **not** move polytopes (its own comment: "they are static geometry"), so the sweep can't move a hull today. Give polytope shapes a translation that `Support` adds, then sweep each convex part at its substep pose. | A wedge thrown at a wall stops at its true face, not at its box. The gates stay byte-identical, since only moving polytopes change and none existed before V2. |
+| L3 | Blasts on a compound use its overall box | A rocket by a boat's cabin roof pushes the boat as if it struck the envelope: the wrong lever arm, the wrong spin. | `SolverBody.AddExplosionForce` takes the closest point over the parts (`ConvexShape.ClosestPoint`, or the rounded shapes' own). | The same blast beside the cabin roof and beside the keel spins the boat in opposite directions. |
+| L4 | Parts assume unit scale, **silently** | An editor-scaled vessel draws scaled and collides unscaled. That mismatch would surface as "the boat is haunted". | **Now**: registration refuses a non-unit-scale compound with a warning (the sync already has `Skip`). **Later, if a level wants it**: scale part positions and sizes at registration, the way `SetupEcs` scales a single shape. | A scaled compound is reported, not simulated wrong. |
+
+#### 2. Fix with the hull physics — "V4b", after V3 (L)
+
+**This is the biggest open risk to the chase, not a tidy-up.** The test boat makes 11 m/s, and the chase needs 20–30. The lumped planing model (`PlaningLift`, `PlaningTrim`, `PlaningCentre`) on a box cannot get there honestly: moving its centre of pressure either buries the bow or launches the hull.
+
+| # | Limit | Fix |
+|---|---|---|
+| L5 | One displacement box per hull | Displacement from the hull's own `hull` brushes (V3), each clipped **exactly** against the water plane: a convex polytope below a plane has an exact volume and centroid. This replaces the sampled box for vessels, and the sampled box stays for crates. |
+| L6 | Planing and drag are lumped on a box; a box trims about 3° bow-down | Per submerged face of those brushes: pressure drag and planing lift from the face's own normal and velocity, plus viscous drag over the wetted area. Bow-up trim, planing and top speed then come from the hull's shape and the engine's power. The three lumped knobs are retired for vessels. |
+
+**Proved by**:
+- A prism hull floats at its analytic draft.
+- A box displacement agrees with today's sampled result.
+- A V-bottomed speedboat of plausible power planes, runs 2–5° **bow-up**, holds steady without porpoising, and reaches chase speed (≥ 20 m/s).
+
+**Watch inside it**: whether rock damping (V4) is still needed once faces damp pitch for real. Keep it if a check still needs it, and say why.
+
+#### 3. Already scheduled — nothing new, just their home
+
+| Limit | Where |
+|---|---|
+| The ship is a kinematic stand-in (`PlatformMotion`); its own motion is not simulated | V9: heavy-vessel dynamics, kinematic in contacts |
+| No pathfinding on the moving ship | V9c |
+| Rigid-body state (and vessel, pilot and director state) not saved | V10 |
+| Flat water | V11 |
+| The kill height kills in a ship's hold; water is a world box; the sea draws inside hulls | V9b: dry volumes, "submerged" |
+| Enemies have no kill rule in water and do not swim | F1 (enemy kill plane), V9b (the submerged rule) |
+| MP3 and OGG not decoded | F0 |
+
+#### 4. Watch — with the measurement that would make it work
+
+| Limit | Measure | Turns into work when |
+|---|---|---|
+| CCD sweeps translation, not rotation | Boats ramming and pitching in the V6 flotilla rig | A rail or deck edge passes through a character or a hull |
+| The ride on a fast-pitching deck | The V4b planing boat, then V11 waves | The ride chatters, or a rider leaves the deck without jumping |
+| Float precision over 3–4 km | C7b, a character at the far end of the course | Visible jitter in the drawn deck or the view |
+| Solver cost: ~10 boats × ~20 parts, and a ship of hundreds | A "flotilla" benchmark scenario at V6; the ship greybox at V9 | A budget fails. V2's own 2% is in this column, and the larger body object is the first suspect |
+| Not deterministic with `threads > 1` | — | A feature needs replays or lockstep. V10 saves do not |
+
+#### 5. Accepted by design — and what would reopen each
+
+| Limit | Why it stands | Reopen if |
+|---|---|---|
+| Ground lighter than rider ÷ 10 is solved as rider ÷ 10 (`maxMassRatio`) | An iterative solver cannot converge a stiff spring over a very light body against a rigid floor. Such a floating prop feels only part of a rider's weight, and could not hold a person up anyway. | A design wants characters riding very light floating things |
+| Grip limit off by default (`RideConstraint.grip`) | The motor runs at about 7 g for feel; real friction (~1 g) makes every deck ice | A slippery-deck design, which sets it per deck |
+| **Walk-off shove**: pushing off a light crate slides it about a metre | Newton's third law, honestly: the motor's 7 g push-off is real force on what it pushes | **Needs a decision** — see below |
+| Caustics use one water level (the highest surface) | Every level so far has one sea | A level with two water heights in view |
+| Only the player swims | Nothing else needs to yet | An enemy design that swims |
+
+**Decisions this needs:**
+
+1. **Walk-off shove.** Either keep it honest (recommended — the chase is heavy boats, not light crates), or cap
+   the reaction on *dynamic* ground at μ × support force. The cap is a deliberate break of Newton's third law: the
+   rider keeps the full feel, and the ground feels only what real feet could give it.
+2. **Scale.** Refuse non-unit-scale compounds (recommended, and part of V2b), or support scaled compounds outright.
+3. **Order.** V2b, then V3, then V4b (recommended, because V4b is the chase-speed risk and needs V3's hull brushes), then V6.
+
+Engine-wide gaps in the README that are not on this pass's path — joint types, mesh triggers overlapping by
+bounds, movers that are not pushed back, the mesh ghost-edge heuristic — stay in the README's list.
+
 ---
 
 ## Part four — the Harbor (C7)
