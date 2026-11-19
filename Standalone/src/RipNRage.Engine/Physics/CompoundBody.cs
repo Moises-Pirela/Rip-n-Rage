@@ -1,4 +1,5 @@
 using System;
+using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Physics;
 
 namespace RipNRage.Engine
@@ -14,7 +15,10 @@ namespace RipNRage.Engine
     /// body frame and moved by the parallel-axis theorem), diagonalised into a principal frame. The solver keeps the
     /// diagonal it always kept; only the frame it is diagonal in is new (<see cref="inertiaFrame"/>).</para>
     ///
-    /// <para>Parts assume a body at unit scale.</para>
+    /// <para>The entity's scale applies to its parts (V2b): uniformly, everything grows; non-uniformly, an axis-aligned box
+    /// stays a box, a turned box becomes the parallelepiped it really is (an exact convex part), and a convex part is
+    /// transformed exactly. Spheres and capsules, which a non-uniform scale would make ellipsoids, take the rule single
+    /// shapes already use: the largest scale across them.</para>
     /// </summary>
     public sealed partial class SolverBody
     {
@@ -32,21 +36,29 @@ namespace RipNRage.Engine
         private Vector3[] _partHalf = Array.Empty<Vector3>();
         /// <summary>The principal axes of the inertia tensor, in the body frame. Identity for a single shape.</summary>
         internal Quaternion inertiaFrame = Quaternion.identity;
+        /// <summary>Each part's centre when its slot was last posed: a sweep between steps carries it from there.</summary>
+        private Vector3[] _posedCentre = Array.Empty<Vector3>();
+        /// <summary>What the body was set up from, so a change of scale can set it up again.</summary>
+        private CompoundShapeAsset _source;
+        private Body _sourceConfig;
+        internal Vector3 compoundScale = Vector3.one;
 
         public bool IsCompound => isCompound;
         public int PartCount => children.Length;
 
         // ------------------------------------------------------------------ setup
 
-        /// <summary>Configures an ECS-owned compound body from its <see cref="Body"/> and its parts.</summary>
-        internal void SetupCompound(in Body cfg, CompoundShapeAsset asset)
+        /// <summary>Configures an ECS-owned compound body from its <see cref="Body"/>, its parts and the entity's scale.</summary>
+        internal void SetupCompound(in Body cfg, CompoundShapeAsset asset, Vector3 scale)
         {
             ApplyBodyConfig(in cfg);
+            _source = asset; _sourceConfig = cfg; compoundScale = scale;
             isCompound = true;
             isSphere = isCapsule = false;
-            parts = asset?.Children ?? Array.Empty<CompoundChild>();
+            parts = ScaledParts(asset?.Children ?? Array.Empty<CompoundChild>(), scale);
             int n = parts.Length;
             _partCentre = new Vector3[n]; _partRotation = new Quaternion[n]; _partTemplate = new ConvexShape[n]; _partHalf = new Vector3[n];
+            _posedCentre = new Vector3[n];
             for (int i = 0; i < n; i++)
             {
                 ref readonly var p = ref parts[i];
@@ -62,6 +74,134 @@ namespace RipNRage.Engine
                 _partHalf[i] = PartHalfExtents(i);
             }
             ComputeMassProperties();
+        }
+
+        /// <summary>
+        /// The entity's scale changed: set the parts up again at the new one, keeping the body where it is - its origin
+        /// stays put and its centre of mass moves with the parts. Velocities carry over.
+        /// </summary>
+        internal void Rescale(Vector3 scale)
+        {
+            if (_source == null) return;
+            Vector3 origin = position - rotation * comOffsetLocal;
+            Vector3 v = linearVelocity, w = angularVelocity;
+            SetupCompound(in _sourceConfig, _source, scale);
+            position = origin + rotation * comOffsetLocal;
+            linearVelocity = v; angularVelocity = w;
+            for (int i = 0; i < children.Length && i < parts.Length; i++) if (children[i] != null) { children[i].ecsShape = parts[i].Shape; children[i].polytope = null; }
+            UpdateShape();
+            TouchBroadphase();
+        }
+
+        // ------------------------------------------------------------------ scale
+
+        /// <summary>
+        /// The parts as the entity's scale makes them. Every part ends up described in the body's frame: its centre is
+        /// the scale applied to where it sat, and its shape is the scale applied to what it was - exactly, wherever the
+        /// result is still a shape a part can be.
+        /// </summary>
+        internal static CompoundChild[] ScaledParts(CompoundChild[] src, Vector3 scale)
+        {
+            if (src.Length == 0 || ((scale - Vector3.one).sqrMagnitude < 1E-10f)) return src;
+            var result = new CompoundChild[src.Length];
+            float ax = MathF.Abs(scale.x), ay = MathF.Abs(scale.y), az = MathF.Abs(scale.z);
+            float most = MathF.Max(ax, MathF.Max(ay, az));
+            bool uniform = scale.x > 0f && MathF.Abs(scale.x - scale.y) < 1E-5f && MathF.Abs(scale.x - scale.z) < 1E-5f;
+            for (int i = 0; i < src.Length; i++)
+            {
+                var p = src[i];
+                var rot = p.Rotation == default ? Quaternion.identity : p.Rotation;
+                var q = p;
+                q.Shape.Center = Vector3.zero;
+                q.Position = Vector3.Scale(scale, p.Position + rot * p.Shape.Center); // the part's centre, scaled
+                q.Rotation = rot;
+                switch (p.Shape.Kind)
+                {
+                    case ShapeKind.Sphere:
+                        q.Shape.Radius = p.Shape.Radius * (uniform ? scale.x : most);
+                        break;
+                    case ShapeKind.Capsule:
+                    {
+                        if (uniform) { q.Shape.Radius = p.Shape.Radius * scale.x; q.Shape.Height = p.Shape.Height * scale.x; break; }
+                        // along a body axis the capsule stays a capsule: its length takes that axis, its girth the larger of the others
+                        Vector3 axis = rot * Vector3.up;
+                        int k = AxisOf(axis);
+                        if (k < 0) { q.Shape.Radius = p.Shape.Radius * most; q.Shape.Height = p.Shape.Height * most; break; }
+                        float along = k == 0 ? ax : k == 1 ? ay : az;
+                        float across = k == 0 ? MathF.Max(ay, az) : k == 1 ? MathF.Max(ax, az) : MathF.Max(ax, ay);
+                        q.Shape.Radius = p.Shape.Radius * across;
+                        q.Shape.Height = MathF.Max(p.Shape.Height * along, 2f * q.Shape.Radius);
+                        break;
+                    }
+                    case ShapeKind.Box:
+                    {
+                        if (uniform) { q.Shape.Size = p.Shape.Size * scale.x; break; }
+                        // a box turned onto the body's axes stays a box, its sides taking the scale of the axes they lie on
+                        int kx = AxisOf(rot * Vector3.right), ky = AxisOf(rot * Vector3.up), kz = AxisOf(rot * Vector3.forward);
+                        if (kx >= 0 && ky >= 0 && kz >= 0)
+                        {
+                            q.Shape.Size = new Vector3(p.Shape.Size.x * Pick(kx, ax, ay, az), p.Shape.Size.y * Pick(ky, ax, ay, az), p.Shape.Size.z * Pick(kz, ax, ay, az));
+                            break;
+                        }
+                        // any other box becomes a parallelepiped: convex, and exact
+                        var h = p.Shape.Size * 0.5f;
+                        var corners = new Vector3[8];
+                        for (int c = 0; c < 8; c++)
+                            corners[c] = new Vector3((c & 1) == 0 ? -h.x : h.x, (c & 2) == 0 ? -h.y : h.y, (c & 4) == 0 ? -h.z : h.z);
+                        var faces = new[]
+                        {
+                            new Plane(Vector3.right, h.x), new Plane(Vector3.left, h.x), new Plane(Vector3.up, h.y),
+                            new Plane(Vector3.down, h.y), new Plane(Vector3.forward, h.z), new Plane(Vector3.back, h.z),
+                        };
+                        q.Shape.Kind = ShapeKind.Convex; q.Shape.Size = Vector3.zero;
+                        q.Shape.Hull = TransformedHull(faces, corners, rot, scale);
+                        q.Rotation = Quaternion.identity;
+                        break;
+                    }
+                    case ShapeKind.Convex:
+                    {
+                        var hull = PhysicsAssets.Hulls.Resolve(p.Shape.Hull);
+                        if (hull == null) break;
+                        q.Shape.Hull = TransformedHull(hull.Faces, hull.Vertices, rot, scale);
+                        q.Rotation = Quaternion.identity;
+                        break;
+                    }
+                }
+                result[i] = q;
+            }
+            return result;
+        }
+
+        private static float Pick(int k, float x, float y, float z) => k == 0 ? x : k == 1 ? y : z;
+
+        /// <summary>Which body axis a unit vector lies along (0 x, 1 y, 2 z), or -1 if none.</summary>
+        private static int AxisOf(Vector3 v)
+        {
+            const float tol = 1E-4f;
+            if (MathF.Abs(MathF.Abs(v.x) - 1f) < tol) return 0;
+            if (MathF.Abs(MathF.Abs(v.y) - 1f) < tol) return 1;
+            if (MathF.Abs(MathF.Abs(v.z) - 1f) < tol) return 2;
+            return -1;
+        }
+
+        /// <summary>
+        /// A hull carried through the part's turn and the body's scale, M = S·R: vertices by M, face normals by its
+        /// inverse transpose S⁻¹·R (R is orthonormal), each plane through the image of a point it held. Exact for any
+        /// scale, mirroring included, and uncapped - deriving faces again from the points would be neither.
+        /// </summary>
+        private static AssetHandle<ConvexColliderAsset> TransformedHull(Plane[] faces, Vector3[] vertices, Quaternion rot, Vector3 scale)
+        {
+            var verts = new Vector3[vertices.Length];
+            for (int i = 0; i < verts.Length; i++) verts[i] = Vector3.Scale(scale, rot * vertices[i]);
+            var inv = new Vector3(1f / scale.x, 1f / scale.y, 1f / scale.z);
+            var planes = new Plane[faces.Length];
+            for (int i = 0; i < planes.Length; i++)
+            {
+                Vector3 n = Vector3.Scale(inv, rot * faces[i].normal).normalized;
+                Vector3 onPlane = Vector3.Scale(scale, rot * (faces[i].normal * faces[i].dist));
+                planes[i] = new Plane(n, Vector3.Dot(n, onPlane));
+            }
+            return PhysicsAssets.Hulls.Intern(new ConvexColliderAsset(planes, verts), "scaled-part-" + Guid.NewGuid().ToString("N"));
         }
 
         /// <summary>Half extents of a part's own box (its frame).</summary>
@@ -120,13 +260,16 @@ namespace RipNRage.Engine
             for (int i = 0; i < n; i++)
             {
                 float m = total * weight[i] / sum;
-                Vector3 d = PartInertia(i, m); // principal moments in the part's own frame
+                var t = PartTensor(i, m); // the part's own inertia, its frame, about its centroid
                 var r = Matrix3x3.FromQuaternion(_partRotation[i]);
-                // R · diag(d) · Rᵀ
+                // R · T · Rᵀ
                 for (int a = 0; a < 3; a++)
                 for (int b = a; b < 3; b++)
                 {
-                    float v = Get(r, a, 0) * d.x * Get(r, b, 0) + Get(r, a, 1) * d.y * Get(r, b, 1) + Get(r, a, 2) * d.z * Get(r, b, 2);
+                    float v = 0f;
+                    for (int k = 0; k < 3; k++)
+                    for (int l = 0; l < 3; l++)
+                        v += Get(r, a, k) * Get(t, k, l) * Get(r, b, l);
                     Accumulate(ref xx, ref yy, ref zz, ref xy, ref xz, ref yz, a, b, v);
                 }
                 // parallel axis to the body's centre of mass
@@ -214,7 +357,61 @@ namespace RipNRage.Engine
             }
         }
 
-        /// <summary>A part's principal moments of inertia, in its own frame, for mass <paramref name="m"/>.</summary>
+        /// <summary>
+        /// A part's inertia tensor in its own frame, about its centroid, for mass <paramref name="m"/>. Exact for every kind:
+        /// a convex part's comes from the same tetrahedra as its volume - each one's ∫x·xᵀ dV is V/20·(s·sᵀ + Σvᵢ·vᵢᵀ)
+        /// over its corners - moved to the centroid and turned into I = tr(C)·E − C. (It was the bounding box's, which
+        /// makes a V-bottomed hull roll like a box.)
+        /// </summary>
+        private Matrix3x3 PartTensor(int i, float m)
+        {
+            if (parts[i].Shape.Kind == ShapeKind.Convex && _partTemplate[i] != null)
+            {
+                var t = _partTemplate[i];
+                Vector3 o = t.center;
+                double cxx = 0, cyy = 0, czz = 0, cxy = 0, cxz = 0, cyz = 0, vol = 0;
+                Vector3 first = Vector3.zero;
+                foreach (var f in t.faces)
+                {
+                    if (f.indices == null || f.indices.Length < 3) continue;
+                    Vector3 a = t.vertices[f.indices[0]] - o;
+                    for (int k = 1; k + 1 < f.indices.Length; k++)
+                    {
+                        Vector3 b = t.vertices[f.indices[k]] - o, c = t.vertices[f.indices[k + 1]] - o;
+                        double det = Math.Abs(Vector3.Dot(a, Vector3.Cross(b, c)));
+                        double k120 = det / 120.0;
+                        Vector3 sum = a + b + c;
+                        cxx += k120 * (a.x * a.x + b.x * b.x + c.x * c.x + sum.x * sum.x);
+                        cyy += k120 * (a.y * a.y + b.y * b.y + c.y * c.y + sum.y * sum.y);
+                        czz += k120 * (a.z * a.z + b.z * b.z + c.z * c.z + sum.z * sum.z);
+                        cxy += k120 * (a.x * a.y + b.x * b.y + c.x * c.y + sum.x * sum.y);
+                        cxz += k120 * (a.x * a.z + b.x * b.z + c.x * c.z + sum.x * sum.z);
+                        cyz += k120 * (a.y * a.z + b.y * b.z + c.y * c.z + sum.y * sum.z);
+                        double v = det / 6.0;
+                        vol += v;
+                        first += sum * (float)(v / 4.0); // the tetrahedron's centroid is a quarter of its corners' sum
+                    }
+                }
+                if (vol > 1E-12)
+                {
+                    // about the centroid, then scaled from volume to mass
+                    Vector3 cen = first / (float)vol;
+                    cxx -= vol * cen.x * cen.x; cyy -= vol * cen.y * cen.y; czz -= vol * cen.z * cen.z;
+                    cxy -= vol * cen.x * cen.y; cxz -= vol * cen.x * cen.z; cyz -= vol * cen.y * cen.z;
+                    double rho = m / vol, tr = cxx + cyy + czz;
+                    return new Matrix3x3
+                    {
+                        m00 = (float)(rho * (tr - cxx)), m11 = (float)(rho * (tr - cyy)), m22 = (float)(rho * (tr - czz)),
+                        m01 = (float)(-rho * cxy), m10 = (float)(-rho * cxy), m02 = (float)(-rho * cxz), m20 = (float)(-rho * cxz),
+                        m12 = (float)(-rho * cyz), m21 = (float)(-rho * cyz),
+                    };
+                }
+            }
+            Vector3 d = PartInertia(i, m);
+            return new Matrix3x3 { m00 = d.x, m11 = d.y, m22 = d.z };
+        }
+
+        /// <summary>A part's principal moments of inertia, in its own frame, for mass <paramref name="m"/> (box, sphere, capsule).</summary>
         private Vector3 PartInertia(int i, float m)
         {
             ref readonly var s = ref parts[i].Shape;
@@ -331,6 +528,7 @@ namespace RipNRage.Engine
                 var slot = children[i];
                 if (slot == null) continue;
                 PartPose(i, out Vector3 c, out Quaternion r);
+                _posedCentre[i] = c;
                 ref readonly var s = ref parts[i].Shape;
                 switch (s.Kind)
                 {
@@ -369,19 +567,61 @@ namespace RipNRage.Engine
 
         /// <summary>
         /// A part's shape at the body's pose <i>right now</i>, for the continuous sweep between steps (the slots are
-        /// posed once a step). Exact for spheres, capsules and boxes; a convex part sweeps as its own box, which can
-        /// only stop it a little early, never late.
+        /// posed once a step). Exact for every kind: a convex part is its posed polytope carried to where the body has
+        /// moved it since (the sweep is translational, as every sweep here is, so its turn since the pose is not
+        /// swept - README, Known gaps).
         /// </summary>
         internal CollisionShape PartSweepShape(int i)
         {
             PartPose(i, out Vector3 c, out Quaternion r);
             ref readonly var s = ref parts[i].Shape;
+            var slot = i < children.Length ? children[i] : null;
+            if (s.Kind == ShapeKind.Convex && slot?.polytope != null)
+            {
+                var shape = CollisionShape.Polytope(slot.polytope);
+                shape.offset = c - _posedCentre[i];
+                shape.center += shape.offset;
+                return shape;
+            }
             switch (s.Kind)
             {
                 case ShapeKind.Sphere: return CollisionShape.Sphere(c, s.Radius);
                 case ShapeKind.Capsule: return CollisionShape.Capsule(c, r, s.Radius, MathF.Max(s.Height * 0.5f - s.Radius, 0f));
                 default: return CollisionShape.Box(c, r, _partHalf[i]);
             }
+        }
+
+        /// <summary>
+        /// The point of the body nearest <paramref name="p"/>, over its parts: what a blast strikes. (It was the box the
+        /// whole body fits in, which strikes air above an open deck and pushes the boat by a point it does not have.)
+        /// </summary>
+        internal Vector3 ClosestPointOnParts(Vector3 p)
+        {
+            Vector3 best = position; float bestD = float.MaxValue;
+            for (int i = 0; i < children.Length; i++)
+            {
+                var slot = children[i];
+                if (slot == null) continue;
+                Vector3 q;
+                var w = slot.worldShape;
+                if (w.type == ShapeType.Sphere) q = w.center + Vector3.ClampMagnitude(p - w.center, w.radius);
+                else if (w.type == ShapeType.Capsule)
+                {
+                    Vector3 axis = w.rotation * Vector3.up;
+                    float t = Mathf.Clamp(Vector3.Dot(p - w.center, axis), -w.halfHeight, w.halfHeight);
+                    Vector3 core = w.center + axis * t;
+                    q = core + Vector3.ClampMagnitude(p - core, w.radius);
+                }
+                else if (slot.polytope != null)
+                {
+                    Vector3 onSurface = slot.polytope.ClosestPoint(p, out _, out _, out bool inside);
+                    q = inside ? p : onSurface; // a blast inside a part strikes it where it is
+                }
+                else continue;
+                float d = (q - p).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = q; }
+            }
+            return best;
         }
 
         private void TouchCompoundBroadphase()

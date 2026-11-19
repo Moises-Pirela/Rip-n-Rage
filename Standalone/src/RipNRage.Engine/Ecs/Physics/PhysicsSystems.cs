@@ -192,7 +192,7 @@ namespace RipNRage.Engine.Ecs.Physics
                 layer = f.Layer; mask = f.Mask; group = f.Group; useMatrix = f.UseLayerMatrix;
             }
             var body = new SolverBody { ecsAlive = true, entity = e };
-            body.SetupCompound(World.Get<Body>(e), asset);
+            body.SetupCompound(World.Get<Body>(e), asset, lt.Scale);
             body.collisionMask = mask; body.useLayerMatrix = useMatrix; body.collisionGroup = group;
             bool trigger = World.Has<Trigger>(e);
             bool material = World.Has<SurfaceMaterial>(e);
@@ -311,6 +311,12 @@ namespace RipNRage.Engine.Ecs.Physics
                 bool moved = lt.Position != reg.LastPos || lt.Rotation != reg.LastRot;
                 if (reg.Body != null)
                 {
+                    // a body of parts takes a new scale by setting its parts up again at it (V2b)
+                    if (reg.Body.isCompound && lt.Scale != reg.LastScale)
+                    {
+                        reg.Body.Rescale(lt.Scale);
+                        reg.LastScale = lt.Scale;
+                    }
                     if (moved)
                     {
                         reg.Body.SetSourcePose(lt.Position, lt.Rotation);

@@ -21,6 +21,13 @@ namespace RipNRage.Engine
         public float radius;            // sphere / capsule
         public float halfHeight;        // capsule: half length of the core segment along the local Y axis
         public ConvexShape polytope;    // hull / triangle
+        /// <summary>
+        /// How far a polytope has been carried from where its vertices are (hull / triangle only; zero for geometry
+        /// that stands where it was built). A polytope's vertices are shared data, so moving one - the continuous
+        /// sweep of a moving hull - shifts this rather than the vertices. Before it existed a hull could not be swept
+        /// at all: <see cref="Translated"/> moved its centre and left every vertex where it was.
+        /// </summary>
+        public Vector3 offset;
 
         public static CollisionShape Sphere(Vector3 center, float radius) =>
             new CollisionShape { type = ShapeType.Sphere, center = center, rotation = Quaternion.identity, radius = MathF.Max(radius, 0f) };
@@ -74,7 +81,7 @@ namespace RipNRage.Engine
                                   + ay * (Vector3.Dot(dir, ay) >= 0f ? halfExtents.y : -halfExtents.y)
                                   + az * (Vector3.Dot(dir, az) >= 0f ? halfExtents.z : -halfExtents.z);
                 }
-                default: return polytope != null ? polytope.Support(dir) : center;
+                default: return polytope != null ? polytope.Support(dir) + offset : center;
             }
         }
 
@@ -136,17 +143,18 @@ namespace RipNRage.Engine
                         if (polytope == null || polytope.vertices.Length == 0) return new Bounds(center, center);
                         Vector3 min = polytope.vertices[0], max = min;
                         for (int i = 1; i < polytope.vertices.Length; i++) { min = Vector3.Min(min, polytope.vertices[i]); max = Vector3.Max(max, polytope.vertices[i]); }
-                        return new Bounds(min, max);
+                        return new Bounds(min + offset, max + offset);
                     }
                 }
             }
         }
 
-        /// <summary>The same shape moved by <paramref name="delta"/> (polytopes are not moved: they are static geometry).</summary>
+        /// <summary>The same shape moved by <paramref name="delta"/> (a polytope by its <see cref="offset"/>: its vertices are shared).</summary>
         public CollisionShape Translated(Vector3 delta)
         {
             var s = this;
             s.center += delta;
+            if (s.polytope != null) s.offset += delta;
             return s;
         }
 

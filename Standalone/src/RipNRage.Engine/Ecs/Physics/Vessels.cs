@@ -88,7 +88,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
             foreach (var chunk in _q)
             {
-                var engines = chunk.Get<VesselEngine>(); var controls = chunk.Get<VesselControl>(); var ents = chunk.Entities;
+                var engines = chunk.Get<VesselEngine>(); var controls = chunk.Get<VesselControl>(); var xforms = chunk.Get<LocalTransform>(); var ents = chunk.Entities;
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
@@ -100,7 +100,9 @@ namespace RipNRage.Engine.Ecs.Physics
                     en.Throttle = Mathf.MoveTowards(en.Throttle, Mathf.Clamp(controls[i].Throttle, -1f, 1f), en.ThrottleResponse * dt);
                     en.Steer = Mathf.MoveTowards(en.Steer, Mathf.Clamp(controls[i].Steer, -1f, 1f), en.SteerResponse * dt);
 
-                    Vector3 prop = body.position + body.rotation * en.SternOffset;
+                    // the propeller sits on the hull, in the hull's frame: from the entity's origin, through its scale
+                    Vector3 origin = body.position - body.rotation * body.comOffsetLocal;
+                    Vector3 prop = origin + body.rotation * Vector3.Scale(en.SternOffset, xforms[i].Scale);
                     en.Biting = WaterSurface.Exists && WaterSurface.DepthAt(prop) > 0f;
                     if (!en.Biting || Mathf.Abs(en.Throttle) < 1e-3f) continue;
 

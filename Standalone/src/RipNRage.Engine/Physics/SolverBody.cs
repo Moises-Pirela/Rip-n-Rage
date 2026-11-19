@@ -329,7 +329,8 @@ namespace RipNRage.Engine
         public void AddExplosionForce(float impulse, Vector3 origin, float radius, float upwardsModifier = 0f)
         {
             if (isKinematic || radius <= 0f) return;
-            Vector3 closest = isRounded ? position + (origin - position).normalized * MathF.Min(sphereRadius, (origin - position).magnitude) : ClosestPointOnBox(origin);
+            Vector3 closest = isCompound ? ClosestPointOnParts(origin) // what the blast strikes is a part, not the box round them
+                : isRounded ? position + (origin - position).normalized * MathF.Min(sphereRadius, (origin - position).magnitude) : ClosestPointOnBox(origin);
             Vector3 d = closest - origin;
             float dist = d.magnitude;
             if (dist >= radius) return;

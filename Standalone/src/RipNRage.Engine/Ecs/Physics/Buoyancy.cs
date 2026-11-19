@@ -175,7 +175,7 @@ namespace RipNRage.Engine.Ecs.Physics
 
             foreach (var chunk in _q)
             {
-                var floats = chunk.Get<Buoyancy>(); var ents = chunk.Entities;
+                var floats = chunk.Get<Buoyancy>(); var xforms = chunk.Get<LocalTransform>(); var ents = chunk.Entities;
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
@@ -186,17 +186,23 @@ namespace RipNRage.Engine.Ecs.Physics
                     if (floats[i].Size.x > 0f && floats[i].Size.y > 0f && floats[i].Size.z > 0f) { boxCentre = floats[i].Center; half = floats[i].Size * 0.5f; }
                     else if (World.Has<ColliderShape>(ents[i])) { var cs = World.Get<ColliderShape>(ents[i]); boxCentre = cs.Center; half = HalfExtents(in cs); }
                     else { floats[i].InWater = false; floats[i].Submerged = 0f; continue; } // nothing to float on
-                    Float(ref floats[i], body, boxCentre, half, gravity, ctx.DeltaTime);
+                    // the box is in the entity's frame, so the entity's scale applies to it - and to an authored volume,
+                    // which describes the same hull
+                    Vector3 scale = xforms[i].Scale;
+                    Vector3 size = new Vector3(MathF.Abs(scale.x), MathF.Abs(scale.y), MathF.Abs(scale.z));
+                    boxCentre = Vector3.Scale(boxCentre, scale); half = Vector3.Scale(half, size);
+                    float volume = floats[i].Volume > 0f ? floats[i].Volume * size.x * size.y * size.z : 0f;
+                    Float(ref floats[i], body, boxCentre, half, volume, gravity, ctx.DeltaTime);
                 }
             }
         }
 
-        private static void Float(ref Buoyancy b, RipNRage.Engine.SolverBody body, Vector3 boxCentre, Vector3 half, float gravity, float dt)
+        private static void Float(ref Buoyancy b, RipNRage.Engine.SolverBody body, Vector3 boxCentre, Vector3 half, float volume, float gravity, float dt)
         {
             int n = Mathf.Clamp(b.Resolution, 1, 4);
             int count = n * n * n;
             float shapeVolume = MathF.Max(8f * half.x * half.y * half.z, 1e-4f);
-            float displaced = b.Volume > 0f ? b.Volume : shapeVolume;
+            float displaced = volume > 0f ? volume : shapeVolume; // the authored displacement, already scaled
             // what one sample is worth: its share of the displacement, and of the area that drags
             float sampleVolume = displaced / count;
 
