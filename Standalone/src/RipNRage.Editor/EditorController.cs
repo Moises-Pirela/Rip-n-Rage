@@ -181,6 +181,7 @@ namespace RipNRage.Editor
         private void Rebuild()
         {
             ClearNavCollision(); // the geometry it was built from is about to change
+            NavMarkStale();
             if (_preview != null)
             {
                 var w = Application.Current.World;
@@ -303,6 +304,7 @@ namespace RipNRage.Editor
             if (Input.GetKeyDown(KeyCode.F7)) TakeSnapshot();
             if (Input.GetKeyDown(KeyCode.F8)) OpenSnapshotPanel();
             if (Input.GetKeyDown(KeyCode.F9)) { _physicsPanel.Open = true; _physicsPanel.Revert(); }
+            if (Input.GetKeyDown(KeyCode.F6)) _navOpen = !_navOpen; // 11.17.2: the panel; the draw switch is inside it
 
             // ---- global keys
             if (Input.GetKeyDown(KeyCode.F1)) showHelp = !showHelp;
@@ -874,6 +876,7 @@ namespace RipNRage.Editor
 
         private void DrawGizmos()
         {
+            DrawNavGizmos(); // 11.17.3
             // grid on the work plane around the camera
             float extent = 64f;
             Vector3 c = BrushGeometry.Snap(new Vector3(cam.position.x, workHeight, cam.position.z), Mathf.Max(grid, 1f));

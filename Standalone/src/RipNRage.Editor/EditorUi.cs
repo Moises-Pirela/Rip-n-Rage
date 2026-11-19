@@ -64,6 +64,7 @@ namespace RipNRage.Editor
             if (_snapshotPanel) DrawSnapshotWindow();
             if (showHelp) DrawHelpWindow();
             _physicsPanel.Draw(_imgui);
+            DrawNavWindow(); // 11.17.2
         }
 
         private void DrawMenuBar()

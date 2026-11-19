@@ -64,20 +64,20 @@ see. The navigation rules and types are in [`LAYER11_NAV.md`](LAYER11_NAV.md); t
   from the editor, **plus** a static collider per map entity whose prefab carries a `ColliderShape` and no
   `Body` (Q4). The colliders go in a list the editor destroys on rebuild. Check: a preview world plus collision
   has the same static count as the game's build of the same map.
-- [ ] **11.17.2 Rebake.** A `NavPanel` (PhysicsPanel's shape): **Rebake**, the readout (tiles, spans, walkable,
+- [x] **11.17.2 Rebake.** A `NavPanel` (PhysicsPanel's shape): **Rebake**, the readout (tiles, spans, walkable,
   tight, carved, time), and a **stale** badge driven by the document's change counter. It calls
   `PhysicsEntities.FlushRegistrations` then `NavBake.Build` with its own cached query, and sets
   `Navigation.Current` for the editor's world. Gate: the session script rebakes and the probe prints the counts.
-- [ ] **11.17.3 The draw.** `NavDebug.Draw` from `DrawGizmos`, three colours plus one-way drop links and tile
+- [x] **11.17.3 The draw.** `NavDebug.Draw` from `DrawGizmos`, three colours plus one-way drop links and tile
   bounds, radius from the panel, a cap on spans drawn. Gate: a screenshot (`shot-edit-nav.png`).
-- [ ] **11.17.4 Reachability paint.** Flood-fill the link graph from a root span (player start, or a clicked
+- [x] **11.17.4 Reachability paint.** Flood-fill the link graph from a root span (player start, or a clicked
   span) and tint what is reachable; the readout gains **unreachable islands**. Engine check: the flood over a
   hand-built grid with a walled-off room reaches exactly the open side; a one-way drop is followed down and not
   up. This is the phase that answers "why can't the AI get there".
-- [ ] **11.17.5 What will carve, and where they roam.** `NavObstacle` footprints as gizmos on the prefabs that
+- [x] **11.17.5 What will carve, and where they roam.** `NavObstacle` footprints as gizmos on the prefabs that
   carry them; monster placements draw their wander radius about `Home`. Both read prefab data the editor already
   has.
-- [ ] **11.17.6 Live settings.** The Level tab's three nav keys mark the grid stale and (optionally) rebake on
+- [x] **11.17.6 Live settings.** The Level tab's three nav keys mark the grid stale and (optionally) rebake on
   release. Nothing new to build in the grid — only to act on its edits.
 - [ ] **11.17.7 Close-out.** Editor gate green with the nav steps, both screenshots, the doc, and the roadmap's
   layer 11 line finally closed.
@@ -123,3 +123,33 @@ The 66-span difference is the honest limit of a config-level bake: the game runs
 (`StandOnBase`, `HingeOnEdge`) that nudge transforms before the colliders register, and this walks configs
 without running them; capsule and convex children are skipped too. The editor's grid is a preview of the game's —
 accurate enough to answer "can the AI get there", and documented as not a substitute for it.
+
+
+## 11.17.2 – 11.17.6 — done (2026-11-19)
+
+One panel (F6 opens it; the draw switch is inside it, as decided) with one button. `Rebake` builds the collision,
+bakes, measures and floods; the badge says **STALE** the moment anything changes the level — every edit path goes
+through `Rebuild`, and a worldspawn edit (where the three nav keys live) says so too.
+
+```
+[test] nav panel: tiles 131 spans 130634 walkable 113118 tight 17276 carved 0
+                  colliders 24 reached 21078 unreachable 92040 stale False drawn 3328
+[test] nav panel after an edit: ... stale True
+```
+
+**The draw** is five colours, not three: green walkable, **blue reachable from the player start**, orange **too
+tight for the body**, grey the level, red carved. Radius slider (10–160 m, default 40) and a span cap (default
+20,000) which the readout reports — the dock is 130k spans and a slider cannot be trusted with that; the gate
+drew 3,328.
+
+**The reachability paint earns its place immediately.** On the dock, 21,078 spans are reachable from the player
+start and **92,040 are not**. That is not a bug in the flood — checked: every reached span is at y 0.9, the deck,
+while the unreachable set runs from y −16 to y 28.9. They are the sea bed, the roofs and the container tops:
+surfaces the body fits on that no path from the spawn can reach. Two things follow — a designer can see at a
+glance which parts of a level the AI will never use, and **the bake spends four fifths of its spans on surfaces
+nobody can stand on in practice**, which is a real optimisation for a later layer (bake what is reachable, or
+drop scenery ground).
+
+**Placements** (11.17.5) are drawn from the same data the game reads: a class carrying `NavObstacle` gets the
+footprint it will stamp when it moves — the grid never shows it, because the editor does not carve — and a
+monster gets the circle it will wander inside, from its `enemies/*.json` definition.

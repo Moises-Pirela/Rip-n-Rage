@@ -353,7 +353,7 @@ namespace RipNRage.Editor
         private void Rebuilt(List<MapEntity> targets, bool isLevel = false)
         {
             _dirty = true;
-            if (isLevel) { LevelLoader.BakeWorldspawn(doc); return; }
+            if (isLevel) { LevelLoader.BakeWorldspawn(doc); NavMarkStale(); return; } // 11.17.6: nav_cell_size and friends live here
             if (_preview == null) return;
             foreach (var e in targets) LevelLoader.RebuildPreview(_preview, e);
         }

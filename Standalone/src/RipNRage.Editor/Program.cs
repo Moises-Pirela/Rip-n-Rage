@@ -141,17 +141,12 @@ namespace RipNRage.Editor
                     // phases move: the probe prints the grid, the collision the editor has, and the broadphase.
                     if (_frame == 10) NavEditorProbe("start");
                     // 11.17.1: the collision the editor can bake from, built on demand and thrown away on a rebuild
-                    if (_frame == 14) Debug.LogWarning($"[test] nav editor: built {_ed.BuildNavCollision()} colliders");
-                    if (_frame == 16)
-                    {
-                        var sw = System.Diagnostics.Stopwatch.StartNew();
-                        var nav = _ed.BakeNav();
-                        sw.Stop();
-                        Debug.LogWarning($"[test] nav editor: baked in {sw.Elapsed.TotalMilliseconds:0} ms");
-                    }
-                    if (_frame == 18) NavEditorProbe("with collision");
-                    if (_frame == 22) { _ed.ClearNavCollision(); }
-                    if (_frame == 26) NavEditorProbe("cleared");
+                    // the panel's one button, then what it reports
+                    if (_frame == 14) { _ed.NavOpen = true; _ed.NavRebake(); }
+                    if (_frame == 18) { NavEditorProbe("baked"); Debug.LogWarning($"[test] nav panel: {_ed.NavSummary()}"); }
+                    // an edit makes the grid older than the level
+                    if (_frame == 22) { _ed.NavMarkStale(); Debug.LogWarning($"[test] nav panel after an edit: {_ed.NavSummary()}"); }
+                    if (_frame == 30) Debug.LogWarning($"[test] nav panel drawn: {_ed.NavSummary()}");
                     break;
                 case "paint":
                     // paint strokes on the dock top, a second colour, erase a bit, drop a spawner, save
