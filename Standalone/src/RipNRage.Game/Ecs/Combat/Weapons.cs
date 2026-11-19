@@ -229,6 +229,9 @@ namespace RipNRage.Game.Ecs.Combat
         {
             Vector3 velocity = World.TryGet<BodyVelocity>(player, out var bv) ? bv.Linear : Vector3.zero;
             bool grounded = !World.TryGet<CharacterMotor>(player, out var motor) || motor.IsGrounded;
+            // the movement penalty is for *moving*, and standing on a deck under way is not moving: the spread is
+            // judged in the frame the shooter stands in (zero on still ground, so nothing changes there)
+            if (World.Has<CharacterMotor>(player)) velocity = World.Get<CharacterMotor>(player).Relative(velocity);
             return Weapons.CurrentSpread(in w, velocity, grounded);
         }
 

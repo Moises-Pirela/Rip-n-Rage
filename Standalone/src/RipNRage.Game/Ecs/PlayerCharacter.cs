@@ -176,7 +176,14 @@ namespace RipNRage.Game.Ecs
 
             bool grounded = m.IsGrounded;
             Vector3 velocity = World.TryGet<BodyVelocity>(e, out var bv) ? bv.Linear : Vector3.zero;
-            Vector3 horizontal = new Vector3(velocity.x, 0f, velocity.z);
+            // Every move below is in the frame of what we stand on (CharacterMotor.FrameVelocity): on still ground
+            // that frame is zero and this is the world velocity it always was; on a deck doing 25 m/s it is the
+            // speed the deck sees, so a slide seeds from running speed and not from the boat's.
+            Vector3 relative = m.Relative(velocity);
+            Vector3 horizontal = new Vector3(relative.x, 0f, relative.z);
+
+            // a turning deck carries the aim round with it
+            if (grounded && m.FrameYawRate != 0f) look.Yaw += m.FrameYawRate * dt;
 
             // the movement basis: the old "Orientation" child, yaw only
             Quaternion yaw = Quaternion.Euler(0f, look.Yaw, 0f);
@@ -223,7 +230,7 @@ namespace RipNRage.Game.Ecs
             }
 
             // ---- footsteps ----
-            if (ProgressStepCycle(ref p, velocity, grounded, dt)) AI.Noises.Emit(ctx.Commands, lt.Position, e, AI.Noises.Footstep);
+            if (ProgressStepCycle(ref p, relative, grounded, dt)) AI.Noises.Emit(ctx.Commands, lt.Position, e, AI.Noises.Footstep);
 
             // ---- hand the wanted velocity to the motor ----
             m.Desired = new Vector3(p.FinalMove.x, 0f, p.FinalMove.z);
@@ -323,8 +330,11 @@ namespace RipNRage.Game.Ecs
             Vector3 rightDir = Vector3.Cross(Vector3.up, fwd).normalized;
             float reach = 0.4f + p.WallCheckDistance; // capsule radius + the configured distance
             int side = 0; Vector3 normal = Vector3.zero;
-            if (PhysicsApi.Raycast(origin, rightDir, out var rh, reach, p.ObstacleLayers) && Mathf.Abs(rh.normal.y) < 0.35f) { side = 1; normal = rh.normal; }
-            else if (PhysicsApi.Raycast(origin, -rightDir, out var lh, reach, p.ObstacleLayers) && Mathf.Abs(lh.normal.y) < 0.35f) { side = -1; normal = lh.normal; }
+            Vector3 wallVelocity = Vector3.zero;
+            if (PhysicsApi.Raycast(origin, rightDir, out var rh, reach, p.ObstacleLayers) && Mathf.Abs(rh.normal.y) < 0.35f)
+            { side = 1; normal = rh.normal; wallVelocity = SurfaceVelocity(in rh); }
+            else if (PhysicsApi.Raycast(origin, -rightDir, out var lh, reach, p.ObstacleLayers) && Mathf.Abs(lh.normal.y) < 0.35f)
+            { side = -1; normal = lh.normal; wallVelocity = SurfaceVelocity(in lh); }
 
             bool pushingForward = input.Move.y > 0.3f;
             if (!p.IsWallRunning)
@@ -344,6 +354,9 @@ namespace RipNRage.Game.Ecs
             else { p.WallSide = side; p.WallNormal = normal; }
 
             p.WallRunTimer += dt;
+            // the wall we are running along is the frame we move in: a cabin side doing 25 m/s carries us with it
+            // (the motor only overwrites the frame while grounded, so this write stands for the whole run)
+            m.FrameVelocity = wallVelocity;
             look.ExternalRoll = -p.WallSide * p.WallRunTilt;
             Vector3 along = Vector3.ProjectOnPlane(fwd, p.WallNormal);
             if (along.sqrMagnitude < 1E-04f) { EndWallRun(ref p, ref look); return; }
@@ -365,6 +378,13 @@ namespace RipNRage.Game.Ecs
                 Sfx.Play(GameAssets.Jump);
                 EndWallRun(ref p, ref look);
             }
+        }
+
+        /// <summary>The velocity of the surface a probe hit, at the point it hit (zero for the world).</summary>
+        private static Vector3 SurfaceVelocity(in RipNRage.Engine.RaycastHit hit)
+        {
+            var body = PhysicsApi.World.Table.BodyOf(hit.proxy);
+            return body == null ? Vector3.zero : body.GetPointVelocity(hit.point);
         }
 
         private static void EndWallRun(ref PlayerMotor p, ref PlayerLook look)

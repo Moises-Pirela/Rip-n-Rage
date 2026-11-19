@@ -48,7 +48,27 @@ namespace RipNRage.Engine.Ecs.Physics
         // ---- state (written by the system) ----
         public bool IsGrounded, IsDashing;
         public Vector3 GroundNormal, GroundVelocity;
+        /// <summary>The ground body's angular velocity (rad/s) — what a turning deck does to whoever stands on it.</summary>
+        public Vector3 GroundAngularVelocity;
         public Entity Ground;
+        /// <summary>
+        /// The velocity of the frame this character moves in — every speed it is given (<see cref="Desired"/>, a
+        /// dash, a jump's rise) is relative to this, not to the world.
+        ///
+        /// <para>Standing, it is the ground's velocity at the contact. In the air it is <b>frozen at the value it
+        /// had on leaving the surface</b>: the deck you jumped from is an inertial frame, and you keep its velocity
+        /// until something else acts on you — so a standing jump on a boat doing 25 m/s lands where it started.
+        /// While wall running, gameplay writes the wall's velocity here (the motor only overwrites it while
+        /// grounded). On ground that does not move it is zero, and every number behaves exactly as it always has.</para>
+        /// </summary>
+        public Vector3 FrameVelocity;
+        /// <summary>The frame's yaw rate in degrees per second while grounded (0 in the air): a turning deck carries
+        /// the rider's aim round with it.</summary>
+        public float FrameYawRate;
+        /// <summary>Is the frame actually moving? (A deck under way, as opposed to solid ground.)</summary>
+        public bool OnMovingFrame => FrameVelocity.sqrMagnitude > 0.01f;
+        /// <summary>A world velocity as this character experiences it — what the deck sees, not what the sea sees.</summary>
+        public Vector3 Relative(Vector3 worldVelocity) => worldVelocity - FrameVelocity;
         /// <summary>From the capsule bottom to the ground (infinity = none in reach).</summary>
         public float GroundDistance;
         // ---- internal timers (sim time) ----
@@ -147,6 +167,9 @@ namespace RipNRage.Engine.Ecs.Physics
             m.StopDeceleration = p.stopDeceleration; m.JumpGrace = p.jumpGrace;
         }
 
+        /// <summary>The horizontal part of a velocity.</summary>
+        private static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);
+
         private void Unground(ref CharacterMotor m, float seconds) { m.UngroundedUntil = MathF.Max(m.UngroundedUntil, _time + seconds); m.IsGrounded = false; }
 
         private void StopDash(ref CharacterMotor m, SolverBody b)
@@ -168,8 +191,9 @@ namespace RipNRage.Engine.Ecs.Physics
             if (m.PendingStopDash) { StopDash(ref m, b); m.PendingStopDash = false; }
             if (m.PendingDashTime > 0f)
             {
-                m.IsDashing = true; m.DashVelocity = m.PendingDash; m.DashUntil = _time + m.PendingDashTime;
-                b.gravityScale = 0f; v = m.PendingDash;
+                // the dash is a speed relative to what we stand on: on a deck doing 25 m/s it carries the deck
+                m.IsDashing = true; m.DashVelocity = m.PendingDash + Flat(m.FrameVelocity); m.DashUntil = _time + m.PendingDashTime;
+                b.gravityScale = 0f; v = m.DashVelocity;
                 Unground(ref m, m.PendingDashTime + 0.05f);
                 m.PendingDashTime = 0f;
             }
@@ -181,7 +205,7 @@ namespace RipNRage.Engine.Ecs.Physics
             }
             if (m.PendingJump > 0f)
             {
-                v.y = MathF.Max(v.y, 0f) + m.PendingJump;
+                v.y = MathF.Max(v.y, m.FrameVelocity.y) + m.PendingJump; // a heaving deck throws its own rise in
                 Unground(ref m, m.JumpGrace);
                 m.PendingJump = 0f;
             }
@@ -189,10 +213,20 @@ namespace RipNRage.Engine.Ecs.Physics
 
             ProbeGround(ref m, b);
 
+            // ---- the frame we move in: the ground while we stand on it, frozen while we are off it ----
+            // Wall running writes its own frame (the wall's velocity) from gameplay; only the ground overwrites it.
+            if (m.IsGrounded)
+            {
+                m.FrameVelocity = m.GroundVelocity;
+                m.FrameYawRate = m.GroundAngularVelocity.y * Mathf.Rad2Deg;
+            }
+            else m.FrameYawRate = 0f;
+
             // ---- dash: exact velocity, no gravity, no spring ----
             if (m.IsDashing)
             {
-                if (_time >= m.DashUntil) { StopDash(ref m, b); v = new Vector3(m.DashVelocity.x, 0f, m.DashVelocity.z) * 0.6f; }
+                // hand back a fast but normal run *in the frame*, not 60% of the deck's own speed
+                if (_time >= m.DashUntil) { StopDash(ref m, b); Vector3 f = Flat(m.FrameVelocity); v = f + Flat(m.DashVelocity - f) * 0.6f; }
                 else { b.linearVelocity = m.DashVelocity; return; }
             }
 
@@ -206,11 +240,15 @@ namespace RipNRage.Engine.Ecs.Physics
                 v.y += Mathf.Clamp(a, -m.MaxRideAcceleration, m.MaxRideAcceleration) * dt;
             }
 
-            // ---- motor: accelerate the horizontal velocity towards the request (riding along with the ground) ----
+            // ---- motor: accelerate the horizontal velocity towards the request, in the frame we move in ----
+            // In the air the frame is the one we jumped from, so air control steers relative to that deck instead
+            // of braking towards a standstill the sea is not in. On still ground the frame is zero and this is
+            // the line it always was.
             Vector3 horizontal = new Vector3(v.x, 0f, v.z);
-            Vector3 target = new Vector3(m.Desired.x, 0f, m.Desired.z);
-            if (m.IsGrounded) target += new Vector3(m.GroundVelocity.x, 0f, m.GroundVelocity.z);
-            float accel = !m.IsGrounded ? m.AirAcceleration : (target.sqrMagnitude > 0.01f ? m.Acceleration : m.StopDeceleration);
+            Vector3 request = new Vector3(m.Desired.x, 0f, m.Desired.z);
+            Vector3 target = request + Flat(m.FrameVelocity);
+            // braking is judged on what was *asked for*, so letting go on a moving deck still stops you on the deck
+            float accel = !m.IsGrounded ? m.AirAcceleration : (request.sqrMagnitude > 0.01f ? m.Acceleration : m.StopDeceleration);
             Vector3 delta = Vector3.ClampMagnitude(target - horizontal, accel * dt);
             v.x += delta.x; v.z += delta.z;
             b.linearVelocity = v;
@@ -228,7 +266,7 @@ namespace RipNRage.Engine.Ecs.Physics
             var filter = QueryFilter.For(ColliderTable.ProxyOf(b.collider), b.collider.layer, m.GroundMask);
             filter.useLayerMatrix = false; // ground is decided by the mask alone
             float cosSlope = MathF.Cos(Mathf.Clamp(m.MaxSlopeAngle, 1f, 89f) * Mathf.Deg2Rad);
-            m.GroundVelocity = Vector3.zero;
+            m.GroundVelocity = Vector3.zero; m.GroundAngularVelocity = Vector3.zero;
             if (PhysicsApi.ShapeCast(in probe, Vector3.down, filter, out RaycastHit hit, reach))
             {
                 m.GroundDistance = MathF.Max(0f, hit.distance - r * 0.05f); // the probe is slightly smaller than the capsule
@@ -236,7 +274,7 @@ namespace RipNRage.Engine.Ecs.Physics
                 m.Ground = hit.entity;
                 m.IsGrounded = hit.normal.y >= cosSlope && m.GroundDistance <= m.RideHeight + m.GroundTolerance && _time >= m.UngroundedUntil;
                 var gb = PhysicsApi.World.Table.BodyOf(hit.proxy);
-                if (gb != null) m.GroundVelocity = gb.GetPointVelocity(hit.point);
+                if (gb != null) { m.GroundVelocity = gb.GetPointVelocity(hit.point); m.GroundAngularVelocity = gb.angularVelocity; }
             }
             else
             {

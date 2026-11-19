@@ -1,6 +1,7 @@
 using RipNRage.Engine;
 using RipNRage.Engine.Ecs;
 using RipNRage.Engine.Ecs.Nav;
+using RipNRage.Engine.Ecs.Physics;
 using RipNRage.Engine.Ecs.Transforms;
 using RipNRage.Game.Ecs.Combat;
 using PhysicsApi = RipNRage.Engine.Physics;
@@ -123,7 +124,7 @@ namespace RipNRage.Game.Ecs.AI
 
         public override void OnCreate() =>
             _q = World.Query().With<AiIntent>().With<PathFollow>().With<PathRequest>()
-                .WithReadOnly<Enemy>().WithReadOnly<LocalToWorld>().Build();
+                .WithReadOnly<Enemy>().WithReadOnly<LocalToWorld>().WithReadOnly<CharacterMotor>().Build();
 
         public void Tick(SystemContext ctx)
         {
@@ -137,7 +138,7 @@ namespace RipNRage.Game.Ecs.AI
             foreach (var chunk in _q)
             {
                 var intents = chunk.Get<AiIntent>(); var follows = chunk.Get<PathFollow>(); var reqs = chunk.Get<PathRequest>();
-                var ltw = chunk.Get<LocalToWorld>(); var ents = chunk.Entities;
+                var ltw = chunk.Get<LocalToWorld>(); var motors = chunk.Get<CharacterMotor>(); var ents = chunk.Entities;
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
@@ -146,6 +147,11 @@ namespace RipNRage.Game.Ecs.AI
                     ref var req = ref reqs[i];
 
                     if (!intent.Move || World.Has<Dead>(ents[i])) { follow.Count = 0; follow.Direct = false; continue; }
+
+                    // A deck under way is not in the grid — the grid is baked for the world, and the sea it sails
+                    // over is not walkable. Anyone standing on something that moves walks straight at the goal
+                    // instead, which is all a deck needs: they are small, open, and the way across is the way across.
+                    if (motors[i].OnMovingFrame) { follow.Count = 0; follow.Direct = true; continue; }
 
                     var self = ltw[i].Position;
                     var goal = intent.MoveTo;
