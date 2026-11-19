@@ -1,6 +1,6 @@
 # Content pass — plan
 
-Status: **V1, V1b, V1c, V4, V5 built** (2026-11-19), plus swimming and caustics; the rest planned. Scope: the two unfinished weapons (katana, sonic shotgun),
+Status: **V1–V1e, V4, V5 built** (2026-11-19), plus swimming and caustics; the rest planned. Scope: the two unfinished weapons (katana, sonic shotgun),
 throwables, more enemy kinds, and the Harbor — one sprawling level ending in a speedboat chase onto a container
 ship. Written from a survey of the code as of `07afed7` (layer 11 closed); paths are relative to `Standalone/`.
 
@@ -314,20 +314,72 @@ at chase speed. The reaction force on the ground (#2) is **not** done — see th
 - The gate sweep's movement scripts (`walk flowmoves evade ledge stay maze`) were run before and after and
   compared: **no probe line differs** apart from the motor's new fields, which are all zero on still ground.
 
-**The remainder** — **the reaction force is now built** (with V4), the grip limit is not:
+**The remainder** — **built, and reformulated** (V1e below): the reaction force and the grip limit.
 
-- **Newton's third law** (built): the ride spring's and the motor's forces, reversed onto the ground at the
-  contact point (`CharacterMotor.PressesOnGround`). A run across a raft shoves it properly — four characters at
-  4 m/s move a 600 kg raft at 0.16 m/s.
-  - **Known limit**: the *static* share of this is far smaller than it should be. A character's weight reaches the
-    raft (it floats lower with crew than without) but by a fraction of the 320 kg they weigh. The ride spring is
-    about 113 kN/m per character against the raft's ~19 kN/m of buoyancy, so as the raft gives under them the
-    spring slackens and takes the load straight back off it — the two springs fight, and the stiff one wins. A
-    hand-applied 3.14 kN sinks the same raft 17 cm; the same weight as crew sinks it under a millimetre.
-    Revisit with the grip limit; it wants the ride spring reformulated so a standing body presses with its weight
-    rather than with whatever its spring happens to be doing that step.
-- **Grip limit** (not built): grounded acceleration bounded by the deck's friction, so a hard turn or a ram
-  throws people off their feet.
+### V1e. The ride is a constraint — **BUILT**
+
+The character used to float on a spring the motor applied to its own velocity before the step, with the
+reaction thrown at the ground as a force. It is now a `RideConstraint` (`Physics/Constraints.cs`) solved by the
+solver with the contacts: a one-sided soft spring along the ground normal for the support, and two motor rows for
+the feet. `Movers.cs` only places it each step from the ground probe.
+
+**A correction first.** The previous version of this entry blamed a static-weight shortfall on "the two springs
+fighting". **That was wrong.** The measurements it rested on were corrupted by two bugs, and once those were fixed
+the old spring transferred weight exactly:
+
+1. **Ghost colliders.** `World.Dispose()` never ended the simulation, so every disposed test world left its bodies
+   in the global physics world, still simulated. The next world's characters stood on them. The checks had been
+   placing each scenario at a different x to dodge it. Fixed: `Dispose` now calls `EndSim`.
+2. **Chattering buoyancy.** A sample was skipped as soon as its *centre* left the water, cutting its lift from half
+   a cell's worth to nothing in one step. The test raft floated with a row of samples right on that edge and
+   chattered at 0.2 m/s for ever, so every load measured on it was an average over the chatter. `Submerged` was a
+   count with the same flaw, switching the heave damping on and off like a relay. Both are continuous now. The raft
+   rests at Archimedes' height to four decimal places, at every load.
+
+**Why the ride was reformulated anyway.** With the measurements clean, a matrix of characters on loose bodies
+turned up three real failures, all from forces applied outside the solver:
+
+- **Light crates went through the floor.** On a 2 kg or 8 kg crate the spring caught the rider at its limit and put
+  thousands of newtons into the crate in a single step. Solved with the contacts, the floor holds the crate while
+  the crate holds the rider.
+- **Traction overshot.** The motor matched the rider's velocity to the ground's by pushing both bodies and ignoring
+  that the second one moves. That overshoots by (1 + rider ÷ ground): eleven-fold on an 8 kg crate, which buzzed
+  under the rider at several m/s and walked away. As solver rows it cannot overshoot. Moving the feet there was
+  also what cured the 2 kg crate; capping the support alone did not.
+- **Iterative solvers and mass ratios.** A stiff spring above a 2 kg body and a rigid floor below it does not
+  converge. In the ride's rows, ground lighter than rider ÷ 10 is treated as rider ÷ 10
+  (`RideConstraint.maxMassRatio`). Its contacts, buoyancy and everything else still use its real mass. The one
+  cost: a floating prop that light, stood on, feels only part of the rider's weight. One that light could not hold
+  a person up anyway.
+
+**What it does now** (`tests/RipNRage.EngineChecks/RideChecks.cs`):
+
+- A character sinks a raft **exactly** as far as an 80 kg box does, and four of them four times as far.
+- Standing on, or landing from 3 m on, crates of 2, 8, 80 and 400 kg: the crate stays within 5 cm and under 0.5 m/s,
+  and the rider stays on it.
+- A character can stand on another's head.
+- On still ground the feet follow the old motor's curve **exactly**, step for step, both running up and stopping.
+  The movement feel is unchanged by construction.
+- A standing character's vertical velocity now reads exactly zero. The old spring left it at −0.06 m/s for ever,
+  because it cancelled gravity a step late.
+
+**The grip limit** is built as `RideConstraint.grip`: a friction coefficient bounding the feet by μ × the support
+force. It is **off by default, deliberately.** The motor accelerates at about 7 g for the game's feel, real friction
+is about 1 g, and a realistic grip limit makes every deck feel like ice. A slippery deck sets it.
+
+**Gates** (full sweep, all 36 pass, compared line by line with the previous commit):
+- `walk`, `flowmoves`, `die`, `jab`, every weapon gate and the editor gates are identical.
+- The others tell the same story — the same states, the same damage, the same deaths — with positions moved by
+  centimetres to decimetres. Characters hover 2.6 mm lower (now exactly g/ω²), and a crowd of AI decisions
+  compounds that.
+- `evade` genuinely diverged. The same mechanics fire, but a few near misses became hits, so it ends on 19 armour
+  instead of 43.
+
+**Cost**: 200 runners on a 29k-triangle hill, physics per step 0.66 → 0.68 ms, p99 1.1 → 0.9 ms.
+
+**Not done**: the walk-off shove. Pushing off a light crate still slides it about a metre, because the motor's
+7 g push-off is real force on what it pushes against. That is bounded and the crate stays upright; `grip` tames it
+where a designer wants.
 
 **Commit.** `Content V1: the character moves in the frame of what it stands on`
 
@@ -450,6 +502,22 @@ The fix for #4.
 - A heeled hull rights itself.
 - A hull dropped from 3 m bobs and comes to rest.
 - A speedboat hull towed at 25 m/s rises to a planing trim (bow up a few degrees, less wetted area).
+
+**Revised with V1e**:
+- Buoyancy is continuous (see the correction there).
+- Heave damping now applies in full whenever the hull is in the water, instead of scaling with the wetted fraction,
+  which damped a hull riding high a tenth as hard.
+- **Rock damping** is new: pitch and roll damped as a fraction of critical for the hull's own righting stiffness
+  (ρg × the waterplane's second moment).
+
+The continuous buoyancy exposed that the test hull's "stable 3.4° trim" had been the old relay-like damping holding
+it down. Made continuous, it **porpoised**: trim swinging 0.6° to −7.7°, the propeller leaving the water, speed
+wandering. With rock damping it runs dead steady, at 11.0 m/s with the propeller always in the water.
+
+**Known limit**: a box hull trims about 3° **bow-down** at speed, where real planing hulls run 2–5° bow-up. Moving
+the planing centre of pressure forward on a box makes it worse — it buries the bow, then launches clear of the
+water. Realistic trim comes from hull shape (deadrise, wetted faces), which is what the convex-brush hulls of V2/V3
+are for. The check asserts steadiness, not a realistic trim.
 
 **Built as** `Ecs/Physics/Buoyancy.cs`: sampled displacement, body-level drag (per-sample drag over-counts the
 wetted area several times over and leaves a boat unable to move), heave damped as a fraction of critical, and
