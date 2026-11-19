@@ -16,6 +16,59 @@ internal static class VesselChecks
     {
         Ocean(True);
         MovingGroundAi(True);
+        Swimming(True);
+    }
+
+    /// <summary>Water you can swim in is a property of the water, not of the game: a harbour meant as a way of
+    /// dying still kills, and a map that wants swimming asks for it.</summary>
+    private static void Swimming(Action<bool, string> True)
+    {
+        var harbour = new RipNRage.Game.Ecs.WaterVolumeConfig { size = new[] { 200f, 200f } }.Bake();
+        True(!harbour.Swimmable, "water is a way of dying unless a map says otherwise");
+
+        var pool = new RipNRage.Game.Ecs.WaterVolumeConfig { size = new[] { 16f, 16f }, swim = true, breath = 20f }.Bake();
+        True(pool.Swimmable && Mathf.Abs(pool.Breath - 20f) < 1e-5f, "\"swim 1\" makes it swimmable, with the breath the map gave it");
+
+        // the tunables the swim reads, and that they reach the player's motor
+        var settings = new RipNRage.Game.Content.MovementSettings();
+        var motor = new PlayerMotor();
+        settings.ApplyTo(ref motor);
+        True(motor.SwimSpeed > 0f && motor.SwimKickSpeed > 0f && motor.SinkSpeed > 0f && motor.DrownDamage > 0f,
+             "the swim tunables reach the player (swim speed, kick, sink, drowning)");
+
+        // the map that exists to be swum in
+        string map = FindLevel("swim_test.map");
+        True(map != null, "levels/swim_test.map is there to swim in");
+        if (map != null)
+        {
+            string text = System.IO.File.ReadAllText(map);
+            True(text.Contains("\"swim\" \"1\""), "and its water says it is swimmable");
+        }
+
+        // and the harbour in the dock has NOT quietly become a swimming pool
+        string dock = FindLevel("dock.map");
+        if (dock != null)
+            True(!System.IO.File.ReadAllText(dock).Contains("\"swim\""),
+                 "the dock's harbour is still lethal: falling in is a way of dying, as the fall gate checks");
+    }
+
+    private static string FindLevel(string name)
+    {
+        var d = new System.IO.DirectoryInfo(System.IO.Directory.GetCurrentDirectory());
+        while (d != null)
+        {
+            var c = System.IO.Path.Combine(d.FullName, "levels", name);
+            if (System.IO.File.Exists(c)) return c;
+            d = d.Parent;
+        }
+        d = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        while (d != null)
+        {
+            var c = System.IO.Path.Combine(d.FullName, "levels", name);
+            if (System.IO.File.Exists(c)) return c;
+            d = d.Parent;
+        }
+        return null;
     }
 
     /// <summary>An infinite volume is everything below its surface; a harbour is still a box.</summary>

@@ -705,6 +705,30 @@ namespace RipNRage.Game
                                          + $" under {ww.GetSingleton<RipNRage.Game.Ecs.Underwater>().Under} water volumes {volumes}");
                     }
                     break;
+                case "swim":
+                {
+                    // levels/swim_test.map: walk off the quay into the pool, swim about, dive, and come back up.
+                    // What is being watched is that the water holds the player instead of killing them, that the
+                    // breath runs down under the surface and comes back at it, and that they can get out again.
+                    RipNRage.Engine.Ecs.Input.InputOverride.Move =
+                        _frame < 90 ? new Vector2(0f, 1f)        // into the pool
+                      : _frame < 200 ? new Vector2(0f, 1f)       // swim across it
+                      : Vector2.zero;
+                    RipNRage.Engine.Ecs.Input.InputOverride.Slide = _frame >= 220 && _frame < 300;  // dive
+                    RipNRage.Engine.Ecs.Input.InputOverride.Jump = _frame >= 320 && _frame < 420;   // kick back up
+                    if (_frame % 40 == 0 && RipNRage.Game.Ecs.PlayerLink.Alive)
+                    {
+                        var world = Application.Current.World;
+                        var player = RipNRage.Game.Ecs.PlayerLink.PlayerEntity;
+                        var pm = world.Get<RipNRage.Game.Ecs.PlayerMotor>(player);
+                        Debug.LogWarning($"[test] frame {_frame} y {RipNRage.Game.Ecs.PlayerLink.Position.y:0.00}"
+                                         + $" swimming {pm.IsSwimming} under {pm.IsUnderwater} breath {pm.Breath:0.0}"
+                                         + $" health {world.Get<RipNRage.Game.Ecs.Combat.Health>(player).Current:0}"
+                                         + $" armour {(world.Has<RipNRage.Game.Ecs.Combat.Armor>(player) ? world.Get<RipNRage.Game.Ecs.Combat.Armor>(player).Current : 0f):0}"
+                                         + $" dead {RipNRage.Game.Ecs.PlayerLink.IsDead}");
+                    }
+                    break;
+                }
                 case "surface":
                     // what a bullet would kick up: rays from the eye at the level around the player start. Until 7.7
                     // every one of these answered "default" — the resolver was stubbed when physics went ECS (layer 2)

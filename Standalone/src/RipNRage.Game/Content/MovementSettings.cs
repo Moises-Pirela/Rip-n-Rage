@@ -22,6 +22,9 @@ namespace RipNRage.Game.Content
         public float wallRunMaxTime = 1.6f, wallRunGravity = 0.2f, wallRunSpeed = 13f, wallCheckDistance = 0.75f, wallJumpUp = 15f, wallJumpAway = 11f, wallRunTilt = 14f, wallRunEntryBoost = 3f;
         public bool dash = true;
         public float dashSpeed = 26f, dashDuration = 0.16f, dashCooldown = 0.7f;
+        /// <summary>Swimming: how fast you swim, how hard you kick, how fast the water pulls you back to the surface,
+        /// and what drowning costs a second once the breath is gone.</summary>
+        public float swimSpeed = 7f, swimKickSpeed = 5f, sinkSpeed = 2.5f, drownDamage = 8f;
         public int airDashes = 1;
 
         public static MovementSettings Current { get; } = new MovementSettings();
@@ -69,6 +72,8 @@ namespace RipNRage.Game.Content
             wallRunTilt = F("wall_run_tilt", wallRunTilt); wallRunEntryBoost = F("wall_run_entry_boost", wallRunEntryBoost);
             dash = B("dash", dash); dashSpeed = F("dash_speed", dashSpeed); dashDuration = F("dash_duration", dashDuration); dashCooldown = F("dash_cooldown", dashCooldown);
             airDashes = Mathf.Clamp(I("air_dashes", airDashes), 0, 10);
+            swimSpeed = F("swim_speed", swimSpeed); swimKickSpeed = F("swim_kick_speed", swimKickSpeed);
+            sinkSpeed = F("sink_speed", sinkSpeed); drownDamage = F("drown_damage", drownDamage);
         }
 
         private static T Get<T>(Dictionary<string, Dictionary<string, string>> sections, string key, T cur, Func<string, T> parse)
@@ -97,6 +102,8 @@ namespace RipNRage.Game.Content
                 (s, "wall_run", Bm(wallRun), "run along walls while airborne"), (s, "wall_run_time", Fm(wallRunMaxTime), "seconds"), (s, "wall_run_gravity", Fm(wallRunGravity), "gravity fraction on the wall"),
                 (s, "wall_run_speed", Fm(wallRunSpeed), "m/s"), (s, "wall_check_distance", Fm(wallCheckDistance), "wall probe beyond the capsule radius"),
                 (s, "wall_jump_up", Fm(wallJumpUp), "m/s"), (s, "wall_jump_away", Fm(wallJumpAway), "m/s"), (s, "wall_run_tilt", Fm(wallRunTilt), "camera roll degrees"), (s, "wall_run_entry_boost", Fm(wallRunEntryBoost), "upward nudge when catching a wall"),
+                (s, "swim_speed", Fm(swimSpeed), "m/s in swimmable water"), (s, "swim_kick_speed", Fm(swimKickSpeed), "m/s up on jump, down on crouch"),
+                (s, "sink_speed", Fm(sinkSpeed), "m/s the surface pulls you back to it"), (s, "drown_damage", Fm(drownDamage), "health per second once the breath is gone"),
                 (s, "dash", Bm(dash), "dash on the dash key"), (s, "dash_speed", Fm(dashSpeed), "m/s"), (s, "dash_duration", Fm(dashDuration), "seconds"), (s, "dash_cooldown", Fm(dashCooldown), "seconds"), (s, "air_dashes", airDashes.ToString(), "dashes allowed per jump"),
             };
         }
@@ -113,6 +120,7 @@ namespace RipNRage.Game.Content
             p.EnableWallRun = wallRun; p.WallRunMaxTime = wallRunMaxTime; p.WallRunGravity = wallRunGravity; p.WallRunSpeed = wallRunSpeed; p.WallCheckDistance = wallCheckDistance;
             p.WallJumpUp = wallJumpUp; p.WallJumpAway = wallJumpAway; p.WallRunTilt = wallRunTilt; p.WallRunEntryBoost = wallRunEntryBoost;
             p.EnableDash = dash; p.DashSpeed = dashSpeed; p.DashDuration = dashDuration; p.DashCooldown = dashCooldown; p.AirDashes = airDashes;
+            p.SwimSpeed = swimSpeed; p.SwimKickSpeed = swimKickSpeed; p.SinkSpeed = sinkSpeed; p.DrownDamage = drownDamage;
         }
 
         /// <summary>Hooks the settings to the application's tunables file (initial values + live reload).</summary>

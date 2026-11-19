@@ -23,6 +23,13 @@ namespace RipNRage.Game.Ecs
         /// an ocean is a half-space, and a chase that runs for kilometres cannot be a box.
         /// </summary>
         public bool Infinite;
+        /// <summary>
+        /// Water you can swim in rather than drown in. Off by default: the harbour a level drops you into is a way
+        /// of dying, and a map says so by not saying anything. A map that wants swimming asks for it.
+        /// </summary>
+        public bool Swimmable;
+        /// <summary>Seconds of breath under the surface before it starts to hurt (0 = you never run out).</summary>
+        public float Breath;
 
         /// <summary>The surface height (the top of the box).</summary>
         public float SurfaceY => Max.y;
@@ -53,6 +60,23 @@ namespace RipNRage.Game.Ecs
                 Infinite = infinite,
             });
             return e;
+        }
+
+        /// <summary>The water at a point, if any is: the deepest surface over it.</summary>
+        public static bool TryAt(World w, Vector3 p, out WaterVolume found)
+        {
+            found = default;
+            bool any = false;
+            foreach (var chunk in w.Query().WithReadOnly<WaterVolume>().Build())
+            {
+                var volumes = chunk.Get<WaterVolume>();
+                for (int i = 0; i < chunk.Length; i++)
+                {
+                    if (!chunk.Includes(i) || !volumes[i].Contains(p)) continue;
+                    if (!any || volumes[i].SurfaceY > found.SurfaceY) { found = volumes[i]; any = true; }
+                }
+            }
+            return any;
         }
 
         /// <summary>
@@ -101,6 +125,18 @@ namespace RipNRage.Game.Ecs
 
         public void LateTick(SystemContext ctx)
         {
+            // the renderer lights what is under the water from the same surface the game swims in, and the
+            // physics floats hulls on (one surface, one height - see Waters.HeightAt)
+            float level = RipNRage.Engine.Ecs.Physics.WaterSurface.None;
+            foreach (var chunk in _ocean)
+            {
+                var vols = chunk.Get<WaterVolume>();
+                for (int i = 0; i < chunk.Length; i++)
+                    if (chunk.Includes(i) && vols[i].SurfaceY > level) level = vols[i].SurfaceY;
+            }
+            var lighting = Application.Current?.Renderer?.Lighting;
+            if (lighting != null) lighting.waterLevel = level;
+
             if (!ActiveCamera.TryGet(_cameras, out var eye, out _)) return;
             foreach (var chunk in _ocean)
             {

@@ -31,6 +31,17 @@ namespace RipNRage.Engine.Graphics.Lighting
         public float fogStart = 150f;
         public float fogEnd = 700f;
 
+        // [caustics]  (the bands of light the surface throws on everything under it)
+        public bool causticsEnabled = true;
+        /// <summary>Where the surface is. Set by the game from its water each frame; nothing is lit below a sea
+        /// that is not there.</summary>
+        public float waterLevel = -1e9f;
+        public Color causticColor = new Color(0.65f, 0.92f, 1f, 1f);
+        public float causticStrength = 0.55f;
+        public float causticScale = 0.35f;    // bands per metre
+        public float causticSpeed = 0.6f;
+        public float causticDepthFade = 14f;  // metres down over which they fade out
+
         // [shadows]
         public bool shadowsEnabled = true;
         public int shadowResolution = 2048;
@@ -98,6 +109,13 @@ namespace RipNRage.Engine.Graphics.Lighting
             fogColor = C("fog", "color", fogColor);
             fogStart = F("fog", "start", fogStart);
             fogEnd = F("fog", "end", fogEnd);
+
+            causticsEnabled = B("caustics", "enabled", causticsEnabled);
+            causticColor = C("caustics", "color", causticColor);
+            causticStrength = Mathf.Max(0f, F("caustics", "strength", causticStrength));
+            causticScale = Mathf.Max(0.001f, F("caustics", "scale", causticScale));
+            causticSpeed = F("caustics", "speed", causticSpeed);
+            causticDepthFade = Mathf.Max(0.1f, F("caustics", "depth_fade", causticDepthFade));
 
             shadowsEnabled = B("shadows", "enabled", shadowsEnabled);
             shadowResolution = Mathf.Clamp(I("shadows", "resolution", shadowResolution), 256, 8192);

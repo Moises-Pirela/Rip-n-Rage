@@ -78,6 +78,9 @@ namespace RipNRage.Game.Ecs.Combat
         /// <summary>Kills outright, whatever the armour and the rage states say: the blow takes all the health that is
         /// left and the armour is not touched (8.1: the lethal fall — death has one door, and a fall goes through it).</summary>
         public bool Fatal;
+        /// <summary>Goes straight to health: a plate carrier is no help against drowning. Not <see cref="Fatal"/>,
+        /// which takes everything at once — this is ordinary damage that armour simply cannot answer.</summary>
+        public bool IgnoresArmor;
     }
 
     /// <summary>A blow landed (posted by <see cref="HealthSystem"/> in the same frame): feedback — crosshair, rage, hit flash.</summary>
@@ -125,7 +128,7 @@ namespace RipNRage.Game.Ecs.Combat
 
                 // ENRAGED hits harder, DEPRESSED takes less: the multipliers are the state's, read off each end
                 float amount = e.Fatal ? h.Current : e.Amount * Rages.DamageDealtBy(w, e.Instigator, e.Melee) * Rages.DamageTakenBy(w, e.Target);
-                if (!e.Fatal && w.Has<Armor>(e.Target))
+                if (!e.Fatal && !e.IgnoresArmor && w.Has<Armor>(e.Target))
                 {
                     ref var a = ref w.Get<Armor>(e.Target);
                     float absorbed = Mathf.Min(amount * a.Resistance, a.Current); // armour absorbs no more than it has

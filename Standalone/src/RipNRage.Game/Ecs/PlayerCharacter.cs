@@ -64,8 +64,20 @@ namespace RipNRage.Game.Ecs
         /// <summary>Collider layers the wall / roof probes treat as solid.</summary>
         public int ObstacleLayers;
 
+        // ---- swimming ----
+        /// <summary>How fast you swim, how hard you kick for the surface, and how fast you sink without kicking.</summary>
+        public float SwimSpeed, SwimKickSpeed, SinkSpeed;
+        /// <summary>Breath left, in seconds (counts down only with the head under).</summary>
+        public float Breath;
+        /// <summary>Health lost per second once the breath has run out.</summary>
+        public float DrownDamage;
+
         // ---- state (read by the HUD, the overlay, the weapons) ----
         public bool IsSliding, IsWallRunning, IsDashing;
+        /// <summary>In water deep enough to swim in. The HUD, the view and the fall watch all read it.</summary>
+        public bool IsSwimming;
+        /// <summary>Under the surface: no air, and the sky is gone.</summary>
+        public bool IsUnderwater;
         /// <summary>-1 = wall on the left, +1 = wall on the right, 0 = none.</summary>
         public int WallSide;
         /// <summary>Evasive moves made so far — a dash, a slide start or a wall jump. A count, not a one-frame
@@ -136,7 +148,7 @@ namespace RipNRage.Game.Ecs
     /// by the same step.
     /// </summary>
     [UpdateAfter(typeof(PhysicsSyncSystem)), UpdateBefore(typeof(CharacterMotorSystem))]
-    [Reads(typeof(InputState), typeof(BodyVelocity)), Writes(typeof(Noise), typeof(RipNRage.Engine.Ecs.View.CameraShake))] // footsteps: a Noise entity through the buffer; the dash kicks the camera
+    [Reads(typeof(InputState), typeof(BodyVelocity), typeof(WaterVolume)), Writes(typeof(Noise), typeof(RipNRage.Engine.Ecs.View.CameraShake))] // footsteps: a Noise entity through the buffer; the dash kicks the camera; the water we swim in
     public sealed class PlayerMoveSystem : SystemBase, IFixedTick
     {
         private Query _q;
@@ -208,6 +220,14 @@ namespace RipNRage.Game.Ecs
 
             Vector3 planar = p.SmoothMoveDir * p.SmoothCurrentSpeed;
             p.FinalMove = new Vector3(planar.x, p.FinalMove.y, planar.z);
+
+            // ---- swimming: water owns the body while it is in it ----
+            if (UpdateSwim(ctx, e, ref p, ref m, in lt, in look, input, ref jump, forward, right, dt))
+            {
+                p.PreviouslyGrounded = grounded;
+                p.CurrentSpeed = m.Desired.magnitude;
+                return;
+            }
 
             // ---- the standalone moves override the horizontal motion computed above ----
             UpdateSlide(ref p, ref m, in lt, input, ref jump, horizontal, grounded, dt);
@@ -378,6 +398,100 @@ namespace RipNRage.Game.Ecs
                 Sfx.Play(GameAssets.Jump);
                 EndWallRun(ref p, ref look);
             }
+        }
+
+        // ---------------------------------------------------------------- swimming
+
+        /// <summary>
+        /// How deep the water has to be before it carries you instead of the floor — and, lower, how shallow it has
+        /// to get before it lets go again. Two thresholds rather than one, because floating puts you *at* the
+        /// surface: a single one sits exactly where the bobbing happens and the swim flickers on and off with it.
+        /// </summary>
+        private const float SwimEnterDepth = 1.1f, SwimLeaveDepth = 0.45f;
+        /// <summary>Where the water holds a floating body: deep enough to go on swimming, shallow enough that the
+        /// head is out of it and the breath comes back.</summary>
+        private const float FloatDepth = 0.62f;
+        /// <summary>Where the head is above the entity's origin — what has to go under to lose your breath.</summary>
+        private const float HeadHeight = 0.7f;
+
+        /// <summary>
+        /// Swimming. In deep enough water the floor stops mattering: gravity goes, the look direction becomes the
+        /// swim direction (pitch and all), jump kicks for the surface and crouch dives. At the surface the body
+        /// floats — it is pushed back up when it sinks past the waterline and held down when it rides over it, so
+        /// you bob along the top rather than bouncing out of it.
+        ///
+        /// <para>Only water that says it is swimmable (<c>swim 1</c>): a harbour a level means as a way of dying
+        /// is still a way of dying.</para>
+        /// </summary>
+        private bool UpdateSwim(SystemContext ctx, Entity e, ref PlayerMotor p, ref CharacterMotor m, in LocalTransform lt,
+                                in PlayerLook look, in InputState input, ref bool jump, Vector3 forward, Vector3 right, float dt)
+        {
+            bool inWater = Waters.TryAt(World, lt.Position, out var water) && water.Swimmable;
+            float surface = water.SurfaceY;
+            float depth = inWater ? surface - lt.Position.y : 0f;
+
+            if (!inWater || depth < (p.IsSwimming ? SwimLeaveDepth : SwimEnterDepth))
+            {
+                if (!p.IsSwimming) return false;
+                // out: gravity back, and the jump left unspent so the ordinary ground rules have it
+                p.IsSwimming = false; p.IsUnderwater = false;
+                m.GravityScale = p.GravityMultiplier;
+                return false;
+            }
+
+            if (!p.IsSwimming)
+            {
+                p.IsSwimming = true;
+                p.Breath = water.Breath;
+                if (p.IsSliding) EndSlide(ref p, ref m);
+                if (p.IsWallRunning) { p.IsWallRunning = false; p.WallSide = 0; }
+                if (m.IsDashing) m.PendingStopDash = true;
+            }
+
+            // the water holds you up: no gravity, no ride spring to the sea bed
+            m.GravityScale = 0f;
+            m.FrameVelocity = Vector3.zero;
+
+            // swim where you look, not merely where you face
+            Quaternion aim = Quaternion.Euler(-look.Pitch, look.Yaw, 0f);
+            Vector3 swim = aim * Vector3.forward * input.Move.y + right * input.Move.x;
+            float wanted = p.SwimSpeed;
+            m.Desired = new Vector3(swim.x, 0f, swim.z) * wanted;
+
+            // up and down: the kick, the dive, and the pull of the surface
+            float head = lt.Position.y + HeadHeight;
+            p.IsUnderwater = head < surface;
+            float vertical;
+            if (jump) { jump = false; vertical = p.SwimKickSpeed; }
+            else if (input.SlideHeld) vertical = -p.SwimKickSpeed;
+            else if (swim.sqrMagnitude > 0.01f) vertical = (aim * Vector3.forward).y * input.Move.y * wanted; // dive or climb along the look
+            else vertical = 0f;
+
+            // float: the water carries a body at the surface, head out — pushed up when it sinks past that and
+            // held down when it rides over it, so you bob along the top instead of bouncing out of it
+            float wanted_ = (surface - FloatDepth) - lt.Position.y;
+            vertical += Mathf.Clamp(wanted_, -1f, 1f) * p.SinkSpeed;
+
+            var velocity = World.TryGet<BodyVelocity>(e, out var bv) ? bv.Linear : Vector3.zero;
+            m.PendingImpulse += new Vector3(0f, Mathf.Clamp(vertical - velocity.y, -6f, 6f), 0f);
+
+            // breath, and what running out of it costs
+            if (p.IsUnderwater && water.Breath > 0f)
+            {
+                p.Breath -= dt;
+                if (p.Breath <= 0f)
+                {
+                    p.Breath = 0f;
+                    ctx.Post(new RipNRage.Game.Ecs.Combat.DamageEvent
+                    {
+                        Target = e, Amount = p.DrownDamage * dt, Point = lt.Position, Direction = Vector3.down,
+                        IgnoresArmor = true, // armour is no use against water
+                    });
+                }
+            }
+            else p.Breath = Mathf.Min(p.Breath + dt * 3f, water.Breath); // a lungful at the surface comes back fast
+
+            return true;
         }
 
         /// <summary>The velocity of the surface a probe hit, at the point it hit (zero for the world).</summary>

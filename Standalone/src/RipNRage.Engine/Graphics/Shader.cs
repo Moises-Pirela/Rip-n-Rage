@@ -163,6 +163,39 @@ float sampleShadow(vec3 wp, vec3 n) {
     return mix(s, 1.0, fade);
 }
 
+
+// ---- caustics: the light the water surface focuses onto everything under it ----
+uniform int uCausticsOn;
+uniform float uWaterLevel;       // world y of the surface (very negative = no water in this level)
+uniform vec3 uCausticColor;
+uniform vec3 uCausticParams;     // strength, bands per metre, drift speed
+uniform float uCausticDepthFade; // metres over which they die away
+
+// Two drifting lattices beaten against each other: where the wavefronts cross, the surface focuses the sun into
+// the bright wandering web you see on a sea bed. Procedural, so it costs no texture and tiles nowhere.
+float causticWeb(vec2 p, float t) {
+    float a = sin(p.x * 3.0 + t) + sin(p.y * 3.1 - t * 0.9);
+    float b = sin((p.x + p.y) * 2.3 - t * 1.3) + sin((p.x - p.y) * 2.7 + t * 0.7);
+    float v = abs((a + b) * 0.25);
+    float web = pow(1.0 - v, 5.0);
+    return web;
+}
+
+// Caustics on a surface under water. They fall off with depth, land hardest on what faces up, and only where the
+// sun actually reaches - they are sunlight, bent, so a surface in shadow gets none.
+vec3 caustics(vec3 wp, vec3 n, float shadow) {
+    if (uCausticsOn == 0) return vec3(0.0);
+    float depth = uWaterLevel - wp.y;
+    if (depth <= 0.0 || shadow <= 0.0) return vec3(0.0);
+    float fade = exp(-depth / uCausticDepthFade);
+    float up = max(n.y, 0.0);
+    float t = uTime * uCausticParams.z;
+    // a second, slower, larger web over the first stops it reading as a repeating pattern
+    float web = causticWeb(wp.xz * uCausticParams.y, t) * 0.7
+              + causticWeb(wp.xz * uCausticParams.y * 0.53 + vec2(13.7, 4.1), t * 0.6) * 0.3;
+    return uCausticColor * (web * uCausticParams.x * fade * up * shadow);
+}
+
 vec3 shade(vec3 albedo, vec3 n, vec3 wp, float wrap) {
     vec3 ambient = mix(uAmbientGround, uAmbientSky, n.y * 0.5 + 0.5);
     float ndl = clamp((dot(n, -uSunDir) + wrap) / (1.0 + wrap), 0.0, 1.0);
@@ -173,6 +206,7 @@ vec3 shade(vec3 albedo, vec3 n, vec3 wp, float wrap) {
         vec3 h = normalize(v - uSunDir);
         col += uSunColor * shadow * pow(max(dot(n, h), 0.0), 32.0) * uSpecular * ndl;
     }
+    col += albedo * caustics(wp, n, shadow);
     for (int i = 0; i < uLightCount; i++) {
         vec3 d = uLightPos[i] - wp;
         float dist = length(d);

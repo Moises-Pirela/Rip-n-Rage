@@ -1,6 +1,6 @@
 # Content pass — plan
 
-Status: **V1 built** (2026-11-19); the rest planned. Scope: the two unfinished weapons (katana, sonic shotgun),
+Status: **V1, V1b, V1c, V4, V5 built** (2026-11-19), plus swimming and caustics; the rest planned. Scope: the two unfinished weapons (katana, sonic shotgun),
 throwables, more enemy kinds, and the Harbor — one sprawling level ending in a speedboat chase onto a container
 ship. Written from a survey of the code as of `07afed7` (layer 11 closed); paths are relative to `Standalone/`.
 
@@ -314,12 +314,20 @@ at chase speed. The reaction force on the ground (#2) is **not** done — see th
 - The gate sweep's movement scripts (`walk flowmoves evade ledge stay maze`) were run before and after and
   compared: **no probe line differs** apart from the motor's new fields, which are all zero on still ground.
 
-**The remainder, not built yet** (carried into V4/V5, where there is a hull to push):
+**The remainder** — **the reaction force is now built** (with V4), the grip limit is not:
 
-- **Newton's third law**: the ride spring's and motor's forces reversed onto the ground body, so boats dip under
-  boarders and a dinghy is pushed by someone running across it.
-- **Grip limit**: grounded acceleration bounded by the deck's friction, so a hard turn or a ram throws people off
-  their feet.
+- **Newton's third law** (built): the ride spring's and the motor's forces, reversed onto the ground at the
+  contact point (`CharacterMotor.PressesOnGround`). A run across a raft shoves it properly — four characters at
+  4 m/s move a 600 kg raft at 0.16 m/s.
+  - **Known limit**: the *static* share of this is far smaller than it should be. A character's weight reaches the
+    raft (it floats lower with crew than without) but by a fraction of the 320 kg they weigh. The ride spring is
+    about 113 kN/m per character against the raft's ~19 kN/m of buoyancy, so as the raft gives under them the
+    spring slackens and takes the load straight back off it — the two springs fight, and the stiff one wins. A
+    hand-applied 3.14 kN sinks the same raft 17 cm; the same weight as crew sinks it under a millimetre.
+    Revisit with the grip limit; it wants the ride spring reformulated so a standing body presses with its weight
+    rather than with whatever its spring happens to be doing that step.
+- **Grip limit** (not built): grounded acceleration bounded by the deck's friction, so a hard turn or a ram
+  throws people off their feet.
 
 **Commit.** `Content V1: the character moves in the frame of what it stands on`
 
@@ -408,7 +416,7 @@ Boats and the ship are built in the level editor, out of brushes, like everythin
 
 **Commit.** `Content V3: brush entities — the editor builds things that move`
 
-### V4. Water and hydrodynamics
+### V4. Water and hydrodynamics — **BUILT**
 
 The fix for #4.
 
@@ -443,9 +451,15 @@ The fix for #4.
 - A hull dropped from 3 m bobs and comes to rest.
 - A speedboat hull towed at 25 m/s rises to a planing trim (bow up a few degrees, less wetted area).
 
-**Commit.** `Content V4: buoyancy and hydrodynamics — hulls float, plane and slam`
+**Built as** `Ecs/Physics/Buoyancy.cs`: sampled displacement, body-level drag (per-sample drag over-counts the
+wetted area several times over and leaves a boat unable to move), heave damped as a fraction of critical, and
+planing from the bottom's angle of attack acting aft of the middle — forward of it, a hull somersaults; at the
+middle it rears until it stalls. Displacement is authored apart from the collider, which is what lets a hollow
+hull float. **Not built**: wetted-face integration from real convex hulls (needs V2/V3), and flooding.
 
-### V5. Propulsion and control
+**Commit.** `Content V4+V5: hulls float, plane and answer their helm`
+
+### V5. Propulsion and control — **BUILT**
 
 - **`VesselEngine`**: thrust applied at the propeller's position, only while the propeller is submerged (a boat
   off a wave crest loses drive). A throttle response, and an outboard that steers by vectoring its thrust.
@@ -460,7 +474,10 @@ The fix for #4.
 - The player stands through a full-throttle start and a hard turn on V1's motor, or is thrown when the grip limit
   says so.
 
-**Commit.** `Content V5: engines and helms`
+**Built as** `Ecs/Physics/Vessels.cs`: `VesselControl` (throttle, helm) and `VesselEngine` (thrust at a stern
+propeller, swung by the helm, dead while out of the water). **Not built**: pilots and the chase director (V6).
+
+**Commit.** `Content V4+V5: hulls float, plane and answer their helm`
 
 ### V6. Pilots and the chase director
 
@@ -654,6 +671,28 @@ when the ship is kilometres from the origin.
 - Save mid-chase and load: every boat is in the same place at the same speed, the riders are on their decks,
   and play continues.
 - Save inside the ship's hold and load: the crates, enemies and doors are where they were relative to the ship.
+
+### V1d. Swimming and caustics — **BUILT**
+
+Asked for alongside the reaction force, and both sit on V1c's one water surface.
+
+- **Swimming** (`PlayerCharacter.UpdateSwim`): in deep enough water the floor stops mattering — gravity goes, the
+  look direction becomes the swim direction, jump kicks for the surface and crouch dives. The body floats with its
+  head out, pushed up when it sinks and held down when it rides over, so you bob along the top instead of being
+  spat out of it. Two depth thresholds rather than one: floating puts you exactly where a single threshold sits,
+  and the swim flickers on and off with the bobbing.
+- **Breath**: it runs down with the head under and comes back fast at the surface. Out of breath, drowning takes
+  health through the ordinary damage path — but `DamageEvent.IgnoresArmor`, because a plate carrier is no help
+  against water.
+- **Swimmable is a property of the water** (`swim 1` on `water_plane`, default off). A harbour a level means as a
+  way of dying still kills: the dock's is untouched, and the `fall` gate still watches a player drown in it. The
+  `swim` gate runs on `levels/swim_test.map`, a pool with a bottom 11 m down and steps out.
+- **Caustics** (`Shader.LightingCommon`, `[caustics]` in `tunables.cfg`): two drifting lattices beaten against
+  each other give the wandering web the surface focuses onto everything under it. They fade with depth, land
+  hardest on what faces up, and only fall where the sun reaches — they are sunlight, bent, so a surface in shadow
+  gets none. The renderer takes the water height from the same volumes the player swims in.
+
+**Commit.** `Content V1d: swimming, drowning and caustics`
 
 ### V11. Waves
 

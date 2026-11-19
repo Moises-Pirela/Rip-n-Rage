@@ -201,6 +201,10 @@ namespace RipNRage.Game.Ecs
         public float depth = 100f;
         [InspectTip("the open sea: water everywhere below the surface, however far the level runs (size then only sets how much of it is drawn)")]
         public bool infinite;
+        [InspectTip("water you can swim in rather than drown in (off = falling in is a way of dying)")]
+        public bool swim;
+        [InspectRange(0, 120, 1), InspectTip("seconds of breath under the surface before it hurts (0 = never)")]
+        public float breath = 20f;
         public override WaterVolume Bake() => From(Vector3.zero);
         public override WaterVolume Bake(in BakeContext ctx) => From(ctx.HasEntity ? ctx.Position : Vector3.zero);
 
@@ -212,7 +216,7 @@ namespace RipNRage.Game.Ecs
             {
                 Min = surface - new Vector3(w * 0.5f, h, l * 0.5f),
                 Max = surface + new Vector3(w * 0.5f, 0f, l * 0.5f),
-                Infinite = infinite,
+                Infinite = infinite, Swimmable = swim, Breath = breath,
             };
         }
     }

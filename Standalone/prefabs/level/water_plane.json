@@ -5,9 +5,10 @@
 // drawn patch follows the camera (OceanSurfaceSystem). The size key then only says how much of it is drawn -
 // make it comfortably past the fog. A harbour stays a box.
 { "name": "water_plane",
-  "description": "Animated water plane (size w l; infinite 1 = open sea that follows the camera)",
-  "keys": { "size": ["PlaneMesh.size", "WaterVolume.size"], "infinite": "WaterVolume.infinite" },
-  "editor": { "gizmoColor": [0.3, 0.6, 1, 1], "pickExtents": [2, 0.2, 2], "defaults": { "size": "200 200", "infinite": "0" },
+  "description": "Animated water plane (size w l; infinite 1 = open sea; swim 1 = swimmable, breath seconds under)",
+  "keys": { "size": ["PlaneMesh.size", "WaterVolume.size"], "infinite": "WaterVolume.infinite",
+            "swim": "WaterVolume.swim", "breath": "WaterVolume.breath" },
+  "editor": { "gizmoColor": [0.3, 0.6, 1, 1], "pickExtents": [2, 0.2, 2], "defaults": { "size": "200 200", "infinite": "0", "swim": "0", "breath": "20" },
               "numeric": [ { "key": "height", "step": 0.25 } ] },
   "components": {
     "PlaneMesh": { "size": [200, 200], "uvScale": 0.0625 },

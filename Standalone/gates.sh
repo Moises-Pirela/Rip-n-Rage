@@ -44,7 +44,7 @@ fail=0
 # script:frames — the 20 of the 7.8 sweep, then fall / pause (in the sweep since 8.0) and checkpoint (new in 8.0)
 ALL="maze:400 door:400 ledge:400 stay:600 crowd:600 brawler:400 walk:400 fire:400 weapons:400 rage:400 saveload:400 jab:400 m1887:400 glockfire:400 rocket:400 glockalt:400
 killenemy:400 style:400 die:400 peek:400 close:400 approach:400 pickup:400 water:400 surface:400 evade:400
-fall:620 pause:400 checkpoint:400 menu:400 flowmoves:400 deathf8:400"
+fall:620 pause:400 checkpoint:400 menu:400 flowmoves:400 deathf8:400 swim:460"
 
 # the slice: entries k, k+n, k+2n ... so every batch mixes cheap and dear scripts
 SLICE="$ALL"
@@ -74,6 +74,9 @@ for entry in $SLICE; do
     if [ -n "${GATES:-}" ] && [[ " $GATES " != *" $name "* ]]; then continue; fi
     log="$OUT/$name.log"
     extra=""; [ "$name" = menu ] && extra="--menu" # the title-screen gate starts on the title screen (8.8)
+    # the swim gate is the one that does not run on the dock: its pool is the level that can be swum in, and the
+    # dock's harbour is deliberately still a way of dying (see levels/swim_test.map)
+    [ "$name" = swim ] && extra="$extra --level levels/swim_test.map"
     # 10.0: the level manifest — what the scene built, entity by entity (the gate for moving a class onto a prefab)
     case "$name" in walk|menu) extra="$extra --dump-level $OUT/$name.level" ;; esac
     dotnet src/RipNRage.Game/bin/Release/net10.0/RipNRage.dll $extra --script "$name" --frames "$frames" \

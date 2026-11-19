@@ -57,6 +57,7 @@ namespace RipNRage.Game.Ecs
     /// geometry, none means <b>off an edge</b> — logged, and the player is killed by a fatal
     /// <see cref="DamageEvent"/> (the one door, 8.1). A dead player is not watched.
     /// </summary>
+    [Reads(typeof(PlayerMotor))] // the swim state: a swimmer is not falling
     [Exclusive] // the physics raycast, the log, the death screen's cause line and the HUD message
     public sealed class FallSystem : SystemBase, ITick
     {
@@ -84,6 +85,10 @@ namespace RipNRage.Game.Ecs
                     Vector3 pos = xforms[i].Position;
                     watches[i] = Falls.Track(in watches[i], pos, motors[i].IsGrounded, now);
                     if (pos.y >= killY) continue;
+                    // a swimmer is not falling: in water a level means to be swum in, the kill height is not the
+                    // rule - running out of breath is (PlayerMoveSystem.UpdateSwim). Optional, because a headless
+                    // test player is a body and a fall watch, with no locomotion on it at all.
+                    if (ctx.World.Has<PlayerMotor>(ents[i]) && ctx.World.Get<PlayerMotor>(ents[i]).IsSwimming) continue;
                     if (ctx.World.Has<Health>(ents[i]) && ctx.World.Get<Health>(ents[i]).Current <= 0f) continue; // the fatal blow is in flight
 
                     ref var f = ref watches[i];

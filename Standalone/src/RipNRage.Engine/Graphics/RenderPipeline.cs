@@ -555,6 +555,15 @@ namespace RipNRage.Engine.Graphics
             sh.SetVector("uCameraPos", camPos);
             sh.SetVector("uFogColor", new Vector3(Lighting.fogColor.r, Lighting.fogColor.g, Lighting.fogColor.b));
             sh.SetVector("uFogRange", new Vector2(Lighting.fogStart, Lighting.fogEnabled ? Lighting.fogEnd : 0f));
+            bool caustics = Lighting.causticsEnabled && Lighting.causticStrength > 0f && Lighting.waterLevel > -1e8f;
+            sh.SetInt("uCausticsOn", caustics ? 1 : 0);
+            if (caustics)
+            {
+                sh.SetFloat("uWaterLevel", Lighting.waterLevel);
+                sh.SetVector("uCausticColor", new Vector3(Lighting.causticColor.r, Lighting.causticColor.g, Lighting.causticColor.b));
+                sh.SetVector("uCausticParams", new Vector3(Lighting.causticStrength, Lighting.causticScale, Lighting.causticSpeed));
+                sh.SetFloat("uCausticDepthFade", Lighting.causticDepthFade);
+            }
             sh.SetInt("uShadowsOn", _shadowsThisFrame ? 1 : 0);
             if (_shadowsThisFrame)
             {
