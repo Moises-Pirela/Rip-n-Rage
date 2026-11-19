@@ -899,3 +899,38 @@ nav gates (`maze door ledge stay crowd brawler` + `approach close peek`), all ar
 - **The editor pass** (11.17) — separate planning.
 - **2-D erosion and rows as job items** (11.12) — deferred with reasons; **hierarchical search** (11.14) —
   skipped with numbers; the ECS query-vs-broadphase timing question (11.12) — written down, not chased.
+
+
+---
+
+## Review and fix pass (2026-11-18, after 11.16)
+
+A read of the whole layer for bugs, rule breaks, inconsistencies and antipatterns, then two commits of fixes.
+
+**Fixed (11.10b, the safe set):** `PathFollowSystem` is `[Exclusive]` — its capsule cast is on the stamped
+main-thread query path and only ever ran alone by the scheduler's accident; the straight-line capsule is built
+from the feet (the centre-based one missed anything under 0.6 m, and measured every drop 1.475 m too deep); one
+`MaxDrop` default where there were three; `[EntityFilter]` on both destroy hooks; a bad `enemies/*.json` warns like
+a bad prefab instead of sinking the level; time from the context; the probe counters are a `NavStats` singleton
+rather than statics on system types; the span-merge no-op, the swing's `"melee"` blood binding, the crowd gate's
+honest comment; three conventions written into the roadmap (the suite gates a commit; destroy hooks declare a
+filter; a system on the main-thread query path is exclusive).
+
+**Fixed (11.10c, the hash-moving set):** a kind's salt is a hash of its classname, not its index — adding a kind
+no longer reseeds the others (every rifleman reseeded once more here, for the last time; the AI gates are
+recorded); the nav cache key mixes the engine module's build id, so a bake-rule change without a `FormatVersion`
+bump cannot read stale grids back from a developer's folder.
+
+**Found by the fix pass itself:** the feet-based capsule exposed two rules for one drop. The straight-line test
+rightly called a 3.5 m drop clear under `MaxDrop` 4 and asked for no path; the ledge guard — 3 m, and standing
+down only for a *path* — then refused the same drop and stranded the grunt (`ledge` back to its 11.0 failure).
+The guard now stands down whenever the follower has judged the line, on a path or Direct. The follower's rule is
+the rule; the guard is for a body walking blind.
+
+**Left, with reasons:** the bake inside a fixed tick still costs a catch-up on a cold start (needs the ECS
+query-vs-broadphase timing question answered before it can move to `StartLevel`); `enemies/` is not watched or
+editor-editable (11.17's territory); the GameChecks `HandGrid` duplicates the engine suite's `Grid` (test-only;
+left until one of them has to change); and **the full sweep has still not been run** — every gate here was
+verified targeted.
+
+Checks after the pass: engine 322, gameplay 535.
