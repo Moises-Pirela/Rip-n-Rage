@@ -69,26 +69,30 @@ namespace RipNRage.Game.Ecs.AI
         /// the way; then the ground is sampled along it, because a clear line over a hole is still not a way — that
         /// is the `ledge` gate, where the wall is an absence of floor.
         /// </summary>
-        public static bool StraightLineClear(Vector3 self, Vector3 goal, float radius, float height, float maxDrop, float stepUp)
+        public static bool StraightLineClear(Vector3 self, Vector3 goal, float radius, float maxDrop, float stepUp,
+                                             float centreAboveFeet, float ride, float bodyHeight)
         {
             Vector3 d = goal - self; d.y = 0f;
             float dist = d.magnitude;
             if (dist < 0.05f) return true;
             d /= dist;
 
-            float r = radius;
-            var p1 = self + Vector3.up * (r - height * 0.5f + 0.1f);
-            var p2 = self + Vector3.up * (height * 0.5f - r);
+            // the capsule is the body's: its collider starts at the ride height above the feet and ends at the
+            // crown. (A first version built it about the transform's centre and missed anything under 0.6 m -
+            // a knee-high crate read as a clear line.)
+            float r = radius, feet = self.y - centreAboveFeet;
+            var p1 = new Vector3(self.x, feet + ride + r, self.z);
+            var p2 = new Vector3(self.x, feet + bodyHeight - r, self.z);
             if (PhysicsApi.CapsuleCast(p1, p2, r, d, out _, dist, Noises.WallMask)) return false;
 
             // the floor under the line: each sample must be within a step up or a drop down of the one before.
             // Finding *some* floor is not enough — a 3 m fall has floor at the bottom of it.
             int steps = Mathf.Clamp(Mathf.CeilToInt(dist / GroundStep), 1, 24);
-            float y = self.y;
+            float y = feet;
             for (int i = 1; i <= steps; i++)
             {
                 var at = self + d * (dist * i / steps);
-                if (!PhysicsApi.Raycast(new Vector3(at.x, y + height, at.z), Vector3.down, out var hit, height + maxDrop + 1f, Noises.WallMask))
+                if (!PhysicsApi.RaycastConcurrent(new Vector3(at.x, y + bodyHeight, at.z), Vector3.down, out var hit, bodyHeight + maxDrop + 1f, Noises.WallMask))
                     return false;
                 float fall = y - hit.point.y, rise = hit.point.y - y;
                 if (fall > maxDrop || rise > stepUp) return false;
@@ -111,6 +115,8 @@ namespace RipNRage.Game.Ecs.AI
     [UpdateAfter(typeof(NavPathSystem))]
     [UpdateBefore(typeof(SteeringSystem))]
     [Reads(typeof(Dead))]
+    [Exclusive] // the straight-line test is a capsule cast on the main-thread query path, which writes visit stamps:
+                // this system must never share a batch (a worker running it would race every other query there)
     public sealed class PathFollowSystem : SystemBase, ITick
     {
         private Query _q;
@@ -122,8 +128,9 @@ namespace RipNRage.Game.Ecs.AI
         public void Tick(SystemContext ctx)
         {
             var nav = Navigation.Current;
-            float now = Time.time;
-            float radius = NavProfile.Radius, height = NavProfile.Height;
+            float now = (float)ctx.Time;
+            float radius = NavProfile.Radius;
+            float centre = NavProfile.CentreAboveFeet, ride = NavProfile.Ride, body = NavProfile.BodyHeight;
             float maxDrop = nav?.Settings.MaxDrop ?? 2.5f;
             float cell = nav?.Settings.CellSize ?? 0.5f;
 
@@ -147,7 +154,7 @@ namespace RipNRage.Game.Ecs.AI
                     if (now >= follow.Recheck)
                     {
                         follow.Recheck = now + PathFollowing.RecheckEvery;
-                        follow.Direct = PathFollowing.StraightLineClear(self, goal, radius, height, maxDrop, NavProfile.StepUp);
+                        follow.Direct = PathFollowing.StraightLineClear(self, goal, radius, maxDrop, NavProfile.StepUp, centre, ride, body);
                     }
                     if (follow.Direct) { follow.Count = 0; continue; } // the brain's goal stands
 

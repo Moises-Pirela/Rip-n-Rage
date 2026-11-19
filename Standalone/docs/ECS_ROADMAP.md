@@ -2374,3 +2374,9 @@ that changes what the level builds.
   (`ctx.CommandsFor(worker)` inside chunk jobs).
 - Gameplay events: `struct : IPostProcessEvent`, `ctx.Post(...)`; consumers implement `IConsumes<T>`.
 - Every layer adds tests to `tests/RipNRage.EngineChecks` for its engine-side pieces.
+- **A commit's gate is the suite.** Build, run both check suites, and only then commit — one `&&` chain, ending at
+  the suite, never at a doc edit (11.16's first form went in with a failing check that way).
+- A system that implements `IOnEntityCreated` / `IOnEntityDestroyed` declares `[EntityFilter(...)]`, or it is
+  delivered every entity that begins or ends.
+- A system that calls a main-thread physics query (`Physics.Raycast`, `CapsuleCast`, `CheckCapsule`) is
+  `[Exclusive]`; a chunk job or a bake uses the `*Concurrent` ones.

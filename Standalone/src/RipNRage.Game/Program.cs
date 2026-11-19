@@ -597,7 +597,7 @@ namespace RipNRage.Game
             string way = follow.Direct ? "direct" : follow.Count > 0 ? $"{follow.Status}" : "none";
             Debug.LogWarning($"[test] {tag}: hp {RipNRage.Game.Ecs.PlayerLink.Health:0} armour {RipNRage.Game.Ecs.PlayerLink.Armor:0} | enemy d {Mathf.Sqrt(best):0.0} moved {moved:0.00} " +
                              $"spotted {spotted} seen {sense.Seen} state {brain.State} anim {anim} ehp {ehp:0} goal d {goalD:0.0} way {way} corners {follow.Count} at {follow.Corner} " +
-                             $"blocked {RipNRage.Engine.Ecs.Nav.NavCarveSystem.BlockedSpans} nodes {follow.Nodes} repaths {follow.Repaths}");
+                             $"blocked {w.Singleton<RipNRage.Engine.Ecs.Nav.NavStats>().BlockedSpans} nodes {follow.Nodes} repaths {follow.Repaths}");
         }
         /// <summary>killenemy: the frame the target died (0 = still alive) — makes a tuning change visible in the gate.</summary>
         private int _killFrame;
@@ -835,8 +835,10 @@ namespace RipNRage.Game
                     if (_frame == 60 || _frame == 300 || _frame == 590) AiProbe($"stay {_frame}");
                     break;
                 case "crowd":
-                    // 11.13: two grunts side by side behind the door wall, one 1.4 m gap, the player beyond it. Both
-                    // must get through and engage, instead of shoving each other in the doorway through the solver.
+                    // 11.13: two grunts side by side behind the door wall, one 1.4 m gap, the player beyond it. What it
+                    // proves: neither gets stuck in the doorway and both engage. What it does not: that both *walk*
+                    // through - one finds a line of fire through the gap from 2 m back and stands. A gate with the
+                    // player out of sight of the gap would prove that; this one is about the doorway not jamming.
                     if (_frame == 2)
                     {
                         RipNRage.Game.Ecs.PlayerLink.Teleport(new Vector3(0f, 1.8f, NavPlayerZ), 180f);

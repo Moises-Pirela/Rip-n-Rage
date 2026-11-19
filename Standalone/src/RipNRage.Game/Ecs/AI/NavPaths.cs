@@ -53,25 +53,26 @@ namespace RipNRage.Game.Ecs.AI
     [UpdateAfter(typeof(AiBrainSystem))]
     [UpdateAfter(typeof(RipNRage.Engine.Ecs.Nav.NavCarveSystem))]
     [UpdateBefore(typeof(SteeringSystem))]
-    [Reads(typeof(Dead))]
+    [Reads(typeof(Dead)), Writes(typeof(NavStats))]
+    [EntityFilter(typeof(PathFollow))] // the destroy hook is for askers, not for every entity that ends
     public sealed class NavPathSystem : SystemBase, ITick, IOnEntityDestroyed
     {
         private Query _askers;
         private readonly NavSearcher _searcher = new NavSearcher();
         private readonly List<(uint order, int index, Entity e)> _queue = new List<(uint, int, Entity)>();
 
-        /// <summary>Searches run last tick — the probe the gates print.</summary>
-        public static int ServedLastTick;
-
-        public override void OnCreate() =>
+        public override void OnCreate()
+        {
             _askers = World.Query().With<PathRequest>().With<PathFollow>()
                 .WithReadOnly<AiBrain>().WithReadOnly<LocalToWorld>().Build();
+            World.SingletonEntity<NavStats>();
+        }
 
         public void OnEntityDestroyed(SystemContext ctx, Entity e) => NavPaths.Forget(e);
 
         public void Tick(SystemContext ctx)
         {
-            ServedLastTick = 0;
+            World.Singleton<NavStats>().ServedLastTick = 0;
             var nav = Navigation.Current;
             if (nav == null || nav.TotalSpans == 0) return;
 
@@ -114,7 +115,7 @@ namespace RipNRage.Game.Ecs.AI
                 follow.Version = nav.Version;
                 follow.Nodes = _searcher.LastNodes;
             }
-            ServedLastTick = served;
+            World.Singleton<NavStats>().ServedLastTick = served;
         }
 
         private static int Compare((uint order, int index, Entity e) a, (uint order, int index, Entity e) b) =>

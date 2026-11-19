@@ -28,12 +28,19 @@ namespace RipNRage.Game.Ecs.AI
 
         public static float MaxSlopeDeg => CharacterProfiles.Enemy.maxSlopeAngle;
 
+        /// <summary>The body floats this high; its collider starts here above the feet.</summary>
+        public static float Ride => CharacterProfiles.Enemy.rideHeight;
+        /// <summary>Feet to crown.</summary>
+        public static float BodyHeight => Enemies.Height;
+        /// <summary>The transform's position is this far above the feet.</summary>
+        public static float CentreAboveFeet => Enemies.Height * 0.5f + CharacterProfiles.Enemy.rideHeight;
+
         /// <summary>The settings for a level, its three map keys over the body's derived limits.</summary>
         public static NavSettings For(in Worldspawn ws) => new NavSettings
         {
             CellSize = ws.NavCellSize > 0f ? ws.NavCellSize : 0.5f,
             CellHeight = ws.NavCellHeight > 0f ? ws.NavCellHeight : 0.2f,
-            MaxDrop = ws.NavMaxDrop > 0f ? ws.NavMaxDrop : 2.5f,
+            MaxDrop = ws.NavMaxDrop > 0f ? ws.NavMaxDrop : NavSettings.DefaultMaxDrop,
             Radius = Radius, Height = Height, StepUp = StepUp, MaxSlopeDeg = MaxSlopeDeg,
         };
     }

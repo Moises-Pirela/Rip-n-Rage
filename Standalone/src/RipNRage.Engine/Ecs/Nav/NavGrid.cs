@@ -109,11 +109,25 @@ namespace RipNRage.Engine.Ecs.Nav
         public float StepUp;
         public float MaxSlopeDeg;
 
+        /// <summary>The one default for how far the AI may drop: at least the ledge guard's reach (3 m below the feet),
+        /// or navigation refuses what blind walking allowed. The worldspawn default and the fallback quote this.</summary>
+        public const float DefaultMaxDrop = 4f;
+
         public static NavSettings Default => new NavSettings
         {
-            CellSize = 0.5f, CellHeight = 0.2f, MaxDrop = 2.5f,
+            CellSize = 0.5f, CellHeight = 0.2f, MaxDrop = DefaultMaxDrop,
             Radius = 0.35f, Height = 1.9f, StepUp = 0.6f, MaxSlopeDeg = 50f,
         };
+    }
+
+    /// <summary>
+    /// What the navigation did this tick, for the probes: spans under a carve, searches served. A component
+    /// singleton per world, where a static on a system type would cross-talk between worlds (the checks run two).
+    /// </summary>
+    public struct NavStats : IComponent
+    {
+        public int BlockedSpans;
+        public int ServedLastTick;
     }
 
     /// <summary>

@@ -67,9 +67,14 @@ namespace RipNRage.Game.Content
             var list = new List<EnemyData>(files.Length);
             foreach (var f in files)
             {
-                var file = JsonSerializer.Deserialize<EnemyFile>(File.ReadAllText(f), Options);
-                if (file == null || string.IsNullOrEmpty(file.classname)) throw new InvalidDataException($"{f}: an enemy definition needs a classname");
-                list.Add(Bake(file, loadTexture));
+                // a bad file is a warning and a missing kind, as a bad prefab is (10.7's policy) - not a level that will not load
+                try
+                {
+                    var file = JsonSerializer.Deserialize<EnemyFile>(File.ReadAllText(f), Options);
+                    if (file == null || string.IsNullOrEmpty(file.classname)) throw new InvalidDataException("an enemy definition needs a classname");
+                    list.Add(Bake(file, loadTexture));
+                }
+                catch (Exception e) { Debug.LogWarning($"enemies: {Path.GetFileName(f)} does not load: {e.Message}"); }
             }
             return list.ToArray();
         }

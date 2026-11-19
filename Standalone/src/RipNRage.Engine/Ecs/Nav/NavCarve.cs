@@ -86,23 +86,25 @@ namespace RipNRage.Engine.Ecs.Nav
     /// anything changed, which is what tells a follower its path may be stale (11.6).
     /// </summary>
     [Exclusive] // writes engine-side shared data (the grid), not components
+    [EntityFilter(typeof(NavObstacle))] // the destroy hook is for obstacles, not for every bullet and noise that ends
     public sealed class NavCarveSystem : SystemBase, ITick, IOnEntityDestroyed
     {
         private Query _q;
 
-        /// <summary>Spans under a stamp right now — the probe the gates print.</summary>
-        public static int BlockedSpans;
         /// <summary>The bake the stamps were made on. A fresh bake has none, so every obstacle is stamped again.</summary>
         private int _stampedFor = -1;
 
-        public override void OnCreate() => _q = World.Query().With<NavObstacle>().WithReadOnly<LocalToWorld>().Build();
+        public override void OnCreate()
+        {
+            _q = World.Query().With<NavObstacle>().WithReadOnly<LocalToWorld>().Build();
+            World.SingletonEntity<NavStats>(); // claimed outside a phase: creating the carrier is a structural change
+        }
 
         public void OnEntityDestroyed(SystemContext ctx, Entity e)
         {
             // an obstacle that is destroyed takes its stamp with it, or the way stays shut for ever
-            if (!World.Has<NavObstacle>(e)) return;
             ref var o = ref World.Get<NavObstacle>(e);
-            if (o.Stamped) { BlockedSpans -= NavCarve.Stamp(Navigation.Current, o.StampCenter, o.StampHalf, -1); o.Stamped = false; }
+            if (o.Stamped) { World.Singleton<NavStats>().BlockedSpans -= NavCarve.Stamp(Navigation.Current, o.StampCenter, o.StampHalf, -1); o.Stamped = false; }
         }
 
         public void Tick(SystemContext ctx)
@@ -114,8 +116,9 @@ namespace RipNRage.Engine.Ecs.Nav
             // a rebake (a respawn, a load, Navigation.Invalidate) is a new grid with no stamps on it, while every
             // obstacle still believes it is stamped where it stands. Without this a door that has not moved is
             // never carved again and stands open to the search until something shoves it (found at the 11.9 review).
+            ref var stats = ref World.Singleton<NavStats>();
             bool fresh = nav.BakeId != _stampedFor;
-            if (fresh) { _stampedFor = nav.BakeId; BlockedSpans = 0; }
+            if (fresh) { _stampedFor = nav.BakeId; stats.BlockedSpans = 0; }
 
             foreach (var chunk in _q)
             {
@@ -145,8 +148,8 @@ namespace RipNRage.Engine.Ecs.Nav
                     if (o.Stamped && (centre - o.StampCenter).sqrMagnitude <= threshold * threshold
                         && (worldHalf - o.StampHalf).sqrMagnitude <= threshold * threshold) continue; // near enough: leave it
 
-                    if (o.Stamped) BlockedSpans -= NavCarve.Stamp(nav, o.StampCenter, o.StampHalf, -1);
-                    BlockedSpans += NavCarve.Stamp(nav, centre, worldHalf, +1);
+                    if (o.Stamped) stats.BlockedSpans -= NavCarve.Stamp(nav, o.StampCenter, o.StampHalf, -1);
+                    stats.BlockedSpans += NavCarve.Stamp(nav, centre, worldHalf, +1);
                     o.StampCenter = centre; o.StampHalf = worldHalf; o.Stamped = true;
                 }
             }

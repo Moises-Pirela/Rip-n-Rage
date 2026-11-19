@@ -53,7 +53,7 @@ namespace RipNRage.Engine.Ecs.Levels
         [InspectRange(0.05f, 1f, 0.05f), InspectTip("navigation: the vertical quantum - two floors closer than this in one column are one span")]
         public float navCellHeight = 0.2f;
         [InspectRange(0f, 10f, 0.25f), InspectTip("navigation: how far the AI may drop down on purpose. At least the ledge guard's reach, or the AI refuses what it used to walk off")]
-        public float navMaxDrop = 4f;
+        public float navMaxDrop = Nav.NavSettings.DefaultMaxDrop;
 
         public override Worldspawn Bake()
         {

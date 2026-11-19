@@ -10,6 +10,12 @@
     "flesh": "blood_hit"
   },
   "bullets": {
+    "melee": {
+      "tracer": "",
+      "impactScale": 1,
+      "bloodScale": 1.2,
+      "impactOverride": ""
+    },
     "light": {
       "tracer": "tracer_light",
       "impactScale": 0.8,

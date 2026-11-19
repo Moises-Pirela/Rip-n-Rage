@@ -224,9 +224,9 @@ namespace RipNRage.Engine.Ecs.Nav
                         }
 
                         if (span.Flags == NavSpanFlags.None) span.Flags = NavSpanFlags.Walkable;
-                        // merge with the span just above when they are within a cell height of each other
-                        if (spans.Count > first && spans[spans.Count - 1].Floor - span.Floor < s.CellHeight) { }
-                        else spans.Add(span);
+                        // two floors within a cell height of each other in one column are one span: the upper stands
+                        bool merged = spans.Count > first && spans[spans.Count - 1].Floor - span.Floor < s.CellHeight;
+                        if (!merged) spans.Add(span);
 
                         y = span.Floor - Mathf.Max(0.05f, s.CellHeight);
                     }
