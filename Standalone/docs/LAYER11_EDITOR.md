@@ -44,26 +44,26 @@ see. The navigation rules and types are in [`LAYER11_NAV.md`](LAYER11_NAV.md); t
 - **Three colours, and `Tight` is one of them.** Walkable, blocked-by-level, and **too tight for the body** —
   the last is the usual reason a doorway a designer drew is not a doorway the AI can use.
 
-## Questions for review
+## Answered (2026-11-19)
 
-- **Q1 — the toggle.** A key (F6, beside F8/F9) and a panel, or only the panel? Proposal: key toggles the draw,
-  panel holds Rebake + the readout.
-- **Q2 — the reachability root.** Flood-fill from the player start by default, re-rooted by clicking a span?
-  That answers "can the AI get from the spawn to here", which is the question worth asking.
-- **Q3 — how much to draw.** The dock is 130k spans. `NavDebug.Radius` is 20 m about the viewer; for the editor
-  the camera can be far above. Proposal: a radius slider, default 40 m, and never draw more than N spans.
-- **Q4 — does the editor need the *game's* grid?** A designer may want to see what the game will bake, props
-  included. That needs entity colliders in the preview too. Proposal: out of scope for 11.17; brush geometry is
-  what a designer edits.
+- **Q1 — panel only.** No key toggle: the panel holds the draw switch, Rebake and the readout.
+- **Q2 — the player start** is the reachability root.
+- **Q3 — a radius slider**, default 40 m, with a hard cap on spans drawn.
+- **Q4 — yes, the editor shows the game's grid**, entity colliders included. In practice that means the
+  **static** ones: a prop with a `Body` is dynamic, is never baked in the game either, and is carved at runtime —
+  so 11.17.1 builds collision for brushes **and** for map entities whose prefab has a collider and no body, and
+  the things that move are drawn as footprints by 11.17.5. Without this the editor's grid would show doorways
+  open that a static prop closes.
 
 ## Phases
 
 - [ ] **11.17.0 Instrument.** Extend the editor's `session` script with nav steps and a `[test] nav editor:`
   probe (tiles, spans, walkable, tight, time). Today it prints "no grid": that is the baseline. The editor gate
   already runs in the sweep, so this costs no new gate.
-- [ ] **11.17.1 Geometry on demand.** `LevelLoader.BuildBrushCollision(doc)` — the collider loop, callable
-  from the editor; the colliders go in a list the editor destroys on rebuild. Check: a preview world plus
-  collision has the same static count as the game's build of the same map.
+- [ ] **11.17.1 Geometry on demand.** `LevelLoader.BuildCollisionOnly(doc)` — the brush collider loop, callable
+  from the editor, **plus** a static collider per map entity whose prefab carries a `ColliderShape` and no
+  `Body` (Q4). The colliders go in a list the editor destroys on rebuild. Check: a preview world plus collision
+  has the same static count as the game's build of the same map.
 - [ ] **11.17.2 Rebake.** A `NavPanel` (PhysicsPanel's shape): **Rebake**, the readout (tiles, spans, walkable,
   tight, carved, time), and a **stale** badge driven by the document's change counter. It calls
   `PhysicsEntities.FlushRegistrations` then `NavBake.Build` with its own cached query, and sets

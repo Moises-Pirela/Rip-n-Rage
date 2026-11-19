@@ -107,6 +107,13 @@ if [ -z "${GATES:-}" ] || [[ " $GATES " == *" edit "* ]]; then
     code=$?
     grep -E '\[test\]|\[Error\] level|Exception|Fatal' "$OUT/edit.log" > "$OUT/edit.test" # a level error in the preview is a failure of the editor
     if [ $code -ne 0 ]; then echo "FAIL edit (exit $code)"; fail=1; else echo "ok   edit"; fi
+
+    # 11.17: what the editor knows about navigation - the grid, the collision it can bake from, the broadphase
+    dotnet src/RipNRage.Editor/bin/Release/net10.0/RipNRageEditor.dll "$OUT/dock.map" --script nav --frames 40 \
+        --fixed-dt 0.016667 --width 640 --height 360 > "$OUT/editnav.log" 2>&1
+    code=$?
+    grep -E '\[test\]|\[Error\] level|Exception|Fatal' "$OUT/editnav.log" > "$OUT/editnav.test"
+    if [ $code -ne 0 ]; then echo "FAIL editnav (exit $code)"; fail=1; else echo "ok   editnav"; fi
     # 10.6: the Entity window's model — sets, reverts, swaps, copies, adds a component, saves a prefab from an
     # instance — then saves the map and reads it back. The prefabs are copied too: "save as prefab" writes a file.
     rm -rf "$OUT/prefabs"; cp -r prefabs "$OUT/prefabs"

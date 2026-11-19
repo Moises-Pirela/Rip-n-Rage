@@ -101,6 +101,31 @@ namespace RipNRage.Editor
             return new Vector2(nx * w.Width, ny * w.Height);
         }
 
+        /// <summary>11.17: the editor's navigation state — the grid, the collision it could bake from, the broadphase.</summary>
+        private static void NavEditorProbe(string tag)
+        {
+            var w = Application.Current.World;
+            RipNRage.Engine.Ecs.Nav.NavBake.Bounds(w, out _, out _, out _, out var all);
+            var nav = RipNRage.Engine.Ecs.Nav.Navigation.Current;
+            string grid = "none";
+            if (nav != null && nav.TotalSpans > 0)
+            {
+                int tiles = 0, walkable = 0, tight = 0;
+                foreach (var t in nav.Tiles)
+                {
+                    if (t == null) continue;
+                    tiles++;
+                    foreach (var sp in t.Spans)
+                    {
+                        if (sp.Walkable) walkable++;
+                        if ((sp.Flags & RipNRage.Engine.Ecs.Nav.NavSpanFlags.Tight) != 0) tight++;
+                    }
+                }
+                grid = $"tiles {tiles} spans {nav.TotalSpans} walkable {walkable} tight {tight}";
+            }
+            Debug.LogWarning($"[test] nav editor {tag}: grid {grid} | static colliders {all.Count} | broadphase {RipNRage.Engine.Physics.World.StaticCount}");
+        }
+
         private static void Tap(KeyCode k) { Input.SimulateKey(k, true); }
         private static void Release(KeyCode k) { Input.SimulateKey(k, false); }
 
@@ -110,6 +135,12 @@ namespace RipNRage.Editor
             _ed ??= Editor;
             switch (scriptName)
             {
+                case "nav":
+                    // 11.17.0: what the editor knows about navigation. Today: nothing - the preview builds no
+                    // colliders, so there is no geometry to bake from and no grid to draw. This is the baseline the
+                    // phases move: the probe prints the grid, the collision the editor has, and the broadphase.
+                    if (_frame == 10 || _frame == 30) NavEditorProbe("start");
+                    break;
                 case "paint":
                     // paint strokes on the dock top, a second colour, erase a bit, drop a spawner, save
                     if (_frame == 3) Tap(KeyCode.V); if (_frame == 4) Release(KeyCode.V);
