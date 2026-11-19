@@ -45,6 +45,8 @@ namespace RipNRage.Engine.Ecs.Physics
             public Quaternion LastRot;
             public bool WasSleeping;
             public bool HasVelocity;
+            /// <summary>A compound body's other parts (its first is <see cref="Slot"/>); empty for one shape.</summary>
+            public ColliderTable.Slot[] Parts = System.Array.Empty<ColliderTable.Slot>();
         }
 
         private readonly Dictionary<Entity, Registration> _regs = new Dictionary<Entity, Registration>();
@@ -122,6 +124,7 @@ namespace RipNRage.Engine.Ecs.Physics
             var shape = hasShape ? World.Get<ColliderShape>(e) : default;
             bool hasBody = World.Has<Body>(e);
             if (hasBody && World.Has<KinematicMover>(e)) return Skip(e, "a KinematicMover must not also have a Body (use Body.Kind = Kinematic for a solver-driven kinematic body)");
+            if (!hasShape && hasBody && World.Has<CompoundShape>(e)) return RegisterCompound(ctx, e);
             var lt = World.Get<LocalTransform>(e);
             var world = PhysicsApi.World;
 
@@ -172,9 +175,64 @@ namespace RipNRage.Engine.Ecs.Physics
             return true;
         }
 
+        /// <summary>
+        /// A body made of parts (V2): one solver body, one collider slot per part, every slot naming the body and its
+        /// entity — a ray or a contact on any part of a boat is a ray or a contact on the boat.
+        /// </summary>
+        private bool RegisterCompound(SystemContext ctx, Entity e)
+        {
+            var asset = PhysicsAssets.Compounds.Resolve(World.Get<CompoundShape>(e).Asset);
+            if (asset == null || asset.Children.Length == 0) return Skip(e, "a CompoundShape with no parts");
+            var lt = World.Get<LocalTransform>(e);
+            var world = PhysicsApi.World;
+            int layer = 0, mask = ~0, group = 0; bool useMatrix = true;
+            if (World.Has<CollisionFilter>(e))
+            {
+                var f = World.Get<CollisionFilter>(e);
+                layer = f.Layer; mask = f.Mask; group = f.Group; useMatrix = f.UseLayerMatrix;
+            }
+            var body = new SolverBody { ecsAlive = true, entity = e };
+            body.SetupCompound(World.Get<Body>(e), asset);
+            body.collisionMask = mask; body.useLayerMatrix = useMatrix; body.collisionGroup = group;
+            bool trigger = World.Has<Trigger>(e);
+            bool material = World.Has<SurfaceMaterial>(e);
+            var parts = new ColliderTable.Slot[asset.Children.Length];
+            for (int i = 0; i < parts.Length; i++)
+            {
+                var slot = world.AddEcs(e, isStatic: false);
+                slot.ecsShape = asset.Children[i].Shape;
+                slot.layer = layer; slot.isTrigger = trigger; slot.body = body;
+                if (material) { slot.ecsMaterial = World.Get<SurfaceMaterial>(e); slot.hasEcsMaterial = true; }
+                parts[i] = slot;
+            }
+            if (material)
+            {
+                var m = World.Get<SurfaceMaterial>(e);
+                body.staticFriction = m.StaticFriction; body.friction = m.DynamicFriction; body.restitution = m.Restitution;
+            }
+            body.collider = parts[0];
+            body.children = parts;
+            body.ecsPosition = lt.Position; body.ecsRotation = lt.Rotation;
+            body.ReadTransform(); // poses every part
+            world.AddRigidBody(body);
+            foreach (var slot in parts) world.InsertEcs(slot);
+
+            var reg = new Registration { Entity = e, LastPos = lt.Position, LastRot = lt.Rotation, LastScale = lt.Scale, Slot = parts[0], Body = body, Parts = parts };
+            if (World.Has<BodyVelocity>(e))
+            {
+                var v = World.Get<BodyVelocity>(e);
+                body.linearVelocity = v.Linear; body.angularVelocity = v.Angular;
+                reg.LastVel = v.Linear; reg.LastAngVel = v.Angular; reg.HasVelocity = true;
+            }
+            _regs[e] = reg;
+            ctx.Commands.Add(e, new PhysicsHandle { Proxy = ColliderTable.ProxyOf(parts[0]) });
+            return true;
+        }
+
         /// <summary>World shape of a slot that follows a body (rounded kinds exact; box / convex simulate as the body's oriented box).</summary>
         internal static void UpdateWorldShape(ColliderTable.Slot slot, SolverBody body)
         {
+            if (body != null && body.isCompound) { body.UpdateShape(); return; } // a body of parts poses every one of them
             slot.worldShape = body.WorldShape;
             slot.worldBounds = body.worldBounds;
         }
@@ -303,6 +361,12 @@ namespace RipNRage.Engine.Ecs.Physics
                 reg.Slot.body = null;
                 PhysicsApi.World.RemoveEcs(reg.Slot);
             }
+            foreach (var part in reg.Parts)
+            {
+                if (part == null || part == reg.Slot) continue;
+                part.body = null;
+                PhysicsApi.World.RemoveEcs(part);
+            }
         }
     }
 
@@ -371,7 +435,10 @@ namespace RipNRage.Engine.Ecs.Physics
             foreach (var reg in sync.Registrations.Values)
             {
                 var b = reg.Body;
-                if (b == null || !b.interpolate || b.isKinematic || b.sleeping || !b.hasPrev || !World.Has<LocalTransform>(reg.Entity)) continue;
+                // kinematic bodies too: a deck the player stands on has to be drawn at the same point between the
+                // two steps as the player is, or the player is drawn up to a whole step's motion off it - 42 cm at
+                // the 25 m/s of a speedboat, judder into the cabin wall every frame
+                if (b == null || !b.interpolate || (b.sleeping && !b.isKinematic) || !b.hasPrev || !World.Has<LocalTransform>(reg.Entity)) continue;
                 ref var lt = ref World.Get<LocalTransform>(reg.Entity);
                 // Someone moved the entity since the last pose was written (a teleport from gameplay, which runs
                 // between fixed steps): leave it alone, or the blend would overwrite the teleport *and* update

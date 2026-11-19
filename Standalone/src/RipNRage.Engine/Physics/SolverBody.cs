@@ -37,7 +37,7 @@ namespace RipNRage.Engine
     /// contact cache, islands and constraints see SolverBody. The pose lives in <see cref="ecsPosition"/> /
     /// <see cref="ecsRotation"/> (entity origin), which the sync / write-back systems copy to and from LocalTransform.
     /// </summary>
-    public sealed class SolverBody
+    public sealed partial class SolverBody
     {
         private static int _nextId;
         /// <summary>Stable, never reused, monotonically increasing: pair keys and the pair order (lower id generates the pair) use it.</summary>
@@ -151,12 +151,8 @@ namespace RipNRage.Engine
         /// </summary>
         internal void SetupEcs(in Ecs.Physics.Body cfg, in Ecs.Physics.ColliderShape shapeCfg, Vector3 scale)
         {
-            mass = cfg.Mass; isKinematic = cfg.Kind == Ecs.Physics.BodyKind.Kinematic;
-            linearDamping = cfg.LinearDamping; angularDamping = cfg.AngularDamping;
-            useGravity = cfg.UseGravity; gravityScale = cfg.GravityScale; freezeRotation = cfg.FreezeRotation;
-            collisionDetection = cfg.CollisionDetection; interpolate = cfg.Interpolate;
-            canSleep = cfg.CanSleep; sleepThreshold = cfg.SleepThreshold; sleepDelay = cfg.SleepDelay;
-            maxSpeed = cfg.MaxSpeed; maxAngularSpeed = cfg.MaxAngularSpeed;
+            ApplyBodyConfig(in cfg);
+            isCompound = false;
 
             isSphere = false; isCapsule = false;
             Vector3 meshCenter = Vector3.zero;
@@ -199,9 +195,22 @@ namespace RipNRage.Engine
             ComputeMassProperties();
         }
 
+        /// <summary>The body's own settings from its component: mass, kind, damping, gravity, sleeping, limits.</summary>
+        private void ApplyBodyConfig(in Ecs.Physics.Body cfg)
+        {
+            mass = cfg.Mass; isKinematic = cfg.Kind == Ecs.Physics.BodyKind.Kinematic;
+            linearDamping = cfg.LinearDamping; angularDamping = cfg.AngularDamping;
+            useGravity = cfg.UseGravity; gravityScale = cfg.GravityScale; freezeRotation = cfg.FreezeRotation;
+            collisionDetection = cfg.CollisionDetection; interpolate = cfg.Interpolate;
+            canSleep = cfg.CanSleep; sleepThreshold = cfg.SleepThreshold; sleepDelay = cfg.SleepDelay;
+            maxSpeed = cfg.MaxSpeed; maxAngularSpeed = cfg.MaxAngularSpeed;
+        }
+
         /// <summary>Inverse mass and inertia from <see cref="mass"/> and the shape description (isSphere / isCapsule / radius / half extents).</summary>
         internal void ComputeMassProperties()
         {
+            if (isCompound) { ComputeCompoundMassProperties(); return; } // a body of parts: theirs, not one box's
+            inertiaFrame = Quaternion.identity;
             float m = MathF.Max(mass, 1E-04f);
             inverseMass = isKinematic ? 0f : 1f / m;
             if (isSphere)
@@ -253,10 +262,15 @@ namespace RipNRage.Engine
 
         internal void WriteTransform() => SetSourcePose(position - rotation * comOffsetLocal, rotation);
 
-        internal void TouchBroadphase() { if (collider != null && collider.alive) Physics.World.Touch(collider, worldBounds); }
+        internal void TouchBroadphase()
+        {
+            if (isCompound) { TouchCompoundBroadphase(); return; }
+            if (collider != null && collider.alive) Physics.World.Touch(collider, worldBounds);
+        }
 
         internal void UpdateShape()
         {
+            if (isCompound) { UpdateCompoundShapes(); return; }
             if (isSphere || isCapsule)
             {
                 worldBounds = WorldShape.bounds;
@@ -338,17 +352,21 @@ namespace RipNRage.Engine
         // The rotation matrix and the world inverse inertia are cached and re-derived only when the rotation (or the
         // local tensor) changed — the solver applies them thousands of times per substep, the rotation changes once.
         private Matrix3x3 _rotationMatrix = Matrix3x3.Identity, _invInertiaWorld;
-        private Quaternion _cachedRotation = Quaternion.identity;
+        private Quaternion _cachedRotation = Quaternion.identity, _cachedFrame = Quaternion.identity;
         private Vector3 _cachedInertia = new Vector3(float.NaN, 0f, 0f);
 
         private void RefreshRotationCache()
         {
             Quaternion q = rotation;
             bool rotChanged = q.x != _cachedRotation.x || q.y != _cachedRotation.y || q.z != _cachedRotation.z || q.w != _cachedRotation.w;
-            if (!rotChanged && inverseInertiaLocal == _cachedInertia) return;
+            bool frameChanged = inertiaFrame != _cachedFrame;
+            if (!rotChanged && !frameChanged && inverseInertiaLocal == _cachedInertia) return;
             if (rotChanged) { _rotationMatrix = Matrix3x3.FromQuaternion(q); _cachedRotation = q; }
-            _invInertiaWorld = Matrix3x3.RotateDiagonal(_rotationMatrix, inverseInertiaLocal);
-            _cachedInertia = inverseInertiaLocal;
+            // the tensor is diagonal in its principal frame; for one shape that frame is the body's own, for a body of
+            // parts it is turned by inertiaFrame - the only place the difference shows
+            var principal = inertiaFrame == Quaternion.identity ? _rotationMatrix : Matrix3x3.FromQuaternion(q * inertiaFrame);
+            _invInertiaWorld = Matrix3x3.RotateDiagonal(principal, inverseInertiaLocal);
+            _cachedInertia = inverseInertiaLocal; _cachedFrame = inertiaFrame;
         }
 
         /// <summary>World-space inverse inertia applied to a vector: R · I⁻¹ · Rᵀ · v.</summary>

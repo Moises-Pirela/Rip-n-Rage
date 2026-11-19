@@ -74,6 +74,39 @@ namespace RipNRage.Engine
             isBox = true; boxAxisX = ax; boxAxisY = ay; boxAxisZ = az; boxHalf = halfExtents;
         }
 
+        // ------------------------------------------------------------------ moving hulls
+
+        /// <summary>
+        /// A copy that shares <paramref name="template"/>'s topology — its face loops and edges, which do not change
+        /// as a hull moves — with vertex and plane arrays of its own to pose with <see cref="SetPose"/>. A compound
+        /// body's hull children are posed every step, and this is how that costs no allocation.
+        /// </summary>
+        public static ConvexShape PosedCopy(ConvexShape template)
+        {
+            var s = new ConvexShape
+            {
+                vertices = new Vector3[template.vertices.Length], faces = new Face[template.faces.Length],
+                edges = template.edges, hasEdgeFaces = template.hasEdgeFaces, radius = template.radius,
+            };
+            for (int i = 0; i < s.faces.Length; i++) s.faces[i].indices = template.faces[i].indices;
+            return s;
+        }
+
+        /// <summary>This shape as <paramref name="template"/> (local) moved to a pose, in place.</summary>
+        public void SetPose(ConvexShape template, Vector3 position, Quaternion rotation)
+        {
+            for (int i = 0; i < vertices.Length; i++) vertices[i] = position + rotation * template.vertices[i];
+            for (int i = 0; i < faces.Length; i++)
+            {
+                Vector3 n = rotation * template.faces[i].normal;
+                faces[i].normal = n;
+                faces[i].dist = template.faces[i].dist + Vector3.Dot(n, position);
+            }
+            center = position + rotation * template.center;
+            radius = template.radius;
+            isBox = false;
+        }
+
         /// <summary>Box-local coordinates of a world point.</summary>
         public Vector3 BoxLocal(Vector3 p) { Vector3 d = p - center; return new Vector3(Vector3.Dot(d, boxAxisX), Vector3.Dot(d, boxAxisY), Vector3.Dot(d, boxAxisZ)); }
 

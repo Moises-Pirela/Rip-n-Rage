@@ -53,6 +53,12 @@ namespace RipNRage.Engine.Ecs.Physics
     {
         /// <summary>Displaced volume in m³ (0 = the collider's own volume).</summary>
         public float Volume;
+        /// <summary>
+        /// The displacement box — the hull's envelope, in the entity's frame — when it is not the collider: a body
+        /// made of parts (a hull, a cabin, rails) floats on the space its hull encloses, not on its parts. Zero size =
+        /// the entity's own <see cref="ColliderShape"/>.
+        /// </summary>
+        public Vector3 Center, Size;
         /// <summary>Samples per axis over the shape's box (2 = 8 samples, 3 = 27). More is smoother and dearer.</summary>
         public int Resolution;
         /// <summary>Viscous drag: N·s/m for every m² the hull shows the flow. The small term, and what settles a
@@ -133,8 +139,11 @@ namespace RipNRage.Engine.Ecs.Physics
         public float planingTrim = 4f;
         [InspectRange(0, 1, 0.05f), InspectTip("where the planing lift acts, as a fraction of the half-length aft of the middle (aft is stable; too far aft buries the bow)")]
         public float planingCentre = 0.5f;
+        [InspectTip("the displacement box (centre and size, the entity's frame) when it is not the collider - a hull of parts floats on its envelope; 0 0 0 = the collider")]
+        public float[] center = { 0, 0, 0 }, size = { 0, 0, 0 };
         public override Buoyancy Bake() => new Buoyancy
         {
+            Center = PhysicsConfigUtil.Vec(center), Size = PhysicsConfigUtil.Vec(size),
             Volume = volume, Resolution = Mathf.Clamp(resolution, 1, 4),
             LinearDrag = linearDrag, QuadraticDrag = quadraticDrag, AngularDrag = angularDrag,
             HeaveDamping = heaveDamping, RockDamping = rockDamping, PlaningLift = planingLift, PlaningTrim = planingTrim, PlaningCentre = planingCentre,
@@ -147,13 +156,14 @@ namespace RipNRage.Engine.Ecs.Physics
     /// surface. Runs before the solver steps, so the forces it adds are in this step's solve.
     /// </summary>
     [UpdateAfter(typeof(PhysicsSyncSystem)), UpdateBefore(typeof(PhysicsStepSystem))]
+    [Reads(typeof(ColliderShape))] // the displacement, when the component does not name a box of its own
     [Exclusive] // adds forces straight onto solver bodies
     public sealed class BuoyancySystem : SystemBase, IFixedTick
     {
         private Query _q;
         private PhysicsSyncSystem _sync;
         public override void OnCreate() =>
-            _q = World.Query().With<Buoyancy>().WithReadOnly<LocalTransform>().WithReadOnly<ColliderShape>().Build();
+            _q = World.Query().With<Buoyancy>().WithReadOnly<LocalTransform>().Build();
 
         public void FixedTick(SystemContext ctx)
         {
@@ -165,20 +175,24 @@ namespace RipNRage.Engine.Ecs.Physics
 
             foreach (var chunk in _q)
             {
-                var floats = chunk.Get<Buoyancy>(); var shapes = chunk.Get<ColliderShape>(); var ents = chunk.Entities;
+                var floats = chunk.Get<Buoyancy>(); var ents = chunk.Entities;
                 for (int i = 0; i < chunk.Length; i++)
                 {
                     if (!chunk.Includes(i)) continue;
                     var body = _sync.BodyOf(ents[i]);
                     if (body == null || body.isKinematic) { floats[i].InWater = false; floats[i].Submerged = 0f; continue; }
-                    Float(ref floats[i], body, in shapes[i], gravity, ctx.DeltaTime);
+                    // what displaces water: the box the component names, or failing that the collider
+                    Vector3 boxCentre, half;
+                    if (floats[i].Size.x > 0f && floats[i].Size.y > 0f && floats[i].Size.z > 0f) { boxCentre = floats[i].Center; half = floats[i].Size * 0.5f; }
+                    else if (World.Has<ColliderShape>(ents[i])) { var cs = World.Get<ColliderShape>(ents[i]); boxCentre = cs.Center; half = HalfExtents(in cs); }
+                    else { floats[i].InWater = false; floats[i].Submerged = 0f; continue; } // nothing to float on
+                    Float(ref floats[i], body, boxCentre, half, gravity, ctx.DeltaTime);
                 }
             }
         }
 
-        private static void Float(ref Buoyancy b, RipNRage.Engine.SolverBody body, in ColliderShape shape, float gravity, float dt)
+        private static void Float(ref Buoyancy b, RipNRage.Engine.SolverBody body, Vector3 boxCentre, Vector3 half, float gravity, float dt)
         {
-            Vector3 half = HalfExtents(in shape);
             int n = Mathf.Clamp(b.Resolution, 1, 4);
             int count = n * n * n;
             float shapeVolume = MathF.Max(8f * half.x * half.y * half.z, 1e-4f);
@@ -187,7 +201,10 @@ namespace RipNRage.Engine.Ecs.Physics
             float sampleVolume = displaced / count;
 
             var rotation = body.rotation;
-            Vector3 centre = body.position;
+            // the box is placed from the entity's origin, not from the centre of mass: the two differ for any shape
+            // off its centre, and for every body made of parts. (Measuring from the centre of mass, as this first
+            // did, put an off-centre box's samples twice its offset away.)
+            Vector3 origin = body.position - rotation * body.comOffsetLocal;
             float wet = 0f; // the sum of every sample's fill: how much of the body is under, continuously
             // a sample stands for a cell of the shape this tall; its centre is in the middle of it
             float cell = MathF.Max(2f * half.y / n, 1e-3f);
@@ -201,7 +218,7 @@ namespace RipNRage.Engine.Ecs.Physics
                     half.x * (2f * (ix + 0.5f) / n - 1f),
                     half.y * (2f * (iy + 0.5f) / n - 1f),
                     half.z * (2f * (iz + 0.5f) / n - 1f));
-                Vector3 point = centre + rotation * (local + shape.Center);
+                Vector3 point = origin + rotation * (boxCentre + local);
 
                 // How much of this sample's cell is under. `depth` is measured at the cell's centre, so the cell is
                 // wet from half a cell above the surface to fully under half a cell below it - and the force must
@@ -283,7 +300,7 @@ namespace RipNRage.Engine.Ecs.Physics
             if (b.PlaningLift > 0f && speed > 2f)
             {
                 Vector3 up = body.rotation * Vector3.up;
-                Vector3 bottom = body.position + body.rotation * (shape.Center + new Vector3(0f, -half.y, 0f));
+                Vector3 bottom = origin + rotation * (boxCentre + new Vector3(0f, -half.y, 0f));
                 // the bottom has to be in the water to plane on it (a little above still catches the surface)
                 if (WaterSurface.DepthAt(bottom) > -0.25f)
                 {

@@ -279,6 +279,9 @@ namespace RipNRage.Engine.Ecs.Physics
                 if (spring < 0f) v.y += MathF.Max(spring, -m.MaxRideAcceleration) * dt; // stick: the spring would pull
 
                 var ground = _sync?.BodyOf(m.Ground);
+                // What carries an interpolated character is drawn interpolated with it, so the two are drawn at the
+                // same point between steps and the character stands on its deck on screen as well as in the solver.
+                if (ground != null && b.interpolate) ground.interpolate = true;
                 ride.Place(b, ground, m.GroundPoint, Vector3.up, m.GroundDistance, m.RideHeight);
                 ride.stiffness = b.mass * omega * omega;            // the rider's own spring: the sag is g/ω² on any ground
                 ride.damping = 2f * m.RideDamping * b.mass * omega;

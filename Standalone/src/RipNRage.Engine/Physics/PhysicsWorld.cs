@@ -546,6 +546,17 @@ namespace RipNRage.Engine
                 e.movingHullShape = s; e.movingHull = h; // publish after building (main-thread callers; a race only rebuilds)
                 return h;
             }
+            if (s.type == ShapeType.Hull && e.polytope != null)
+            {
+                // a moving convex part of a compound body: its planes, rebuilt once per pose it is asked about
+                if (e.movingHull != null && e.movingHullStamp == e.poseStamp) return e.movingHull;
+                var p = e.polytope;
+                var planes = new Plane[p.faces.Length];
+                for (int i = 0; i < planes.Length; i++) planes[i] = new Plane(p.faces[i].normal, p.faces[i].dist);
+                var h = ConvexHull.FromPlanes(planes, (Vector3[])p.vertices.Clone(), true);
+                e.movingHull = h; e.movingHullStamp = e.poseStamp;
+                return h;
+            }
             return ConvexHull.FromBounds(e.worldBounds);
         }
 

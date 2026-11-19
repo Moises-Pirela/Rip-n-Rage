@@ -52,6 +52,7 @@ internal static class Program
             PlatformChecks.Run(True);
             BuoyancyChecks.Run(True);
             RideChecks.Run(True);
+            CompoundChecks.Run(True);
             Layer3Checks.Run(True);
             Layer4Checks.Run(True);
             Layer5Checks.Run(True);

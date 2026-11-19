@@ -108,11 +108,52 @@ namespace RipNRage.Engine.Ecs.Physics
         }
     }
 
+    /// <summary>One part of a compound body: a shape, where it sits in the body's frame, and how dense it is.</summary>
+    public struct CompoundChild
+    {
+        /// <summary>The part's shape in its own frame (<see cref="ColliderShape.Center"/> offsets it within that frame;
+        /// <see cref="ColliderShape.IsStatic"/> means nothing here — the part moves with its body).</summary>
+        public ColliderShape Shape;
+        /// <summary>Where the part's frame sits, relative to the body entity's origin.</summary>
+        public Vector3 Position;
+        public Quaternion Rotation;
+        /// <summary>Relative density: how the body's mass is shared out (a steel keel 8, a cabin 1). 0 = 1.</summary>
+        public float Density;
+    }
+
+    /// <summary>
+    /// The parts of a compound body — a hull, its cabin, its rails — shared by every body built from it (V2). One
+    /// rigid body, many colliders: each part collides as itself, and the body moves as one, with the mass and inertia
+    /// of all of them put together.
+    /// </summary>
+    public sealed class CompoundShapeAsset
+    {
+        public readonly CompoundChild[] Children;
+        public CompoundShapeAsset(CompoundChild[] children)
+        {
+            Children = children ?? Array.Empty<CompoundChild>();
+            for (int i = 0; i < Children.Length; i++)
+                if (Children[i].Rotation == default) Children[i].Rotation = Quaternion.identity;
+        }
+    }
+
+    /// <summary>
+    /// "This body is made of several shapes": the entity carries a <see cref="Body"/> and this instead of a single
+    /// <see cref="ColliderShape"/>. The parts are shared data, referenced by handle like every other shape asset.
+    /// </summary>
+    [NotInPreview] public struct CompoundShape : IComponent
+    {
+        public AssetHandle<CompoundShapeAsset> Asset;
+    }
+
     /// <summary>Shape assets colliders reference by handle.</summary>
     public static class PhysicsAssets
     {
         public static readonly AssetRegistry<ConvexColliderAsset> Hulls = new AssetRegistry<ConvexColliderAsset>();
         public static readonly AssetRegistry<TriangleMesh> Meshes = new AssetRegistry<TriangleMesh>();
+        public static readonly AssetRegistry<CompoundShapeAsset> Compounds = new AssetRegistry<CompoundShapeAsset>();
+        /// <summary>Interns the parts of a compound body.</summary>
+        public static AssetHandle<CompoundShapeAsset> AddCompound(string name, CompoundChild[] children) => Compounds.Intern(new CompoundShapeAsset(children), name);
         /// <summary>Interns explicit triangles (terrain, level meshes built in code) as a collider mesh.</summary>
         public static AssetHandle<TriangleMesh> AddMesh(string name, Vector3[] vertices, int[] triangles) => Meshes.Intern(new TriangleMesh(vertices, triangles), name);
     }
@@ -162,6 +203,49 @@ namespace RipNRage.Engine.Ecs.Physics
         [InspectTip("starting velocity, m/s and rad/s")]
         public float[] linear = { 0, 0, 0 }, angular = { 0, 0, 0 };
         public override BodyVelocity Bake() => new BodyVelocity { Linear = PhysicsConfigUtil.Vec(linear), Angular = PhysicsConfigUtil.Vec(angular) };
+    }
+
+    /// <summary>One part of a compound body, as a prefab writes it: a shape (any kind a collider can be), where it sits
+    /// in the body's frame, how it is turned (Euler degrees) and how dense it is.</summary>
+    public sealed class CompoundPartConfig
+    {
+        public ColliderShapeConfig shape = new ColliderShapeConfig();
+        [InspectTip("where the part sits, relative to the body's origin")]
+        public float[] position = { 0, 0, 0 };
+        [InspectTip("how the part is turned, Euler degrees")]
+        public float[] rotation = { 0, 0, 0 };
+        [InspectTip("relative density: how the body's mass is shared out among its parts")]
+        public float density = 1f;
+    }
+
+    /// <summary>A body made of parts (V2): a hull and its cabin, a ship and its decks. Goes with a <see cref="Body"/> in place of a ColliderShape.</summary>
+    public sealed class CompoundShapeConfig : ComponentConfig<CompoundShape>
+    {
+        public CompoundPartConfig[] parts = Array.Empty<CompoundPartConfig>();
+        [System.Text.Json.Serialization.JsonIgnore] private AssetHandle<CompoundShapeAsset> _baked;
+        [System.Text.Json.Serialization.JsonIgnore] private bool _hasBaked;
+
+        public override CompoundShape Bake()
+        {
+            // one asset per config, however many instances the prefab spawns: they share their parts
+            if (!_hasBaked)
+            {
+                var children = new CompoundChild[parts?.Length ?? 0];
+                for (int i = 0; i < children.Length; i++)
+                {
+                    var p = parts[i] ?? new CompoundPartConfig();
+                    var r = PhysicsConfigUtil.Vec(p.rotation);
+                    children[i] = new CompoundChild
+                    {
+                        Shape = (p.shape ?? new ColliderShapeConfig()).Bake(), Position = PhysicsConfigUtil.Vec(p.position),
+                        Rotation = Quaternion.Euler(r.x, r.y, r.z), Density = p.density,
+                    };
+                }
+                _baked = PhysicsAssets.AddCompound("compound-" + Guid.NewGuid().ToString("N"), children);
+                _hasBaked = true;
+            }
+            return new CompoundShape { Asset = _baked };
+        }
     }
 
     public sealed class ColliderShapeConfig : ComponentConfig<ColliderShape>

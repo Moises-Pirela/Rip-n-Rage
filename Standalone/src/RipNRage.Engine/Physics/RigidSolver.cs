@@ -739,6 +739,7 @@ namespace RipNRage.Engine
 
         private void CollectContacts(PhysicsWorld world, SolverBody a, Worker w)
         {
+            if (a.isCompound) { CollectCompoundContacts(world, a, w); return; }
             var candidates = w.candidates;
             candidates.Clear();
             if (a.collider != null && a.collider.isTrigger) return; // a trigger body senses (TriggerSystem); it never makes contacts
@@ -780,9 +781,107 @@ namespace RipNRage.Engine
                     }
                     continue;
                 }
-                bool contact = b != null ? CollideBodies(a, b, w.scratch) : CollideStatic(a, s, w);
+                // a compound's part is collided as that part, not as the box the whole body fits in
+                bool contact = b != null && !b.isCompound ? CollideBodies(a, b, w.scratch) : CollideStatic(a, s, w);
                 if (contact) Commit(w, a, b, s, key);
             }
+        }
+
+        /// <summary>Marks the keys of part-by-part pairs, so they can never coincide with a single body's.</summary>
+        private const long PartKey = 0x4000000000000000L;
+
+        /// <summary>
+        /// Contacts of a compound body: each part queries the broadphase for itself and collides as itself. The pair
+        /// rules are a single body's — the lower id generates a pair between two awake bodies, a sleeping partner is
+        /// woken by a moving one, a negative group or a joint without collideConnected never collides — applied per
+        /// part, so each pair of slots is generated exactly once whichever side holds the compound.
+        /// </summary>
+        private void CollectCompoundContacts(PhysicsWorld world, SolverBody a, Worker w)
+        {
+            var candidates = w.candidates;
+            float wake = a.sleepThreshold * a.sleepThreshold * 4f;
+            bool aMoving = a.linearVelocity.sqrMagnitude > wake || a.angularVelocity.sqrMagnitude > wake;
+            var filter = a.Filter;
+            for (int ci = 0; ci < a.children.Length; ci++)
+            {
+                var part = a.children[ci];
+                if (part == null || !part.alive || part.isTrigger) continue;
+                candidates.Clear();
+                Bounds region = part.worldBounds.Expanded(ContactGeneration.ContactMargin + 0.01f);
+                world.QueryBoundsConcurrent(region, filter, candidates);
+                w.queries++;
+                foreach (var s in candidates)
+                {
+                    SolverBody b = s.body;
+                    if (b == a) continue; // a body never collides with itself, part with part
+                    if (b != null)
+                    {
+                        if (!b.live) continue;
+                        if (a.collisionGroup != 0 && a.collisionGroup == b.collisionGroup && a.collisionGroup < 0) continue;
+                        if (_noCollide.Contains(PairKey(a, b))) continue;
+                        if (!b.isKinematic)
+                        {
+                            if (b.sleeping) { if (aMoving) w.wake.Add(b); }
+                            else if (a.id > b.id) continue;
+                        }
+                    }
+                    long key = (((long)part.uid << 32) ^ (long)s.uid) | PartKey;
+                    if (s.mesh != null)
+                    {
+                        var mesh = s.mesh;
+                        var tris = w.tris;
+                        tris.Clear();
+                        mesh.QueryTriangles(region, tris);
+                        foreach (int t in tris)
+                        {
+                            mesh.GetTriangle(t, out Vector3 p0, out Vector3 p1, out Vector3 p2);
+                            w.triangle.SetTriangle(p0, p1, p2);
+                            bool hit = part.IsRounded
+                                ? ContactGeneration.RoundedVsConvex(part.worldShape, w.triangle, w.scratch)
+                                : ContactGeneration.ConvexVsConvex(PolytopeOf(part, w), w.triangle, w.scratch, w.triangle.triangleNormal);
+                            if (hit) Commit(w, a, null, part, s, key ^ ((long)(t + 1) << 20));
+                        }
+                        continue;
+                    }
+                    if (CollideParts(part, s, w)) Commit(w, a, b, part, s, key);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Contacts between two collider slots, normal from <paramref name="pa"/> towards <paramref name="pb"/>. A slot
+        /// belonging to a single-shape body is collided by that body's live shape (exactly what CollideBodies uses);
+        /// every other slot by its own posed world shape.
+        /// </summary>
+        private static bool CollideParts(ColliderTable.Slot pa, ColliderTable.Slot pb, Worker w)
+        {
+            var scratch = w.scratch;
+            var bb = pb.body;
+            bool single = bb != null && !bb.isCompound;
+            bool aRound = pa.IsRounded;
+            bool bRound = single ? bb.isRounded : pb.IsRounded;
+            if (aRound && bRound)
+            {
+                CollisionShape sb = single ? bb.WorldShape : pb.worldShape;
+                return ContactGeneration.RoundedVsRounded(pa.worldShape, in sb, scratch);
+            }
+            if (aRound) return ContactGeneration.RoundedVsConvex(pa.worldShape, single ? bb.shape : PolytopeOf(pb, w), scratch);
+            if (bRound)
+            {
+                CollisionShape sb = single ? bb.WorldShape : pb.worldShape;
+                bool hit = ContactGeneration.RoundedVsConvex(in sb, PolytopeOf(pa, w), scratch);
+                if (hit) scratch.normal = -scratch.normal; // the routine's normal points from its second shape to its first
+                return hit;
+            }
+            return ContactGeneration.ConvexVsConvex(PolytopeOf(pa, w), single ? bb.shape : PolytopeOf(pb, w), scratch);
+        }
+
+        /// <summary>A slot's world polytope: its own when it has one, else its box (a static box keeps none).</summary>
+        private static ConvexShape PolytopeOf(ColliderTable.Slot s, Worker w)
+        {
+            if (s.polytope != null) return s.polytope;
+            w.aabb.SetBox(s.worldShape.center, s.worldShape.halfExtents, s.worldShape.rotation);
+            return w.aabb;
         }
 
         /// <summary>Contacts between two rigid bodies (normal from A to B).</summary>
@@ -819,16 +918,18 @@ namespace RipNRage.Engine
             return ContactGeneration.ConvexVsConvex(a.shape, other, w.scratch);
         }
 
-        private void Commit(Worker w, SolverBody a, SolverBody b, ColliderTable.Slot s, long key)
+        private void Commit(Worker w, SolverBody a, SolverBody b, ColliderTable.Slot s, long key) => Commit(w, a, b, a.collider, s, key);
+
+        private void Commit(Worker w, SolverBody a, SolverBody b, ColliderTable.Slot partA, ColliderTable.Slot s, long key)
         {
             var scratch = w.scratch;
             if (scratch.count == 0) return;
             var m = NewManifold(w);
-            m.bodyA = a; m.bodyB = b; m.colliderA = a.collider; m.colliderB = s;
+            m.bodyA = a; m.bodyB = b; m.colliderA = partA; m.colliderB = s;
             m.normal = scratch.normal; m.count = scratch.count;
             for (int i = 0; i < m.count; i++) m.points[i] = scratch.points[i];
             m.key = key; m.item = w.item;
-            Surface(a.collider, a, out float musA, out float mudA, out float restA, out CombineMode fcA, out CombineMode rcA);
+            Surface(partA, a, out float musA, out float mudA, out float restA, out CombineMode fcA, out CombineMode rcA);
             Surface(s, b, out float musB, out float mudB, out float restB, out CombineMode fcB, out CombineMode rcB);
             CombineMode fc = PhysicsMaterial.Pick(fcA, fcB), rc = PhysicsMaterial.Pick(rcA, rcB);
             m.staticFriction = MathF.Max(0f, PhysicsMaterial.Combine(musA, musB, fc));
@@ -869,9 +970,29 @@ namespace RipNRage.Engine
         {
             if (b.collisionDetection == CollisionDetectionMode.Discrete || b.sleeping || b.isKinematic) return;
             Vector3 motion = b.linearVelocity * h;
+            if (b.isCompound)
+            {
+                // every part sweeps for itself: a hull's rail can tunnel through a quay as well as its keel can
+                float fastest = 1f;
+                for (int i = 0; i < b.children.Length; i++)
+                {
+                    CollisionShape part = b.PartSweepShape(i);
+                    float f = SweepFraction(world, b, in part, motion, h);
+                    if (f < fastest) fastest = f;
+                }
+                if (fastest < 1f) b.motionScale = MathF.Min(b.motionScale, fastest);
+                return;
+            }
             CollisionShape shape = b.WorldShape;
+            float fraction = SweepFraction(world, b, in shape, motion, h);
+            if (fraction < 1f) b.motionScale = MathF.Min(b.motionScale, fraction);
+        }
+
+        /// <summary>How much of this substep's motion <paramref name="shape"/> can make before it touches something (1 = all of it).</summary>
+        private float SweepFraction(PhysicsWorld world, SolverBody b, in CollisionShape shape, Vector3 motion, float h)
+        {
             float threshold = 0.5f * shape.MinExtent;
-            if (motion.sqrMagnitude < threshold * threshold) return;
+            if (motion.sqrMagnitude < threshold * threshold) return 1f;
             CcdSweepsThisStep++;
             float fraction = 1f;
             QueryFilter bodyFilter = b.Filter;
@@ -888,12 +1009,23 @@ namespace RipNRage.Engine
                     if (o.collider != null && !bodyFilter.Accepts(o.collider)) continue;
                     Vector3 otherMotion = o.linearVelocity * h;
                     if (!o.worldBounds.Swept(otherMotion).Intersects(shape.bounds.Swept(motion))) continue;
+                    if (o.isCompound)
+                    {
+                        // against each of its parts, not the box it fits in
+                        for (int k = 0; k < o.children.Length; k++)
+                        {
+                            CollisionShape ps = o.PartSweepShape(k);
+                            if (ConvexDistance.Sweep(in shape, motion, in ps, otherMotion, fraction, ccdSkin, out SweepResult pr) && pr.fraction < fraction)
+                                fraction = MathF.Max(0f, pr.fraction);
+                        }
+                        continue;
+                    }
                     CollisionShape os = o.WorldShape;
                     if (ConvexDistance.Sweep(in shape, motion, in os, otherMotion, fraction, ccdSkin, out SweepResult r) && r.fraction < fraction)
                         fraction = MathF.Max(0f, r.fraction);
                 }
             }
-            if (fraction < 1f) b.motionScale = MathF.Min(b.motionScale, fraction);
+            return fraction;
         }
 
         // ------------------------------------------------------------------ reporting
