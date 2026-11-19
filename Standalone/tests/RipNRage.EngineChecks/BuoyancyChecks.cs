@@ -129,12 +129,23 @@ internal static class BuoyancyChecks
         w.Add(boat, new VesselControl { Throttle = 1f });
         w.Sync();
 
-        for (int i = 0; i < 900; i++) w.Update(Dt);
+        // run it up to speed, then watch it: a planing hull that porpoises trims up, loses lift, drops its stern and
+        // lifts its propeller out of the water, over and over
+        for (int i = 0; i < 600; i++) w.Update(Dt);
+        float trimLow = 90f, trimHigh = -90f; int dry = 0;
+        for (int i = 0; i < 300; i++)
+        {
+            w.Update(Dt);
+            float t0 = Mathf.Asin(Mathf.Clamp((w.Get<LocalTransform>(boat).Rotation * Vector3.forward).y, -1f, 1f)) * Mathf.Rad2Deg;
+            trimLow = Mathf.Min(trimLow, t0); trimHigh = Mathf.Max(trimHigh, t0);
+            if (!w.Get<VesselEngine>(boat).Biting) dry++;
+        }
         float speed = w.Get<BodyVelocity>(boat).Linear.magnitude;
         True(speed > 8f, $"full throttle drives the hull along (speed={speed:0.0} m/s)");
         True(speed < 40f, $"and drag holds it to a top speed instead of accelerating for ever (speed={speed:0.0} m/s)");
-        var trim = Mathf.DeltaAngle(w.Get<LocalTransform>(boat).Rotation.eulerAngles.x, 0f);
-        True(Mathf.Abs(trim) < 12f, $"it runs at a sane trim rather than rearing up or burying its bow ({trim:0.0}°)");
+        True(trimHigh - trimLow < 1f, $"it runs steady instead of porpoising (trim between {trimLow:0.0}° and {trimHigh:0.0}° over five seconds)");
+        True(dry == 0, $"and its propeller stays in the water the whole time (out for {dry} of 300 steps)");
+        True(Mathf.Abs(trimLow) < 8f && Mathf.Abs(trimHigh) < 8f, $"at a trim that neither rears up nor buries the bow ({trimLow:0.0}°; a box runs slightly bow-down - see PlaningCentre)");
         True(w.Get<Buoyancy>(boat).Submerged < 0.75f, "and rides up as it goes, instead of ploughing");
 
         // a hull out of the water has nothing to push against
@@ -201,13 +212,9 @@ internal static class BuoyancyChecks
 
         float sank = empty - loaded;
         True(w.Get<CharacterMotor>(crew[0]).IsGrounded, "the crew are standing on the raft, not in it");
-        // Their weight reaches the raft: it floats lower with them aboard than without. How *much* lower is far
-        // less than their 320 kg would put it, and that is a known limit rather than a target met - the ride
-        // spring holding each of them is ~113 kN/m against the raft's ~19 kN/m of buoyancy, so as the raft gives
-        // under them the spring slackens and takes the load straight back off it. The horizontal push below has
-        // no such spring to fight and transfers properly.
-        True(sank > 0f, $"a raft floats lower with four aboard ({sank * 1000f:0.00} mm), because their weight reaches it");
-
+        // all of their weight reaches it: 320 kg on 6 m³ of displacement spread over 36 m² of box is 320 / (1025 × 12) m
+        float expected = 4f * 80f / (WaterSurface.Density * 12f);
+        True(Mathf.Abs(sank - expected) < 0.002f, $"a raft floats lower with four aboard by their whole weight ({sank * 1000f:0.0} mm, expected {expected * 1000f:0.0} mm)");
 
         // and a run across it pushes back
         var before = w.Get<BodyVelocity>(raft).Linear;

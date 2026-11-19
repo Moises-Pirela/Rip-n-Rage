@@ -318,6 +318,18 @@ namespace RipNRage.Engine.Ecs
         internal void EndIteration() => Interlocked.Decrement(ref _iterating);
 
         private readonly bool _ownsJobs;
-        public void Dispose() { if (_ownsJobs) Jobs.Dispose(); }
+        /// <summary>
+        /// Ends the simulation if it is still running, then releases the job system. A world starts its simulation
+        /// by itself on the first <see cref="Update"/>, so it has to end it by itself too: the end is where systems
+        /// hand back what they hold outside the world — above all the physics sync, whose bodies and colliders live
+        /// in the one global physics world. A world disposed without it left every collider it ever made behind, still
+        /// simulated, for the next world to stand on (the checks had been placing each scenario at a different x to
+        /// stay out of each other's ghosts).
+        /// </summary>
+        public void Dispose()
+        {
+            EndSim();
+            if (_ownsJobs) Jobs.Dispose();
+        }
     }
 }

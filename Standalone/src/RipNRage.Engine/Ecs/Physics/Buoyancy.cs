@@ -74,6 +74,12 @@ namespace RipNRage.Engine.Ecs.Physics
         /// </summary>
         public float HeaveDamping;
         /// <summary>
+        /// The same for pitch and roll: how hard the water damps a hull rocking, as a fraction of critical for its own
+        /// righting stiffness (ρg times the second moment of its waterplane). What stops a planing hull porpoising —
+        /// trimming bow-up, losing lift, dropping its stern, lifting its propeller out of the water and doing it again.
+        /// </summary>
+        public float RockDamping;
+        /// <summary>
         /// Lift coefficient of the hull's bottom as a planing surface (0 = never planes: a displacement hull that
         /// ploughs through the water at hull speed for ever).
         ///
@@ -90,6 +96,15 @@ namespace RipNRage.Engine.Ecs.Physics
         /// the water turns none of it aside and so never planes at all.
         /// </summary>
         public float PlaningTrim;
+        /// <summary>
+        /// Where the planing lift acts, as a fraction of the half-length aft of the middle. Aft of the centre of mass
+        /// is what makes planing stable — lift the bow and more lift behind the centre puts it back down — but too far
+        /// aft and it drives the bow under. Real planing hulls carry it roughly 0.35–0.45 of the length from the
+        /// transom — but a box hull is not a planing hull: half-way aft is the setting that runs a box steadily (it
+        /// trims about 3° bow-down at speed), and moving it forward on a box buries the bow or launches the hull.
+        /// Realistic running trim comes from a hull's shape, which is what the convex-brush hulls are for.
+        /// </summary>
+        public float PlaningCentre;
         // ---- state, for whoever wants to know (an engine that must not drive in the air; the VFX) ----
         /// <summary>0 = out of the water, 1 = under it.</summary>
         public float Submerged;
@@ -110,15 +125,19 @@ namespace RipNRage.Engine.Ecs.Physics
         public float angularDrag = 0.9f;
         [InspectRange(0, 1, 0.05f), InspectTip("how hard the water damps rise and fall, as a fraction of critical (0 = bobs for ever, 1 = no overshoot)")]
         public float heaveDamping = 0.35f;
+        [InspectRange(0, 1, 0.05f), InspectTip("how hard the water damps pitch and roll, as a fraction of critical (what stops a fast hull porpoising)")]
+        public float rockDamping = 0.35f;
         [InspectTip("lift coefficient of the hull bottom as a planing surface (0 = a displacement hull, ploughing along at hull speed)")]
         public float planingLift;
         [InspectRange(0, 15, 0.5f), InspectTip("the bottom's built-in angle to the keel (deadrise plus running trim); a flat box planes on nothing")]
         public float planingTrim = 4f;
+        [InspectRange(0, 1, 0.05f), InspectTip("where the planing lift acts, as a fraction of the half-length aft of the middle (aft is stable; too far aft buries the bow)")]
+        public float planingCentre = 0.5f;
         public override Buoyancy Bake() => new Buoyancy
         {
             Volume = volume, Resolution = Mathf.Clamp(resolution, 1, 4),
             LinearDrag = linearDrag, QuadraticDrag = quadraticDrag, AngularDrag = angularDrag,
-            HeaveDamping = heaveDamping, PlaningLift = planingLift, PlaningTrim = planingTrim,
+            HeaveDamping = heaveDamping, RockDamping = rockDamping, PlaningLift = planingLift, PlaningTrim = planingTrim, PlaningCentre = planingCentre,
         };
     }
 
@@ -169,7 +188,9 @@ namespace RipNRage.Engine.Ecs.Physics
 
             var rotation = body.rotation;
             Vector3 centre = body.position;
-            int under = 0;
+            float wet = 0f; // the sum of every sample's fill: how much of the body is under, continuously
+            // a sample stands for a cell of the shape this tall; its centre is in the middle of it
+            float cell = MathF.Max(2f * half.y / n, 1e-3f);
 
             for (int ix = 0; ix < n; ix++)
             for (int iy = 0; iy < n; iy++)
@@ -182,15 +203,16 @@ namespace RipNRage.Engine.Ecs.Physics
                     half.z * (2f * (iz + 0.5f) / n - 1f));
                 Vector3 point = centre + rotation * (local + shape.Center);
 
+                // How much of this sample's cell is under. `depth` is measured at the cell's centre, so the cell is
+                // wet from half a cell above the surface to fully under half a cell below it - and the force must
+                // follow that the whole way. A first version skipped any sample whose *centre* was dry, which cut
+                // the lift from half a cell's worth to nothing in one step as the centre crossed the surface: a
+                // light hull that floated with a row of samples near the waterline chattered across that edge for
+                // ever and never came to rest, and every load measured on it was an average over the chatter.
                 float depth = WaterSurface.DepthAt(point);
-                if (depth <= 0f) continue;
-
-                // How much of this sample is under. It stands for a cell of the shape, and `depth` is measured at
-                // the cell's *centre*: a centre exactly at the surface is half under, not dry. Without the half
-                // the whole body floats half a cell too deep.
-                float cell = MathF.Max(2f * half.y / n, 1e-3f);
                 float fill = Mathf.Clamp01(depth / cell + 0.5f);
-                under++;
+                if (fill <= 0f) continue;
+                wet += fill;
 
                 // up, by the weight of the water this sample displaces, at the place it displaces it: partial
                 // submersion, trim and the righting of a heeled hull all fall out of where these land
@@ -198,8 +220,10 @@ namespace RipNRage.Engine.Ecs.Physics
                 body.AddForceAtPosition(new Vector3(0f, up, 0f), point);
             }
 
-            b.Submerged = count > 0 ? (float)under / count : 0f;
-            b.InWater = under > 0;
+            // continuous too, for the same reason: the drag and the heave damping scale by it, and a count of whole
+            // samples would switch them on and off like a relay as the hull bobbed
+            b.Submerged = count > 0 ? wet / count : 0f;
+            b.InWater = wet > 0f;
 
             if (!b.InWater) return;
 
@@ -226,15 +250,27 @@ namespace RipNRage.Engine.Ecs.Physics
             // Heave: the water damps rise and fall. The spring is the body's own - a waterplane of area A pushes
             // back with ρgA for every metre it is pressed down - so the damping that matters is a fraction of
             // critical for *that* spring, which is the same few tenths whatever the hull weighs.
+            // The stiffness of those springs is the sampled buoyancy's: every metre of waterplane carries the weight of
+            // the water the samples stand for, which is the displacement spread through the shape's box.
+            float displacementRatio = displaced / shapeVolume;
+            float waterSpring = WaterSurface.Density * gravity * displacementRatio;
             if (b.HeaveDamping > 0f)
             {
-                float waterplane = 4f * half.x * half.z;
-                float stiffness = WaterSurface.Density * gravity * waterplane;
+                float stiffness = waterSpring * 4f * half.x * half.z; // ρg × waterplane area
                 float critical = 2f * MathF.Sqrt(MathF.Max(stiffness * body.mass, 0f));
                 float vy = body.linearVelocity.y;
-                float damp = Mathf.Clamp01(b.HeaveDamping) * critical * vy * b.Submerged;
+                // the full fraction whenever the hull is in the water: it is a property of floating, not of how deep
+                // (scaling it by the wetted fraction, as it first did, damped a hull riding high a tenth as hard)
+                float damp = Mathf.Clamp01(b.HeaveDamping) * critical * vy;
                 float most = body.mass * MathF.Abs(vy) / MathF.Max(dt, 1e-4f);
                 body.AddForce(new Vector3(0f, -MathF.Sign(damp) * MathF.Min(MathF.Abs(damp), most), 0f), ForceMode.Force);
+            }
+            if (b.RockDamping > 0f)
+            {
+                float length = 2f * half.z, beam = 2f * half.x;
+                // second moments of the waterplane: about the beam (pitch) and about the keel (roll)
+                Rock(body, rotation * Vector3.right, waterSpring * beam * length * length * length / 12f, b.RockDamping, dt);
+                Rock(body, rotation * Vector3.forward, waterSpring * length * beam * beam * beam / 12f, b.RockDamping, dt);
             }
 
             // spin dies in water
@@ -260,14 +296,28 @@ namespace RipNRage.Engine.Ecs.Physics
                         float lift = 0.5f * WaterSurface.Density * b.PlaningLift * bottomArea * speed * speed * sinAlpha;
                         // a hull is lifted by the water, not fired out of it
                         float most = body.mass * gravity * 3f;
-                        // The lift acts aft of the hull's middle, which is what makes planing stable: lift the bow
-                        // and the angle of attack grows, and more lift behind the centre of mass pushes the bow
-                        // back down. At the middle a hull rears up until it stalls; ahead of it, it somersaults.
-                        Vector3 centreOfPressure = bottom - (body.rotation * Vector3.forward) * (half.z * 0.5f);
+                        // The lift acts aft of the hull's middle (PlaningCentre), which is what makes planing stable:
+                        // lift the bow and the angle of attack grows, and more lift behind the centre of mass pushes
+                        // the bow back down. Ahead of the middle a hull somersaults. With no rock damping even the
+                        // middle reared it up; the water's damping of pitch (RockDamping) is what makes it settle.
+                        Vector3 centreOfPressure = bottom - (body.rotation * Vector3.forward) * (half.z * Mathf.Clamp01(b.PlaningCentre));
                         body.AddForceAtPosition(up * MathF.Min(lift, most), centreOfPressure);
                     }
                 }
             }
+        }
+
+        /// <summary>Damp rotation about <paramref name="axis"/> at a fraction of critical for a righting stiffness.</summary>
+        private static void Rock(RipNRage.Engine.SolverBody body, Vector3 axis, float stiffness, float fraction, float dt)
+        {
+            float inverse = Vector3.Dot(axis, body.ApplyInverseInertia(axis));
+            if (inverse <= 0f || stiffness <= 0f) return;
+            float inertia = 1f / inverse;
+            float w = Vector3.Dot(body.angularVelocity, axis);
+            float critical = 2f * MathF.Sqrt(stiffness * inertia);
+            float torque = Mathf.Clamp01(fraction) * critical * w;
+            float most = inertia * MathF.Abs(w) / MathF.Max(dt, 1e-4f); // damping slows a roll, it never reverses one
+            body.AddTorque(-axis * (MathF.Sign(torque) * MathF.Min(MathF.Abs(torque), most)), ForceMode.Force);
         }
 
         /// <summary>The box a shape samples over.</summary>
