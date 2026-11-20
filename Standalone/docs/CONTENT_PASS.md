@@ -1,6 +1,8 @@
 # Content pass — plan
 
-Status: **V1–V1e, V2, V4, V5 built** (2026-11-19), plus swimming and caustics; the rest planned. Scope: the two unfinished weapons (katana, sonic shotgun),
+Status: **V1–V1e, V2, V2b, V4, V5 built** (2026-11-19); everything else planned. See *Pick up here* below.
+
+Scope: the two unfinished weapons (katana, sonic shotgun),
 throwables, more enemy kinds, and the Harbor — one sprawling level ending in a speedboat chase onto a container
 ship. Written from a survey of the code as of `07afed7` (layer 11 closed); paths are relative to `Standalone/`.
 
@@ -12,6 +14,92 @@ order, the ammo enum and `GameSave` all change freely.
 steered by pilots, at real speeds. The player and enemies ride them, fight on them, and jump between them under
 the same physics as everything else. Nothing is faked until the real version has been made as robust as it can
 be. Part three is that work, and it is the largest single piece of the pass.
+
+
+## Pick up here (end of the 2026-11-19 session)
+
+### Where it stands
+
+- **Branch** `hfi/db232b31-e08d-4987-b6d0-27196e0da383/elm`, last commit `0199a83`; the tree is clean.
+- **Checks**:
+  - 482 engine assertions and 561 gameplay assertions pass.
+  - All 36 gates pass.
+  - The last two engine steps (V2, V2b) left every gate's probe lines byte-identical and the four pixel gates
+    pixel-identical.
+- **Built**, all of it engine/physics groundwork for the Harbor's chase and ship:
+  - V1 / V1e — the character moves in the frame of what it stands on; the ride and the feet are a
+    `RideConstraint` solved with the contacts.
+  - V1b — `PlatformMotion` decks and `CarriedBy`.
+  - V1c — the infinite ocean.
+  - V1d — swimming, drowning and caustics.
+  - V4 / V5 — buoyancy, hydrodynamics, engines.
+  - V2 / V2b — compound bodies: exact convex inertia and sweeps, blasts on parts, full scale support.
+- **Not started**:
+  - F0–F3: housekeeping, weapon fire modes and slots, level logic, enemy foundation.
+  - C1–C7: katana, sonic shotgun, throwables, the enemy roster, the Harbor.
+  - V3 and every V step after V5.
+
+### Next, in the agreed order
+
+1. **V3, brush entities.** An entity's own brushes become its mesh and a `CompoundShape` of convex parts, in
+   entity-local space. Plus:
+   - `hull` and `interior` brush textures (displacement and dry volumes);
+   - the editor's "tie to entity";
+   - a `parent` key;
+   - the classes `vehicle_boat` and `vehicle_ship`.
+
+   **What exists to build on**:
+   - `MapEntity.brushes`, already parsed by `MapFile.cs:99`;
+   - `CompoundShapeConfig`;
+   - `ConvexColliderAsset` built from planes;
+   - the convex path in `PhysicsSyncSystem.BakeStaticShape`;
+   - scale support, done.
+2. **V4b, hulls from their shape — the chase's biggest risk.** The test boat makes 11 m/s; the chase needs 20–30.
+   - Displacement from the `hull` brushes, each convex brush clipped exactly against the water plane.
+   - Per-face pressure drag, planing lift and viscous drag.
+   - Retire the lumped `PlaningLift`, `PlaningTrim` and `PlaningCentre` for vessels.
+   - Done when a V-bottomed boat runs 2–5° **bow-up**, holds steady, and reaches at least 20 m/s on plausible power.
+3. **V6**, pilots and the chase director, with a "flotilla" benchmark scenario. Then V8, V9 (V9a/b/c), V10, V11
+   and V12 as written in part three.
+4. The F and C steps can interleave whenever content work is wanted. None of them depends on the V steps except C7b
+   and C7c, the chase and the ship.
+
+**Every limit and open item, and where it goes, is in the register "The limits, and what to do about each"** (end of
+part three), and the decisions taken are listed at the end of this file.
+
+### Seen only by checks, never on screen
+
+All of it was verified headless. Nobody has looked at any of these yet:
+- swimming and the caustics (`./run.sh --level levels/swim_test.map`);
+- the infinite ocean following the camera;
+- the interpolation fix — a player on a moving deck, which needs a scene with a moving deck; the vessel rig of V3
+  will be the first.
+
+Worth a look early next session.
+
+### Working notes — things that cost time this session
+
+- **Measure before theorising.** Three diagnoses this session were wrong until a control experiment isolated the
+  cause: "the two springs fight", "traction leans into walls", "the contact solver ignores kinematic velocity". The
+  causes were ghost colliders, chattering buoyancy and the drawn pose of an interpolated character. Build the
+  control first.
+- **Characters interpolate.** A character's `LocalTransform` is its *drawn* pose, blended between the last two steps.
+  In checks:
+  - compare it with an interpolated ground (the motor turns that on for whatever carries a character), or
+  - read the solver body (`worldCenterOfMass`) for the truth.
+- **`ScheduleChecks` pins system order.** A new system means updating `ScheduleChecks.Expected` in the same commit.
+- **Gates run with `--validate-access`.** A system that reads a component it does not query needs `[Reads(...)]`.
+  The game checks do not catch this; the gates do.
+- **Regression proof** — the way every engine step here was closed:
+  1. `git worktree add --detach <scratchpad>/base HEAD`.
+  2. Run `./gates.sh` in both trees.
+  3. `./gates.sh --compare A B`, and `python3 tools/pngdiff.py` on the `shot-*.png` files.
+  4. Remove the worktree.
+- **The benchmark**: `bash bench.sh` (the script is not executable). The crates scenario misses its 8 ms budget
+  single-threaded on this machine; it did before this session too.
+- **Never a bare `git stash`** — the stash is shared with other worktrees.
+- MP3 is still not decoded, so `mg338.mp3` and `MeleeHit_01.mp3` are silent until F0.
+
 
 ---
 
